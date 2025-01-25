@@ -475,9 +475,6 @@ if _build_core_ext():
 if _is_cuda() or _is_hip():
     ext_modules.append(CMakeExtension(name="aphrodite._moe_C"))
 
-if _is_cuda():
-    ext_modules.append(CMakeExtension(name="aphrodite._aphrodite_flash_attn_c"))
-
 if _build_custom_ops():
     ext_modules.append(CMakeExtension(name="aphrodite._C"))
 

@@ -1057,6 +1057,128 @@ def top_k_top_p_sampling_from_probs(
         raise ValueError(f"Invalid filter_apply_order: {filter_apply_order}")
 
 
+# Flash Attention kernels
+def fwd(
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        alibi_slopes: torch.Tensor,
+        dropout_p: float,
+        softmax_scale: float,
+        causal: bool,
+        window_size_left: int,
+        window_size_right: int,
+        softcap: float,
+        return_softmax: bool,
+        out: torch.Tensor,
+        gen: Optional[torch.Generator] = None,
+):
+    return torch.ops._C.fwd(
+        q,
+        k,
+        v,
+        out,
+        alibi_slopes,
+        dropout_p,
+        softmax_scale,
+        causal,
+        window_size_left,
+        window_size_right,
+        softcap,
+        return_softmax,
+        gen,
+    )
+
+def varlen_fwd(
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        out: Optional[torch.Tensor],
+        cu_seqlens_q: torch.Tensor,
+        cu_seqlens_k: torch.Tensor,
+        seqused_k: Optional[torch.Tensor],
+        block_table: Optional[torch.Tensor],
+        alibi_slopes: Optional[torch.Tensor],
+        max_seqlen_q: int,
+        max_seqlen_k: int,
+        dropout_p: float,
+        softmax_scale: float,
+        zero_tensors: bool,
+        causal: bool,
+        window_size_left: int,
+        window_size_right: int,
+        softcap: float,
+        return_softmax: bool,
+        gen: Optional[torch.Generator] = None,
+):
+    return torch.ops._C.varlen_fwd(
+        q,
+        k,
+        v,
+        out,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        seqused_k,
+        block_table,
+        alibi_slopes,
+        max_seqlen_q,
+        max_seqlen_k,
+        dropout_p,
+        softmax_scale,
+        zero_tensors,
+        causal,
+        window_size_left,
+        window_size_right,
+        softcap,
+        return_softmax,
+        gen,
+    )
+
+
+def fwd_kvcache(
+        q: torch.Tensor,
+        kcache: torch.Tensor,
+        vcache: torch.Tensor,
+        k: Optional[torch.Tensor],
+        v: Optional[torch.Tensor],
+        seqlens_k: Optional[torch.Tensor],
+        rotary_cos: Optional[torch.Tensor],
+        rotary_sin: Optional[torch.Tensor],
+        cache_batch_idx: Optional[torch.Tensor],
+        block_table: Optional[torch.Tensor],
+        alibi_slopes: Optional[torch.Tensor],
+        out: Optional[torch.Tensor],
+        softmax_scale: float,
+        causal: bool,
+        window_size_left: int,
+        window_size_right: int,
+        softcap: float,
+        rotary_interleaved: bool,
+        num_splits: int,
+):
+    return torch.ops._C.fwd_kvcache(
+        q,
+        kcache,
+        vcache,
+        k,
+        v,
+        seqlens_k,
+        rotary_cos,
+        rotary_sin,
+        cache_batch_idx,
+        block_table,
+        alibi_slopes,
+        out,
+        softmax_scale,
+        causal,
+        window_size_left,
+        window_size_right,
+        softcap,
+        rotary_interleaved,
+        num_splits,
+    )
+
+
 # TODO: remove this later
 names_and_values = globals()
 names_and_values_to_update = {}

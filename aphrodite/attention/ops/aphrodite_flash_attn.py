@@ -1,9 +1,8 @@
 from typing import Optional, Union
 
 import torch
-import torch.nn as nn
 
-import aphrodite._aphrodite_flash_attn_C as _aphrodite_flash_attn_C  # noqa: F401
+import aphrodite._custom_ops as ops
 
 
 def maybe_contiguous(x):
@@ -17,20 +16,20 @@ def _flash_attn_forward(
 ):
     q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
     (out, q, k, v, out_padded, softmax_lse,
-     S_dmask, rng_state) = torch.ops._aphrodite_flash_attn_c.fwd(
-        q,
-        k,
-        v,
-        out,
-        alibi_slopes,
-        dropout_p,
-        softmax_scale,
-        causal,
-        window_size[0],
-        window_size[1],
-        softcap,
-        return_softmax,
-        None,
+     S_dmask, rng_state) = ops.fwd(
+        q=q,
+        k=k,
+        v=v,
+        out=out,
+        alibi_slopes=alibi_slopes,
+        dropout_p=dropout_p,
+        softmax_scale=softmax_scale,
+        causal=causal,
+        window_size_left=window_size[0],
+        window_size_right=window_size[1],
+        softcap=softcap,
+        return_softmax=return_softmax,
+        gen=None,
     )  # type: ignore
     return out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state
 
@@ -56,27 +55,27 @@ def _flash_attn_varlen_forward(
 ):
     q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
     (out, q, k, v, out_padded, softmax_lse,
-     S_dmask, rng_state) = torch.ops._aphrodite_flash_attn_c.varlen_fwd(
-        q,
-        k,
-        v,
-        out,
-        cu_seqlens_q,
-        cu_seqlens_k,
-        None,
-        block_table,
-        alibi_slopes,
-        max_seqlen_q,
-        max_seqlen_k,
-        dropout_p,
-        softmax_scale,
-        False,
-        causal,
-        window_size[0],
-        window_size[1],
-        softcap,
-        return_softmax,
-        None,
+     S_dmask, rng_state) = ops.varlen_fwd(
+        q=q,
+        k=k,
+        v=v,
+        cu_seqlens_q=cu_seqlens_q,
+        cu_seqlens_k=cu_seqlens_k,
+        max_seqlen_q=max_seqlen_q,
+        max_seqlen_k=max_seqlen_k,
+        dropout_p=dropout_p,
+        softmax_scale=softmax_scale,
+        causal=causal,
+        window_size_left=window_size[0],
+        window_size_right=window_size[1],
+        softcap=softcap,
+        alibi_slopes=alibi_slopes,
+        block_table=block_table,
+        return_softmax=return_softmax,
+        gen=None,
+        out=out,
+        seqused_k=None,
+        zero_tensors=False,
     )  # type: ignore
     return out, q, k, v, out_padded, softmax_lse, S_dmask, rng_state
 
@@ -264,28 +263,25 @@ def flash_attn_with_kvcache(
         cache_seqlens = maybe_contiguous(cache_seqlens)
     cache_batch_idx = maybe_contiguous(cache_batch_idx)
     block_table = maybe_contiguous(block_table)
-    out, softmax_lse = torch.ops._aphrodite_flash_attn_c.fwd_kvcache(
-        q,
-        k_cache,
-        v_cache,
-        k,
-        v,
-        cache_seqlens,
-        rotary_cos,
-        rotary_sin,
-        cache_batch_idx,
-        block_table,
-        alibi_slopes,
-        out,
-        softmax_scale,
-        causal,
-        window_size[0],
-        window_size[1],
-        softcap,
-        rotary_interleaved,
-        num_splits,
+    out, softmax_lse = ops.fwd_kvcache(
+        q=q,
+        kcache=k_cache,
+        vcache=v_cache,
+        k=k,
+        v=v,
+        seqlens_k=cache_seqlens,
+        rotary_cos=rotary_cos,
+        rotary_sin=rotary_sin,
+        cache_batch_idx=cache_batch_idx,
+        block_table=block_table,
+        alibi_slopes=alibi_slopes,
+        out=out,
+        softmax_scale=softmax_scale,
+        causal=causal,
+        window_size_left=window_size[0],
+        window_size_right=window_size[1],
+        softcap=softcap,
+        rotary_interleaved=rotary_interleaved,
+        num_splits=num_splits,
     )  # type: ignore
     return (out, softmax_lse) if return_softmax_lse else out
-
-
-

@@ -254,7 +254,6 @@ def which_attn_to_use(
     if selected_backend == _Backend.FLASH_ATTN:
         try:
             import aphrodite.attention.ops.aphrodite_flash_attn  # noqa: F401
-
             from aphrodite.attention.backends.flash_attn import (  # noqa: F401
                 FlashAttentionBackend)
 
