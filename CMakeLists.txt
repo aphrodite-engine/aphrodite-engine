@@ -352,24 +352,22 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
         "kernels/flash_attn/*.cu"
         "kernels/flash_attn/*.cpp"
     )
-else()
-    set(APHRODITE_FLASH_ATTN_EXT_SRC)
+    
+    define_gpu_extension_target(
+        _aphrodite_flash_attn_c
+        DESTINATION aphrodite
+        LANGUAGE ${APHRODITE_GPU_LANG}
+        SOURCES ${APHRODITE_FLASH_ATTN_EXT_SRC}
+        COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
+        ARCHITECTURES ${APHRODITE_GPU_ARCHES}
+        INCLUDE_DIRECTORIES ${CUTLASS_INCLUDE_DIR}
+        USE_SABI 3
+        WITH_SOABI)
+
+    target_compile_definitions(_aphrodite_flash_attn_c PRIVATE
+        FLASHATTENTION_DISABLE_DROPOUT
+        FLASHATTENTION_DISABLE_UNEVEN_K)
 endif()
-
-define_gpu_extension_target(
-  aphrodite_flash_attn_c  # Change to lowercase 'c'
-  DESTINATION aphrodite
-  LANGUAGE ${APHRODITE_GPU_LANG}
-  SOURCES ${APHRODITE_FLASH_ATTN_EXT_SRC}
-  COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
-  ARCHITECTURES ${APHRODITE_GPU_ARCHES}
-  INCLUDE_DIRECTORIES ${CUTLASS_INCLUDE_DIR}
-  USE_SABI 3
-  WITH_SOABI)
-
-target_compile_definitions(aphrodite_flash_attn_c PRIVATE
-    FLASHATTENTION_DISABLE_DROPOUT
-    FLASHATTENTION_DISABLE_UNEVEN_K)
 
 
 if(APHRODITE_GPU_LANG STREQUAL "HIP")
@@ -390,7 +388,6 @@ if(APHRODITE_GPU_LANG STREQUAL "HIP")
     WITH_SOABI)
 endif()
 
-
 if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   message(STATUS "Enabling C extension.")
   add_dependencies(default _C)
@@ -399,7 +396,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   add_dependencies(default _moe_C)
 
   message(STATUS "Enabling flash_attn extension.")
-  add_dependencies(default aphrodite_flash_attn_c)
+  add_dependencies(default _aphrodite_flash_attn_c)
 endif()
 
 if(APHRODITE_GPU_LANG STREQUAL "HIP")
