@@ -1,6 +1,5 @@
 """Minimal implementation of CLIPVisionModel intended to be only used
 within a vision language model."""
-from array import array
 from typing import Iterable, List, Optional, Tuple, Union
 
 import torch
@@ -10,8 +9,7 @@ from transformers import CLIPVisionConfig
 from transformers.models.clip.modeling_clip import CLIPSdpaAttention
 
 from aphrodite.common.config import ModelConfig
-from aphrodite.common.sequence import (APHRODITE_TOKEN_ID_ARRAY_TYPE,
-                                       SequenceData)
+from aphrodite.common.sequence import SequenceData
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.inputs import LLMInputs
 from aphrodite.modeling.layers.activation import get_act_fn
@@ -63,11 +61,10 @@ def dummy_seq_data_for_clip(
     else:
         image_feature_size = image_feature_size_override
 
-    token_ids = array(APHRODITE_TOKEN_ID_ARRAY_TYPE,
-                      [image_token_id]) * image_feature_size * num_images
-    token_ids += array(APHRODITE_TOKEN_ID_ARRAY_TYPE,
-                       [0]) * (seq_len - image_feature_size * num_images)
-    return SequenceData(token_ids)
+    return SequenceData.from_token_counts(
+        (image_token_id, image_feature_size * num_images),
+        (0, seq_len - image_feature_size * num_images),
+    )
 
 
 def dummy_image_for_clip(
