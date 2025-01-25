@@ -88,6 +88,8 @@ _MULTIMODAL_MODELS = {
                                           "LlavaNextForConditionalGeneration"),
     "LlavaNextVideoForConditionalGeneration":
     ("llava_next_video", "LlavaNextVideoForConditionalGeneration"),
+    "LlavaOnevisionForConditionalGeneration":
+    ("llava_onevision", "LlavaOnevisionForConditionalGeneration"),
     "MiniCPMV": ("minicpmv", "MiniCPMV"),
     "PaliGemmaForConditionalGeneration": ("paligemma",
                                           "PaliGemmaForConditionalGeneration"),
