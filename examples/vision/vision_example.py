@@ -148,6 +148,7 @@ def run_minicpmv(question):
     llm = LLM(
         model=model_name,
         trust_remote_code=True,
+        max_model_len=8192,
     )
     # NOTE The stop_token_ids are different for various versions of MiniCPM-V
     # 2.0
@@ -342,7 +343,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = FlexibleArgumentParser(
-        description='Demo on using vLLM for offline inference with '
+        description='Demo on using Aphrodite for offline inference with '
         'vision language models')
     parser.add_argument('--model-type',
                         '-m',
