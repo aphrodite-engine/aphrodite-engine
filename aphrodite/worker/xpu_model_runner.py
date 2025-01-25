@@ -15,15 +15,14 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
-from aphrodite.common.utils import CudaMemoryProfiler, make_tensor_with_pad
+from aphrodite.common.utils import DeviceMemoryProfiler, make_tensor_with_pad
 from aphrodite.distributed import get_pp_group
 from aphrodite.inputs import INPUT_REGISTRY, InputRegistry
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.model_loader import get_model
 from aphrodite.multimodal import (MULTIMODAL_REGISTRY, BatchedTensorInputs,
                                   MultiModalInputs, MultiModalRegistry)
-from aphrodite.worker.model_runner import (AttentionMetadata,
-                                                 SamplingMetadata)
+from aphrodite.worker.model_runner import AttentionMetadata, SamplingMetadata
 from aphrodite.worker.model_runner_base import (
     ModelRunnerBase, ModelRunnerInputBase, ModelRunnerInputBuilderBase,
     _add_attn_metadata_broadcastable_dict,
@@ -360,7 +359,7 @@ class XPUModelRunner(ModelRunnerBase[ModelInputForXPUWithSamplingMetadata]):
         self.model: nn.Module  # Set after init_Model
 
     def load_model(self) -> None:
-        with CudaMemoryProfiler() as m:
+        with DeviceMemoryProfiler() as m:
             self.model = get_model(
                 model_config=self.model_config,
                 device_config=self.device_config,
