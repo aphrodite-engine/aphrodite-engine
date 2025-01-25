@@ -15,19 +15,14 @@ class RejectionSampler(SpecDecodeStochasticBaseSampler):
     """
 
     def __init__(self,
-                 disable_bonus_tokens: bool = True,
                  strict_mode: bool = False):
         """Create a rejection sampler.
         Args:
-            disable_bonus_tokens: Whether or not to disable the bonus token.
-            Require when bonus tokens will cause corrupt KV cache for
-            proposal methods that require KV cache.
             strict_mode: Whether or not to perform shape/device/dtype checks
                 during sampling. This catches correctness issues but adds
                 nontrivial latency.
         """
-        super().__init__(disable_bonus_tokens=disable_bonus_tokens,
-                         strict_mode=strict_mode)
+        super().__init__(strict_mode=strict_mode)
 
     def forward(
         self,
