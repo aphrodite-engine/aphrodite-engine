@@ -404,10 +404,12 @@ class CLIPVisionModel(nn.Module):
 
         for name, loaded_weight in weights:
             # post_layernorm is not needed in CLIPVisionModel
-            if "vision_model.post_layernorm" in name:
+            if (name.startswith("vision_model.post_layernorm")
+                    and self.vision_model.post_layernorm is None):
                 continue
+
             # omit layers when num_hidden_layers_override is set
-            if "vision_model.encoder.layers." in name:
+            if name.startswith("vision_model.encoder.layers"):
                 layer_idx = int(name.split(".")[3])
                 if layer_idx >= layer_count:
                     continue

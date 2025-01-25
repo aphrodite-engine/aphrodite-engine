@@ -504,10 +504,6 @@ class SiglipVisionModel(nn.Module):
             num_hidden_layers_override=num_hidden_layers_override,
         )
 
-    @property
-    def _require_post_layernorm(self) -> bool:
-        return self.vision_model.post_layernorm is not None
-
     def get_input_embeddings(self) -> nn.Module:
         return self.vision_model.embeddings.patch_embedding
 
@@ -533,11 +529,11 @@ class SiglipVisionModel(nn.Module):
 
         for name, loaded_weight in weights:
             # post_layernorm is optional in SiglipVisionModel
-            if ("vision_model.post_layernorm" in name
-                    and not self._require_post_layernorm):
+            if (name.startswith("vision_model.post_layernorm")
+                    and self.vision_model.post_layernorm is None):
                 continue
             # omit layers when num_hidden_layers_override is set
-            if "vision_model.encoder.layers." in name:
+            if name.startswith("vision_model.encoder.layers"):
                 layer_idx = int(name.split(".")[3])
                 if layer_idx >= layer_count:
                     continue
