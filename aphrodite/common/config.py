@@ -141,6 +141,8 @@ class ModelConfig:
             per prompt. Only applicable for multimodal models.
         config_format: The config format which will be loaded. Defaults to
             'auto' which defaults to 'hf'.
+        mm_processor_kwargs: Arguments to be forwarded to the model's processor
+            for multi-modal data, e.g., image processor.
         override_neuron_config: Initialize non default neuron config or 
             override default neuron config that are specific to Neuron devices, 
             this argument will be used to configure the neuron config that 
@@ -177,6 +179,7 @@ class ModelConfig:
         limit_mm_per_prompt: Optional[Mapping[str, int]] = None,
         use_async_output_proc: bool = True,
         config_format: ConfigFormat = ConfigFormat.AUTO,
+        mm_processor_kwargs: Optional[Dict[str, Any]] = None,
         override_neuron_config: Optional[Dict[str, Any]] = None
     ) -> None:
         self.model = model
@@ -217,6 +220,7 @@ class ModelConfig:
             self.model, revision)
         self.dtype = _get_and_verify_dtype(self.hf_text_config, dtype)
         self.use_async_output_proc = use_async_output_proc
+        self.mm_processor_kwargs = mm_processor_kwargs
         # Set enforce_eager to False if the value is unset.
         if self.enforce_eager is None:
             self.enforce_eager = False
