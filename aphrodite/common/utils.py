@@ -5,6 +5,7 @@ import datetime
 import enum
 import gc
 import inspect
+import ipaddress
 import math
 import os
 import random
@@ -531,6 +532,12 @@ def get_ip() -> str:
         stacklevel=2)
     return "0.0.0.0"
 
+def is_valid_ipv6_address(address: str) -> bool:
+    try:
+        ipaddress.IPv6Address(address)
+        return True
+    except ValueError:
+        return False
 
 def get_distributed_init_method(ip: str, port: int) -> str:
     # Brackets are not permitted in ipv4 addresses,
