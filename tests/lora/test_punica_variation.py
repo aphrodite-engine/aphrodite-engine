@@ -3,12 +3,12 @@ This script is mainly used to test whether trtion kernels can run normally
 under different conditions, including various batches, numbers of LoRA , and 
 maximum ranks.
 """
-import random
 from unittest.mock import patch
 
 import pytest
 import torch
 
+from aphrodite.common.utils import seed_everything
 from aphrodite.lora.ops.bgmv_expand import bgmv_expand
 from aphrodite.lora.ops.bgmv_expand_slice import bgmv_expand_slice
 from aphrodite.lora.ops.bgmv_shrink import bgmv_shrink
@@ -60,11 +60,8 @@ def test_punica_sgmv(
     seed: int,
     device: str,
 ):
-    random.seed(seed)
     torch.set_default_device(device)
-    torch.random.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    seed_everything(seed)
 
     seq_length = 128
     (
@@ -87,6 +84,7 @@ def test_punica_sgmv(
         device,
     )
     max_seq_length = seq_len_tensor.max()
+    token_nums = seq_len_tensor.sum().item()
     if isinstance(max_seq_length, tuple):
         max_seq_length = max_seq_length[0].item()
     else:
@@ -101,6 +99,7 @@ def test_punica_sgmv(
             lora_indices_tensor,
             batches,
             max_seq_length,
+            token_nums,
             scaling,
         )
     else:
@@ -113,6 +112,7 @@ def test_punica_sgmv(
             lora_indices_tensor,
             batches,
             max_seq_length,
+            token_nums,
             add_inputs=True,
         )
     ref_torch_groupgemm(
@@ -153,11 +153,8 @@ def test_punica_bgmv(
     from aphrodite.lora.ops.bgmv_expand import _bgmv_expand_kernel
     from aphrodite.lora.ops.bgmv_shrink import _bgmv_shrink_kernel
 
-    random.seed(seed)
     torch.set_default_device(device)
-    torch.random.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    seed_everything(seed)
 
     seq_length = 1
     (
@@ -244,11 +241,9 @@ def test_punica_expand_nslices(
 ):
     from aphrodite.lora.ops.bgmv_expand_slice import _bgmv_expand_slice_kernel
 
-    random.seed(seed)
     torch.set_default_device(device)
-    torch.random.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    seed_everything(seed)
+
     seq_length = 128 if op_type == "sgmv" else 1
     (
         inputs_tensor,
@@ -270,6 +265,7 @@ def test_punica_expand_nslices(
         device,
     )
     max_seq_length = seq_len_tensor.max()
+    token_nums = seq_len_tensor.sum().item()
     if isinstance(max_seq_length, tuple):
         max_seq_length = max_seq_length[0].item()
     else:
@@ -287,6 +283,7 @@ def test_punica_expand_nslices(
                 lora_indices_tensor,
                 batches,
                 max_seq_length,
+                token_nums,
                 slice_offset,
                 hidden_size,
                 add_inputs=True,

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 def compute_meta(
     token_lora_tensor: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, int, bool]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, int, int, bool]:
     """
     Get the information required for the sgmv kernel. With the  features:
     1. If consecutive requests in the batch use the same LoRA, this function
@@ -43,7 +43,7 @@ def compute_meta(
     b_seq_start_tensor = torch.zeros_like(seq_length_tensor)
     b_seq_start_tensor[1:].copy_(cum_result[:-1])
     max_length = seq_length_tensor.max().item()
-
+    token_nums = seq_length_tensor.sum().item()
     batch_size = lora_indices_tensor.size(0)
     no_lora = False
     # -1 means no lora should be applied. Use `no_lora` to determine whether
@@ -52,7 +52,7 @@ def compute_meta(
     if batch_size == 1 and lora_indices_tensor == -1:
         no_lora = True
     return (b_seq_start_tensor, seq_length_tensor, lora_indices_tensor,
-            batch_size, max_length, no_lora)
+            batch_size, max_length, token_nums, no_lora)
 
 
 # TODO see if this can be vectorized
@@ -216,6 +216,7 @@ class PunicaWrapper:
                                                    dtype=torch.long,
                                                    device=device)
         self.max_length: int = 0
+        self.token_nums: int = 0
         self.batch_size: int = -1
         self.is_prefill = False
         self.no_lora = False
@@ -282,7 +283,8 @@ class PunicaWrapper:
     def _update_prefill_metada(self, token_lora_tensor: torch.Tensor) -> None:
 
         (b_seq_start_tensor, seq_length_tensor, lora_indices_tensor,
-         batch_size, max_length, no_lora) = compute_meta(token_lora_tensor)
+         batch_size, max_length, token_nums,
+         no_lora) = compute_meta(token_lora_tensor)
 
         self._seq_start_locs[:b_seq_start_tensor.shape[0]].copy_(
             b_seq_start_tensor)
@@ -291,25 +293,28 @@ class PunicaWrapper:
             lora_indices_tensor)
         self.batch_size = batch_size
         self.max_length = max_length
+        self.token_nums = token_nums
         self.no_lora = no_lora
 
     @property
     def prefill_metadata(
-            self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, int]:
+        self
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, int, int]:
         """
         This property provides a convenient way to access the necessary 
         metadata for prefill-related  kernel computations.
-            1. seq_start_locs: Tensor of sequence start positions
-            2. seq_lengths: Tensor of sequence lengths
+            1. seq_start_locs: Tensor of sequence start positions.
+            2. seq_lengths: Tensor of sequence lengths.
             3. lora_indices_per_batch: Tensor of lora indices, and an index of 
                 -1 means no lora should be applied.
-            4. batch_size: batch size after clustering identical lora indices
-            5. max_length: The maximum sequence length in the batch
+            4. batch_size: Batch size after clustering identical lora indices.
+            5. max_length: The maximum sequence length in the batch.
+            6. token_nums: The token numbers in the batch.
         """
         return (self._seq_start_locs[:self.batch_size],
                 self._seq_lengths[:self.batch_size],
                 self._lora_indices_per_batch[:self.batch_size],
-                self.batch_size, self.max_length)
+                self.batch_size, self.max_length, self.token_nums)
 
     @property
     def token_lora_indices(self) -> torch.Tensor:
