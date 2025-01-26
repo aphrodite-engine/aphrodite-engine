@@ -192,6 +192,7 @@ endif()
 set(APHRODITE_EXT_SRC
   "kernels/cache_kernels.cu"
   "kernels/attention/attention_kernels.cu"
+  "kernels/attention/vertical_slash_index.cu"
   "kernels/pos_encoding_kernels.cu"
   "kernels/activation_kernels.cu"
   "kernels/layernorm_kernels.cu"
