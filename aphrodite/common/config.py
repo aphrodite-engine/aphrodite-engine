@@ -48,8 +48,10 @@ _PP_SUPPORTED_MODELS = [
     "NemotronForCausalLM",
     "Qwen2ForCausalLM",
     "Qwen2MoeForCausalLM",
+    "QWenLMHeadModel",
     "InternLM2ForCausalLM",
     "InternVLChatModel",
+    "Qwen2VLForConditionalGeneration",
 ]
 
 _OPTIMIZED_QUANTS = [
@@ -513,7 +515,8 @@ class ModelConfig:
                    for arch in architectures) and pipeline_parallel_size > 1:
             raise NotImplementedError(
                 "Pipeline parallelism is only supported for the following "
-                f" architectures: {_PP_SUPPORTED_MODELS}.")
+                f" architectures: {_PP_SUPPORTED_MODELS}. You are using "
+                f"the following architecture: {architectures}.")
 
         if self.quantization == "bitsandbytes" and self.enforce_eager is False:
             logger.warning("CUDA graph is not supported on BitAndBytes yet, "
