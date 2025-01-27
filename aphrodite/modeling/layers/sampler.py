@@ -377,7 +377,10 @@ class Sampler(nn.Module):
                     sampling_tensors.dry_bases, 
                     sampling_tensors.dry_allowed_lengths,
                     sampling_tensors.dry_sequence_breaker_ids,
-                    sampling_tensors.dry_ranges)
+                    sampling_tensors.dry_ranges,
+                    sampling_tensors.dry_max_ngram,
+                    sampling_tensors.dry_max_occurrences,
+                    sampling_tensors.dry_early_exit_match_len)
 
             elif sampler_id == SamplerID.PENALTIES and do_penalties:
                 if (sampling_metadata.seq_groups and
@@ -755,6 +758,9 @@ def _apply_dry(
     allowed_lengths: torch.Tensor,
     sequence_breakers_ids: torch.Tensor,
     ranges: torch.Tensor,
+    max_ngram: torch.Tensor,
+    max_occurrences: torch.Tensor,
+    early_exit_match_len: torch.Tensor,
 ) -> torch.Tensor:
     """
     Apply Don't Repeat Yourself (DRY) sampling to the logits.
@@ -762,14 +768,7 @@ def _apply_dry(
     Reference: https://github.com/oobabooga/text-generation-webui/pull/5677 and
     https://github.com/AlpinDale/vllm/pull/1
     """
-
     VOCAB_SIZE = logits.size(-1)
-
-    # ---- Key constants for DRY behavior ----
-    MAX_NGRAM = 12            # Maximum length of match to check
-    MAX_OCCURRENCES = 8       # How many occurrences of last_token we analyze
-    EARLY_EXIT_MATCH_LEN = 8  # If we find this large a match, we stop searching
-    # ----------------------------------------
 
     applies_to = multipliers.nonzero(as_tuple=True)[0]
     for irow in applies_to.tolist():
@@ -800,13 +799,14 @@ def _apply_dry(
         for break_tok in sequence_breakers_ids[irow]:
             break_mask.logical_or_(token_seq == break_tok)
 
-        max_ngram = 0
-        for max_ngram in range(min(len(break_mask), MAX_NGRAM + 1)):
-            if break_mask[-max_ngram - 1]:
+        curr_max_ngram = 0
+        max_ngram_val = max_ngram[irow].item()
+        for curr_max_ngram in range(min(len(break_mask), max_ngram_val + 1)):
+            if break_mask[-curr_max_ngram - 1]:
                 break
 
         min_ngram = allowed_lengths[irow].item()
-        if max_ngram <= min_ngram:
+        if curr_max_ngram <= min_ngram:
             continue
 
         ngram_lens = torch.zeros(
@@ -818,15 +818,17 @@ def _apply_dry(
             continue
         endpoint_indexes = endpoint_indexes_all[:-1]
 
-        if len(endpoint_indexes) > MAX_OCCURRENCES:
-            endpoint_indexes = endpoint_indexes[-MAX_OCCURRENCES:]
+        max_occurrences_val = max_occurrences[irow].item()
+        if len(endpoint_indexes) > max_occurrences_val:
+            endpoint_indexes = endpoint_indexes[-max_occurrences_val:]
 
+        early_exit_match_len_val = early_exit_match_len[irow].item()
         for idx in reversed(endpoint_indexes):
             if idx == len(token_seq) - 1:
                 continue
 
             match_len = 0
-            for unwind in range(1, min(idx, max_ngram) + 1):
+            for unwind in range(1, min(idx, curr_max_ngram) + 1):
                 if break_mask[idx - unwind]:
                     break
                 if token_seq[idx - unwind] != token_seq[-unwind - 1]:
@@ -839,7 +841,7 @@ def _apply_dry(
 
                 ngram_lens[next_tok] = max(ngram_lens[next_tok].item(), new_len)
 
-                if new_len >= EARLY_EXIT_MATCH_LEN:
+                if new_len >= early_exit_match_len_val:
                     break
 
         penalty_mask = ngram_lens > 0

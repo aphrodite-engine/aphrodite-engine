@@ -228,6 +228,10 @@ class SamplingParams(
             Defaults to None.
         dry_range: The range of tokens (input + output) to apply the DRY
             sampler.
+        dry_max_ngram: Maximum length of match to check.
+        dry_max_occurrences: How many occurrences of last_token we analyze.
+        dry_early_exit_match_len: If we find this large a match, we stop
+            searching.
         skew: Bias the token selection towards higher or lower probability
             tokens. Defaults to 0 (disabled).
         sampler_priority: A list of integers to control the order in which
@@ -284,6 +288,9 @@ class SamplingParams(
     dry_allowed_length: int = 2
     dry_sequence_breaker_ids: List[int] = []
     dry_range: int = 0
+    dry_max_ngram: int = 12
+    dry_max_occurrences: int = 8
+    dry_early_exit_match_len: int = 8
     skew: float = 0.0
     sampler_priority: Optional[List[int]] = []
     output_kind: RequestOutputKind = RequestOutputKind.CUMULATIVE
@@ -339,6 +346,9 @@ class SamplingParams(
         "dry_allowed_length": 2,
         "dry_sequence_breaker_ids": [],
         "dry_range": 0,
+        "dry_max_ngram": 12,
+        "dry_max_occurrences": 8,
+        "dry_early_exit_match_len": 8,
         "skew": 0.0,
         "sampler_priority": [],
         "output_kind": RequestOutputKind.CUMULATIVE,
@@ -496,6 +506,18 @@ class SamplingParams(
             raise ValueError(
                 "dry_range must be non-negative, got "
                 f"{self.dry_range}.")
+        if self.dry_max_ngram < 0:
+            raise ValueError(
+                "dry_max_ngram must be non-negative, got "
+                f"{self.dry_max_ngram}.")
+        if self.dry_max_occurrences < 0:
+            raise ValueError(
+                "dry_max_occurrences must be non-negative, got "
+                f"{self.dry_max_occurrences}.")
+        if self.dry_early_exit_match_len < 0:
+            raise ValueError(
+                "dry_early_exit_match_len must be non-negative, got "
+                f"{self.dry_early_exit_match_len}.")
         if self.skew < 0.0:
             raise ValueError(
                 "skew must be non-negative, got "
