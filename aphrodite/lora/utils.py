@@ -89,16 +89,18 @@ def replace_submodule(model: nn.Module, module_name: str,
     return new_module
 
 
-def parse_fine_tuned_lora_name(name: str) -> Tuple[str, bool]:
+def parse_fine_tuned_lora_name(name: str) -> Optional[Tuple[str, bool]]:
     """Parse the name of lora weights.
 
     args:
         name: the name of the fine-tuned LoRA, e.g.
             base_model.model.dense1.weight
     return:
-        Tuple(module_name, is_lora_a):
-            module_name: the name of the module, e.g. model.dense1,
-            is_lora_a whether the tensor is lora_a or lora_b.
+        Optional[Tuple(module_name, is_lora_a)]:
+            If supported: (module_name, is_lora_a) where
+                module_name: the name of the module, e.g. model.dense1,
+                is_lora_a: whether the tensor is lora_a or lora_b.
+            If unsupported: None
     """
     parts = name.split(".")
 
@@ -109,7 +111,7 @@ def parse_fine_tuned_lora_name(name: str) -> Tuple[str, bool]:
         elif parts[-1] == "lora_embedding_A" or parts[-1] == "lora_embedding_B":
             return ".".join(parts[2:-1]), parts[-1] == "lora_embedding_A"
 
-    raise ValueError(f"{name} is unsupported LoRA weight")
+    return None
 
 
 def get_adapter_absolute_path(lora_path: str) -> str:

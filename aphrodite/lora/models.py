@@ -116,8 +116,16 @@ class LoRAModel(AdapterModel):
         """Create a LoRAModel from a dictionary of tensors."""
         pin_memory = str(device) == "cpu" and is_pin_memory_available()
         loras: Dict[str, LoRALayerWeights] = {}
+        skipped_count = 0
         for tensor_name, tensor in tensors.items():
-            module_name, is_lora_a = parse_fine_tuned_lora_name(tensor_name)
+            parsed = parse_fine_tuned_lora_name(tensor_name)
+            if parsed is None:
+                skipped_count += 1
+                print(f"\rSkipping {skipped_count} "
+                      "unsupported LoRA weight tensors... Latest: "
+                      f"{tensor_name}", end="", flush=True)
+                continue
+            module_name, is_lora_a = parsed
             if module_name not in loras:
                 lora_embeddings_tensor = None
                 if embeddings:
@@ -159,6 +167,9 @@ class LoRAModel(AdapterModel):
 
         for lora in loras.values():
             lora.optimize()
+        if skipped_count > 0:
+            # Print final count and move to next line
+            print(f"\rSkipped {skipped_count} unsupported LoRA weight tensors.")
         return cls(lora_model_id, rank, loras, scaling_factor=scaling_factor)
 
     @classmethod
@@ -203,20 +214,25 @@ class LoRAModel(AdapterModel):
             config = json.load(f)
         if os.path.isfile(lora_tensor_path):
             tensors: Dict[str, torch.Tensor] = {}
-            # Find unexpected modules.
-            # Use safetensor key as a source of truth to find expected modules.
-            # in peft if you have target_modules A, B, C and C does not exist
-            # in the model it won’t error and model will be trained with A, B
-            # loraified. C won’t exist in the safetensor but it will exist in
-            # the target_modules of the adapter_config.json.
             unexpected_modules = []
+            skipped_count = 0
             with safetensors.safe_open(lora_tensor_path,
                                        framework="pt") as f:  # type: ignore
                 for lora_module in f.keys():  # noqa
-                    module_name, _ = parse_fine_tuned_lora_name(lora_module)
+                    parsed = parse_fine_tuned_lora_name(lora_module)
+                    if parsed is None:
+                        skipped_count += 1
+                        print(f"\rSkipping {skipped_count} unsupported LoRA "
+                              "weight tensors... Latest: "
+                              f"{lora_module}", end="", flush=True)
+                        continue
+                    module_name, _ = parsed
                     part_name = module_name.split(".")[-1]
                     if part_name not in expected_lora_modules:
                         unexpected_modules.append(module_name)
+                if skipped_count > 0:
+                    print(f"\rSkipped {skipped_count} unsupported LoRA "
+                          "weight tensors.")
                 if unexpected_modules:
                     raise ValueError(
                         f"While loading {lora_dir}, expected"
@@ -232,18 +248,19 @@ class LoRAModel(AdapterModel):
             # modules.
             unexpected_modules = []
             target_modules = config["target_modules"]
+            skipped_count = 0
             for module in target_modules:
                 # Compatible with more modules,
                 # such as:layers.11.self_attn.k_proj
                 part_name = module.split(".")[-1]
                 if part_name not in expected_lora_modules:
+                    skipped_count += 1
+                    print(f"\rSkipping {skipped_count} unexpected modules... "
+                          f"Latest: {module}", end="", flush=True)
                     unexpected_modules.append(module)
-            # loaded lora's target modules must be a subset of
-            # expected_lora_modules. It is not reliable. See
-            # https://github.com/vllm-project/vllm/pull/5909. But there's no
-            # other better mechanism.
+            if skipped_count > 0:
+                print(f"\rSkipped {skipped_count} unexpected modules.")
             if unexpected_modules:
-                print(unexpected_modules, "modules")
                 raise ValueError(
                     f"While loading {lora_dir}, expected"
                     f" target modules in {expected_lora_modules}"
