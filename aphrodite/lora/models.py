@@ -214,6 +214,12 @@ class LoRAModel(AdapterModel):
             config = json.load(f)
         if os.path.isfile(lora_tensor_path):
             tensors: Dict[str, torch.Tensor] = {}
+            # Find unexpected modules.
+            # Use safetensor key as a source of truth to find expected modules.
+            # in peft if you have target_modules A, B, C and C does not exist
+            # in the model it won’t error and model will be trained with A, B
+            # loraified. C won’t exist in the safetensor but it will exist in
+            # the target_modules of the adapter_config.json.
             unexpected_modules = []
             skipped_count = 0
             with safetensors.safe_open(lora_tensor_path,
@@ -260,6 +266,10 @@ class LoRAModel(AdapterModel):
                     unexpected_modules.append(module)
             if skipped_count > 0:
                 print(f"\rSkipped {skipped_count} unexpected modules.")
+            # loaded lora's target modules must be a subset of
+            # expected_lora_modules. It is not reliable. See
+            # https://github.com/vllm-project/vllm/pull/5909. But there's no
+            # other better mechanism.
             if unexpected_modules:
                 raise ValueError(
                     f"While loading {lora_dir}, expected"
