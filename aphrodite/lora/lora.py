@@ -18,6 +18,7 @@ class LoRALayerWeights:
         lora_b: torch.Tensor,
         embeddings_tensor: Optional[torch.Tensor] = None,
         scaling: Optional[float] = None,
+        runtime_scaling: Optional[float] = 1.0,
     ) -> None:
         self.module_name = module_name
         self.rank = rank
@@ -27,9 +28,9 @@ class LoRALayerWeights:
         self.embeddings_tensor = embeddings_tensor
 
         if scaling is None:
-            self.scaling = self.lora_alpha / self.rank
+            self.scaling = (self.lora_alpha / self.rank) * runtime_scaling
         else:
-            self.scaling = scaling
+            self.scaling = scaling * runtime_scaling
 
     def optimize(self) -> "LoRALayerWeights":
         """Optimize the LoRA by merging the scaling into lora_b."""
