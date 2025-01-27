@@ -3,13 +3,13 @@ from enum import Enum
 from typing import Callable, List, Optional
 
 import torch
+from compressed_tensors import CompressionFormat
 
 from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.fused_moe import FusedMoEMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization.compressed_tensors.schemes import (
     WNA16_SUPPORTED_BITS)
-from aphrodite.quantization.compressed_tensors.utils import CompressionFormat
 
 
 class GPTQMarlinState(Enum):

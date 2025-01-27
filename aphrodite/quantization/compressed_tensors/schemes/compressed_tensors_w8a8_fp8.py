@@ -1,6 +1,7 @@
 from typing import Callable, List, Optional
 
 import torch
+from compressed_tensors.quantization import QuantizationStrategy
 from torch.nn import Parameter
 
 from aphrodite.common.utils import is_hip
@@ -9,8 +10,6 @@ from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
                                           PerTensorScaleParameter)
 from aphrodite.quantization.compressed_tensors.schemes import (
     CompressedTensorsScheme)
-from aphrodite.quantization.compressed_tensors.utils import (
-    QuantizationStrategy)
 from aphrodite.quantization.utils.w8a8_utils import (
     apply_fp8_linear, cutlass_fp8_supported, normalize_e4m3fn_to_e4m3fnuz,
     requantize_with_max_scale)

@@ -36,3 +36,4 @@ python-multipart
 partial-json-parser
 opencv-python-headless
 einops
+compressed-tensors == 0.6.0

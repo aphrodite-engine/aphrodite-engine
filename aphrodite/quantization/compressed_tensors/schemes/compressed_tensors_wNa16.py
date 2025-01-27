@@ -1,6 +1,7 @@
 from typing import Callable, List, Optional, Set
 
 import torch
+from compressed_tensors.quantization import ActivationOrdering
 from loguru import logger
 
 from aphrodite.modeling.parameter import (BaseAphroditeParameter,
@@ -10,7 +11,6 @@ from aphrodite.modeling.parameter import (BaseAphroditeParameter,
                                           RowAphroditeParameter)
 from aphrodite.quantization.compressed_tensors.schemes import (
     CompressedTensorsScheme)
-from aphrodite.quantization.compressed_tensors.utils import ActivationOrdering
 from aphrodite.quantization.kernels import (MPLinearLayerConfig,
                                             choose_mp_linear_kernel)
 from aphrodite.quantization.utils.marlin_utils import (

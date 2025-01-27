@@ -1,6 +1,10 @@
 from typing import Any, Dict, List, Optional
 
 import torch
+from compressed_tensors.config import CompressionFormat
+from compressed_tensors.quantization import (QuantizationArgs,
+                                             QuantizationStrategy,
+                                             QuantizationType)
 from pydantic import BaseModel
 
 from aphrodite.modeling.layers.fused_moe import FusedMoE
@@ -17,8 +21,7 @@ from aphrodite.quantization.compressed_tensors.schemes import (
     CompressedTensorsW8A8Fp8, CompressedTensorsW8A8Int8,
     CompressedTensorsW8A16Fp8, CompressedTensorsWNA16)
 from aphrodite.quantization.compressed_tensors.utils import (
-    CompressionFormat, QuantizationArgs, QuantizationStrategy,
-    QuantizationType, find_matched_target, is_activation_quantization_format,
+    find_matched_target, is_activation_quantization_format,
     should_ignore_layer)
 from aphrodite.quantization.kv_cache import BaseKVCacheMethod
 
