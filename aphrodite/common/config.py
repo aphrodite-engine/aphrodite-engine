@@ -1129,6 +1129,7 @@ class SchedulerConfig:
                  is_multimodal_model: bool = False,
                  preemption_mode: Optional[str] = None,
                  num_scheduler_steps: int = 1,
+                 multi_step_stream_outputs: bool = False,
                  send_delta_data: bool = False,
                  single_user_mode: bool = False) -> None:
         if max_num_batched_tokens is None:
@@ -1160,17 +1161,17 @@ class SchedulerConfig:
                 f"max_num_batched_tokens={self.max_num_batched_tokens}.")
         if single_user_mode:
             max_num_seqs = 1
-            if cache_config.enable_prefix_caching:
+            if cache_config and cache_config.enable_prefix_caching:
                 if not envs.APHRODITE_FORCE_SINGLE_USER_PREFIX_CACHE:
                     logger.warning(
-                        "Chunked prefill is not supported in single user mode, "
+                        "Prefix caching is not supported in single user mode, "
                         "this is not recommended and may lead to memory "
                         "issues. Set APHRODITE_FORCE_SINGLE_USER_PREFIX_CACHE=1"
                         " to force prefix caching.")
                     cache_config.enable_prefix_caching = False
                 else:
                     logger.warning(
-                        "Chunked prefill is enabled in single user mode, "
+                        "Prefix caching is enabled in single user mode, "
                         "this is not recommended and may lead to memory "
                         "issues.")
 
@@ -1185,6 +1186,7 @@ class SchedulerConfig:
         self.embedding_mode = embedding_mode
         self.preemption_mode = preemption_mode
         self.num_scheduler_steps = num_scheduler_steps
+        self.multi_step_stream_outputs = multi_step_stream_outputs
         self.send_delta_data = send_delta_data
         self.single_user_mode = single_user_mode
         self._verify_args()

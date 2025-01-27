@@ -93,13 +93,16 @@ class OutputData(NamedTuple):
 
 
 class SchedulerContext:
-    def __init__(self):
+    def __init__(self, multi_step_stream_outputs: bool = False):
         self.output_queue: Deque[OutputData] = deque()
         self.request_outputs: List[Union[RequestOutput,
                                          EmbeddingRequestOutput]] = []
         self.seq_group_metadata_list: Optional[
             List[SequenceGroupMetadata]] = None
         self.scheduler_outputs: Optional[SchedulerOutputs] = None
+
+        self.multi_step_stream_outputs: bool = multi_step_stream_outputs
+
     def append_output(self, outputs: List[SamplerOutput],
                       seq_group_metadata_list: List[SequenceGroupMetadata],
                       scheduler_outputs: SchedulerOutputs, is_async: bool,
@@ -213,6 +216,7 @@ class AphroditeEngine:
         log_stats: bool,
         stat_loggers: Optional[Dict[str, StatLoggerBase]] = None,
         input_registry: InputRegistry = INPUT_REGISTRY,
+        use_cached_outputs: bool = False,
     ) -> None:
         try:
             import aphrodite.commit_id
@@ -274,6 +278,7 @@ class AphroditeEngine:
         self.decoding_config = decoding_config or DecodingConfig()
         self.prompt_adapter_config = prompt_adapter_config
         self.log_stats = log_stats
+        self.use_cached_outputs = use_cached_outputs
 
         if not self.model_config.skip_tokenizer_init:
             self.tokenizer = self._init_tokenizer()
@@ -327,7 +332,8 @@ class AphroditeEngine:
             for _ in range(self.parallel_config.pipeline_parallel_size)
         ]
         self.scheduler_contexts = [
-            SchedulerContext()
+            SchedulerContext(multi_step_stream_outputs=self.scheduler_config.
+                             multi_step_stream_outputs)
             for _ in range(self.parallel_config.pipeline_parallel_size)
         ]
         if model_config.use_async_output_proc:
@@ -909,7 +915,8 @@ class AphroditeEngine:
 
             seq_group = scheduled_seq_group.seq_group
             seq_group.maybe_set_first_token_time(now)
-            request_output = RequestOutputFactory.create(seq_group)
+            request_output = RequestOutputFactory.create(
+                seq_group, use_cache=self.use_cached_outputs)
             if request_output:
                 ctx.request_outputs.append(request_output)
 
@@ -927,8 +934,8 @@ class AphroditeEngine:
         if finished_now:
             for scheduler in self.scheduler:
                 scheduler.free_finished_seq_groups()
-        # For multi-step, do not create outputs each iteration
-        if not is_last_step:
+        # For multi-step without streaming, don't create outputs each iteration
+        if not is_last_step and not ctx.multi_step_stream_outputs:
             # Immediately process request outputs here (if callback is given)
             if (finished_now
                     and self.process_request_outputs_callback is not None):
@@ -944,16 +951,26 @@ class AphroditeEngine:
             scheduled_seq_group = scheduler_outputs.scheduled_seq_groups[i]
             seq_group = scheduled_seq_group.seq_group
             seq_group.maybe_set_first_token_time(now)
-            request_output = RequestOutputFactory.create(seq_group)
+            request_output = RequestOutputFactory.create(
+                seq_group, use_cache=self.use_cached_outputs)
             if request_output:
                 ctx.request_outputs.append(request_output)
 
+        # For multi-step with streaming, create outputs each iteration
+        if not is_last_step and ctx.multi_step_stream_outputs:
+            # Immediately process request outputs here (if callback is given)
+            if self.process_request_outputs_callback is not None:
+                self.process_request_outputs_callback(ctx.request_outputs)
+                ctx.request_outputs.clear()
+            return
         for seq_group in scheduler_outputs.ignored_seq_groups:
             params = seq_group.sampling_params
             if params is not None and params.output_kind == (
                     RequestOutputKind.DELTA) and not seq_group.is_finished():
                 continue
-            request_output = RequestOutputFactory.create(seq_group)
+
+            request_output = RequestOutputFactory.create(
+                seq_group, use_cache=self.use_cached_outputs)
             if request_output:
                 ctx.request_outputs.append(request_output)
 

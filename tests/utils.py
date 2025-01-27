@@ -105,7 +105,7 @@ class RemoteOpenAIServer:
         if env_dict is not None:
             env.update(env_dict)
         self.proc = subprocess.Popen(
-            ["aphrodite", "serve", model, *aphrodite_serve_args],
+            ["aphrodite", "run", model, *aphrodite_serve_args],
             env=env,
             stdout=sys.stdout,
             stderr=sys.stderr,

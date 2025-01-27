@@ -129,6 +129,7 @@ class EngineArgs:
     max_num_batched_tokens: Optional[int] = None
     max_num_seqs: int = 256
     num_scheduler_steps: int = 1
+    multi_step_stream_outputs: bool = False
     single_user_mode: bool = False
     # Speculative Decoding Options
     num_lookahead_slots: int = 0
@@ -671,6 +672,10 @@ class EngineArgs:
                             default=1,
                             help=('Maximum number of forward steps per '
                                   'scheduler call.'))
+        parser.add_argument(
+            '--multi-step-stream-outputs',
+            action='store_true',
+            help='If True, then multi-step will stream outputs for every step')
         # Speculative Decoding Options
         parser.add_argument("--num-lookahead-slots",
                             type=int,
@@ -907,34 +912,9 @@ class EngineArgs:
         engine_args = cls(**{attr: getattr(args, attr) for attr in attrs})
         return engine_args
 
-    def create_engine_config(self, ) -> EngineConfig:
-        # gguf file needs a specific model loader and doesn't use hf_repo
-        if check_gguf_file(self.model):
-            self.quantization = self.load_format = "gguf"
 
-        # bitsandbytes quantization needs a specific model loader
-        # so we make sure the quant method and the load format are consistent
-        if (self.quantization == "bitsandbytes" or
-            self.qlora_adapter_name_or_path is not None) and \
-            self.load_format != "bitsandbytes":
-            raise ValueError(
-                "BitsAndBytes quantization and QLoRA adapter only support "
-                f"'bitsandbytes' load format, but got {self.load_format}")
-
-        if (self.load_format == "bitsandbytes" or
-            self.qlora_adapter_name_or_path is not None) and \
-            self.quantization != "bitsandbytes":
-            raise ValueError(
-                "BitsAndBytes load format and QLoRA adapter only support "
-                f"'bitsandbytes' quantization, but got {self.quantization}")
-
-        assert self.cpu_offload_gb >= 0, (
-            "CPU offload space must be non-negative"
-            f", but got {self.cpu_offload_gb}")
-
-        device_config = DeviceConfig(device=self.device)
-
-        model_config = ModelConfig(
+    def create_model_config(self) -> ModelConfig:
+        return ModelConfig(
             model=self.model,
             tokenizer=self.tokenizer,
             tokenizer_mode=self.tokenizer_mode,
@@ -965,6 +945,37 @@ class EngineArgs:
             mm_processor_kwargs=self.mm_processor_kwargs,
             override_neuron_config=self.override_neuron_config
         )
+
+    def create_load_config(self) -> LoadConfig:
+        return LoadConfig(
+            load_format=self.load_format,
+            download_dir=self.download_dir,
+            model_loader_extra_config=self.model_loader_extra_config,
+            ignore_patterns=self.ignore_patterns,
+        )
+    def create_engine_config(self) -> EngineConfig:
+        # gguf file needs a specific model loader and doesn't use hf_repo
+        if check_gguf_file(self.model):
+            self.quantization = self.load_format = "gguf"
+        # bitsandbytes quantization needs a specific model loader
+        # so we make sure the quant method and the load format are consistent
+        if (self.quantization == "bitsandbytes" or
+           self.qlora_adapter_name_or_path is not None) and \
+           self.load_format != "bitsandbytes":
+            raise ValueError(
+                "BitsAndBytes quantization and QLoRA adapter only support "
+                f"'bitsandbytes' load format, but got {self.load_format}")
+        if (self.load_format == "bitsandbytes" or
+            self.qlora_adapter_name_or_path is not None) and \
+            self.quantization != "bitsandbytes":
+            raise ValueError(
+                "BitsAndBytes load format and QLoRA adapter only support "
+                f"'bitsandbytes' quantization, but got {self.quantization}")
+        assert self.cpu_offload_gb >= 0, (
+            "CPU offload space must be non-negative"
+            f", but got {self.cpu_offload_gb}")
+        device_config = DeviceConfig(device=self.device)
+        model_config = self.create_model_config()
 
         if model_config.is_multimodal_model:
             if self.enable_prefix_caching:
@@ -1101,6 +1112,7 @@ class EngineArgs:
             is_multimodal_model=model_config.is_multimodal_model,
             preemption_mode=self.preemption_mode,
             num_scheduler_steps=self.num_scheduler_steps,
+            multi_step_stream_outputs=self.multi_step_stream_outputs,
             send_delta_data=(APHRODITE_USE_RAY_SPMD_WORKER and
                              parallel_config.use_ray),
             single_user_mode=self.single_user_mode,
@@ -1126,11 +1138,7 @@ class EngineArgs:
             self.model_loader_extra_config[
                 "qlora_adapter_name_or_path"] = self.qlora_adapter_name_or_path
 
-        load_config = LoadConfig(
-            load_format=self.load_format,
-            download_dir=self.download_dir,
-            model_loader_extra_config=self.model_loader_extra_config,
-            ignore_patterns=self.ignore_patterns)
+        load_config = self.create_load_config()
 
         prompt_adapter_config = PromptAdapterConfig(
             max_prompt_adapters=self.max_prompt_adapters,
