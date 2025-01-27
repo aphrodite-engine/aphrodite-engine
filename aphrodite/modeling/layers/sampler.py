@@ -377,7 +377,10 @@ class Sampler(nn.Module):
                     sampling_tensors.dry_bases, 
                     sampling_tensors.dry_allowed_lengths,
                     sampling_tensors.dry_sequence_breaker_ids,
-                    sampling_tensors.dry_ranges)
+                    sampling_tensors.dry_ranges,
+                    sampling_tensors.dry_max_ngram,
+                    sampling_tensors.dry_max_occurrences,
+                    sampling_tensors.dry_early_exit_match_len)
 
             elif sampler_id == SamplerID.PENALTIES and do_penalties:
                 if (sampling_metadata.seq_groups and
@@ -755,77 +758,96 @@ def _apply_dry(
     allowed_lengths: torch.Tensor,
     sequence_breakers_ids: torch.Tensor,
     ranges: torch.Tensor,
+    max_ngram: torch.Tensor,
+    max_occurrences: torch.Tensor,
+    early_exit_match_len: torch.Tensor,
 ) -> torch.Tensor:
     """
     Apply Don't Repeat Yourself (DRY) sampling to the logits.
 
-    Reference: https://github.com/oobabooga/text-generation-webui/pull/5677
+    Reference: https://github.com/oobabooga/text-generation-webui/pull/5677 and
+    https://github.com/AlpinDale/vllm/pull/1
     """
-
     VOCAB_SIZE = logits.size(-1)
-    MAX_NGRAM = 100
 
-    # Process each sequence that has a nonzero multiplier
     applies_to = multipliers.nonzero(as_tuple=True)[0]
     for irow in applies_to.tolist():
-        # DRY applies to input AND output tokens, so concat w/o padding tokens
-        prompt_len = (len(input_token_ids[irow]) - 
-                      (input_token_ids[irow] == VOCAB_SIZE).sum().item())
-        ouput_len = (len(output_token_ids[irow]) - 
-                     (output_token_ids[irow] == VOCAB_SIZE).sum().item())
-        token_seq = torch.cat((input_token_ids[irow][:prompt_len],
-                               output_token_ids[irow][:ouput_len]), dim=0)
-        
+        prompt_len = len(input_token_ids[irow]) - (
+            input_token_ids[irow] == VOCAB_SIZE).sum().item()
+        output_len = len(output_token_ids[irow]) - (
+            output_token_ids[irow] == VOCAB_SIZE).sum().item()
+
+        token_seq = torch.cat(
+            (input_token_ids[irow][:prompt_len],
+             output_token_ids[irow][:output_len]),
+            dim=0
+        )
+
         range_limit = ranges[irow].item()
-        if range_limit:  # could this be done in cat? yes. do i care? no.
+        if range_limit > 0:
             token_seq = token_seq[-range_limit:]
-        
+
+        if token_seq.size(0) < 2:
+            continue
+
         last_token = token_seq[-1].item()
         if last_token in sequence_breakers_ids[irow]:
-            continue  # early out for everything up to the min_ngram check?
-        
-        # Build a mask of all the breaking tokens in the context
-        break_mask = torch.zeros(len(token_seq), dtype=torch.bool,
-                                 device=logits.device)
+            continue
+
+        break_mask = torch.zeros(len(token_seq),
+                                 dtype=torch.bool, device=logits.device)
         for break_tok in sequence_breakers_ids[irow]:
             break_mask.logical_or_(token_seq == break_tok)
 
-        # Find the most recent breaking token (sets ngram limit)
-        max_ngram = 0
-        for max_ngram in range(min(len(break_mask), MAX_NGRAM + 1)):
-            if break_mask[-max_ngram - 1]:
+        curr_max_ngram = 0
+        max_ngram_val = max_ngram[irow].item()
+        for curr_max_ngram in range(min(len(break_mask), max_ngram_val + 1)):
+            if break_mask[-curr_max_ngram - 1]:
                 break
 
         min_ngram = allowed_lengths[irow].item()
-        if max_ngram <= min_ngram:  # Too close to a break to match anything
+        if curr_max_ngram <= min_ngram:
             continue
-            
-        # If [token] is picked, what's the longest ngram that would match?
-        ngram_lens = torch.zeros(VOCAB_SIZE, dtype=torch.int32,
-                                 device=logits.device)
-        
-        # Find all instances of the last token- potential ngrams!
-        endpoint_indexes = torch.nonzero(token_seq == last_token,
-                                         as_tuple=True)[0].tolist()
-        # NOTE: This seems like the slow part. Haven't benchmarked.
-        for idx in endpoint_indexes[:-1]:  # Skip the last_token match
-            unwind = 0
-            # Check up to max_ngram tokens prior to idx (we know idx matches)
-            for unwind in range(1, min(idx, max_ngram) + 1):
+
+        ngram_lens = torch.zeros(
+            VOCAB_SIZE, dtype=torch.int32, device=logits.device)
+
+        endpoint_indexes_all = torch.nonzero(
+            token_seq == last_token, as_tuple=True)[0].tolist()
+        if len(endpoint_indexes_all) < 2:
+            continue
+        endpoint_indexes = endpoint_indexes_all[:-1]
+
+        max_occurrences_val = max_occurrences[irow].item()
+        if len(endpoint_indexes) > max_occurrences_val:
+            endpoint_indexes = endpoint_indexes[-max_occurrences_val:]
+
+        early_exit_match_len_val = early_exit_match_len[irow].item()
+        for idx in reversed(endpoint_indexes):
+            if idx == len(token_seq) - 1:
+                continue
+
+            match_len = 0
+            for unwind in range(1, min(idx, curr_max_ngram) + 1):
                 if break_mask[idx - unwind]:
                     break
                 if token_seq[idx - unwind] != token_seq[-unwind - 1]:
                     break
-            next_tok = token_seq[idx+1]
-            # The repeated tokens BEFORE next_tok (+1 to include [idx]).
-            ngram_lens[next_tok] = max(ngram_lens[next_tok].item(), unwind + 1)
+                match_len = unwind
 
-        # Convert ngram lengths to penalty exponents
+            if match_len > 0:
+                next_tok = token_seq[idx + 1]
+                new_len = match_len + 1
+
+                ngram_lens[next_tok] = max(ngram_lens[next_tok].item(), new_len)
+
+                if new_len >= early_exit_match_len_val:
+                    break
+
         penalty_mask = ngram_lens > 0
-        scales = bases[irow] ** (ngram_lens[penalty_mask] - min_ngram)
-
-        # Calculate and apply penalties
-        logits[irow][penalty_mask] -= multipliers[irow] * scales
+        if penalty_mask.any():
+            scales = bases[irow] ** (ngram_lens[penalty_mask] - min_ngram)
+            logits[irow][penalty_mask] -= multipliers[irow] * scales
 
     return logits
 

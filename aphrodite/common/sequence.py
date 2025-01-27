@@ -6,7 +6,7 @@ from array import array
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import cached_property, reduce
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from typing import Sequence as GenericSequence
 from typing import Set, Tuple, Union, cast
 
@@ -161,14 +161,17 @@ class SequenceData(msgspec.Struct,
     _mrope_position_delta: Optional[int] = None
 
     @staticmethod
-    def from_counts(counts_by_token: Mapping[int, int]) -> "SequenceData":
-        if len(counts_by_token) == 0:
+    def from_token_counts(*token_counts: Tuple[int, int]) -> "SequenceData":
+        if len(token_counts) == 0:
             return SequenceData.from_seqs([])
+
         arrs = [
             array(APHRODITE_TOKEN_ID_ARRAY_TYPE, [token_id]) * count
-            for token_id, count in counts_by_token.items()
+            for token_id, count in token_counts
         ]
+
         return SequenceData(reduce(array.__add__, arrs))
+
     @staticmethod
     def from_seqs(
         prompt_token_ids: GenericSequence[int],

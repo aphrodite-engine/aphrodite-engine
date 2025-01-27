@@ -222,12 +222,79 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
     "kernels/quantization/fp8/fp8_marlin.cu"
     "kernels/all_reduce/custom_all_reduce.cu"
     "kernels/permute_cols.cu"
-    "kernels/sampling/sampling.cu")
+    "kernels/sampling/sampling.cu"
+    "kernels/flash_attn/flash_fwd_hdim32_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim32_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim32_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim32_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim64_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim64_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim64_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim64_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim96_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim96_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim96_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim96_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim128_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim128_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim128_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim128_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim160_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim160_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim160_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim160_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim192_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim192_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim192_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim192_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim224_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim224_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim224_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim224_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim256_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim256_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim256_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_hdim256_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim32_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim32_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim32_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim32_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim64_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim64_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim64_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim64_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim96_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim96_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim96_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim96_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim128_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim128_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim128_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim128_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim160_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim160_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim160_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim160_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim192_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim192_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim192_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim192_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim224_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim224_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim224_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim224_fp16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim256_bf16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim256_bf16_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim256_fp16_causal_sm80.cu"
+    "kernels/flash_attn/flash_fwd_split_hdim256_fp16_sm80.cu"
+    )
 
   if(NOT MSVC)
     # Include CUTLASS only when needed
     include(FetchContent)
     SET(CUTLASS_ENABLE_HEADERS_ONLY=ON)
+    # Set CUTLASS_REVISION manually -- its revision detection doesn't work in this case.
+    set(CUTLASS_REVISION "v3.5.1" CACHE STRING "CUTLASS revision to use")
     FetchContent_Declare(
           cutlass
           GIT_REPOSITORY https://github.com/nvidia/cutlass.git
@@ -361,13 +428,13 @@ if(APHRODITE_GPU_LANG STREQUAL "HIP")
     WITH_SOABI)
 endif()
 
-
 if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   message(STATUS "Enabling C extension.")
   add_dependencies(default _C)
 
   message(STATUS "Enabling moe extension.")
   add_dependencies(default _moe_C)
+
 endif()
 
 if(APHRODITE_GPU_LANG STREQUAL "HIP")

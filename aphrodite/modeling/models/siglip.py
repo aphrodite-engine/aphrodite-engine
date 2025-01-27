@@ -2,9 +2,9 @@
 within a vision language model."""
 
 import math
-from array import array
 from typing import Iterable, List, Optional, Tuple, Union
 
+import numpy as np
 import torch
 from PIL import Image
 from torch import nn
@@ -13,7 +13,6 @@ from transformers.models.siglip.modeling_siglip import SiglipSdpaAttention
 
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.sequence import SequenceData
-from aphrodite.constants import APHRODITE_TOKEN_ID_ARRAY_TYPE
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.inputs import LLMInputs
 from aphrodite.modeling.layers.activation import get_act_fn
@@ -68,11 +67,10 @@ def dummy_seq_data_for_siglip(
     else:
         image_feature_size = image_feature_size_override
 
-    token_ids = array(APHRODITE_TOKEN_ID_ARRAY_TYPE,
-                      [image_token_id]) * image_feature_size
-    token_ids += array(APHRODITE_TOKEN_ID_ARRAY_TYPE,
-                       [0]) * (seq_len - image_feature_size)
-    return SequenceData(token_ids)
+    return SequenceData.from_token_counts(
+        (image_token_id, image_feature_size * num_images),
+        (0, seq_len - image_feature_size * num_images),
+    )
 
 
 def dummy_image_for_siglip(
@@ -90,6 +88,24 @@ def dummy_image_for_siglip(
 
     image = Image.new("RGB", (width, height), color=0)
     return {"image": image if num_images == 1 else [image] * num_images}
+
+
+def dummy_video_for_siglip(
+    hf_config: SiglipVisionConfig,
+    num_frames: int,
+    *,
+    image_width_override: Optional[int] = None,
+    image_height_override: Optional[int] = None,
+):
+    pil_frame = dummy_image_for_siglip(
+        hf_config,
+        num_images=1,
+        image_width_override=image_width_override,
+        image_height_override=image_height_override)
+    np_frame = np.array(pil_frame["image"])
+    mm_data_per_video = np.repeat([np_frame], num_frames, axis=0)
+    mm_data = {"video": mm_data_per_video}
+    return mm_data
 
 
 def input_processor_for_siglip(
@@ -507,10 +523,6 @@ class SiglipVisionModel(nn.Module):
             num_hidden_layers_override=num_hidden_layers_override,
         )
 
-    @property
-    def _require_post_layernorm(self) -> bool:
-        return self.vision_model.post_layernorm is not None
-
     def get_input_embeddings(self) -> nn.Module:
         return self.vision_model.embeddings.patch_embedding
 
@@ -536,11 +548,11 @@ class SiglipVisionModel(nn.Module):
 
         for name, loaded_weight in weights:
             # post_layernorm is optional in SiglipVisionModel
-            if ("vision_model.post_layernorm" in name
-                    and not self._require_post_layernorm):
+            if (name.startswith("vision_model.post_layernorm")
+                    and self.vision_model.post_layernorm is None):
                 continue
             # omit layers when num_hidden_layers_override is set
-            if "vision_model.encoder.layers." in name:
+            if name.startswith("vision_model.encoder.layers"):
                 layer_idx = int(name.split(".")[3])
                 if layer_idx >= layer_count:
                     continue

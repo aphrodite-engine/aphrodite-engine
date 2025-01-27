@@ -15,16 +15,15 @@ from aphrodite.attention.backends.utils import (PAD_SLOT_ID,
                                                 compute_slot_mapping,
                                                 compute_slot_mapping_start_idx,
                                                 is_block_tables_empty)
+from aphrodite.attention.ops.aphrodite_flash_attn import (
+    flash_attn_varlen_func as _flash_attn_varlen_func)
+from aphrodite.attention.ops.aphrodite_flash_attn import (
+    flash_attn_with_kvcache as _flash_attn_with_kvcache)
 from aphrodite.common.utils import async_tensor_h2d, make_tensor_with_pad
 
 if TYPE_CHECKING:
-    from aphrodite.worker.model_runner import (ModelInputForGPUBuilder,
-                                               ModelInputForGPUWithSamplingMetadata)
-
-from aphrodite_flash_attn import (
-    flash_attn_varlen_func as _flash_attn_varlen_func)
-from aphrodite_flash_attn import (
-    flash_attn_with_kvcache as _flash_attn_with_kvcache)
+    from aphrodite.worker.model_runner import (
+        ModelInputForGPUBuilder, ModelInputForGPUWithSamplingMetadata)
 
 
 @torch.library.custom_op("aphrodite::flash_attn_varlen_func", mutates_args=[])

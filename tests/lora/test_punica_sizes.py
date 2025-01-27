@@ -172,6 +172,7 @@ def test_punica_sgmv(
         device,
     )
     max_seq_length = seq_len_tensor.max()
+    token_nums = seq_len_tensor.sum().item()
     if isinstance(max_seq_length, tuple):
         max_seq_length = max_seq_length[0].item()
     else:
@@ -186,6 +187,7 @@ def test_punica_sgmv(
             lora_indices_tensor,
             batches,
             max_seq_length,
+            token_nums,
             scaling,
         )
     else:
@@ -198,6 +200,7 @@ def test_punica_sgmv(
             lora_indices_tensor,
             batches,
             max_seq_length,
+            token_nums,
             add_inputs=True,
         )
     ref_torch_groupgemm(
@@ -355,6 +358,7 @@ def test_punica_expand_nslices(
         device,
     )
     max_seq_length = seq_len_tensor.max()
+    token_nums = seq_len_tensor.sum().item()
     if isinstance(max_seq_length, tuple):
         max_seq_length = max_seq_length[0].item()
     else:
@@ -372,6 +376,7 @@ def test_punica_expand_nslices(
                 lora_indices_tensor,
                 batches,
                 max_seq_length,
+                token_nums,
                 slice_offset,
                 hidden_size,
                 add_inputs=True,

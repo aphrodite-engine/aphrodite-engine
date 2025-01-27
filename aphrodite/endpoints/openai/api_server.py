@@ -1059,10 +1059,11 @@ def build_app(args: Namespace) -> FastAPI:
 
             if request.url.path.startswith(
                 ("/v1/lora", "/v1/soft_prompt", "/v1/model")):
-                if admin_key is not None and (
-                    api_key_header == admin_key or 
-                    auth_header == "Bearer " + admin_key
-                ):
+                if ((admin_key is not None and (
+                        api_key_header == admin_key or 
+                        auth_header == "Bearer " + admin_key)) or
+                    (auth_header == f"Bearer {token}" or
+                     api_key_header == token)):
                     return await call_next(request)
                 return JSONResponse(content={"error": "Unauthorized"},
                                     status_code=401)

@@ -21,4 +21,5 @@ DOCKER_BUILDKIT=1 docker build -f Dockerfile . --target aphrodite-openai --tag a
 commit=$(git rev-parse --short HEAD)
 docker tag alpindale/aphrodite-openai alpindale/aphrodite-openai:${commit}
 docker push alpindale/aphrodite-openai:${commit}
+docker tag alpindale/aphrodite-openai alpindale/aphrodite-openai:latest
 docker push alpindale/aphrodite-openai:latest

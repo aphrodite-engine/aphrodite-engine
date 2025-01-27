@@ -1,4 +1,3 @@
-from array import array
 from dataclasses import dataclass, fields
 from itertools import tee
 from typing import Iterable, List, Mapping, Optional, Tuple, Union
@@ -14,8 +13,7 @@ from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
 from aphrodite.attention import AttentionMetadata
 from aphrodite.common.config import CacheConfig, MultiModalConfig
-from aphrodite.common.sequence import (APHRODITE_TOKEN_ID_ARRAY_TYPE,
-                                       IntermediateTensors, SequenceData)
+from aphrodite.common.sequence import IntermediateTensors, SequenceData
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.sampler import SamplerOutput
@@ -64,12 +62,10 @@ def dummy_data_for_pixtral(
 
     num_image_tokens = image_feature_size * num_images
 
-    token_ids = array(APHRODITE_TOKEN_ID_ARRAY_TYPE,
-                      [image_token_id]) * num_image_tokens
-    token_ids += array(APHRODITE_TOKEN_ID_ARRAY_TYPE,
-                       [0]) * (seq_len - num_image_tokens)
-
-    seq_data = SequenceData(token_ids)
+    seq_data = SequenceData.from_token_counts(
+        (image_token_id, num_image_tokens),
+        (0, seq_len - num_image_tokens),
+    )
     mm_data = {"image": num_images * [image]}
     return seq_data, mm_data
 

@@ -131,6 +131,7 @@ class LLM:
         max_seq_len_to_capture: int = 8192,
         disable_custom_all_reduce: bool = False,
         disable_async_output_proc: bool = False,
+        mm_processor_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
         '''
@@ -171,6 +172,7 @@ class LLM:
             max_seq_len_to_capture=max_seq_len_to_capture,
             disable_custom_all_reduce=disable_custom_all_reduce,
             disable_async_output_proc=disable_async_output_proc,
+            mm_processor_kwargs=mm_processor_kwargs,
             **kwargs,
         )
         self.llm_engine = AphroditeEngine.from_engine_args(engine_args)

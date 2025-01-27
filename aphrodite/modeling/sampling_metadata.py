@@ -385,6 +385,9 @@ class SamplingTensors:
     dry_allowed_lengths: torch.Tensor
     dry_sequence_breaker_ids: torch.Tensor
     dry_ranges: torch.Tensor
+    dry_max_ngram: torch.Tensor
+    dry_max_occurrences: torch.Tensor
+    dry_early_exit_match_len: torch.Tensor
     skews: torch.Tensor
     prompt_tokens: torch.Tensor
     output_tokens: torch.Tensor
@@ -427,6 +430,9 @@ class SamplingTensors:
         dry_allowed_lengths: List[int] = []
         dry_sequence_breaker_ids: List[List[int]] = []
         dry_ranges: List[int] = []
+        dry_max_ngram: List[int] = []
+        dry_max_occurrences: List[int] = []
+        dry_early_exit_match_len: List[int] = []
         skews: List[float] = []
 
         do_penalties = False
@@ -525,6 +531,10 @@ class SamplingTensors:
             dry_sequence_breaker_ids += (
                 [params.dry_sequence_breaker_ids] * n_seqs)
             dry_ranges += [params.dry_range] * n_seqs
+            dry_max_ngram += [params.dry_max_ngram] * n_seqs
+            dry_max_occurrences += [params.dry_max_occurrences] * n_seqs
+            dry_early_exit_match_len += [
+                params.dry_early_exit_match_len] * n_seqs
             skews += [params.skew] * n_seqs
 
         if do_penalties or do_dry or do_no_repeat_ngrams:
@@ -573,6 +583,9 @@ class SamplingTensors:
             dry_allowed_lengths,
             dry_sequence_breaker_ids,
             dry_ranges,
+            dry_max_ngram,
+            dry_max_occurrences,
+            dry_early_exit_match_len,
             skews,
             prompt_tokens,
             output_tokens,
@@ -628,6 +641,9 @@ class SamplingTensors:
         dry_allowed_lengths: List[int],
         dry_sequence_breaker_ids: List[List[int]],
         dry_ranges: List[int],
+        dry_max_ngram: List[int],
+        dry_max_occurrences: List[int],
+        dry_early_exit_match_len: List[int],
         skews: List[float],
         prompt_tokens: List[array],
         output_tokens: List[array],
@@ -803,6 +819,24 @@ class SamplingTensors:
             dtype=torch.int,
             pin_memory=pin_memory,
         )
+        dry_max_ngram_t = torch.tensor(
+            dry_max_ngram,
+            device="cpu",
+            dtype=torch.int,
+            pin_memory=pin_memory,
+        )
+        dry_max_occurrences_t = torch.tensor(
+            dry_max_occurrences,
+            device="cpu",
+            dtype=torch.int,
+            pin_memory=pin_memory,
+        )
+        dry_early_exit_match_len_t = torch.tensor(
+            dry_early_exit_match_len,
+            device="cpu",
+            dtype=torch.int,
+            pin_memory=pin_memory,
+        )
         skews_t = torch.tensor(
             skews,
             device="cpu",
@@ -852,6 +886,11 @@ class SamplingTensors:
             dry_sequence_breaker_ids=dry_sequence_breakers_t.to(device=device,
                                                                 non_blocking=True),
             dry_ranges=dry_ranges_t.to(device=device, non_blocking=True),
+            dry_max_ngram=dry_max_ngram_t.to(device=device, non_blocking=True),
+            dry_max_occurrences=dry_max_occurrences_t.to(device=device,
+                                                         non_blocking=True),
+            dry_early_exit_match_len=dry_early_exit_match_len_t.to(
+                device=device, non_blocking=True),
             skews=skews_t.to(device=device, non_blocking=True),
             typical_ps=typical_ps_t.to(device=device, non_blocking=True),
             prompt_tokens=prompt_t.to(device=device, non_blocking=True),

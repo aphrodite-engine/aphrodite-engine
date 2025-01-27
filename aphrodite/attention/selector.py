@@ -253,8 +253,7 @@ def which_attn_to_use(
     # FlashAttn is valid for the model, checking if the package is installed.
     if selected_backend == _Backend.FLASH_ATTN:
         try:
-            import aphrodite_flash_attn  # noqa: F401
-
+            import aphrodite.attention.ops.aphrodite_flash_attn  # noqa: F401
             from aphrodite.attention.backends.flash_attn import (  # noqa: F401
                 FlashAttentionBackend)
 
@@ -267,8 +266,8 @@ def which_attn_to_use(
         except ImportError:
             logger.info(
                 "Cannot use FlashAttention-2 backend because the "
-                "aphrodite_flash_attn package is not found. "
-                "`pip install aphrodite-flash-attn` for better performance.")
+                "aphrodite._aphrodite_flash_attn_C object is not found. "
+                "This is built by default on supported hardware.")
             selected_backend = _Backend.XFORMERS
 
     return selected_backend

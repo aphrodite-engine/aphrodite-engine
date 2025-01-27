@@ -25,7 +25,7 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
-from aphrodite.common.utils import (CudaMemoryProfiler, PyObjectCache,
+from aphrodite.common.utils import (DeviceMemoryProfiler, PyObjectCache,
                                     async_tensor_h2d, flatten_2d_lists, is_hip,
                                     is_pin_memory_available, supports_dynamo)
 from aphrodite.distributed import get_pp_group
@@ -1003,7 +1003,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         rank = get_tensor_model_parallel_rank()
         if rank == 0:
             logger.info(f"Loading model {self.model_config.model}...")
-        with CudaMemoryProfiler() as m:
+        with DeviceMemoryProfiler() as m:
             # measure the time it takes to load the model
             start_time = time.time()
             self.model = get_model(model_config=self.model_config,

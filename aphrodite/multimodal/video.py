@@ -7,7 +7,7 @@ from loguru import logger
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.utils import is_list_of
 from aphrodite.inputs.registry import InputContext
-from aphrodite.transformers_utils.image_processor import get_video_processor
+from aphrodite.transformers_utils.processor import get_video_processor
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 from .base import MultiModalData, MultiModalInputs
@@ -34,9 +34,14 @@ class VideoPlugin(ImagePlugin):
         return "video"
 
     def _get_hf_video_processor(self, model_config: ModelConfig):
+        mm_processor_kwargs = ({} if model_config.mm_processor_kwargs is None
+                               else model_config.mm_processor_kwargs)
+        # We don't explicitly check kwarg overrides to the HF class
+        # since the automodel just takes kwargs, so we can't inspect it
         return cached_get_video_processor(
-            model_config.model, trust_remote_code=model_config.trust_remote_code
-        )
+            model_config.model,
+            trust_remote_code=model_config.trust_remote_code,
+            **mm_processor_kwargs)
 
     def _default_input_mapper(
         self,

@@ -106,6 +106,7 @@ def _sgmv_expand(
     lora_indices_tensor: torch.Tensor,
     batches: int,
     max_seq_length: int,
+    token_nums: int,
     add_inputs: bool = False,
 ) -> None:
     """
@@ -123,9 +124,11 @@ def _sgmv_expand(
             corresponding to each batch. An index of -1 means no lora should be
             applied.
         batches (int): batch size
-        max_seq_length (int):  The max sequence lengths of the sequences
-            in the batch
-        add_inputs (bool, optional):  Defaults to False. adds the final lora 
+        max_seq_length (int): The max sequence lengths of the sequences in the 
+            batch.
+        token_nums (int): The token numbers in the batch. Used to verify if the 
+            token numbers in the inputs matches the one in the metadata.
+        add_inputs (bool, optional): Defaults to False, adds the final lora 
             results to the output.
     """
 
@@ -134,6 +137,7 @@ def _sgmv_expand(
         torch.float16,
         torch.bfloat16,
     ]
+    assert inputs.size(0) == token_nums
     assert inputs.size(1) == lora_b_weights.size(-1)
     assert b_seq_start_loc.size(0) == batches
     assert lora_indices_tensor.size(0) == batches
