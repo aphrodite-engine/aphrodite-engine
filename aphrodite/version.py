@@ -11,4 +11,4 @@ except Exception as e:
     __commit__ = "COMMIT_HASH_PLACEHOLDER"
     __short_commit__ = "SHORT_COMMIT_HASH_PLACEHOLDER"
 
-__version__ = "0.6.5"
+__version__ = "0.6.6"
