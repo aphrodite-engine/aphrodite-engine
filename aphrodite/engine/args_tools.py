@@ -152,6 +152,7 @@ class EngineArgs:
     lora_dtype: str = "auto"
     max_cpu_loras: Optional[int] = None
     long_lora_scaling_factors: Optional[Tuple[float]] = None
+    enable_lora_modules_to_save: bool = False
     fully_sharded_loras: bool = False
     qlora_adapter_name_or_path: Optional[str] = None
     enable_prompt_adapter: bool = False
@@ -860,6 +861,12 @@ class EngineArgs:
                             default=None,
                             help="Category: Adapter Options\n"
                             "Name or path of the LoRA adapter to use.")
+        parser.add_argument(
+            "--enable-lora-modules-to-save",
+            action="store_true",
+            help="Category: Adapter Options\n"
+            "If True, fully trained lm_head and embed_tokens "
+            "in LoRA will be used instead of A*B-style adapters.")
         parser.add_argument('--enable-prompt-adapter',
                             action='store_true',
                             help='Category: Adapter Options\n'
@@ -1116,6 +1123,7 @@ class EngineArgs:
             lora_extra_vocab_size=self.lora_extra_vocab_size,
             long_lora_scaling_factors=self.long_lora_scaling_factors,
             lora_dtype=self.lora_dtype,
+            enable_lora_modules_to_save=self.enable_lora_modules_to_save,
             max_cpu_loras=self.max_cpu_loras if self.max_cpu_loras
             and self.max_cpu_loras > 0 else None) if self.enable_lora else None
 
