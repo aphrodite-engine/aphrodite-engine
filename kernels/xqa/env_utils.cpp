@@ -32,6 +32,6 @@ static std::optional<int32_t> getIntEnv(char const* name) {
 
 // XQA kernels (optimized kernels for generation phase).
 bool forceXQAKernels() {
-  static bool const forceXQA = (getIntEnv("VLLM_FORCE_XQA").value_or(0) != 0);
+  static bool const forceXQA = (getIntEnv("APHRODITE_FORCE_XQA").value_or(0) != 0);
   return forceXQA;
 }
