@@ -28,6 +28,8 @@ struct XQAParams {
   uint32_t batch_size = 0;
   int32_t beam_width = 0;
 
+  int32_t generation_input_length;
+  int32_t layer_idx = 0;
   int32_t num_q_heads = 0;
   int32_t num_kv_heads = 0;
   int32_t head_size = 0;
