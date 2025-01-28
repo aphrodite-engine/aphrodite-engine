@@ -420,7 +420,8 @@ set(APHRODITE_XQA_EXT_SRC
   "kernels/xqa/decoder_xqa_runner.cpp"
   "kernels/xqa/decoder_xqa_impl_common.cpp"
   "kernels/xqa/decoder_xqa_impl.cpp"
-  "kernels/xqa/env_utils.cpp")
+  "kernels/xqa/env_utils.cpp"
+  "kernels/xqa/torch_bindings.cpp")
 
 file(GLOB XQA_CUBIN_CPP_SOURCES "kernels/xqa/cubin/*.cubin.cpp")
 list(APPEND APHRODITE_XQA_EXT_SRC ${XQA_CUBIN_CPP_SOURCES})
