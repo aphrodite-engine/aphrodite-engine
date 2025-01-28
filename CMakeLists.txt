@@ -462,8 +462,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
   add_dependencies(default _moe_C)
 
   # only compile XQA kernels if APHRODITE_BUILD_XQA_KERNELS is true
-  if(APHRODITE_BUILD_XQA_KERNELS)
-    message(STATUS "Enabling XQA kernels.")
+  if (ENV{APHRODITE_BUILD_XQA_KERNELS} OR APHRODITE_BUILD_XQA_KERNELS)
+    message(STATUS "Enabling xqa extension.")
     add_dependencies(default _xqa_C)
   endif()
 

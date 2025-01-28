@@ -176,6 +176,11 @@ class cmake_build_ext(build_ext):
             '-DAPHRODITE_TARGET_DEVICE={}'.format(APHRODITE_TARGET_DEVICE),
         ]
 
+        if _install_xqa_kernels():
+            cmake_args += [
+                '-DAPHRODITE_BUILD_XQA_KERNELS=ON'
+            ]
+
         verbose = envs.VERBOSE
         if verbose:
             cmake_args += ['-DCMAKE_VERBOSE_MAKEFILE=ON']
@@ -300,6 +305,9 @@ def _build_custom_ops() -> bool:
 
 def _build_core_ext() -> bool:
     return not (_is_neuron() or _is_tpu() or _is_openvino() or _is_xpu())
+
+def _install_xqa_kernels() -> bool:
+    return bool(int(os.getenv("APHRODITE_BUILD_XQA_KERNELS", "0")))
 
 
 def get_hipcc_rocm_version():
@@ -480,6 +488,9 @@ if _build_custom_ops():
 
 if _is_hip():
     ext_modules.append(CMakeExtension(name="aphrodite._rocm_C"))
+
+if _is_cuda() and _install_xqa_kernels():
+    ext_modules.append(CMakeExtension(name="aphrodite._xqa_C"))
 
 package_data = {
     "aphrodite": [
