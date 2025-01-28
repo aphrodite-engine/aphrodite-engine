@@ -410,6 +410,32 @@ define_gpu_extension_target(
   WITH_SOABI)
 
 
+#
+# XQA Kernels
+#
+
+set(APHRODITE_XQA_EXT_SRC
+  "kernels/xqa/xqa_kernel_launcher.cu"
+  "kernels/xqa/decoder_xqa_impl_precompiled.cpp"
+  "kernels/xqa/decoder_xqa_runner.cpp"
+  "kernels/xqa/decoder_xqa_impl_common.cpp"
+  "kernels/xqa/decoder_xqa_impl.cpp"
+  "kernels/xqa/env_utils.cpp")
+
+file(GLOB XQA_CUBIN_CPP_SOURCES "kernels/xqa/cubin/*.cubin.cpp")
+list(APPEND APHRODITE_XQA_EXT_SRC ${XQA_CUBIN_CPP_SOURCES})
+
+define_gpu_extension_target(
+  _xqa_C
+  DESTINATION aphrodite
+  LANGUAGE ${APHRODITE_GPU_LANG}
+  SOURCES ${APHRODITE_XQA_EXT_SRC}
+  COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
+  ARCHITECTURES ${APHRODITE_GPU_ARCHES}
+  USE_SABI 3
+  WITH_SOABI)
+
+
 if(APHRODITE_GPU_LANG STREQUAL "HIP")
   #
   # _rocm_C extension
@@ -434,6 +460,12 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA" OR APHRODITE_GPU_LANG STREQUAL "HIP")
 
   message(STATUS "Enabling moe extension.")
   add_dependencies(default _moe_C)
+
+  # only compile XQA kernels if APHRODITE_BUILD_XQA_KERNELS is true
+  if(APHRODITE_BUILD_XQA_KERNELS)
+    message(STATUS "Enabling XQA kernels.")
+    add_dependencies(default _xqa_C)
+  endif()
 
 endif()
 
