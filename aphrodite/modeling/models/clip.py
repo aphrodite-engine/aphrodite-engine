@@ -372,6 +372,19 @@ class CLIPVisionTransformer(nn.Module):
             quant_config=quant_config,
             num_hidden_layers_override=num_hidden_layers_override)
 
+        if len(self.encoder.layers) > config.num_hidden_layers:
+            raise ValueError(
+                f"The original encoder only has {config.num_hidden_layers} "
+                f"layers, but you requested {len(self.encoder.layers)} layers."
+            )
+        elif len(self.encoder.layers) == config.num_hidden_layers:
+            self.post_layernorm = nn.LayerNorm(embed_dim,
+                                               eps=config.layer_norm_eps)
+        else:
+            # post_layernorm is unused when we extract intermediate features
+            # In this case, we can skip it to conserve memory
+            self.post_layernorm = None
+
     def forward(
         self,
         pixel_values: torch.Tensor,
@@ -381,7 +394,10 @@ class CLIPVisionTransformer(nn.Module):
         hidden_states = self.pre_layrnorm(hidden_states)
         hidden_states = self.encoder(inputs_embeds=hidden_states)
 
-        return hidden_states
+        if self.post_layernorm is None:
+            return hidden_states
+
+        return self.post_layernorm(hidden_states)
 
 
 class CLIPVisionModel(nn.Module):
@@ -394,17 +410,18 @@ class CLIPVisionModel(nn.Module):
                  quant_config: Optional[QuantizationConfig] = None,
                  num_hidden_layers_override: Optional[int] = None):
         super().__init__()
+
         tp_size = get_tensor_model_parallel_world_size()
         num_heads = config.num_attention_heads
         self.shard_weight = USE_XFORMERS_OPS and num_heads % tp_size == 0
+
         self.vision_model = CLIPVisionTransformer(
             config=config,
             quant_config=quant_config,
             num_hidden_layers_override=num_hidden_layers_override)
 
-    def forward(self, pixel_values: Optional[torch.Tensor] = None):
-
-        return self.vision_model(pixel_values=pixel_values)
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        return self.vision_model(pixel_values)
 
     @property
     def device(self):
