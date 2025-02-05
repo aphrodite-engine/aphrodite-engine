@@ -392,10 +392,15 @@ target_compile_definitions(_C PRIVATE CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL=1)
 
 set(APHRODITE_MOE_EXT_SRC
   "kernels/moe/torch_bindings.cpp"
-  "kernels/moe/softmax.cu")
+  "kernels/moe/topk_softmax_kernels.cu")
 
 if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   list(APPEND APHRODITE_MOE_EXT_SRC
+      "kernels/moe/marlin_kernels/marlin_moe_kernel.h"
+      "kernels/moe/marlin_kernels/marlin_moe_kernel_ku4b8.h"
+      "kernels/moe/marlin_kernels/marlin_moe_kernel_ku4b8.cu"
+      "kernels/moe/marlin_kernels/marlin_moe_kernel_ku8b128.h"
+      "kernels/moe/marlin_kernels/marlin_moe_kernel_ku8b128.cu"
       "kernels/moe/marlin_moe_ops.cu")
 endif()
 

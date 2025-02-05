@@ -198,7 +198,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "Tensor b_zeros, Tensor g_idx, Tensor perm, Tensor workspace, "
       "__torch__.torch.classes._core_C.ScalarType b_q_type, "
       "int size_m, int size_n, int size_k, bool is_k_full, "
-      "bool has_zp, bool use_fp32_reduce, bool is_zp_float) -> Tensor");
+      "bool has_zp, bool use_fp32_reduce) -> Tensor");
   ops.impl("gptq_marlin_gemm", torch::kCUDA, &gptq_marlin_gemm);
 
   // gptq_marlin repack from GPTQ.

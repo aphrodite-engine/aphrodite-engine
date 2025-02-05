@@ -76,7 +76,6 @@ def prepare_fp8_layer_for_marlin(layer: torch.nn.Module,
 
     # WEIGHT SCALES
     scales = layer.weight_scale.to(layer.orig_dtype)
-
     # Permute scales
     marlin_scales = marlin_permute_scales(s=scales,
                                           size_k=part_size_k,

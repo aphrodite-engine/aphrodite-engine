@@ -32,7 +32,7 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
         config = self.quant_config.target_scheme_map["Linear"].get("weights")
         self.num_bits = config.num_bits
         self.packed_factor = 32 // config.num_bits
-        self.strategy = config.strategy.value
+        self.strategy = config.strategy
         self.group_size = config.group_size
         assert config.symmetric, (
             "Only symmetric quantization is supported for MoE")

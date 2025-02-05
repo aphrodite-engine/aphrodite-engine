@@ -67,6 +67,7 @@ def _check_marlin_supported(
         return (False, f"Marlin does not support group_size = {group_size}. "
                 f"Only group_sizes = {MARLIN_SUPPORTED_GROUP_SIZES} "
                 "are supported.")
+
     return True, None
 
 
@@ -193,6 +194,23 @@ def marlin_permute_scales(s: torch.Tensor, size_k: int, size_n: int,
     return s
 
 
+def marlin_moe_permute_scales(
+    s: torch.Tensor,
+    size_k: int,
+    size_n: int,
+    group_size: int,
+):
+    num_experts = s.shape[0]
+    output = torch.empty(
+        (num_experts, s.shape[1], s.shape[2]),
+        device=s.device,
+        dtype=s.dtype,
+    )
+    for e in range(num_experts):
+        output[e] = marlin_permute_scales(s[e], size_k, size_n, group_size)
+    return output
+
+
 def marlin_zero_points(zp: torch.Tensor, size_k: int, size_n: int,
                        num_bits: int) -> torch.Tensor:
     # Permute zero-points in a similar way to scales, but do not use the
@@ -268,8 +286,7 @@ def apply_gptq_marlin_linear(
                                   size_k=input_size_per_partition,
                                   is_k_full=is_k_full,
                                   has_zp=False,
-                                  use_fp32_reduce=use_fp32_reduce,
-                                  is_zp_float=False)
+                                  use_fp32_reduce=use_fp32_reduce)
 
     if bias is not None:
         output.add_(bias)  # In-place add
@@ -306,8 +323,7 @@ def apply_awq_marlin_linear(
                                   size_k=input_size_per_partition,
                                   is_k_full=True,
                                   has_zp=True,
-                                  use_fp32_reduce=use_fp32_reduce,
-                                  is_zp_float=True)
+                                  use_fp32_reduce=use_fp32_reduce)
 
     if bias is not None:
         output.add_(bias)  # In-place add
