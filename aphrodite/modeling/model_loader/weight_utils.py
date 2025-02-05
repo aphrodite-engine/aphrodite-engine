@@ -406,7 +406,7 @@ def pt_weights_iterator(
             desc="Loading pt checkpoint shards",
             disable=not enable_tqdm,
     ):
-        state = torch.load(bin_file, map_location="cpu")
+        state = torch.load(bin_file, map_location="cpu", weights_only=True)
         for name, param in state.items():
             yield name, param
         del state

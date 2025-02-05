@@ -352,7 +352,8 @@ class LLM:
 
     def chat(
         self,
-        messages: List[ChatCompletionMessageParam],
+        messages: Union[List[ChatCompletionMessageParam],
+                        List[List[ChatCompletionMessageParam]]],
         sampling_params: Optional[Union[SamplingParams,
                                         List[SamplingParams]]] = None,
         use_tqdm: bool = True,
@@ -372,8 +373,9 @@ class LLM:
         to the OpenAI API.
 
         Args:
-            messages: A single conversation represented as a list of messages.
-                Each message is a dictionary with 'role' and 'content' keys.
+            messages: A list of conversations or a single conversation. 
+                - Each conversation is represented as a list of messages.
+                - Each message is a dictionary with 'role' and 'content' keys.
             sampling_params: The sampling parameters for text generation.
                 If None, we use the default sampling parameters. When it
                 is a single value, it is applied to every prompt. When it
@@ -390,42 +392,51 @@ class LLM:
             A list of ``RequestOutput`` objects containing the generated
             responses in the same order as the input messages.
         """
+        list_of_messages: List[List[ChatCompletionMessageParam]]
 
-        tokenizer = self.get_tokenizer()
-        model_config = self.llm_engine.get_model_config()
-
-        conversation, mm_data = parse_chat_messages(messages, model_config,
-                                                    tokenizer)
-
-        prompt_data: Union[str, List[int]]
-        if isinstance(tokenizer, MistralTokenizer):
-            prompt_data = apply_mistral_chat_template(
-                tokenizer,
-                messages=messages,
-                chat_template=chat_template,
-                add_generation_prompt=add_generation_prompt,
-                tools=tools,
-            )
+        # Handle multi and single conversations
+        if is_list_of(messages, list):
+            # messages is List[List[...]]
+            list_of_messages = messages
         else:
-            prompt_data = apply_hf_chat_template(
-                tokenizer,
-                conversation=conversation,
-                chat_template=chat_template,
-                add_generation_prompt=add_generation_prompt,
-                tools=tools,
-            )
+            # messages is List[...]
+            list_of_messages = [messages]
+        prompts: List[Union[TokensPrompt, TextPrompt]] = []
+        for msgs in list_of_messages:
+            tokenizer = self.get_tokenizer()
+            model_config = self.llm_engine.get_model_config()
+            conversation, mm_data = parse_chat_messages(
+                msgs, model_config, tokenizer)
+            prompt_data: Union[str, List[int]]
+            if isinstance(tokenizer, MistralTokenizer):
+                prompt_data = apply_mistral_chat_template(
+                    tokenizer,
+                    messages=msgs,
+                    chat_template=chat_template,
+                    add_generation_prompt=add_generation_prompt,
+                    tools=tools,
+                )
+            else:
+                prompt_data = apply_hf_chat_template(
+                    tokenizer,
+                    conversation=conversation,
+                    chat_template=chat_template,
+                    add_generation_prompt=add_generation_prompt,
+                    tools=tools,
+                )
+            prompt: Union[TokensPrompt, TextPrompt]
+            if is_list_of(prompt_data, int):
+                prompt = TokensPrompt(prompt_token_ids=prompt_data)
+            else:
+                prompt = TextPrompt(prompt=prompt_data)
 
-        prompt: PromptType
-        if is_list_of(prompt_data, int):
-            prompt = TokensPrompt(prompt_token_ids=prompt_data)
-        else:
-            prompt = TextPrompt(prompt=prompt_data)
+            if mm_data is not None:
+                prompt["multi_modal_data"] = mm_data
 
-        if mm_data is not None:
-            prompt["multi_modal_data"] = mm_data
+            prompts.append(prompt)
 
         return self.generate(
-            prompt,
+            prompts,
             sampling_params=sampling_params,
             use_tqdm=use_tqdm,
             lora_request=lora_request,
