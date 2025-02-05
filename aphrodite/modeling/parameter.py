@@ -328,6 +328,15 @@ class PackedAphroditeParameter(ModelWeightParameter):
             marlin_tile_size=self.marlin_tile_size)
 
 
+class BlockQuantScaleParameter(_ColumnAphroditeParameter,
+                               RowAphroditeParameter):
+    """
+    Parameter class for weight scales loaded for weights with
+    block-wise quantization. Uses both column and row parallelism.
+    """
+    pass
+
+
 def permute_param_layout_(param: BaseAphroditeParameter, input_dim: int,
                           output_dim: int, **kwargs) -> BaseAphroditeParameter:
     """
