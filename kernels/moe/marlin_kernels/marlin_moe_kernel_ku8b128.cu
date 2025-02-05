@@ -5,9 +5,9 @@ namespace marlin_moe {
 // We return bool so we can create these different kernel calls as a sequence
 // of if-elseif's.
 bool call_marlin_moe_kernel_ku8b128(
-    aphrodite::ScalarType const& q_type, int thread_n_blocks, int thread_k_blocks,
-    bool has_act_order, int group_blocks, int num_threads, int blocks,
-    int max_shared_mem, cudaStream_t stream, const int4* A_ptr,
+    aphrodite::ScalarType const& q_type, int thread_n_blocks,
+    int thread_k_blocks, bool has_act_order, int group_blocks, int num_threads,
+    int blocks, int max_shared_mem, cudaStream_t stream, const int4* A_ptr,
     const int4* B_ptr, int4* C_ptr, const int* sorted_ids_ptr,
     const float* topk_weights_ptr, const int4* s_ptr, const int* g_idx_ptr,
     int* expert_offsets_ptr, int num_groups, int expert_idx, int num_experts,

@@ -47,6 +47,7 @@ QUANTIZATION_METHODS = {
     "quip": QuipConfig,
     "squeezellm": SqueezeLLMConfig,
     "compressed-tensors": CompressedTensorsConfig,
+    "compressed_tensors": CompressedTensorsConfig,
     "bitsandbytes": BitsAndBytesConfig,
     "qqq": QQQConfig,
     "hqq": HQQMarlinConfig,
