@@ -95,7 +95,7 @@ def validate_generated_texts(hf_runner,
     with aphrodite_runner(model_name,
                      quantization='bitsandbytes',
                      load_format='bitsandbytes',
-                     enforce_eager=True,
+                     enforce_eager=False,
                      gpu_memory_utilization=0.8) as llm:
         aphrodite_outputs = llm.generate_greedy(prompts, 8)
         aphrodite_logs = log_generated_texts(prompts, aphrodite_outputs,
