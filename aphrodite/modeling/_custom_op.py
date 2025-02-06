@@ -1,5 +1,6 @@
 import torch.nn as nn
 
+import aphrodite.common.envs as envs
 from aphrodite.common.utils import is_cpu, is_hip, is_xpu
 from aphrodite.platforms import current_platform
 
@@ -47,6 +48,9 @@ class CustomOp(nn.Module):
         # NOTE: This is a placeholder for future extensions.
         return self.forward_native(*args, **kwargs)
 
+    def forward_triton(self, *args, **kwargs):
+        raise NotImplementedError
+
     def dispatch_forward(self):
         # NOTE: Here we assume that Aphrodite was built for only one
         # specific backend. Currently, we do not support dynamic dispatching.
@@ -58,5 +62,7 @@ class CustomOp(nn.Module):
             return self.forward_tpu
         elif is_xpu():
             return self.forward_xpu
+        elif envs.APHRODITE_USE_TRITON_LAYERNORM:
+            return self.forward_triton
         else:
             return self.forward_cuda

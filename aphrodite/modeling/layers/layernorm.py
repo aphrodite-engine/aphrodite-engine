@@ -112,6 +112,18 @@ class RMSNorm(CustomOp):
             self.variance_epsilon,
         )
 
+    def forward_triton(
+            self,
+            x: torch.Tensor,
+            residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        from aphrodite.modeling.layers.ops.layernorm import fast_rms_layernorm
+
+        if residual is not None:
+            x = x + residual
+            return fast_rms_layernorm(self, x, gemma=False), x
+        return fast_rms_layernorm(self, x, gemma=False)
+
     def extra_repr(self) -> str:
         s = f"hidden_size={self.weight.data.size(0)}"
         s += f", eps={self.variance_epsilon}"
@@ -177,3 +189,15 @@ class GemmaRMSNorm(CustomOp):
                 self.forward_static)
             self._is_compiled = True
         return self.forward_native(x, residual)
+
+    def forward_triton(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        from aphrodite.modeling.layers.ops.layernorm import fast_rms_layernorm
+
+        if residual is not None:
+            x = x + residual
+            return fast_rms_layernorm(self, x, gemma=True), x
+        return fast_rms_layernorm(self, x, gemma=True)
