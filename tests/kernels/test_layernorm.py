@@ -60,3 +60,46 @@ def test_rms_norm(
     else:
         opcheck(torch.ops._C.rms_norm,
                 (out, x, layer.weight.data, layer.variance_epsilon))
+
+
+@pytest.mark.parametrize("num_tokens", NUM_TOKENS)
+@pytest.mark.parametrize("hidden_size", HIDDEN_SIZES)
+@pytest.mark.parametrize("add_residual", ADD_RESIDUAL)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("device", CUDA_DEVICES)
+@torch.inference_mode()
+def test_rms_norm_triton(
+    num_tokens: int,
+    hidden_size: int,
+    add_residual: bool,
+    dtype: torch.dtype,
+    seed: int,
+    device: str,
+) -> None:
+    """
+    Test RMSNorm's Triton kernel by comparing its output to the native CUDA
+    implementation.
+    """
+    torch.random.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+    
+    # Explicitly move the layer to the selected device.
+    layer = RMSNorm(hidden_size).to(device=device, dtype=dtype)
+    layer.weight.data.normal_(mean=1.0, std=0.1)
+    
+    scale = 1 / (2 * hidden_size)
+    x = torch.randn(num_tokens, hidden_size, dtype=dtype, device=device) * scale
+    residual = torch.randn_like(x) * scale if add_residual else None
+
+    ref_out = layer.forward_native(x, residual)
+    triton_out = layer.forward_triton(x, residual)
+    
+    if add_residual:
+        torch.testing.assert_close(triton_out[0], ref_out[0],
+                                   atol=1e-2, rtol=1e-2)
+        torch.testing.assert_close(triton_out[1], ref_out[1],
+                                   atol=1e-2, rtol=1e-2)
+    else:
+        torch.testing.assert_close(triton_out, ref_out, atol=1e-2, rtol=1e-2)
