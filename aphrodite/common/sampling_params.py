@@ -11,6 +11,7 @@ from typing_extensions import Annotated
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import SchedulerConfig
+from aphrodite.common.sampler_ids import SamplerID
 
 _SAMPLING_EPS = 1e-5
 _MAX_TEMP = 1e-2
@@ -32,25 +33,6 @@ class RequestOutputKind(Enum):
     DELTA = 1
     # Do not return intermediate RequestOuputs
     FINAL_ONLY = 2
-
-class SamplerID(IntEnum):
-    # Mirror these in aphrodite/modeling/layers/sampler.py
-    # Values out of order to keep backwards compatibility
-    # with Koboldcpp values
-    DRY = 7
-    PENALTIES = 6
-    NO_REPEAT_NGRAM = 8
-    TEMPERATURE = 5
-    TOP_NSIGMA = 9
-    TOP_P_TOP_K = 0
-    TOP_A = 1
-    MIN_P = 2
-    TFS = 3
-    ETA_CUTOFF = 10
-    EPSILON_CUTOFF = 11
-    TYPICAL_P = 4
-    QUADRATIC = 12
-    XTC = 13
 
     @classmethod
     def from_str(cls, value: Union[str, int]) -> "SamplerID":
@@ -236,6 +218,7 @@ class SamplingParams(
             tokens. Defaults to 0 (disabled).
         sampler_priority: A list of integers to control the order in which
             samplers are applied.
+        custom_sampler: Dict[str, Any] = {}  # For plugin parameters
     """
 
     n: int = 1
@@ -298,6 +281,7 @@ class SamplingParams(
     # They are set in post_init.
     output_text_buffer_length: int = 0
     _all_stop_token_ids: Set[int] = msgspec.field(default_factory=set)
+    custom_sampler: Dict[str, Any] = {}  # For plugin parameters
 
     default_values = {
         "n": 1,
@@ -660,3 +644,7 @@ class SamplingParams(
                 repr_str += f"{param}={current_value}, "
         repr_str = repr_str.rstrip(', ') + ")"
         return repr_str
+
+    @property
+    def plugin_params(self) -> dict:
+        return self.custom_sampler

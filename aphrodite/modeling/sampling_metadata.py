@@ -391,6 +391,7 @@ class SamplingTensors:
     skews: torch.Tensor
     prompt_tokens: torch.Tensor
     output_tokens: torch.Tensor
+    _plugin_tensors: Dict[str, torch.Tensor]
 
     @classmethod
     def from_sampling_metadata(
@@ -554,6 +555,30 @@ class SamplingTensors:
                         seq_data = seq_group.seq_data[seq_id]
                         prompt_tokens.append(seq_data.prompt_token_ids_array)
                         output_tokens.append(seq_data.output_token_ids_array)
+
+        plugin_tensors = {}  # Replace with your existing code
+
+        # Calculate number of sequences
+        n_seqs = 0
+        if sampling_metadata.seq_groups:
+            n_seqs = sum(len(sg.seq_ids) for sg in sampling_metadata.seq_groups)
+
+        # Now, collect plugin tensors
+        plugin_tensors = {}
+        from aphrodite.plugins.sampling_registry import SamplingPluginRegistry
+        for plugin_name, plugin_cls in SamplingPluginRegistry.get_all_plugins().items():
+            plugin = plugin_cls()
+            sampling_params = sampling_metadata.seq_groups[
+                0].sampling_params
+            # Check if the plugin should be applied based on the plugin_params
+            if plugin.should_apply(sampling_params.plugin_params):
+                new_tensors = plugin.create_tensors(
+                    sampling_params.plugin_params,
+                    n_seqs,
+                    device,
+                    dtype
+                )
+                plugin_tensors.update(new_tensors)
 
         sampling_tensors = SamplingTensors.from_lists(
             temperatures,
@@ -846,7 +871,6 @@ class SamplingTensors:
 
         # Because the memory is pinned, we can do non-blocking
         # transfer to device.
-
         return cls(
             temperatures=temperatures_t.to(device=device, non_blocking=True),
             dynatemp_mins=dynatemp_mins_t.to(device=device, non_blocking=True),
@@ -895,4 +919,11 @@ class SamplingTensors:
             typical_ps=typical_ps_t.to(device=device, non_blocking=True),
             prompt_tokens=prompt_t.to(device=device, non_blocking=True),
             output_tokens=output_t.to(device=device, non_blocking=True),
+            _plugin_tensors={
+                name: tensor.to(device=device, non_blocking=True)
+                for name, tensor in plugin_tensors.items()
+            }
         )
+
+    def get_plugin_tensor(self, name: str) -> torch.Tensor:
+        return self._plugin_tensors[name]
