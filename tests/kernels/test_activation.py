@@ -92,3 +92,30 @@ def test_activation(
                                rtol=get_default_rtol(out))
     out = torch.empty_like(x)
     opcheck(fn, (out, x))
+
+@pytest.mark.parametrize("activation_cls, kwargs", [
+    (SiluAndMul, {}),
+    (GeluAndMul, {"approximate": "none"}),
+    (GeluAndMul, {"approximate": "tanh"}),
+])
+@pytest.mark.parametrize("num_tokens", NUM_TOKENS)
+@pytest.mark.parametrize("d", D)
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("seed", SEEDS)
+@pytest.mark.parametrize("device", CUDA_DEVICES)
+@torch.inference_mode()
+def test_activation_triton(
+    activation_cls, kwargs, num_tokens, d, dtype, seed, device):
+    torch.random.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+    torch.set_default_device(device)
+
+    activation = activation_cls(**kwargs).to(device=device, dtype=dtype)
+    # Input shape is (num_tokens, 2*d) for these activations.
+    x = torch.randn(num_tokens, 2 * d, dtype=dtype, device=device)
+
+    native_out = activation.forward_native(x)
+    triton_out = activation.forward_triton(x)
+
+    torch.testing.assert_close(triton_out, native_out, atol=1e-2, rtol=1e-2)

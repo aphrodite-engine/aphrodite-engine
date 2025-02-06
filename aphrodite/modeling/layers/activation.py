@@ -46,7 +46,9 @@ class SiluAndMul(CustomOp):
         return out
 
     def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_cuda(x)
+        from aphrodite.modeling.layers.ops.activation import swiglu_fg_kernel
+        d = x.shape[-1] // 2
+        return swiglu_fg_kernel(x[..., :d], x[..., d:])
 
 
 class GeluAndMul(CustomOp):
@@ -94,7 +96,15 @@ class GeluAndMul(CustomOp):
         return out
 
     def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_cuda(x)
+        from aphrodite.modeling.layers.ops.activation import (
+            geglu_approx_forward_kernel, geglu_exact_forward_kernel)
+        d = x.shape[-1] // 2
+        gate = x[..., :d]
+        up = x[..., d:]
+        if self.approximate == "none":
+            return geglu_exact_forward_kernel(gate, up)
+        elif self.approximate == "tanh":
+            return geglu_approx_forward_kernel(gate, up)
 
     def extra_repr(self) -> str:
         return f'approximate={repr(self.approximate)}'
