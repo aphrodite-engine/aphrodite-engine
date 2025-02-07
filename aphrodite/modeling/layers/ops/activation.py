@@ -37,6 +37,11 @@ def _fg_kernel(e, g, h, n_elements, BLOCK_SIZE: tl.constexpr):
     """
     Compute SiLU activation and multiply with gate:
     h = silu(e) * g where silu(x) = x * sigmoid(x)
+    
+    Differences from unsloth:
+    1. We use 1/(1+exp(-x)) for sigmoid, while unsloth uses tl.sigmoid()
+    2. We cast to float32 explicitly, while unsloth uses .to(tl.float32)
+    3. Otherwise functionally identical
     """
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
@@ -87,6 +92,12 @@ def _exact_gelu_kernel(e, g, h, n_elements, BLOCK_SIZE: tl.constexpr):
     """
     Compute exact GELU activation and multiply with gate:
     h = gelu(e) * g where gelu(x) = x * 0.5 * (1 + erf(x/sqrt(2)))
+    
+    Differences from unsloth:
+    1. We compute as: x * 0.5 * (1 + erf(x/sqrt(2)))
+       Unsloth computes as: 0.5 * x * (erf(rsqrt(2) * x) + 1)
+    2. We use triton_erf/sqrt helpers for version compatibility
+    3. Otherwise mathematically equivalent
     """
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
@@ -113,6 +124,13 @@ def _approx_gelu_kernel(e, g, h, n_elements, BLOCK_SIZE: tl.constexpr):
     Compute approximate GELU activation and multiply with gate:
     h = gelu(e) * g where
     gelu(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    
+    Differences from unsloth:
+    1. We compute cubic term separately: (x + 0.044715 * x^3)
+       Unsloth factors out x: x * (1 + 0.044715 * x^2)
+    2. We use triton_tanh/sqrt helpers for version compatibility
+    3. We don't precompute sqrt(2/pi) as a constant
+    4. Otherwise mathematically equivalent
     """
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
