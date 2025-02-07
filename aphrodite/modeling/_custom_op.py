@@ -1,7 +1,6 @@
 import torch.nn as nn
 
-import aphrodite.common.envs as envs
-from aphrodite.common.utils import is_cpu, is_hip, is_xpu
+from aphrodite.common.utils import is_cpu, is_hip, is_triton, is_xpu
 from aphrodite.platforms import current_platform
 
 
@@ -62,7 +61,7 @@ class CustomOp(nn.Module):
             return self.forward_tpu
         elif is_xpu():
             return self.forward_xpu
-        elif envs.APHRODITE_USE_TRITON_BACKEND:
+        elif is_triton():
             return self.forward_triton
         else:
             return self.forward_cuda

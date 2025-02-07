@@ -360,6 +360,17 @@ def is_xpu() -> bool:
 
 
 @lru_cache(maxsize=None)
+def is_triton() -> bool:
+    if envs.APHRODITE_USE_TRITON_BACKEND:
+        try:
+            import triton  # noqa: F401
+        except ImportError:
+            return False
+        return True
+    return False
+
+
+@lru_cache(maxsize=None)
 def get_max_shared_memory_bytes(gpu: int = 0) -> int:
     """Returns the maximum shared memory per thread block in bytes."""
     from aphrodite import _custom_ops as ops
