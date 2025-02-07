@@ -93,6 +93,7 @@ def test_activation(
     out = torch.empty_like(x)
     opcheck(fn, (out, x))
 
+
 @pytest.mark.parametrize("activation_cls, kwargs", [
     (SiluAndMul, {}),
     (GeluAndMul, {"approximate": "none"}),
