@@ -188,11 +188,6 @@ def _gelu_new_kernel(x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
     """
     Compute new GELU activation (same as approximate GELU):
     gelu_new(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
-    
-    Differences from CUDA impl:
-    1. We handle device placement flexibly
-    2. We use version-compatible math functions
-    3. Otherwise identical, including optimizations and constants
     """
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
@@ -225,6 +220,96 @@ def gelu_new_kernel(x: torch.Tensor) -> torch.Tensor:
 
     with torch.cuda.device(x.device):
         _gelu_new_kernel[grid](
+            x.reshape(-1), output.reshape(-1),
+            n_elements, BLOCK_SIZE=1024
+        )
+
+    if squeeze:
+        return output.squeeze(0)
+    return output
+
+
+@triton.jit
+def _fast_gelu_kernel(x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    """
+    Compute fast GELU activation:
+    gelu_fast(x) = 0.5 * x * (1 + tanh(0.7978845608 * x * (1 + 0.044715 * x^2)))
+    """
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+
+    x = tl.load(x_ptr + offsets, mask=mask).to(tl.float32)
+
+    c = 0.79788456  # sqrt(2/pi)
+    inner = x * (1.0 + 0.044715 * x * x)
+    t = triton_tanh(c * inner)
+    output = 0.5 * x * (1.0 + t)
+
+    tl.store(output_ptr + offsets, output, mask=mask)
+
+
+@triton.jit
+def _quick_gelu_kernel(x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    """
+    Compute quick GELU activation:
+    quick_gelu(x) = x * sigmoid(1.702 * x)
+    """
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+
+    x = tl.load(x_ptr + offsets, mask=mask).to(tl.float32)
+
+    # Compute x * sigmoid(1.702 * x)
+    output = x * (1.0 / (1.0 + tl.exp(-1.702 * x)))
+
+    tl.store(output_ptr + offsets, output, mask=mask)
+
+
+def fast_gelu_kernel(x: torch.Tensor) -> torch.Tensor:
+    """Triton kernel wrapper for fast GELU activation."""
+    # If x is 2D (num_tokens x d), add a dummy batch dimension
+    squeeze = False
+    if x.dim() == 2:
+        x = x.unsqueeze(0)
+        squeeze = True
+
+    batch, num_tokens, d = x.shape
+    n_elements = batch * num_tokens * d
+    output = torch.empty_like(x)
+
+    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+
+    with torch.cuda.device(x.device):
+        _fast_gelu_kernel[grid](
+            x.reshape(-1), output.reshape(-1),
+            n_elements, BLOCK_SIZE=1024
+        )
+
+    if squeeze:
+        return output.squeeze(0)
+    return output
+
+
+def quick_gelu_kernel(x: torch.Tensor) -> torch.Tensor:
+    """Triton kernel wrapper for quick GELU activation."""
+    # If x is 2D (num_tokens x d), add a dummy batch dimension
+    squeeze = False
+    if x.dim() == 2:
+        x = x.unsqueeze(0)
+        squeeze = True
+
+    batch, num_tokens, d = x.shape
+    n_elements = batch * num_tokens * d
+    output = torch.empty_like(x)
+
+    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+
+    with torch.cuda.device(x.device):
+        _quick_gelu_kernel[grid](
             x.reshape(-1), output.reshape(-1),
             n_elements, BLOCK_SIZE=1024
         )

@@ -153,7 +153,8 @@ class FastGELU(CustomOp):
         return ops.gelu_fast(x)
 
     def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_cuda(x)
+        from aphrodite.modeling.layers.ops.activation import fast_gelu_kernel
+        return fast_gelu_kernel(x)
 
 
 class QuickGELU(CustomOp):
@@ -177,7 +178,8 @@ class QuickGELU(CustomOp):
         return out
 
     def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_cuda(x)
+        from aphrodite.modeling.layers.ops.activation import quick_gelu_kernel
+        return quick_gelu_kernel(x)
 
 
 class ReLUSquaredActivation(CustomOp):
