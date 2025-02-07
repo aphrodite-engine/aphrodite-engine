@@ -60,7 +60,7 @@ if TYPE_CHECKING:
     APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE: int = 0
     APHRODITE_USE_TRITON_AWQ: bool = False
     APHRODITE_DYNAMO_USE_CUSTOM_DISPATCHER: bool = False
-    APHRODITE_USE_TRITON_LAYERNORM: bool = False
+    APHRODITE_USE_TRITON_BACKEND: bool = False
 
 
 def get_default_cache_root():
@@ -404,8 +404,8 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_AWQ", "0"))),
 
     # If set, Aphrodite will use Triton implementations of layernorm.
-    "APHRODITE_USE_TRITON_LAYERNORM":
-    lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_LAYERNORM", "0"))),
+    "APHRODITE_USE_TRITON_BACKEND":
+    lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_BACKEND", "0"))),
 }
 
 # end-env-vars-definition

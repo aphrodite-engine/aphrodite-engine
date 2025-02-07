@@ -62,7 +62,7 @@ class CustomOp(nn.Module):
             return self.forward_tpu
         elif is_xpu():
             return self.forward_xpu
-        elif envs.APHRODITE_USE_TRITON_LAYERNORM:
+        elif envs.APHRODITE_USE_TRITON_BACKEND:
             return self.forward_triton
         else:
             return self.forward_cuda
