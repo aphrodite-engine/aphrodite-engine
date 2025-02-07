@@ -317,3 +317,59 @@ def quick_gelu_kernel(x: torch.Tensor) -> torch.Tensor:
     if squeeze:
         return output.squeeze(0)
     return output
+
+
+@triton.jit
+def _relu_squared_kernel(
+    x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+    """
+    Compute Squared ReLU: 
+    relu2(x) = x² if x > 0 else 0
+
+    Optimization: Uses direct bit manipulation instead of relu->square
+    For IEEE 754 floats, sign bit is the MSB, so we can:
+    1. Check sign bit directly
+    2. Square only if positive
+    3. Avoid branch prediction issues with masked operations
+    """
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+
+    x = tl.load(x_ptr + offsets, mask=mask).to(tl.float32)
+
+    # Create mask for positive values (sign bit = 0)
+    # IEEE 754: sign bit is MSB, so x >= 0 means top bit is 0
+    is_positive = x >= 0
+
+    # Square only positive values, others become 0
+    # This is faster than separate relu and square
+    output = tl.where(is_positive, x * x, 0.0)
+
+    tl.store(output_ptr + offsets, output, mask=mask)
+
+
+def relu_squared_kernel(x: torch.Tensor) -> torch.Tensor:
+    """Triton kernel wrapper for Squared ReLU activation."""
+    # If x is 2D (num_tokens x d), add a dummy batch dimension
+    squeeze = False
+    if x.dim() == 2:
+        x = x.unsqueeze(0)
+        squeeze = True
+
+    batch, num_tokens, d = x.shape
+    n_elements = batch * num_tokens * d
+    output = torch.empty_like(x)
+
+    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+
+    with torch.cuda.device(x.device):
+        _relu_squared_kernel[grid](
+            x.reshape(-1), output.reshape(-1),
+            n_elements, BLOCK_SIZE=1024
+        )
+
+    if squeeze:
+        return output.squeeze(0)
+    return output

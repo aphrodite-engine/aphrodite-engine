@@ -6,6 +6,7 @@ import torch
 
 from aphrodite.modeling.layers.activation import (FastGELU, GeluAndMul,
                                                   NewGELU, QuickGELU,
+                                                  ReLUSquaredActivation,
                                                   SiluAndMul)
 from tests.kernels.utils import opcheck
 
@@ -102,6 +103,7 @@ def test_activation(
     (NewGELU, {}),
     (FastGELU, {}),
     (QuickGELU, {}),
+    (ReLUSquaredActivation, {}),
 ])
 @pytest.mark.parametrize("num_tokens", NUM_TOKENS)
 @pytest.mark.parametrize("d", D)
@@ -135,6 +137,7 @@ def test_activation_triton(
     (NewGELU, {}),
     (FastGELU, {}),
     (QuickGELU, {}),
+    (ReLUSquaredActivation, {}),
 ])
 @pytest.mark.parametrize("batch_size, seq_len, hidden_size", [
     (1, 2048, 4096),

@@ -195,7 +195,8 @@ class ReLUSquaredActivation(CustomOp):
         return self.forward_native(x)
 
     def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_cuda(x)
+        from aphrodite.modeling.layers.ops.activation import relu_squared_kernel
+        return relu_squared_kernel(x)
 
 
 class ScaledActivation(nn.Module):
