@@ -39,25 +39,19 @@ def _fg_kernel(e, g, h, n_elements, BLOCK_SIZE: tl.constexpr):
     h = silu(e) * g where silu(x) = x * sigmoid(x)
     
     Differences from unsloth:
-    1. We use 1/(1+exp(-x)) for sigmoid, while unsloth uses tl.sigmoid()
-    2. We cast to float32 explicitly, while unsloth uses .to(tl.float32)
-    3. Otherwise functionally identical
+    1. Support for 2D inputs
     """
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
     offsets = block_start + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    e_row = tl.load(e + offsets, mask=mask)
-    g_row = tl.load(g + offsets, mask=mask)
+    e_row = tl.load(e + offsets, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + offsets, mask=mask, other=0)
 
-    e_f32 = tl.cast(e_row, tl.float32)
-
-    # Compute SiLU: x * sigmoid(x)
-    silu = e_f32 * (1 / (1 + tl.exp(-e_f32)))
-
-    silu = tl.cast(silu, e_row.dtype)
-    output = silu * g_row
+    f_row = e_row * tl.sigmoid(e_row)
+    f_row = f_row.to(g_row.dtype)
+    output = f_row * g_row
 
     tl.store(h + offsets, output, mask=mask)
 
@@ -94,26 +88,19 @@ def _exact_gelu_kernel(e, g, h, n_elements, BLOCK_SIZE: tl.constexpr):
     h = gelu(e) * g where gelu(x) = x * 0.5 * (1 + erf(x/sqrt(2)))
     
     Differences from unsloth:
-    1. We compute as: x * 0.5 * (1 + erf(x/sqrt(2)))
-       Unsloth computes as: 0.5 * x * (erf(rsqrt(2) * x) + 1)
-    2. We use triton_erf/sqrt helpers for version compatibility
-    3. Otherwise mathematically equivalent
+    1. Support for 2D inputs
     """
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
     offsets = block_start + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    e_row = tl.load(e + offsets, mask=mask)
-    g_row = tl.load(g + offsets, mask=mask)
+    e_row = tl.load(e + offsets, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + offsets, mask=mask, other=0)
 
-    e_f32 = tl.cast(e_row, tl.float32)
-    
-    # Compute GELU: x * 0.5 * (1 + erf(x/sqrt(2)))
-    gelu = e_f32 * 0.5 * (1.0 + triton_erf(e_f32 / triton_sqrt(2.0)))
-
-    gelu = tl.cast(gelu, e_row.dtype)
-    output = gelu * g_row
+    f_row = 0.5 * e_row * (triton_erf(triton_sqrt(0.5) * e_row) + 1.0)
+    f_row = f_row.to(g_row.dtype)
+    output = f_row * g_row
 
     tl.store(h + offsets, output, mask=mask)
 
@@ -126,29 +113,22 @@ def _approx_gelu_kernel(e, g, h, n_elements, BLOCK_SIZE: tl.constexpr):
     gelu(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
     
     Differences from unsloth:
-    1. We compute cubic term separately: (x + 0.044715 * x^3)
-       Unsloth factors out x: x * (1 + 0.044715 * x^2)
-    2. We use triton_tanh/sqrt helpers for version compatibility
-    3. We don't precompute sqrt(2/pi) as a constant
-    4. Otherwise mathematically equivalent
+    1. Support for 2D inputs
     """
     pid = tl.program_id(axis=0)
     block_start = pid * BLOCK_SIZE
     offsets = block_start + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    e_row = tl.load(e + offsets, mask=mask)
-    g_row = tl.load(g + offsets, mask=mask)
+    e_row = tl.load(e + offsets, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + offsets, mask=mask, other=0)
 
-    e_f32 = tl.cast(e_row, tl.float32)
-
-    gelu = 0.5 * e_f32 * (1.0 + triton_tanh(
-        triton_sqrt(2.0 / 3.141592653589793) * 
-        (e_f32 + 0.044715 * e_f32 * e_f32 * e_f32)
-    ))
-
-    gelu = tl.cast(gelu, e_row.dtype)
-    output = gelu * g_row
+    s = 0.7978845608028654  # sqrt(2/pi)
+    f_row = 0.5 * e_row * (
+        triton_tanh(s * e_row * (1.0 + 0.044715 * e_row * e_row)) + 1.0
+    )
+    f_row = f_row.to(g_row.dtype)
+    output = f_row * g_row
 
     tl.store(h + offsets, output, mask=mask)
 
