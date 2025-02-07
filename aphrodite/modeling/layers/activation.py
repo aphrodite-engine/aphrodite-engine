@@ -130,7 +130,8 @@ class NewGELU(CustomOp):
         return ops.gelu_new(x)
 
     def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_cuda(x)
+        from aphrodite.modeling.layers.ops.activation import gelu_new_kernel
+        return gelu_new_kernel(x)
 
 
 class FastGELU(CustomOp):
