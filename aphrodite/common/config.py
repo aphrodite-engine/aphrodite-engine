@@ -1123,6 +1123,7 @@ class SchedulerConfig:
             APHRODITE_USE_RAY_SPMD_WORKER=1
         single_user_mode: If True, we only allocate blocks for one sequence
             and use the maximum sequence length as the number of tokens.
+        policy: The scheduling policy to use. "fcfs" (default) or "priority".
     """
 
     def __init__(self,
@@ -1141,7 +1142,8 @@ class SchedulerConfig:
                  num_scheduler_steps: int = 1,
                  multi_step_stream_outputs: bool = False,
                  send_delta_data: bool = False,
-                 single_user_mode: bool = False) -> None:
+                 single_user_mode: bool = False,
+                 policy: str = "fcfs") -> None:
         if max_num_batched_tokens is None:
             if enable_chunked_prefill:
                 # It is the values that have the best balance between ITL
@@ -1199,6 +1201,7 @@ class SchedulerConfig:
         self.multi_step_stream_outputs = multi_step_stream_outputs
         self.send_delta_data = send_delta_data
         self.single_user_mode = single_user_mode
+        self.policy = policy
         self._verify_args()
 
     def _verify_args(self) -> None:

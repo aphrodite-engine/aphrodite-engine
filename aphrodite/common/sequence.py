@@ -627,6 +627,7 @@ class SequenceGroup:
         encoder_seq: Optional, the single encoder sequence. Should be None
                      unless you are working with an encoder/decoder model.
         prompt_adapter_request: Prompt Adapter request.
+        priority: User-defined priority of the request.
     """
 
     def __init__(
@@ -640,9 +641,11 @@ class SequenceGroup:
         pooling_params: Optional[PoolingParams] = None,
         encoder_seq: Optional[Sequence] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
     ) -> None:
         self.request_id = request_id
         self.seqs = seqs
+        self.arrival_time = arrival_time
         self.is_single_seq = len(seqs) == 1
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
 
@@ -659,7 +662,7 @@ class SequenceGroup:
         self.pooling_params = pooling_params
         self.prompt_adapter_request = prompt_adapter_request
         self.encoder_seq = encoder_seq
-
+        self.priority = priority
         self.cached_request_output = None
 
     @property
