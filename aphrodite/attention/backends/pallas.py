@@ -131,7 +131,7 @@ class PallasAttentionBackendImpl(AttentionImpl):
                     or tpu_env.get("TPU_ACCELERATOR_TYPE", None))
         assert tpu_type is not None
         tpu_type = tpu_type.lower()
-        if "lite" not in tpu_type:
+        if (("lite" not in tpu_type) and ("v6" not in tpu_type)):
             if self.num_kv_heads % 2 == 0:
                 self.megacore_mode = "kv_head"
             else:
