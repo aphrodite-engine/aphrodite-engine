@@ -22,7 +22,6 @@ from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,
                                               IPC_HEALTH_EXT, IPC_INPUT_EXT,
                                               IPC_OUTPUT_EXT, RPC_REQUEST_T,
                                               RPCAbortRequest, RPCError,
-                                              RPCHealthRequest,
                                               RPCProcessRequest,
                                               RPCStartupRequest,
                                               RPCStartupResponse)
@@ -92,9 +91,9 @@ class MQAphroditeEngineClient:
         self.output_socket: Socket = self.context.socket(zmq.constants.PULL)
         self.output_socket.connect(f"{ipc_path}{IPC_OUTPUT_EXT}")
 
-        # IPC path for ack of check_health requests.
-        self.health_socket: Socket = self.context.socket(zmq.constants.PULL)
-        self.health_socket.connect(f"{ipc_path}{IPC_HEALTH_EXT}")
+        # IPC path for acking heartbeats.
+        self.heartbeat_socket: Socket = self.context.socket(zmq.constants.PULL)
+        self.heartbeat_socket.connect(f"{ipc_path}{IPC_HEALTH_EXT}")
 
         # IPC path for the data socket.
         self.data_ipc_path = f"{ipc_path}{IPC_DATA_EXT}"
@@ -121,38 +120,30 @@ class MQAphroditeEngineClient:
         finally:
             socket.close(linger=0)
 
-    async def run_check_health_loop(self, timeout: int):
-        """Background loop that continually probes the RPCServer for health.
-
-        The loop sends CHECK_HEALTH requests to the INPUT_SOCKET, which
-        the MQAphroditeEngine server is blocking on.
-
-        The Server replies on the HEALTH_SOCKET (rather than on the
-        OUTPUT_SOCKET such that the messages are not intermingled with
-        output streaming).
+    async def run_heartbeat_loop(self, timeout: int):
+        """Background loop that continually listens to the RPCServer for
+        heartbeats.
         """
-
         try:
             while True:
-                if await self.health_socket.poll(timeout=timeout) == 0:
-                    # Wakeup every N seconds and do a health probe.
-                    await self._send_one_way_rpc_request(
-                        RPCHealthRequest(), self.input_socket)
-
-                    # Wait for ack from the health socket.
-                    await self._await_ack(error_message="Health check failed.",
-                                          socket=self.health_socket)
+                if await self.heartbeat_socket.poll(timeout=timeout) == 0:
+                    # No heartbeat was received. Set error and exit the loop
+                    self._set_errored(
+                        TimeoutError("No heartbeat received "
+                                     "from MQLLMEngine"))
+                    logger.debug("Shutting down MQLLMEngineClient check "
+                                 "health loop due to timeout")
+                    break
                 else:
-                    # Server sent a health status message unprompted.
+                    # Heartbeat received- check the message
                     await self._check_success(
-                        error_message="Health check failed.",
-                        socket=self.health_socket)
+                        error_message="Heartbeat failed.",
+                        socket=self.heartbeat_socket)
 
-                logger.debug("Health probe successful.")
+                logger.debug("Heartbeat successful.")
 
         except asyncio.CancelledError:
-            logger.debug(
-                "Shutting down MQAphroditeEngineClient check health loop.")
+            logger.debug("Shutting down MQLLMEngineClient check health loop.")
 
         except Exception as e:
             self._set_errored(e)
@@ -234,7 +225,7 @@ class MQAphroditeEngineClient:
 
             # Start health_loop.
             self.health_loop = asyncio.create_task(
-                self.run_check_health_loop(timeout=APHRODITE_RPC_TIMEOUT))
+                self.run_heartbeat_loop(timeout=APHRODITE_RPC_TIMEOUT))
 
     def close(self):
         """Destroy the ZeroMQ Context."""
