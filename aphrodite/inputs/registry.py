@@ -9,7 +9,8 @@ from torch import nn
 from transformers import PretrainedConfig
 from typing_extensions import TypeVar
 
-from aphrodite.common.utils import get_allowed_kwarg_only_overrides
+from aphrodite.common.utils import (get_allowed_kwarg_only_overrides,
+                                    print_warning_once)
 
 from .data import LLMInputs
 
@@ -219,7 +220,7 @@ class InputRegistry:
         num_tokens = seq_data.prompt_token_ids
         if len(num_tokens) < seq_len:
             if is_encoder_data:
-                logger.warning(
+                print_warning_once(
                     f"Expected at least {seq_len} dummy encoder tokens for "
                     f"profiling, but found {len(num_tokens)} tokens instead.")
             else:
