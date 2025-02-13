@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from aphrodite.multimodal.base import MultiModalDataDict
 
 APHRODITE_TOKEN_ID_ARRAY_TYPE = "l"
+APHRODITE_INVALID_TOKEN_ID = -1
 
 
 # We use dataclass for now because it is used for

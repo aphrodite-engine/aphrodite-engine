@@ -5,9 +5,9 @@ from transformers import PreTrainedTokenizer
 
 from aphrodite.common.logger import log_once
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.sequence import (Sequence, SequenceGroup,
-                                       SequenceGroupOutput, SequenceOutput,
-                                       SequenceStatus)
+from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID, Sequence,
+                                       SequenceGroup, SequenceGroupOutput,
+                                       SequenceOutput, SequenceStatus)
 from aphrodite.common.utils import Counter
 from aphrodite.engine.output_processor.interfaces import (
     SequenceGroupOutputProcessor)
@@ -108,12 +108,15 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
             # Since there's only one sequence per sequence group,
             # we can take the first sample.
             samples = [output.samples[0] for output in outputs]
-            # -1 means the output token is not valid (eg. due to spec decode
+
+            # entries in sample tokens may be invalid (eg. due to spec decode
             # rejecting tokens).
             valid_samples = [
-                sample for sample in samples if sample.output_token != -1
+                sample for sample in samples
+                if sample.output_token != APHRODITE_INVALID_TOKEN_ID
             ]
             assert valid_samples
+
             self._process_seq_outputs(seq, valid_samples,
                                       sequence_group.sampling_params)
     def _process_decode_and_stop(self, seq: Sequence,

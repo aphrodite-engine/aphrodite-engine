@@ -14,7 +14,8 @@ from loguru import logger
 import aphrodite._custom_ops as ops
 import aphrodite.common.envs as envs
 from aphrodite.common.sampling_params import SamplingType
-from aphrodite.common.sequence import (CompletionSequenceGroupOutput, Logprob,
+from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID,
+                                       CompletionSequenceGroupOutput, Logprob,
                                        PromptLogprobs, SampleLogprobs,
                                        SequenceOutput)
 from aphrodite.common.utils import is_cpu
@@ -1436,10 +1437,10 @@ def _sample_with_torch(
     beam_search_logprobs: Optional[torch.Tensor] = None
     # Create output tensor for sampled token ids.
     if include_gpu_probs_tensor:
-        sampled_token_ids_tensor = torch.empty(logprobs.shape[0],
-                                               1,
-                                               dtype=torch.long,
-                                               device=logprobs.device)
+        sampled_token_ids_tensor = torch.full((logprobs.shape[0], 1),
+                                              APHRODITE_INVALID_TOKEN_ID,
+                                              dtype=torch.long,
+                                              device=logprobs.device)
     else:
         sampled_token_ids_tensor = None
     # Counterintuitively, having two loops here is actually faster.

@@ -5,7 +5,8 @@ from typing import Iterator, List, Optional, Tuple
 import torch
 
 from aphrodite import SamplingParams
-from aphrodite.common.sequence import (APHRODITE_TOKEN_ID_ARRAY_TYPE,
+from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID,
+                                       APHRODITE_TOKEN_ID_ARRAY_TYPE,
                                        ExecuteModelRequest, SequenceData,
                                        SequenceGroupMetadata, get_all_seq_ids)
 from aphrodite.modeling.layers.sampler import SamplerOutput
@@ -70,10 +71,10 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
         proposal_lens_list = proposals.proposal_lens.tolist()
         proposal_token_ids_list = proposals.proposal_token_ids.tolist()
 
-        # Filter the list to ignore -1 proposals.
+        # Filter the list to ignore invalid proposals.
         proposal_token_ids_list_without_skips = [
             proposals for proposals in proposal_token_ids_list
-            if -1 not in proposals
+            if APHRODITE_INVALID_TOKEN_ID not in proposals
         ]
 
         (spec_indices, non_spec_indices, target_seq_group_metadata_list,
