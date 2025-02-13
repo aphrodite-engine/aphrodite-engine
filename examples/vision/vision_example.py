@@ -285,6 +285,26 @@ def run_molmo(question):
     return llm, prompt, stop_token_ids
 
 
+# LLama
+def run_mllama(question, modality):
+    assert modality == "image"
+    model_name = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+    # Note: The default setting of max_num_seqs (256) and
+    # max_model_len (131072) for this model may cause OOM.
+    # You may lower either to run this example on lower-end GPUs.
+    # The configuration below has been confirmed to launch on a
+    # single H100 GPU.
+    llm = LLM(
+        model=model_name,
+        max_num_seqs=16,
+        enforce_eager=True,
+        max_model_len=8192,
+    )
+    prompt = f"<|image|><|begin_of_text|>{question}"
+    stop_token_ids = None
+    return llm, prompt, stop_token_ids
+
+
 model_example_map = {
     "llava": run_llava,
     "llava-next": run_llava_next,
@@ -300,6 +320,7 @@ model_example_map = {
     "qwen_vl": run_qwen_vl,
     "qwen2_vl": run_qwen2_vl,
     "molmo": run_molmo,
+    "mllama": run_mllama,
 }
 
 

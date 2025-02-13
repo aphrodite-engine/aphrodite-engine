@@ -139,6 +139,12 @@ class EncoderDecoderLLMInputs(LLMInputs):
     available.
     """
 
+    encoder_multi_modal_data: NotRequired[Optional["MultiModalDataDict"]]
+    """
+    Optional multi-modal data to pass to the encoder model,
+    if the model supports it.
+    """
+
 
 _T1 = TypeVar("_T1", bound=SingletonPrompt, default=SingletonPrompt)
 _T2 = TypeVar("_T2", bound=SingletonPrompt, default=SingletonPrompt)

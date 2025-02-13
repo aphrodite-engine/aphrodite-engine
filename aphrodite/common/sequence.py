@@ -15,13 +15,13 @@ import torch
 
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.inputs import EncoderDecoderLLMInputs, LLMInputs
 from aphrodite.inputs.parse import is_valid_encoder_decoder_llm_inputs
 from aphrodite.lora.request import LoRARequest
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.spec_decode.metrics import SpecDecodeWorkerMetrics
 
 if TYPE_CHECKING:
-    from aphrodite.inputs import LLMInputs
     from aphrodite.multimodal.base import MultiModalDataDict
 
 APHRODITE_TOKEN_ID_ARRAY_TYPE = "l"
@@ -458,7 +458,15 @@ class Sequence:
 
     @property
     def multi_modal_data(self) -> "MultiModalDataDict":
-        return self.inputs.get("multi_modal_data") or {}
+        if self.inputs.get("multi_modal_data") and self.inputs.get(
+                "encoder_multi_modal_data"):
+            raise ValueError(
+                "Multi-modal data in both encoder and decoder is not supported."
+            )
+        inputs = self.inputs
+        return self.inputs.get("multi_modal_data") or (cast(
+            EncoderDecoderLLMInputs,
+            inputs).get("encoder_multi_modal_data")) or {}
 
     @property
     def lora_int_id(self) -> int:

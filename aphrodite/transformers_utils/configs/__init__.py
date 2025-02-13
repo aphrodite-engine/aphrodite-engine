@@ -8,6 +8,7 @@ from aphrodite.transformers_utils.configs.falcon import RWConfig
 from aphrodite.transformers_utils.configs.internvl import InternVLChatConfig
 from aphrodite.transformers_utils.configs.jais import JAISConfig
 from aphrodite.transformers_utils.configs.medusa import MedusaConfig
+from aphrodite.transformers_utils.configs.mllama import MllamaConfig
 from aphrodite.transformers_utils.configs.mlp_speculator import (
     MLPSpeculatorConfig)
 from aphrodite.transformers_utils.configs.mpt import MPTConfig
@@ -28,4 +29,5 @@ __all__ = [
     "EAGLEConfig",
     "Qwen2VLConfig",
     "Qwen2VLVisionConfig",
+    "MllamaConfig",
 ]

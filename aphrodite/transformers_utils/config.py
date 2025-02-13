@@ -20,6 +20,7 @@ from aphrodite.transformers_utils.configs import (ChatGLMConfig, DbrxConfig,
                                                   EAGLEConfig,
                                                   InternVLChatConfig,
                                                   JAISConfig, MedusaConfig,
+                                                  MllamaConfig,
                                                   MLPSpeculatorConfig,
                                                   MPTConfig, Qwen2VLConfig,
                                                   RWConfig, UltravoxConfig)
@@ -34,6 +35,10 @@ else:
 
 MISTRAL_CONFIG_NAME = "params.json"
 
+_CONFIG_REGISTRY_OVERRIDE_HF: Dict[str, Type[PretrainedConfig]] = {
+    "mllama": MllamaConfig
+}
+
 _CONFIG_REGISTRY: Dict[str, Type[PretrainedConfig]] = {
     "chatglm": ChatGLMConfig,
     "dbrx": DbrxConfig,
@@ -47,11 +52,15 @@ _CONFIG_REGISTRY: Dict[str, Type[PretrainedConfig]] = {
     "ultravox": UltravoxConfig,
     "eagle": EAGLEConfig,
     "qwen2_vl": Qwen2VLConfig,
+    **_CONFIG_REGISTRY_OVERRIDE_HF
 }
 
 for name, cls in _CONFIG_REGISTRY.items():
     with contextlib.suppress(ValueError):
-        AutoConfig.register(name, cls)
+        if name in _CONFIG_REGISTRY_OVERRIDE_HF:
+            AutoConfig.register(name, cls, exist_ok=True)
+        else:
+            AutoConfig.register(name, cls)
 
 
 class ConfigFormat(str, enum.Enum):

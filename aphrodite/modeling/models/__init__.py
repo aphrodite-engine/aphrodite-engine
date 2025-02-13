@@ -101,6 +101,8 @@ _MULTIMODAL_MODELS = {
     "PixtralForConditionalGeneration": ("pixtral",
                                         "PixtralForConditionalGeneration"),
     "MolmoForCausalLM": ("molmo", "MolmoForCausalLM"),
+    "MllamaForConditionalGeneration": ("mllama",
+                                       "MllamaForConditionalGeneration"),
 }
 
 _CONDITIONAL_GENERATION_MODELS = {
