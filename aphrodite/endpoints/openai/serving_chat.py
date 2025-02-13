@@ -33,6 +33,7 @@ from aphrodite.endpoints.openai.serving_engine import (BaseModelPath,
                                                        PromptAdapterPath,
                                                        TextTokensPrompt)
 from aphrodite.endpoints.openai.tool_parsers import (Hermes2ProToolParser,
+                                                     Llama3JsonToolParser,
                                                      MistralToolParser,
                                                      ToolParser)
 from aphrodite.engine.protocol import EngineClient
@@ -82,6 +83,8 @@ class OpenAIServingChat(OpenAIServing):
                 self.tool_parser = MistralToolParser
             elif tool_parser == "hermes":
                 self.tool_parser = Hermes2ProToolParser
+            elif tool_parser == "llama3_json":
+                self.tool_parser = Llama3JsonToolParser
             else:
                 raise TypeError("Error: --enable-auto-tool-choice requires "
                                 "--tool-call-parser")
