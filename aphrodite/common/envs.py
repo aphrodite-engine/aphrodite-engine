@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     APHRODITE_USE_TRITON_AWQ: bool = False
     APHRODITE_DYNAMO_USE_CUSTOM_DISPATCHER: bool = False
     APHRODITE_USE_TRITON_BACKEND: bool = False
+    APHRODITE_FORCE_P2P: bool = False
 
 
 def get_default_cache_root():
@@ -406,6 +407,11 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # If set, Aphrodite will use Triton implementations of layernorm.
     "APHRODITE_USE_TRITON_BACKEND":
     lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_BACKEND", "0"))),
+
+    # If set, Aphrodite will skip the P2P check and assume that P2P is
+    # available. Used for custom all-reduce kernels.
+    "APHRODITE_FORCE_P2P":
+    lambda: bool(int(os.getenv("APHRODITE_FORCE_P2P", "0"))),
 }
 
 # end-env-vars-definition

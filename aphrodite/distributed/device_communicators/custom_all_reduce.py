@@ -24,6 +24,11 @@ except Exception:
 
 
 def _can_p2p(rank: int, world_size: int) -> bool:
+    if envs.APHRODITE_FORCE_P2P:
+        logger.warning(
+            "Forcing Custom All-Reduce. This may fail if P2P is not supported."
+        )
+        return True
     for i in range(world_size):
         if i == rank:
             continue
