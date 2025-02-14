@@ -23,6 +23,8 @@ from aphrodite.modeling.sampling_metadata import (SamplingMetadata,
                                                   SamplingTensors,
                                                   SequenceGroupToSample)
 from aphrodite.spec_decode.metrics import SpecDecodeWorkerMetrics
+from aphrodite.plugins.sampling_registry import SamplingPluginRegistry
+from aphrodite.common.sampler_ids import SamplerID
 
 # (num_token_ids, num_parent_ids) per sequence group.
 SampleResultType = List[Tuple[List[int], List[int]]]
@@ -146,25 +148,6 @@ _TEMPERATURE_MINIMUM = 2e-5
 APHRODITE_USE_SAMPLING_KERNELS = envs.APHRODITE_USE_SAMPLING_KERNELS
 
 
-class SamplerID(IntEnum):
-    # Mirror these in aphrodite/common/sampling_params.py
-    # Values out of order to keep backwards compatibility
-    # with Koboldcpp values
-    DRY = 7
-    PENALTIES = 6
-    NO_REPEAT_NGRAM = 8
-    TEMPERATURE = 5
-    TOP_NSIGMA = 9
-    TOP_P_TOP_K = 0
-    TOP_A = 1
-    MIN_P = 2
-    TFS = 3
-    ETA_CUTOFF = 10
-    EPSILON_CUTOFF = 11
-    TYPICAL_P = 4
-    QUADRATIC = 12
-    XTC = 13
-
 
 class Sampler(nn.Module):
     """Samples the next tokens from the model's outputs.
@@ -189,6 +172,36 @@ class Sampler(nn.Module):
 
     def __init__(self):
         super().__init__()
+        self.plugins = {
+            name: plugin_cls() 
+            for name, plugin_cls in
+            SamplingPluginRegistry.get_all_plugins().items()
+        }
+        
+        self._default_order = [
+            SamplerID.DRY,
+            SamplerID.PENALTIES,
+            SamplerID.NO_REPEAT_NGRAM,
+            SamplerID.TEMPERATURE,
+            SamplerID.TOP_NSIGMA,
+            SamplerID.TOP_P_TOP_K,
+            SamplerID.TOP_A,
+            SamplerID.MIN_P,
+            SamplerID.TFS,
+            SamplerID.ETA_CUTOFF,
+            SamplerID.EPSILON_CUTOFF,
+            SamplerID.TYPICAL_P,
+            SamplerID.QUADRATIC,
+            SamplerID.XTC,
+        ]
+        
+        for plugin in self.plugins.values():
+            metadata = plugin.get_metadata()
+            if metadata.default_position is not None:
+                self._default_order.insert(metadata.default_position,
+                                           metadata.sampler_id)
+            else:
+                self._default_order.append(metadata.sampler_id)
 
         # Whether or not the SamplerOutput should have on-device tensors
         # containing the sampled token ids and probabilities. This is used by
@@ -312,25 +325,8 @@ class Sampler(nn.Module):
                     "and ignoring temperature_last.")
 
         if sampler_order is None:
-            default_order = [
-                SamplerID.DRY,
-                SamplerID.PENALTIES,
-                SamplerID.NO_REPEAT_NGRAM,
-                SamplerID.TEMPERATURE,
-                SamplerID.TOP_NSIGMA,
-                SamplerID.TOP_P_TOP_K,
-                SamplerID.TOP_A,
-                SamplerID.MIN_P,
-                SamplerID.TFS,
-                SamplerID.ETA_CUTOFF,
-                SamplerID.EPSILON_CUTOFF,
-                SamplerID.TYPICAL_P,
-                SamplerID.QUADRATIC,
-                SamplerID.XTC,
-            ]
-
             sampler_order = []
-            for sampler_id in default_order:
+            for sampler_id in self._default_order:
                 if sampler_id == SamplerID.TEMPERATURE and do_temp_last:
                     continue
                 sampler_order.append(sampler_id)
@@ -361,6 +357,13 @@ class Sampler(nn.Module):
             if do_nsigmas: enabled_samplers.append("TOP_NSIGMA")
             if do_dry: enabled_samplers.append("DRY")
             if do_skew: enabled_samplers.append("SKEW")
+
+            for plugin in self.plugins.values():
+                sampling_params = sampling_metadata.seq_groups[
+                    0].sampling_params
+                if plugin.should_apply(sampling_params.plugin_params):
+                    enabled_samplers.append(plugin.get_metadata().sampler_id.name)
+
             logger.debug(f"Enabled samplers: {', '.join(enabled_samplers)}")
 
         for sampler_id in sampler_order:
@@ -525,6 +528,23 @@ class Sampler(nn.Module):
                     logits, sampling_tensors.xtc_thresholds,
                     sampling_tensors.xtc_probabilities)
 
+            for plugin in self.plugins.values():
+                metadata = plugin.get_metadata()
+                sampling_params = sampling_metadata.seq_groups[
+                    0].sampling_params
+                if (metadata.sampler_id == metadata.sampler_id and 
+                    plugin.should_apply(sampling_params.plugin_params)):
+                    if (sampling_metadata.seq_groups and
+                        sampling_metadata.seq_groups[0].is_prompt):
+                        logger.debug(
+                            f"Applying {metadata.sampler_id.name} "
+                            "plugin sampler")
+                    
+                    plugin_tensors = {
+                        name: sampling_tensors.get_plugin_tensor(name)
+                        for name in metadata.tensor_names
+                    }
+                    logits = plugin.apply_sampling(logits, plugin_tensors)
 
         # We use float32 for probabilities and log probabilities.
         # Compute the probabilities.
