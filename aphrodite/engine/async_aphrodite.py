@@ -409,11 +409,15 @@ class _AsyncAphrodite(AphroditeEngine):
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
     ) -> None:
         """Async version of :meth:`add_request`."""
         if lora_request is not None and not self.lora_config:
             raise ValueError(f"Got lora_request {lora_request} but LoRA is "
                              "not enabled!")
+        if priority != 0 and not self.scheduler_config.policy == "priority":
+            raise ValueError(f"Got priority {priority} but "
+                             "Priority scheduling is not enabled.")
         if arrival_time is None:
             arrival_time = time.time()
 
@@ -432,6 +436,7 @@ class _AsyncAphrodite(AphroditeEngine):
             arrival_time=arrival_time,
             lora_request=lora_request,
             prompt_adapter_request=prompt_adapter_request,
+            priority=priority,
         )
 
     async def check_health_async(self) -> None:
@@ -777,7 +782,8 @@ class AsyncAphrodite:
         params: Union[SamplingParams, PoolingParams],
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
     ) -> AsyncGenerator[Union[RequestOutput, EmbeddingRequestOutput], None]:
         if not self.is_running:
             if self.start_engine_loop:
@@ -789,6 +795,11 @@ class AsyncAphrodite:
                     "error that caused the background loop to stop "
                     "(AsyncEngineDeadError).")
 
+        if (priority != 0
+                and not self.engine.scheduler_config.policy == "priority"):
+            raise ValueError(f"Got priority {priority} but "
+                             "Priority scheduling is not enabled.")
+
         stream = self._request_tracker.add_request(
             request_id,
             verbose=self.log_requests,
@@ -796,7 +807,8 @@ class AsyncAphrodite:
             params=params,
             arrival_time=arrival_time or time.time(),
             lora_request=lora_request,
-            prompt_adapter_request=prompt_adapter_request)
+            prompt_adapter_request=prompt_adapter_request,
+            priority=priority)
 
         return stream.generator()
 
@@ -806,7 +818,8 @@ class AsyncAphrodite:
         sampling_params: SamplingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
     ) -> AsyncGenerator[RequestOutput, None]:
         """Generate outputs for a request.
 
@@ -822,6 +835,8 @@ class AsyncAphrodite:
             lora_request: LoRA request to use for generation, if any.
             prompt_adapter_request: Prompt Adapter request to use
                                             for generation, if any.
+            priority: The priority of the request.
+                Only applicable with priority scheduling.
 
         Yields:
             The output `RequestOutput` objects from the AphroditeEngine
@@ -877,6 +892,7 @@ class AsyncAphrodite:
                 sampling_params,
                 lora_request=lora_request,
                 prompt_adapter_request=prompt_adapter_request,
+                priority=priority,
         ):
             yield AphroditeEngine.validate_output(output, RequestOutput)
 
