@@ -102,6 +102,7 @@ def run_aphrodite(
         enable_chunked_prefill=enable_chunked_prefill,
         max_num_batched_tokens=max_num_batched_tokens,
         disable_log_stats=False,
+        scheduling_policy="priority",
     )
 
     # Add the requests to the engine.
