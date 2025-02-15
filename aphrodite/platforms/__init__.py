@@ -9,6 +9,13 @@ try:
 except ImportError:
     libtpu = None
 
+is_xpu = False
+try:
+    if hasattr(torch, 'xpu') and torch.xpu.is_available():
+        is_xpu = True
+except Exception:
+    pass
+
 is_cpu = False
 try:
     from importlib.metadata import version
@@ -30,6 +37,9 @@ elif torch.version.hip is not None:
 elif is_cpu:
     from .cpu import CpuPlatform
     current_platform = CpuPlatform()
+elif is_xpu:
+    from .xpu import XPUPlatform
+    current_platform = XPUPlatform()
 else:
     current_platform = UnspecifiedPlatform()
 

@@ -1,5 +1,5 @@
 import enum
-from typing import Optional, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 import torch
 
@@ -8,8 +8,25 @@ class PlatformEnum(enum.Enum):
     CUDA = enum.auto()
     ROCM = enum.auto()
     TPU = enum.auto()
+    XPU = enum.auto()
     CPU = enum.auto()
     UNSPECIFIED = enum.auto()
+
+
+class DeviceCapability(NamedTuple):
+    major: int
+    minor: int
+
+    def as_version_str(self) -> str:
+        return f"{self.major}.{self.minor}"
+
+    def to_int(self) -> int:
+        """
+        Express device capability as an integer ``<major><minor>``.
+        It is assumed that the minor version is always a single digit.
+        """
+        assert 0 <= self.minor < 10
+        return self.major * 10 + self.minor
 
 
 class Platform:
@@ -26,6 +43,9 @@ class Platform:
 
     def is_cpu(self) -> bool:
         return self._enum == PlatformEnum.CPU
+
+    def is_xpu(self) -> bool:
+        return self._enum == PlatformEnum.XPU
 
     @staticmethod
     def get_device_capability(device_id: int = 0) -> Optional[Tuple[int, int]]:
