@@ -2,8 +2,8 @@ import argparse
 import dataclasses
 import json
 from dataclasses import dataclass
-from typing import (TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple,
-                    Type, Union)
+from typing import (TYPE_CHECKING, Any, Dict, List, Literal, Mapping, Optional,
+                    Tuple, Type, Union)
 
 from loguru import logger
 
@@ -163,6 +163,7 @@ class EngineArgs:
     disable_async_output_proc: bool = False
     override_neuron_config: Optional[Dict[str, Any]] = None
     mm_processor_kwargs: Optional[Dict[str, Any]] = None
+    scheduling_policy: Literal["fcfs", "priority"] = "fcfs"
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -901,6 +902,15 @@ class EngineArgs:
             },
             default=None,
             help="override or set neuron device configuration.")
+        parser.add_argument(
+            '--scheduling-policy',
+            choices=['fcfs', 'priority'],
+            default="fcfs",
+            help='The scheduling policy to use. "fcfs" (first come first served'
+            ', i.e. requests are handled in order of arrival; default) '
+            'or "priority" (requests are handled based on given '
+            'priority (lower value means earlier handling) and time of '
+            'arrival deciding any ties).')
 
         return parser
 
@@ -1120,6 +1130,7 @@ class EngineArgs:
             send_delta_data=(APHRODITE_USE_RAY_SPMD_WORKER and
                              parallel_config.use_ray),
             single_user_mode=self.single_user_mode,
+            policy=self.scheduling_policy,
         )
 
         if not HAS_TRITON and self.enable_lora:

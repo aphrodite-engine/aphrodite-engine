@@ -129,6 +129,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     request_id_item,
                     lora_request=lora_request,
                     prompt_adapter_request=prompt_adapter_request,
+                    priority=request.priority,
                 )
 
                 generators.append(generator)

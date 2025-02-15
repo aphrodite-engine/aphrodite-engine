@@ -370,7 +370,8 @@ class MQAphroditeEngineClient:
         sampling_params: SamplingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
     ) -> AsyncGenerator[RequestOutput, None]:
         """Generate outputs for a request.
         Generate outputs for a request. This method is a coroutine. It adds the
@@ -385,9 +386,13 @@ class MQAphroditeEngineClient:
             lora_request: LoRA request to use for generation, if any.
             prompt_adapter_request: Prompt Adapter request to use
                                             for generation, if any.
+            priority: Priority of the request (lower means earlier handling). 
+                Any priority other than 0 will lead to an error if the 
+                scheduling policy is not "priority".
         """
         return self._process_request(prompt, sampling_params, request_id,
-                                     lora_request, prompt_adapter_request)
+                                     lora_request, prompt_adapter_request,
+                                     priority)
 
     def encode(
         self,
@@ -395,6 +400,7 @@ class MQAphroditeEngineClient:
         pooling_params: PoolingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        priority: int = 0,
     ) -> AsyncGenerator[EmbeddingRequestOutput, None]:
         """Generate outputs for a request from an embedding model.
         Generate outputs for a request. This method is a coroutine. It adds the
@@ -412,7 +418,7 @@ class MQAphroditeEngineClient:
             for the request.
         """
         return self._process_request(prompt, pooling_params, request_id,
-                                     lora_request)
+                                     lora_request, priority)
 
     async def _process_request(
         self,
@@ -420,7 +426,8 @@ class MQAphroditeEngineClient:
         params: Union[SamplingParams, PoolingParams],
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
     ) -> Union[AsyncGenerator[RequestOutput, None], AsyncGenerator[
             EmbeddingRequestOutput, None]]:
         """Send an RPCGenerateRequest to the RPCServer and stream responses."""
@@ -452,7 +459,8 @@ class MQAphroditeEngineClient:
                     params=params,
                     request_id=request_id,
                     lora_request=lora_request,
-                    prompt_adapter_request=prompt_adapter_request))
+                    prompt_adapter_request=prompt_adapter_request,
+                    priority=priority))
 
             # 3) Send the RPCGenerateRequest to the MQAphroditeEngine.
             parts = (request_bytes,

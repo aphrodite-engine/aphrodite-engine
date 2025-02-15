@@ -902,6 +902,7 @@ class AsyncAphrodite:
         pooling_params: PoolingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        priority: int = 0,
     ) -> AsyncGenerator[EmbeddingRequestOutput, None]:
         """Generate outputs for a request from an embedding model.
 
@@ -916,6 +917,8 @@ class AsyncAphrodite:
             pooling_params: The pooling parameters of the request.
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
+            priority: The priority of the request.
+                Only applicable with priority scheduling.
 
         Yields:
             The output `EmbeddingRequestOutput` objects from the AphroditeEngine
@@ -967,6 +970,7 @@ class AsyncAphrodite:
                 prompt,
                 pooling_params,
                 lora_request=lora_request,
+                priority=priority,
         ):
             yield AphroditeEngine.validate_output(output,
                                                   EmbeddingRequestOutput)

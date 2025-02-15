@@ -225,6 +225,7 @@ class OpenAIServingChat(OpenAIServing):
                 request_id,
                 lora_request=lora_request,
                 prompt_adapter_request=prompt_adapter_request,
+                priority=request.priority,
             )
         except ValueError as e:
             # TODO: Use an aphrodite-specific Validation Error
