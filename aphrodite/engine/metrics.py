@@ -19,6 +19,8 @@ else:
 if TYPE_CHECKING:
     from aphrodite.spec_decode.metrics import SpecDecodeWorkerMetrics
 
+import queue
+import threading
 
 prometheus_client.disable_created_metrics()
 
@@ -330,6 +332,24 @@ class LoggingStatLogger(StatLoggerBase):
     def __init__(self, local_interval: float):
         super().__init__(local_interval)
         self.request_level_metrics = envs.APHRODITE_REQUEST_LEVEL_METRICS
+        if self.request_level_metrics:
+            self.log_queue: queue.Queue = queue.Queue()
+            self.log_thread = threading.Thread(target=self._log_worker,
+                                               daemon=True)
+            self.log_thread.start()
+
+    def _log_worker(self):
+        """Worker thread that processes log messages from the queue."""
+        while True:
+            try:
+                log_msg = self.log_queue.get()
+                if log_msg is None:
+                    break
+                logger.info(log_msg)
+            except Exception as e:
+                logger.error(f"Error in logging thread: {e}")
+            finally:
+                self.log_queue.task_done()
 
     def log(self, stats: Stats) -> None:
         """Called by LLMEngine to log stats."""
@@ -383,7 +403,6 @@ class LoggingStatLogger(StatLoggerBase):
                 self.spec_decode_metrics = None
         else:
             # Request-level logging
-            # Only log if we have finished requests
             if stats.time_e2e_requests:
                 for i, e2e_time in enumerate(stats.time_e2e_requests):
                     if not stats.time_to_first_tokens_iter or i >= len(
@@ -397,7 +416,6 @@ class LoggingStatLogger(StatLoggerBase):
 
                     prompt_tokens = stats.num_prompt_tokens_requests[i]
                     gen_tokens = stats.num_generation_tokens_requests[i]
-
                     time_to_first = stats.time_to_first_tokens_iter[i]
                     prompt_throughput = prompt_tokens / time_to_first
                     gen_time = e2e_time - time_to_first
@@ -405,7 +423,7 @@ class LoggingStatLogger(StatLoggerBase):
                                       gen_time > 0 and gen_tokens > 0
                                       else 0)
 
-                    logger.info(
+                    log_msg = (
                         f"Request {stats.request_ids[i]} completed - "
                         f"E2E time: {e2e_time:.2f}s, "
                         f"TTFT: {time_to_first:.2f}s, "
@@ -414,6 +432,7 @@ class LoggingStatLogger(StatLoggerBase):
                         f"Decode: {gen_tokens} tokens "
                         f"({gen_throughput:.1f} tokens/s)"
                     )
+                    self.log_queue.put(log_msg)
 
     def _format_spec_decode_metrics_str(
             self, metrics: "SpecDecodeWorkerMetrics") -> str:
@@ -428,6 +447,12 @@ class LoggingStatLogger(StatLoggerBase):
 
     def info(self, type: str, obj: SupportsMetricsInfo) -> None:
         raise NotImplementedError
+
+    def __del__(self):
+        """Cleanup the logging thread when the logger is destroyed."""
+        if self.request_level_metrics:
+            self.log_queue.put(None)
+            self.log_thread.join(timeout=1.0)
 
 
 class PrometheusStatLogger(StatLoggerBase):
