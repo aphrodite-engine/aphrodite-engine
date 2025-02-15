@@ -291,7 +291,15 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
 
   if(NOT MSVC)
     # Include CUTLASS only when needed
+    #
+    # Use FetchContent for C++ dependencies that are compiled as part of vLLM's build process.
+    # Configure it to place files in vllm/.deps, in order to play nicely with sccache.
+    #
     include(FetchContent)
+    get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
+    file(MAKE_DIRECTORY "${FETCHCONTENT_BASE_DIR}")
+    set(FETCHCONTENT_BASE_DIR "${PROJECT_ROOT_DIR}/.deps")
+    message(STATUS "FetchContent base directory: ${FETCHCONTENT_BASE_DIR}")
     SET(CUTLASS_ENABLE_HEADERS_ONLY=ON)
     # Set CUTLASS_REVISION manually -- its revision detection doesn't work in this case.
     set(CUTLASS_REVISION "v3.5.1" CACHE STRING "CUTLASS revision to use")
