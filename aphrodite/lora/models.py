@@ -27,7 +27,9 @@ from aphrodite.lora.punica import PunicaWrapper
 from aphrodite.lora.utils import (from_layer, from_layer_logits_processor,
                                   parse_fine_tuned_lora_name,
                                   replace_submodule)
-from aphrodite.modeling.models.interfaces import SupportsLoRA
+from aphrodite.modeling.models.interfaces import (SupportsLoRA,
+                                                  supports_multimodal)
+from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.models.utils import PPMissingLayer
 
 _GLOBAL_LORA_ID = 0
@@ -360,6 +362,8 @@ class LoRAModelManager(AdapterModelManager):
                 self.supported_lora_modules.append("rotary_emb")
             self.packed_modules_mapping = copy.deepcopy(
                 self.model.packed_modules_mapping)
+        # Used to indicate whether the model is a multimodal model
+        self.supports_mm: bool = supports_multimodal(self.model)
         self.packed_modules: Dict[str, List[str]] = {}
         self.modules: Dict[str, "BaseLayerWithLoRA"] = {}
         # Dict instead of a Set for compatibility with LRUCache.
@@ -465,6 +469,14 @@ class LoRAModelManager(AdapterModelManager):
                 continue
             if not self._match_target_modules(module_name):
                 continue
+            # A temporary approach for multimodal models to support LoRA
+            # TODO: Remove this restriction
+            if self._filter_unsupported_mm_module(module_name):
+                logger.warning(
+                    "Regarding multimodal models, Aphrodite currently only "
+                    "supports adding LoRA to language model, "
+                    f"{module_name} will be ignored.")
+                continue
             parts = module_name.split(".")[-1]
             packed_moduled_lst = self.packed_modules_mapping.get(parts, [])
             new_module = replace_submodule(
@@ -488,6 +500,14 @@ class LoRAModelManager(AdapterModelManager):
                                                 module, self.lora_slots,
                                                 self.lora_config,
                                                 self.model.config))
+            # In some models, especially multimodal ones, layers with the same
+            # name may have different types, such as nn.Linear and
+            # ReplicatedLinear. The nn.Linear layers cannot be replaced with
+            # LoRA layers, leading to assertion error. The following check
+            # aims to prevent this error
+            if self.supports_mm and not isinstance(new_module,
+                                                   BaseLayerWithLoRA):
+                continue
             self.register_module(module_name, new_module)
             self._register_packed_modules(module_name)
             # All lora layers share the same punica_wrapper based on reference.
@@ -506,9 +526,10 @@ class LoRAModelManager(AdapterModelManager):
         """Create zero-initialized LoRAModel for warmup."""
         model = LoRAModel(lora_id, rank, {}, scaling_factor)
         for module_name, module in self.model.named_modules():
-            if not self._match_target_modules(module_name) or not isinstance(
-                    module, BaseLayerWithLoRA) or isinstance(
-                        module, LinearScalingRotaryEmbeddingWithLora):
+            if (not self._match_target_modules(module_name)
+                    or not isinstance(module, BaseLayerWithLoRA)
+                    or isinstance(module, LinearScalingRotaryEmbeddingWithLora)
+                    or self._filter_unsupported_mm_module(module_name)):
                 continue
             parts = module_name.split(".")
             if module_name not in self.packed_modules:
@@ -568,6 +589,19 @@ class LoRAModelManager(AdapterModelManager):
                 r".*\.{target_module}$".format(target_module=target_module),
                 module_name) or target_module == module_name
             for target_module in self.supported_lora_modules)
+
+    def _filter_unsupported_mm_module(self, module_name: str) -> bool:
+        """
+        Regarding multimodal models, Aphrodite currently only supports adding
+        LoRA to language model. LoRA for other modules, such as the vision
+        tower, will be filtered out.
+        """
+        if self.supports_mm:
+            prefix = module_name.split(".")[0]
+            module_mapping: MultiModelKeys = self.model.get_mm_mapping()
+            return (prefix in module_mapping.connector
+                    or prefix in module_mapping.tower_model)
+        return False
 
     def _register_packed_modules(self, module_full_name: str) -> None:
         parts = module_full_name.split(".")
