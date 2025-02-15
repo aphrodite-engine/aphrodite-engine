@@ -7,6 +7,8 @@ set(APHRODITE_TARGET_DEVICE "cuda" CACHE STRING "Target device backend for Aphro
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Target device: ${APHRODITE_TARGET_DEVICE}")
+message(STATUS "C++ compiler launcher: ${CMAKE_CXX_COMPILER_LAUNCHER}")
+message(STATUS "CUDA compiler launcher: ${CMAKE_CUDA_COMPILER_LAUNCHER}")
 
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/utils.cmake)
 
@@ -292,8 +294,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   if(NOT MSVC)
     # Include CUTLASS only when needed
     #
-    # Use FetchContent for C++ dependencies that are compiled as part of vLLM's build process.
-    # Configure it to place files in vllm/.deps, in order to play nicely with sccache.
+    # Use FetchContent for C++ dependencies that are compiled as part of Aphrodite's build process.
+    # Configure it to place files in aphrodite-engine/.deps, in order to play nicely with sccache.
     #
     include(FetchContent)
     get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
