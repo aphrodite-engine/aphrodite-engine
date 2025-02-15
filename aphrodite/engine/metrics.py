@@ -6,6 +6,7 @@ import numpy as np
 import prometheus_client
 from loguru import logger
 
+import aphrodite.common.envs as envs
 from aphrodite.engine.metrics_types import (StatLoggerBase, Stats,
                                             SupportsMetricsInfo)
 from aphrodite.executor.ray_utils import ray
@@ -33,7 +34,7 @@ class Metrics:
     See https://prometheus.github.io/client_python/multiprocess/ for more
     details on limitations.
     """
-    labelname_finish_reason = "finished_reason"
+    labelname_finish_reason = "finish_reason"
     _gauge_cls = prometheus_client.Gauge
     _counter_cls = prometheus_client.Counter
     _histogram_cls = prometheus_client.Histogram
@@ -41,6 +42,9 @@ class Metrics:
     def __init__(self, labelnames: List[str], max_model_len: int):
         # Unregister any existing Aphrodite collectors (for CI/CD)
         self._unregister_aphrodite_metrics()
+
+        # Add finish_reason to labelnames for request-level metrics
+        request_labelnames = labelnames + [self.labelname_finish_reason]
 
         # System stats
         #   Scheduler State
@@ -118,20 +122,20 @@ class Metrics:
         self.histogram_e2e_time_request = self._histogram_cls(
             name="aphrodite:e2e_request_latency_seconds",
             documentation="Histogram of end to end request latency in seconds.",
-            labelnames=labelnames,
+            labelnames=request_labelnames,
             buckets=[1.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0])
         #   Metadata
         self.histogram_num_prompt_tokens_request = self._histogram_cls(
             name="aphrodite:request_prompt_tokens",
             documentation="Number of prefill tokens processed.",
-            labelnames=labelnames,
+            labelnames=request_labelnames,
             buckets=build_1_2_5_buckets(max_model_len),
         )
         self.histogram_num_generation_tokens_request = \
             self._histogram_cls(
                 name="aphrodite:request_generation_tokens",
                 documentation="Number of generation tokens processed.",
-                labelnames=labelnames,
+                labelnames=request_labelnames,
                 buckets=build_1_2_5_buckets(max_model_len),
             )
         self.histogram_best_of_request = self._histogram_cls(
@@ -323,59 +327,93 @@ def get_throughput(tracked_stats: List[int], now: float,
 class LoggingStatLogger(StatLoggerBase):
     """LoggingStatLogger is used in LLMEngine to log to Stdout."""
 
+    def __init__(self, local_interval: float):
+        super().__init__(local_interval)
+        self.request_level_metrics = envs.APHRODITE_REQUEST_LEVEL_METRICS
+
     def log(self, stats: Stats) -> None:
-        """Called by LLMEngine.
-           Logs to Stdout every self.local_interval seconds."""
+        """Called by LLMEngine to log stats."""
+        if not self.request_level_metrics:
+            # Existing interval-based logging logic
+            self.num_prompt_tokens.append(stats.num_prompt_tokens_iter)
+            self.num_generation_tokens.append(stats.num_generation_tokens_iter)
 
-        # Save tracked stats for token counters.
-        self.num_prompt_tokens.append(stats.num_prompt_tokens_iter)
-        self.num_generation_tokens.append(stats.num_generation_tokens_iter)
+            self.maybe_update_spec_decode_metrics(stats)
 
-        # Update spec decode metrics
-        self.maybe_update_spec_decode_metrics(stats)
+            if local_interval_elapsed(stats.now, self.last_local_log,
+                                      self.local_interval):
+                # Compute summary metrics for tracked stats (and log them
+                # to promethus if applicable).
+                prompt_throughput = get_throughput(self.num_prompt_tokens,
+                                                   now=stats.now,
+                                                   last_log=self.last_local_log)
+                generation_throughput = get_throughput(
+                    self.num_generation_tokens,
+                    now=stats.now,
+                    last_log=self.last_local_log)
 
-        # Log locally every local_interval seconds.
-        if local_interval_elapsed(stats.now, self.last_local_log,
-                                  self.local_interval):
-            # Compute summary metrics for tracked stats (and log them
-            # to promethus if applicable).
-            prompt_throughput = get_throughput(self.num_prompt_tokens,
-                                               now=stats.now,
-                                               last_log=self.last_local_log)
-            generation_throughput = get_throughput(
-                self.num_generation_tokens,
-                now=stats.now,
-                last_log=self.last_local_log)
-
-            # Log to stdout.
-            logger.info(
-                f"Avg prompt throughput: {prompt_throughput:.1f} tokens/s, "
-                f"Avg generation throughput: {generation_throughput:.1f} "
-                "tokens/s, "
-                f"Running: {stats.num_running_sys} reqs, "
-                f"Swapped: {stats.num_swapped_sys} reqs, "
-                f"Pending: {stats.num_waiting_sys} reqs, "
-                f"GPU KV cache usage: {stats.gpu_cache_usage_sys * 100:.1f}%, "
-                f"CPU KV cache usage: {stats.cpu_cache_usage_sys * 100:.1f}%."
-            )
-
-            if (stats.cpu_prefix_cache_hit_rate >= 0
-                    or stats.gpu_prefix_cache_hit_rate >= 0):
+                # Log to stdout.
                 logger.info(
-                    "Prefix cache hit rate: "
-                    f"GPU: {stats.gpu_prefix_cache_hit_rate * 100:.2f}%, "
-                    f"CPU: {stats.cpu_prefix_cache_hit_rate * 100:.2f}%")
+                    f"Avg prompt throughput: {prompt_throughput:.1f} tokens/s, "
+                    f"Avg generation throughput: {generation_throughput:.1f} "
+                    "tokens/s, "
+                    f"Running: {stats.num_running_sys} reqs, "
+                    f"Swapped: {stats.num_swapped_sys} reqs, "
+                    f"Pending: {stats.num_waiting_sys} reqs, "
+                    f"GPU KV cache usage: {stats.gpu_cache_usage_sys * 100:.1f}%, "  # noqa: E501
+                    f"CPU KV cache usage: {stats.cpu_cache_usage_sys * 100:.1f}%."  # noqa: E501
+                )
 
-            if self.spec_decode_metrics is not None:
-                logger.info(
-                    self._format_spec_decode_metrics_str(
-                        self.spec_decode_metrics))
+                if (stats.cpu_prefix_cache_hit_rate >= 0
+                        or stats.gpu_prefix_cache_hit_rate >= 0):
+                    logger.info(
+                        "Prefix cache hit rate: "
+                        f"GPU: {stats.gpu_prefix_cache_hit_rate * 100:.2f}%, "
+                        f"CPU: {stats.cpu_prefix_cache_hit_rate * 100:.2f}%")
 
-            # Reset tracked stats for next interval.
-            self.num_prompt_tokens = []
-            self.num_generation_tokens = []
-            self.last_local_log = stats.now
-            self.spec_decode_metrics = None
+                if self.spec_decode_metrics is not None:
+                    logger.info(
+                        self._format_spec_decode_metrics_str(
+                            self.spec_decode_metrics))
+
+                # Reset tracked stats for next interval.
+                self.num_prompt_tokens = []
+                self.num_generation_tokens = []
+                self.last_local_log = stats.now
+                self.spec_decode_metrics = None
+        else:
+            # Request-level logging
+            # Only log if we have finished requests
+            if stats.time_e2e_requests:
+                for i, e2e_time in enumerate(stats.time_e2e_requests):
+                    if not stats.time_to_first_tokens_iter or i >= len(
+                        stats.time_to_first_tokens_iter):
+                        logger.error(
+                            "Missing time_to_first_token metric for completed "
+                            "request. This should never happen and indicates "
+                            "a bug in the metrics collection."
+                        )
+                        continue
+
+                    prompt_tokens = stats.num_prompt_tokens_requests[i]
+                    gen_tokens = stats.num_generation_tokens_requests[i]
+
+                    time_to_first = stats.time_to_first_tokens_iter[i]
+                    prompt_throughput = prompt_tokens / time_to_first
+                    gen_time = e2e_time - time_to_first
+                    gen_throughput = (gen_tokens / gen_time if
+                                      gen_time > 0 and gen_tokens > 0
+                                      else 0)
+
+                    logger.info(
+                        f"Request {stats.request_ids[i]} completed - "
+                        f"E2E time: {e2e_time:.2f}s, "
+                        f"TTFT: {time_to_first:.2f}s, "
+                        f"Prefill: {prompt_tokens} tokens "
+                        f"({prompt_throughput:.1f} tokens/s), "
+                        f"Decode: {gen_tokens} tokens "
+                        f"({gen_throughput:.1f} tokens/s)"
+                    )
 
     def _format_spec_decode_metrics_str(
             self, metrics: "SpecDecodeWorkerMetrics") -> str:
@@ -419,11 +457,14 @@ class PrometheusStatLogger(StatLoggerBase):
         for label, count in data.items():
             counter.labels(**{**self.labels, label_key: label}).inc(count)
 
-    def _log_histogram(self, histogram, data: Union[List[int],
-                                                    List[float]]) -> None:
+    def _log_histogram(self, histogram, data: Union[List[int], List[float]],
+                      extra_labels: Optional[Dict[str, str]] = None) -> None:
         # Convenience function for logging list to histogram.
         for datum in data:
-            histogram.labels(**self.labels).observe(datum)
+            labels = self.labels.copy()  # Create a copy of base labels
+            if extra_labels:
+                labels.update(extra_labels)  # Add any extra labels
+            histogram.labels(**labels).observe(datum)
 
     def _log_prometheus(self, stats: Stats) -> None:
         # System state data
@@ -455,23 +496,32 @@ class PrometheusStatLogger(StatLoggerBase):
                             stats.time_per_output_tokens_iter)
 
         # Request level data
-        # Latency
-        self._log_histogram(self.metrics.histogram_e2e_time_request,
-                            stats.time_e2e_requests)
-        # Metadata
-        finished_reason_counter = CollectionsCounter(
-            stats.finished_reason_requests)
-        self._log_counter_labels(self.metrics.counter_request_success,
-                                 finished_reason_counter,
-                                 Metrics.labelname_finish_reason)
-        self._log_histogram(self.metrics.histogram_num_prompt_tokens_request,
-                            stats.num_prompt_tokens_requests)
-        self._log_histogram(
-            self.metrics.histogram_num_generation_tokens_request,
-            stats.num_generation_tokens_requests)
+        # Latency and metadata
+        if stats.time_e2e_requests:
+            for i, e2e_time in enumerate(stats.time_e2e_requests):
+                # Create request-specific labels
+                request_labels = {
+                    Metrics.labelname_finish_reason: stats.finished_reason_requests[i]  # noqa: E501
+                }
+
+                # Log request-specific metrics with the finish_reason label
+                self._log_histogram(
+                    self.metrics.histogram_e2e_time_request,
+                    [e2e_time],
+                    request_labels)
+                self._log_histogram(
+                    self.metrics.histogram_num_prompt_tokens_request,
+                    [stats.num_prompt_tokens_requests[i]],
+                    request_labels)
+                self._log_histogram(
+                    self.metrics.histogram_num_generation_tokens_request,
+                    [stats.num_generation_tokens_requests[i]],
+                    request_labels)
+
+        # Log non-request-specific metrics normally
         self._log_histogram(self.metrics.histogram_n_request, stats.n_requests)
         self._log_histogram(self.metrics.histogram_best_of_request,
-                            stats.best_of_requests)
+                          stats.best_of_requests)
 
     def _log_prometheus_interval(self, prompt_throughput: float,
                                  generation_throughput: float) -> None:
@@ -487,55 +537,71 @@ class PrometheusStatLogger(StatLoggerBase):
             **self.labels).set(generation_throughput)
 
     def log(self, stats: Stats):
-        """Logs to prometheus and tracked stats every iteration."""
-        # Log to prometheus.
+        """Logs to prometheus."""
+        # Always log to prometheus metrics regardless of mode
         self._log_prometheus(stats)
 
-        # Save tracked stats for token counters.
-        self.num_prompt_tokens.append(stats.num_prompt_tokens_iter)
-        self.num_generation_tokens.append(stats.num_generation_tokens_iter)
+        if not self.request_level_metrics:
+            # Existing interval-based logging
+            self.num_prompt_tokens.append(stats.num_prompt_tokens_iter)
+            self.num_generation_tokens.append(stats.num_generation_tokens_iter)
 
-        # Update spec decode metrics
-        self.maybe_update_spec_decode_metrics(stats)
+            self.maybe_update_spec_decode_metrics(stats)
 
-        # Log locally every local_interval seconds.
-        if local_interval_elapsed(stats.now, self.last_local_log,
-                                  self.local_interval):
-            # Compute summary metrics for tracked stats (and log them
-            # to promethus if applicable).
-            prompt_throughput = get_throughput(self.num_prompt_tokens,
-                                               now=stats.now,
-                                               last_log=self.last_local_log)
-            generation_throughput = get_throughput(
-                self.num_generation_tokens,
-                now=stats.now,
-                last_log=self.last_local_log)
+            if local_interval_elapsed(stats.now, self.last_local_log,
+                                      self.local_interval):
+                # Compute summary metrics for tracked stats (and log them
+                # to promethus if applicable).
+                prompt_throughput = get_throughput(self.num_prompt_tokens,
+                                                   now=stats.now,
+                                                   last_log=self.last_local_log)
+                generation_throughput = get_throughput(
+                    self.num_generation_tokens,
+                    now=stats.now,
+                    last_log=self.last_local_log)
 
-            self._log_prometheus_interval(
-                prompt_throughput=prompt_throughput,
-                generation_throughput=generation_throughput)
+                self._log_prometheus_interval(
+                    prompt_throughput=prompt_throughput,
+                    generation_throughput=generation_throughput)
 
-            if self.spec_decode_metrics is not None:
-                self._log_gauge(
-                    self.metrics.gauge_spec_decode_draft_acceptance_rate,
-                    self.spec_decode_metrics.draft_acceptance_rate)
-                self._log_gauge(self.metrics.gauge_spec_decode_efficiency,
-                                self.spec_decode_metrics.system_efficiency)
-                self._log_counter(
-                    self.metrics.counter_spec_decode_num_accepted_tokens,
-                    self.spec_decode_metrics.accepted_tokens)
-                self._log_counter(
-                    self.metrics.counter_spec_decode_num_draft_tokens,
-                    self.spec_decode_metrics.draft_tokens)
-                self._log_counter(
-                    self.metrics.counter_spec_decode_num_emitted_tokens,
-                    self.spec_decode_metrics.emitted_tokens)
+                if self.spec_decode_metrics is not None:
+                    self._log_gauge(
+                        self.metrics.gauge_spec_decode_draft_acceptance_rate,
+                        self.spec_decode_metrics.draft_acceptance_rate)
+                    self._log_gauge(self.metrics.gauge_spec_decode_efficiency,
+                                    self.spec_decode_metrics.system_efficiency)
+                    self._log_counter(
+                        self.metrics.counter_spec_decode_num_accepted_tokens,
+                        self.spec_decode_metrics.accepted_tokens)
+                    self._log_counter(
+                        self.metrics.counter_spec_decode_num_draft_tokens,
+                        self.spec_decode_metrics.draft_tokens)
+                    self._log_counter(
+                        self.metrics.counter_spec_decode_num_emitted_tokens,
+                        self.spec_decode_metrics.emitted_tokens)
 
-            # Reset tracked stats for next interval.
-            self.num_prompt_tokens = []
-            self.num_generation_tokens = []
-            self.last_local_log = stats.now
-            self.spec_decode_metrics = None
+                # Reset tracked stats for next interval.
+                self.num_prompt_tokens = []
+                self.num_generation_tokens = []
+                self.last_local_log = stats.now
+                self.spec_decode_metrics = None
+        else:
+            # For request-level metrics, we don't need to track intervals
+            # Just update the prometheus metrics directly
+            if stats.time_e2e_requests:
+                for i, e2e_time in enumerate(stats.time_e2e_requests):
+                    # Create request-specific labels
+                    request_labels = {
+                        **self.labels,
+                        "finish_reason": stats.finished_reason_requests[i]
+                    }
+
+                    # Log request-specific metrics
+                    self.metrics.histogram_e2e_time_request.labels(**request_labels).observe(e2e_time)
+                    self.metrics.histogram_num_prompt_tokens_request.labels(**request_labels).observe(
+                        stats.num_prompt_tokens_requests[i])
+                    self.metrics.histogram_num_generation_tokens_request.labels(**request_labels).observe(
+                        stats.num_generation_tokens_requests[i])
 
     def info(self, type: str, obj: SupportsMetricsInfo) -> None:
         # Info type metrics are syntactic sugar for a gauge permanently set to 1

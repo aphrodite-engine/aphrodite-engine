@@ -386,8 +386,8 @@ class MQAphroditeEngineClient:
             lora_request: LoRA request to use for generation, if any.
             prompt_adapter_request: Prompt Adapter request to use
                                             for generation, if any.
-            priority: Priority of the request (lower means earlier handling). 
-                Any priority other than 0 will lead to an error if the 
+            priority: Priority of the request (lower means earlier handling).
+                Any priority other than 0 will lead to an error if the
                 scheduling policy is not "priority".
         """
         return self._process_request(prompt, sampling_params, request_id,

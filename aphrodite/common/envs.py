@@ -63,6 +63,7 @@ if TYPE_CHECKING:
     APHRODITE_USE_TRITON_BACKEND: bool = False
     APHRODITE_FORCE_P2P: bool = False
     APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT: bool = False
+    APHRODITE_REQUEST_LEVEL_METRICS: bool = False
 
 
 def get_default_cache_root():
@@ -418,6 +419,11 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     "APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT":
     lambda: bool(int(
         os.getenv("APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT", "0"))),
+
+    # If set, Aphrodite will use request-level metrics instead of
+    # interval-based metrics.
+    "APHRODITE_REQUEST_LEVEL_METRICS":
+    lambda: bool(int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "0"))),
 }
 
 # end-env-vars-definition

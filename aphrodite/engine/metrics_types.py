@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Protocol
 
+import aphrodite.common.envs as envs
 from aphrodite.spec_decode.metrics import SpecDecodeWorkerMetrics
 
 
@@ -46,17 +47,24 @@ class Stats:
     best_of_requests: List[int]
     n_requests: List[int]
     finished_reason_requests: List[str]
+    request_ids: List[str]
     spec_decode_metrics: Optional["SpecDecodeWorkerMetrics"] = None
+
+
 class SupportsMetricsInfo(Protocol):
     def metrics_info(self) -> Dict[str, str]:
         ...
+
+
 class StatLoggerBase(ABC):
     """Base class for StatLogger."""
     def __init__(self, local_interval: float) -> None:
-        # Tracked stats over current local logging interval.
-        self.num_prompt_tokens: List[int] = []
-        self.num_generation_tokens: List[int] = []
-        self.last_local_log = time.time()
+        self.request_level_metrics = envs.APHRODITE_REQUEST_LEVEL_METRICS
+        # Only initialize these if not using request-level metrics
+        if not self.request_level_metrics:
+            self.num_prompt_tokens: List[int] = []
+            self.num_generation_tokens: List[int] = []
+            self.last_local_log = time.time()
         self.local_interval = local_interval
         self.spec_decode_metrics: Optional["SpecDecodeWorkerMetrics"] = None
     @abstractmethod

@@ -869,7 +869,7 @@ class AphroditeEngine:
               prefill seq_group
             num_outputs: int - number of output tokens being processed for the
               given seq_group
-            is_first_step_output: Optional[bool] - 
+            is_first_step_output: Optional[bool] -
                 If multi-step is enabled and num_outputs is 1, this value
                 indicates if this outputs belongs to the first step in the
                 multi-step.
@@ -1456,12 +1456,13 @@ class AphroditeEngine:
         # Request stats
         #   Latency
         time_e2e_requests: List[float] = []
-        #   Metadata
+        time_to_first_tokens_iter: List[float] = []
         num_prompt_tokens_requests: List[int] = []
         num_generation_tokens_requests: List[int] = []
         best_of_requests: List[int] = []
         n_requests: List[int] = []
         finished_reason_requests: List[str] = []
+        request_ids: List[str] = []
 
         # NOTE: This loop assumes prefill seq_groups are before
         # decode seq_groups in scheduled_seq_groups.
@@ -1520,9 +1521,16 @@ class AphroditeEngine:
                 # which can only happen once.
                 if seq_group.is_finished():
                     # Latency timings
-                    time_e2e_requests.append(now -
-                                             seq_group.metrics.arrival_time)
+                    time_e2e_requests.append(
+                        now - seq_group.metrics.arrival_time)
+                    # Get time to first token for finished requests
+                    if seq_group.metrics.first_token_time is not None:
+                        ttft = (seq_group.metrics.first_token_time -
+                               seq_group.metrics.arrival_time)
+                        time_to_first_tokens_iter.append(ttft)
+
                     # Metadata
+                    request_ids.append(seq_group.request_id)
                     num_prompt_tokens_requests.append(
                         len(seq_group.prompt_token_ids))
                     num_generation_tokens_requests.extend([
@@ -1587,6 +1595,7 @@ class AphroditeEngine:
             best_of_requests=best_of_requests,
             n_requests=n_requests,
             finished_reason_requests=finished_reason_requests,
+            request_ids=request_ids,
         )
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
