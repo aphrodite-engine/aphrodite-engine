@@ -9,6 +9,7 @@ from loguru import logger
 from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.common.utils import (_run_task_with_lock,
                                     cuda_device_count_stateless,
+                                    cuda_is_initialized,
                                     get_aphrodite_instance_id,
                                     get_distributed_init_method, get_open_port,
                                     make_async, update_environment_variables)
@@ -120,6 +121,14 @@ class MultiprocessingGPUExecutor(DistributedGPUExecutor):
             update_environment_variables({
                 "CUDA_VISIBLE_DEVICES": (",".join(map(str, range(world_size))))
             })
+
+        if (cuda_is_initialized()
+                and os.environ.get(
+                    "APHRODITE_WORKER_MULTIPROC_METHOD") != "spawn"):
+            logger.warning("CUDA was previously initialized. We must use "
+                           "the `spawn` multiprocessing start method. Setting "
+                           "APHRODITE_WORKER_MULTIPROC_METHOD to 'spawn'.")
+            os.environ["APHRODITE_WORKER_MULTIPROC_METHOD"] = "spawn"
 
         cuda_device_count = cuda_device_count_stateless()
         # Use confusing message for more common TP-only case.

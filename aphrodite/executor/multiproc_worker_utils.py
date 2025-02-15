@@ -26,11 +26,6 @@ RESET = '\033[0;0m'
 
 JOIN_TIMEOUT_S = 2
 
-# Use dedicated multiprocess context for workers.
-# Both spawn and fork work
-mp_method = envs.APHRODITE_WORKER_MULTIPROC_METHOD
-mp = multiprocessing.get_context(mp_method)
-
 
 @dataclass
 class Result(Generic[T]):
@@ -78,7 +73,7 @@ class ResultHandler(threading.Thread):
 
     def __init__(self) -> None:
         super().__init__(daemon=True)
-        self.result_queue = mp.Queue()
+        self.result_queue = get_mp_context().Queue()
         self.tasks: Dict[uuid.UUID, Union[ResultFuture, asyncio.Future]] = {}
 
     def run(self):
@@ -148,10 +143,11 @@ class ProcessWorkerWrapper:
 
     def __init__(self, result_handler: ResultHandler,
                  worker_factory: Callable[[], Any]) -> None:
-        self._task_queue = mp.Queue()
+        self.mp = get_mp_context()
+        self._task_queue = self.mp.Queue()
         self.result_queue = result_handler.result_queue
         self.tasks = result_handler.tasks
-        self.process: BaseProcess = mp.Process(  # type: ignore[attr-defined]
+        self.process: BaseProcess = self.mp.Process(  # type: ignore[attr-defined]
             target=_run_worker_process,
             name="AphroditeWorkerProcess",
             kwargs=dict(
@@ -205,7 +201,7 @@ def _run_worker_process(
     """Worker process event loop"""
 
     # Add process-specific prefix to stdout and stderr
-    process_name = mp.current_process().name
+    process_name = get_mp_context().current_process().name
     pid = os.getpid()
     _add_prefix(sys.stdout, process_name, pid)
     _add_prefix(sys.stderr, process_name, pid)
@@ -269,3 +265,8 @@ def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
 
     file.start_new_line = True  # type: ignore[attr-defined]
     file.write = write_with_prefix  # type: ignore[method-assign]
+
+
+def get_mp_context():
+    mp_method = envs.APHRODITE_WORKER_MULTIPROC_METHOD
+    return multiprocessing.get_context(mp_method)

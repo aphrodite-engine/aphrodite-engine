@@ -8,6 +8,7 @@ from typing import Optional
 
 import uvloop
 import yaml
+from loguru import logger
 from openai import OpenAI
 
 from aphrodite.common.utils import FlexibleArgumentParser
@@ -153,7 +154,30 @@ def _add_query_options(
     return parser
 
 
+def env_setup():
+    # The safest multiprocessing method is `spawn`, as the default `fork` method
+    # is not compatible with some accelerators. The default method will be
+    # changing in future versions of Python, so we should use it explicitly when
+    # possible.
+    #
+    # We only set it here in the CLI entrypoint, because changing to `spawn`
+    # could break some existing code using Aphrodite as a library. `spawn` will
+    # cause unexpected behavior if the code is not protected by
+    # `if __name__ == "__main__":`.
+    #
+    # References:
+    # - https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
+    # - https://pytorch.org/docs/stable/notes/multiprocessing.html#cuda-in-multiprocessing
+    # - https://pytorch.org/docs/stable/multiprocessing.html#sharing-cuda-tensors
+    # - https://docs.habana.ai/en/latest/PyTorch/Getting_Started_with_PyTorch_and_Gaudi/Getting_Started_with_PyTorch.html?highlight=multiprocessing#torch-multiprocessing-for-dataloaders
+    if "APHRODITE_WORKER_MULTIPROC_METHOD" not in os.environ:
+        logger.debug("Setting APHRODITE_WORKER_MULTIPROC_METHOD to 'spawn'")
+        os.environ["APHRODITE_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+
 def main():
+    env_setup()
+
     parser = FlexibleArgumentParser(description="Aphrodite CLI")
     subparsers = parser.add_subparsers(required=True)
 
