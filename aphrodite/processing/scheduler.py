@@ -1,5 +1,4 @@
 import enum
-import os
 import random
 import time
 from collections import deque
@@ -9,6 +8,7 @@ from typing import (Callable, Deque, Dict, Iterable, List, Optional, Set,
 
 from loguru import logger
 
+import aphrodite.common.envs as envs
 from aphrodite.common.config import CacheConfig, LoRAConfig, SchedulerConfig
 from aphrodite.common.sequence import (Sequence, SequenceData, SequenceGroup,
                                        SequenceGroupMetadata,
@@ -21,8 +21,7 @@ from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 # Test-only. If configured, decode is preempted with
 # ARTIFICIAL_PREEMPTION_PROB% probability.
-ENABLE_ARTIFICIAL_PREEMPT = bool(
-    os.getenv("APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT", False))  # noqa
+ENABLE_ARTIFICIAL_PREEMPT = envs.APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT
 ARTIFICIAL_PREEMPTION_PROB = 0.5
 ARTIFICIAL_PREEMPTION_MAX_CNT = 500
 

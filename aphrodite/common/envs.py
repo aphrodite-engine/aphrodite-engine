@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     APHRODITE_DYNAMO_USE_CUSTOM_DISPATCHER: bool = False
     APHRODITE_USE_TRITON_BACKEND: bool = False
     APHRODITE_FORCE_P2P: bool = False
+    APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT: bool = False
 
 
 def get_default_cache_root():
@@ -412,6 +413,11 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # available. Used for custom all-reduce kernels.
     "APHRODITE_FORCE_P2P":
     lambda: bool(int(os.getenv("APHRODITE_FORCE_P2P", "0"))),
+
+    # If set, Aphrodite will use artificial preemption.
+    "APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT":
+    lambda: bool(int(
+        os.getenv("APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT", "0"))),
 }
 
 # end-env-vars-definition
