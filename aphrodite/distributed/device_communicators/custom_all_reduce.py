@@ -129,7 +129,8 @@ class CustomAllreduce:
         assert current_platform.is_cuda()
         from aphrodite.platforms.cuda import CudaPlatform
         cuda_platform: CudaPlatform = current_platform
-        full_nvlink = cuda_platform.is_full_nvlink(physical_device_ids)
+        full_nvlink = (cuda_platform.is_full_nvlink(physical_device_ids)
+                        or envs.APHRODITE_FORCE_P2P)
         if world_size > 2 and not full_nvlink:
             if rank == 0:
                 logger.warning(
