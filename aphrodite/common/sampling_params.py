@@ -1,5 +1,6 @@
 """Sampling parameters for text generation."""
 import copy
+from dataclasses import dataclass
 from enum import Enum, IntEnum
 from functools import cached_property
 from typing import Any, Callable, Dict, List, Optional, Set, Union
@@ -7,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 import msgspec
 import torch
 from loguru import logger
+from pydantic import BaseModel
 from typing_extensions import Annotated
 
 import aphrodite.common.envs as envs
@@ -23,6 +25,55 @@ class SamplingType(IntEnum):
     RANDOM = 1
     RANDOM_SEED = 2
     BEAM = 3
+
+
+# maybe make msgspec?
+@dataclass
+class GuidedDecodingParams:
+    """One of these fields will be used to build a logit processor."""
+    json: Optional[Union[str, Dict]] = None
+    regex: Optional[str] = None
+    choice: Optional[List[str]] = None
+    grammar: Optional[str] = None
+    json_object: Optional[bool] = None
+    """These are other options that can be set"""
+    backend: Optional[str] = None
+    whitespace_pattern: Optional[str] = None
+
+    @staticmethod
+    def from_optional(
+        json: Optional[Union[Dict, BaseModel, str]],
+        regex: Optional[str] = None,
+        choice: Optional[List[str]] = None,
+        grammar: Optional[str] = None,
+        json_object: Optional[bool] = None,
+        backend: Optional[str] = None,
+        whitespace_pattern: Optional[str] = None,
+    ) -> "GuidedDecodingParams":
+        # Extract json schemas from pydantic models
+        if isinstance(json, (BaseModel, type(BaseModel))):
+            json = json.model_json_schema()
+
+        return GuidedDecodingParams(
+            json=json,
+            regex=regex,
+            choice=choice,
+            grammar=grammar,
+            json_object=json_object,
+            backend=backend,
+            whitespace_pattern=whitespace_pattern,
+        )
+
+    def __post_init__(self):
+        """Validate that some fields are mutually exclusive."""
+        guide_count = sum([
+            self.json is not None, self.regex is not None, self.choice
+            is not None, self.grammar is not None, self.json_object is not None
+        ])
+        if guide_count > 1:
+            raise ValueError(
+                "You can only use one kind of guided decoding but multiple are "
+                f"specified: {self.__dict__}")
 
 
 class RequestOutputKind(Enum):
@@ -236,6 +287,13 @@ class SamplingParams(
             tokens. Defaults to 0 (disabled).
         sampler_priority: A list of integers to control the order in which
             samplers are applied.
+        guided_decoding: If provided, the engine will construct a guided
+            decoding logits processor from these parameters. Defaults to None.
+        logit_bias: If provided, the engine will construct a logits processor
+            that applies these logit biases. Defaults to None.
+        allowed_token_ids: If provided, the engine will construct a logits
+            processor which only retains scores for the given token ids.
+            Defaults to None.
     """
 
     n: int = 1
@@ -299,6 +357,11 @@ class SamplingParams(
     output_text_buffer_length: int = 0
     _all_stop_token_ids: Set[int] = msgspec.field(default_factory=set)
 
+    # Fields used to construct logits processors
+    guided_decoding: Optional[GuidedDecodingParams] = None
+    logit_bias: Optional[Dict[int, float]] = None
+    allowed_token_ids: Optional[List[int]] = None
+
     default_values = {
         "n": 1,
         "best_of": 1,
@@ -352,6 +415,9 @@ class SamplingParams(
         "skew": 0.0,
         "sampler_priority": [],
         "output_kind": RequestOutputKind.CUMULATIVE,
+        "guided_decoding": None,
+        "logit_bias": None,
+        "allowed_token_ids": None,
     }
 
     def __post_init__(self) -> None:
@@ -384,6 +450,13 @@ class SamplingParams(
         # until sequence is finished.
         if self.stop and not self.include_stop_str_in_output:
             self.output_text_buffer_length = max(len(s) for s in self.stop) - 1
+
+        if self.logit_bias is not None:
+            logit_bias = {
+                int(token): bias
+                for token, bias in self.logit_bias.items()
+            }
+            self.logit_bias = logit_bias
 
         self._verify_args()
         if self.use_beam_search:

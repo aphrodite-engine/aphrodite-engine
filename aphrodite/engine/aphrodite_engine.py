@@ -28,6 +28,7 @@ from aphrodite.common.sequence import (EmbeddingSequenceGroupOutput,
                                        SequenceGroup, SequenceGroupMetadata,
                                        SequenceStatus)
 from aphrodite.common.utils import Counter, Device, weak_bind
+from aphrodite.endpoints.openai.logits_processors import get_logits_processors
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.engine.metrics_types import StatLoggerBase, Stats
 from aphrodite.engine.output_processor.interfaces import (
@@ -41,6 +42,8 @@ from aphrodite.inputs import (INPUT_REGISTRY, EncoderDecoderLLMInputs,
                               InputRegistry, LLMInputs, PromptType)
 from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
+from aphrodite.modeling.guided_decoding import (
+    get_local_guided_decoding_logits_processor)
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.processing.scheduler import (ScheduledSequenceGroup, Scheduler,
                                             SchedulerOutputs)
@@ -729,6 +732,9 @@ class AphroditeEngine:
                     and sampling_params.prompt_logprobs > max_logprobs):
             raise ValueError(f"Cannot request more than "
                              f"{max_logprobs} logprobs.")
+
+        sampling_params = self._build_logits_processors(
+            sampling_params, lora_request)
 
         # Defensive copy of SamplingParams, which are used by the sampler,
         # this doesn't deep-copy LogitsProcessor objects
@@ -1672,6 +1678,51 @@ class AphroditeEngine:
             # TODO: Find out how many placeholder tokens are there so we can
             # check that chunked prefill does not truncate them
             # max_batch_len = self.scheduler_config.max_num_batched_tokens
+
+    def _build_logits_processors(
+        self,
+        sampling_params: SamplingParams,
+        lora_request: Optional[LoRARequest],
+    ) -> SamplingParams:
+        """Constructs logits processors based on the guided_decoding,
+        logits_bias, and allowed_token_ids fields in sampling_params. Deletes
+        those fields and adds the constructed logits processors to the
+        logits_processors field. Returns the modified sampling params."""
+        logits_processors = []
+        if (guided_decoding := sampling_params.guided_decoding) is not None:
+            logger.debug(
+                "Building guided decoding logits processor in "
+                f"AphroditeEngine. Params: {guided_decoding}"
+            )
+            tokenizer = self.get_tokenizer(lora_request=lora_request)
+            guided_decoding.backend = (
+                guided_decoding.backend
+                or self.decoding_config.guided_decoding_backend
+            )
+            processor = get_local_guided_decoding_logits_processor(
+                guided_params=guided_decoding, tokenizer=tokenizer
+            )
+            if processor:
+                logits_processors.append(processor)
+            # Unset so this doesn't get passed down to the model
+            sampling_params.guided_decoding = None
+        if sampling_params.logit_bias or sampling_params.allowed_token_ids:
+            tokenizer = self.get_tokenizer(lora_request=lora_request)
+            processors = get_logits_processors(
+                logit_bias=sampling_params.logit_bias,
+                allowed_token_ids=sampling_params.allowed_token_ids,
+                tokenizer=tokenizer,
+            )
+            logits_processors.extend(processors)
+            # Unset so these don't get passed down to the model
+            sampling_params.logit_bias = None
+            sampling_params.allowed_token_ids = None
+        if logits_processors:
+            if sampling_params.logits_processors is None:
+                sampling_params.logits_processors = logits_processors
+            else:
+                sampling_params.logits_processors.extend(logits_processors)
+        return sampling_params
 
 
 setup_logger()

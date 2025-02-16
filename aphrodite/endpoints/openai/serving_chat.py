@@ -182,8 +182,6 @@ class OpenAIServingChat(OpenAIServing):
         if raw_request:
             raw_request.state.request_metadata = request_metadata
         try:
-            guided_decode_logits_processor = (
-                await self._guided_decode_logits_processor(request, tokenizer))
 
             if isinstance(prompt, str):
                 prompt_inputs = self._tokenize_prompt_input(
@@ -204,7 +202,6 @@ class OpenAIServingChat(OpenAIServing):
 
             sampling_params = request.to_sampling_params(
                 tokenizer,
-                guided_decode_logits_processor,
                 default_max_tokens=self.max_model_len -
                 len(prompt_inputs["prompt_token_ids"]))
 

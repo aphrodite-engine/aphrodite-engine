@@ -17,6 +17,8 @@ from aphrodite.common.envs import APHRODITE_RPC_TIMEOUT
 from aphrodite.common.outputs import EmbeddingRequestOutput, RequestOutput
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.engine.args_tools import AsyncEngineArgs
+from aphrodite.engine.async_aphrodite import (
+    build_guided_decoding_logits_processor_async)
 from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,
                                               ENGINE_DEAD_ERROR, IPC_DATA_EXT,
                                               IPC_HEALTH_EXT, IPC_INPUT_EXT,
@@ -436,6 +438,18 @@ class MQAphroditeEngineClient:
         if self._errored_with is not None:
             raise ENGINE_DEAD_ERROR(self._errored_with)
 
+        # Constructing guided decoding logits processors is expensive, so we do
+        # it here to avoid contending with cpu resources and the GIL on the
+        # backend process.
+        if isinstance(params, SamplingParams) and \
+            params.guided_decoding is not None:
+            params = await \
+                build_guided_decoding_logits_processor_async(
+                    sampling_params=params,
+                    tokenizer=await self.get_tokenizer(lora_request),
+                    default_guided_backend=self.decoding_config.guided_decoding_backend
+                )
+    
         # 1) Create output queue for this requests.
         queue: asyncio.Queue[Union[RequestOutput,
                                    BaseException]] = asyncio.Queue()

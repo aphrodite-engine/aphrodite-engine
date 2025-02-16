@@ -11,8 +11,7 @@ from typing_extensions import Annotated
 
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import (LogitsProcessorFunc,
-                                              SamplingParams)
+from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import Logprob
 from aphrodite.endpoints.logger import RequestLogger
 # yapf conflicts with isort here
@@ -30,8 +29,6 @@ from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.parse import parse_and_batch_prompt
 from aphrodite.lora.request import LoRARequest
-from aphrodite.modeling.guided_decoding import (
-    get_guided_decoding_logits_processor)
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 
@@ -164,15 +161,6 @@ class OpenAIServing:
                                        status_code=status_code).model_dump()
         })
         return json_str
-
-    async def _guided_decode_logits_processor(
-            self, request: Union[ChatCompletionRequest, CompletionRequest],
-            tokenizer: AnyTokenizer) -> Optional[LogitsProcessorFunc]:
-        decoding_config = await self.engine_client.get_decoding_config()
-        guided_decoding_backend = request.guided_decoding_backend \
-            or decoding_config.guided_decoding_backend
-        return await get_guided_decoding_logits_processor(
-            guided_decoding_backend, request, tokenizer)
 
     async def _check_model(
         self,

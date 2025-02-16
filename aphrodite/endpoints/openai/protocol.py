@@ -12,13 +12,12 @@ from transformers import PreTrainedTokenizer
 from typing_extensions import Annotated, Required, TypedDict
 
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import (LogitsProcessorFunc,
+from aphrodite.common.sampling_params import (GuidedDecodingParams,
                                               RequestOutputKind,
                                               SamplingParams)
 from aphrodite.common.sequence import Logprob
 from aphrodite.common.utils import random_uuid
 from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
-from aphrodite.endpoints.openai.logits_processors import get_logits_processors
 
 
 class CustomChatCompletionMessageParam(TypedDict, total=False):
@@ -309,20 +308,23 @@ class ChatCompletionRequest(OpenAIBaseModel):
 
     def to_sampling_params(
             self, tokenizer: PreTrainedTokenizer,
-            guided_decode_logits_processor: Optional[LogitsProcessorFunc],
             default_max_tokens: int) -> SamplingParams:
         max_tokens = self.max_tokens
         if max_tokens is None:
             max_tokens = default_max_tokens
 
-        # We now allow logprobs being true without top_logrobs.
-        logits_processors = get_logits_processors(
-            logit_bias=self.logit_bias,
-            allowed_token_ids=None,
-            tokenizer=tokenizer,
-        )
-        if guided_decode_logits_processor:
-            logits_processors.append(guided_decode_logits_processor)
+        guided_json_object = None
+        if (self.response_format is not None
+                and self.response_format.type == "json_object"):
+            guided_json_object = True
+        guided_decoding = GuidedDecodingParams.from_optional(
+            json=self._get_guided_json_from_tool() or self.guided_json,
+            regex=self.guided_regex,
+            choice=self.guided_choice,
+            grammar=self.guided_grammar,
+            json_object=guided_json_object,
+            backend=self.guided_decoding_backend,
+            whitespace_pattern=self.guided_whitespace_pattern)
 
 
         dry_sequence_breaker_ids = []
@@ -364,7 +366,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
             spaces_between_special_tokens=self.spaces_between_special_tokens,
             include_stop_str_in_output=self.include_stop_str_in_output,
             length_penalty=self.length_penalty,
-            logits_processors=logits_processors,
             temperature_last=self.temperature_last,
             xtc_threshold=self.xtc_threshold,
             xtc_probability=self.xtc_probability,
@@ -384,8 +385,25 @@ class ChatCompletionRequest(OpenAIBaseModel):
             custom_token_bans=self.custom_token_bans,
             sampler_priority=self.sampler_priority,
             output_kind=RequestOutputKind.DELTA if self.stream \
-            else RequestOutputKind.FINAL_ONLY,
-        )
+                else RequestOutputKind.FINAL_ONLY,
+            guided_decoding=guided_decoding,
+            logit_bias=self.logit_bias)
+
+    def _get_guided_json_from_tool(
+            self) -> Optional[Union[str, dict, BaseModel]]:
+        # user has chosen to not use any tool
+        if self.tool_choice == "none" or self.tools is None:
+            return None
+        # user has chosen to use a named tool
+        if type(self.tool_choice) is ChatCompletionNamedToolChoiceParam:
+            tool_name = self.tool_choice.function.name
+            tools = {tool.function.name: tool.function for tool in self.tools}
+            if tool_name not in tools:
+                raise ValueError(
+                    f"Tool '{tool_name}' has not been passed in `tools`.")
+            tool = tools[tool_name]
+            return tool.parameters
+        return None
 
     @model_validator(mode='before')
     @classmethod
@@ -612,7 +630,6 @@ class CompletionRequest(OpenAIBaseModel):
 
     def to_sampling_params(
             self, tokenizer: PreTrainedTokenizer,
-            guided_decode_logits_processor: Optional[LogitsProcessorFunc],
             default_max_tokens: int) -> SamplingParams:
         max_tokens = self.max_tokens
         if max_tokens is None:
@@ -620,13 +637,19 @@ class CompletionRequest(OpenAIBaseModel):
 
         echo_without_generation = self.echo and self.max_tokens == 0
 
-        logits_processors = get_logits_processors(
-            logit_bias=self.logit_bias,
-            allowed_token_ids=self.allowed_token_ids,
-            tokenizer=tokenizer,
-        )
-        if guided_decode_logits_processor:
-            logits_processors.append(guided_decode_logits_processor)
+        guided_json_object = None
+        if (self.response_format is not None
+                and self.response_format.type == "json_object"):
+            guided_json_object = True
+
+        guided_decoding = GuidedDecodingParams.from_optional(
+            json=self.guided_json,
+            regex=self.guided_regex,
+            choice=self.guided_choice,
+            grammar=self.guided_grammar,
+            json_object=guided_json_object,
+            backend=self.guided_decoding_backend,
+            whitespace_pattern=self.guided_whitespace_pattern)
 
         dry_sequence_breaker_ids = []
         if self.dry_sequence_breakers:
@@ -668,7 +691,6 @@ class CompletionRequest(OpenAIBaseModel):
             spaces_between_special_tokens=(self.spaces_between_special_tokens),
             include_stop_str_in_output=self.include_stop_str_in_output,
             length_penalty=self.length_penalty,
-            logits_processors=logits_processors,
             truncate_prompt_tokens=self.truncate_prompt_tokens,
             temperature_last=self.temperature_last,
             xtc_threshold=self.xtc_threshold,
@@ -689,8 +711,25 @@ class CompletionRequest(OpenAIBaseModel):
             custom_token_bans=self.custom_token_bans,
             sampler_priority=self.sampler_priority,
             output_kind=RequestOutputKind.DELTA if self.stream \
-            else RequestOutputKind.FINAL_ONLY,
-        )
+                else RequestOutputKind.FINAL_ONLY,
+            guided_decoding=guided_decoding,
+            logit_bias=self.logit_bias)
+
+    def _get_guided_json_from_tool(
+            self) -> Optional[Union[str, dict, BaseModel]]:
+        # user has chosen to not use any tool
+        if self.tool_choice == "none" or self.tools is None:
+            return None
+        # user has chosen to use a named tool
+        if type(self.tool_choice) is ChatCompletionNamedToolChoiceParam:
+            tool_name = self.tool_choice.function.name
+            tools = {tool.function.name: tool.function for tool in self.tools}
+            if tool_name not in tools:
+                raise ValueError(
+                    f"Tool '{tool_name}' has not been passed in `tools`.")
+            tool = tools[tool_name]
+            return tool.parameters
+        return None
 
     @model_validator(mode="before")
     @classmethod
