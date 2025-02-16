@@ -122,7 +122,7 @@ class EngineArgs:
     swap_space: float = 4  # GiB
     cpu_offload_gb: float = 0  # GiB
     # Scheduler Options
-    use_v2_block_manager: bool = False
+    use_v2_block_manager: bool = True
     scheduler_delay_factor: float = 0.0
     enable_chunked_prefill: Optional[bool] = None
     guided_decoding_backend: str = 'lm-format-enforcer'
@@ -615,10 +615,12 @@ class EngineArgs:
             'loaded from CPU memory to GPU memory on the fly in each '
             'model forward pass.')
         # Scheduler Options
-        parser.add_argument("--use-v2-block-manager",
-                            action="store_true",
-                            help="Category: Scheduler Options\n"
-                            "Use the v2 block manager.")
+        parser.add_argument(
+            '--use-v2-block-manager',
+            default=EngineArgs.use_v2_block_manager,
+            action='store_true',
+            help='Use BlockSpaceMangerV2. By default this is set to True. '
+            'Set to False to use BlockSpaceManagerV1')
         parser.add_argument(
             "--scheduler-delay-factor",
             "-sdf",

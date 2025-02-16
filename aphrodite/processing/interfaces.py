@@ -4,6 +4,8 @@ from typing import List
 from typing import Sequence as GenericSequence
 from typing import Tuple
 
+from loguru import logger
+
 from aphrodite.common.sequence import Sequence, SequenceGroup
 from aphrodite.common.utils import Device
 
@@ -31,11 +33,13 @@ class BlockSpaceManager(ABC):
         if version == "v1":
             from aphrodite.processing.block_manager_v1 import (
                 BlockSpaceManagerV1)
+            logger.info("Using v1 BlockSpaceManager")
             return BlockSpaceManagerV1
 
         if version == "v2":
             from aphrodite.processing.block_manager_v2 import (
                 BlockSpaceManagerV2)
+            logger.info("Using v2 BlockSpaceManager")
             return BlockSpaceManagerV2
 
         if version == "placeholder":
