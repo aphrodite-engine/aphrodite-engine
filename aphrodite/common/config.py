@@ -91,22 +91,19 @@ class ConfigMixin:
 
             current_val = getattr(self, param_name)
 
-            # Skip served_model_name and tokenizer if they match model
             if (param_name in ('served_model_name', 'tokenizer') and
                 current_val == self.model):
                 continue
-
-            # Skip max_model_len since it comes from model config
             if param_name == 'max_model_len' and not isinstance(
                 self, ModelConfig):
                 continue
-
-            # Skip ignore_patterns if it matches the default
             if param_name == 'ignore_patterns' and current_val == [
                 "original/**/*"]:
                 continue
+            if param_name == 'cache_config' and isinstance(
+                self, SchedulerConfig):
+                continue
 
-            # Skip config objects that have no non-default values
             if isinstance(current_val, ConfigMixin):
                 nested_diff = current_val.get_config_diff()
                 if not nested_diff:
