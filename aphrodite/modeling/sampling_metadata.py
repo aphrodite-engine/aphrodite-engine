@@ -145,7 +145,7 @@ class SamplingMetadata:
     def prepare(
         seq_group_metadata_list: List[SequenceGroupMetadata],
         seq_lens: List[int],
-        query_lens: Optional[List[int]],
+        query_lens: List[int],
         device: str,
         pin_memory: bool,
         generators: Optional[Dict[str, torch.Generator]] = None,
@@ -191,7 +191,7 @@ class SamplingMetadata:
 def _prepare_seq_groups(
     seq_group_metadata_list: List[SequenceGroupMetadata],
     seq_lens: List[int],
-    query_lens: Optional[List[int]],
+    query_lens: List[int],
     device: str,
     generators: Optional[Dict[str, torch.Generator]] = None,
     cache: Optional[SamplingMetadataCache] = None,
@@ -280,7 +280,8 @@ def _prepare_seq_groups(
         else:
             # Decode
             prompt_logprob_len = 0
-            sample_len = len(seq_ids) if do_sample else 0
+            query_len = query_lens[i] if query_lens is not None else 1
+            sample_len = len(seq_ids) * query_len if do_sample else 0
 
             if sampling_params.seed is not None and generators is not None:
                 generator = generators.get(seq_group_metadata.request_id)
@@ -500,7 +501,7 @@ class SamplingTensors:
                 n_seqs += len(seq_group.prompt_logprob_indices)
 
             if seq_group.do_sample:
-                assert len(seq_group.sample_indices) == len(seq_ids)
+                assert len(seq_group.sample_indices) >= len(seq_ids)
                 n_seqs += len(seq_ids)
 
             temperatures += [temperature] * n_seqs

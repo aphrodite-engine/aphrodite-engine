@@ -5,6 +5,7 @@ from typing import Optional, Set
 import torch
 
 from aphrodite.common.sequence import ExecuteModelRequest
+from aphrodite.worker.worker_base import WorkerBase
 
 
 @dataclass
@@ -73,6 +74,12 @@ class SpeculativeProposer(ABC):
 
 
 class SpeculativeScorer(ABC):
+
+    def __init__(self, scorer_worker: WorkerBase, device: str,
+                 vocab_size: int):
+        self._scorer_worker = scorer_worker
+        self._device = device
+        self._vocab_size = vocab_size
 
     @abstractmethod
     def score_proposals(

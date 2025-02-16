@@ -870,12 +870,13 @@ class AphroditeEngine:
             prefill sequence scheduled for multi-step execution turn into
             decodes in the first step itself. This function accounts
             for that conversion.
+
             seq_group: SequenceGroup - A prefill seq_group
             seq_group_meta: SequenceGroupMetadata - Metadata of the given
               prefill seq_group
             num_outputs: int - number of output tokens being processed for the
               given seq_group
-            is_first_step_output: Optional[bool] -
+            is_first_step_output: Optional[bool] - 
                 If multi-step is enabled and num_outputs is 1, this value
                 indicates if this outputs belongs to the first step in the
                 multi-step.
@@ -884,14 +885,19 @@ class AphroditeEngine:
                 all the steps in multi-step are submitted in a single burst.
                 When multi-step is disabled, this value is always True.
             """
+
             assert seq_group_meta.is_prompt
+
             token_chunk_size = seq_group_meta.token_chunk_size
+
             if num_outputs == 1:
                 assert is_first_step_output is not None
+
                 if seq_group_meta.state.num_steps == 1:
                     assert is_first_step_output is True
                     seq_group.update_num_computed_tokens(token_chunk_size)
                     return
+
                 # multi-step prefill is only supported when multi-step is
                 # enabled with chunked prefill
                 assert self.scheduler_config.is_multi_step and \
@@ -900,7 +906,9 @@ class AphroditeEngine:
                     # This sequence is a prompt during the first step only.
                     seq_group.update_num_computed_tokens(token_chunk_size)
                 return
+
             assert is_first_step_output is None
+
             # multi-step prefill is only supported when multi-step is
             # enabled with chunked prefill. Outputs from all the steps are
             # submitted in a single burst.
@@ -953,6 +961,7 @@ class AphroditeEngine:
                     assert i not in skip  # Cannot be called twice
                     indices.append(i)
                     break
+
             # If the request_id was not found, then it means that
             # this is a new request that has no pending async
             # postprocessor
@@ -960,11 +969,13 @@ class AphroditeEngine:
                 return
         else:
             indices = range(len(seq_group_metadata_list))  # type: ignore
+
         finished_before: List[int] = []
         finished_now: List[int] = []
         for i in indices:
             if i in skip:
                 continue
+
             seq_group_meta = seq_group_metadata_list[i]
             scheduled_seq_group = scheduler_outputs.scheduled_seq_groups[i]
 
@@ -985,14 +996,25 @@ class AphroditeEngine:
                 update_prefill_num_computed_tokens(seq_group, seq_group_meta,
                                                    len(output),
                                                    is_first_step_output)
+            elif not is_async:
+                seq_group.update_num_computed_tokens(1)
+
 
             if self.model_config.embedding_mode:
                 self._process_sequence_group_outputs(seq_group, output)
             else:
                 self.output_processor.process_prompt_logprob(seq_group, output)
                 if seq_group_meta.do_sample:
-                    self.output_processor.process_outputs(
+                    output_token_num = self.output_processor.process_outputs(
                         seq_group, output, is_async)
+                    if self.speculative_config and output_token_num is not None:
+                        # We -1 here because we always
+                        # (w/o speculative decoding) add the number of
+                        # computed tokens by one in the decoding phase.
+                        # Therefore, we remove that one token that
+                        # is already added.
+                        seq_group.update_num_computed_tokens(output_token_num -
+                                                             1)
 
             if seq_group.is_finished():
                 finished_now.append(i)
@@ -1013,15 +1035,18 @@ class AphroditeEngine:
         if request_id:
             assert len(indices) == 1
             skip.append(indices[0])
+
             if (finished_now
                     and self.process_request_outputs_callback is not None):
                 self.process_request_outputs_callback(ctx.request_outputs)
                 ctx.request_outputs.clear()
             return
+
         # Free currently finished requests
         if finished_now:
             for scheduler in self.scheduler:
                 scheduler.free_finished_seq_groups()
+
         # For multi-step without streaming, don't create outputs each iteration
         if not is_last_step and not ctx.multi_step_stream_outputs:
             # Immediately process request outputs here (if callback is given)
@@ -1037,6 +1062,7 @@ class AphroditeEngine:
                 continue  # Avoids double processing
 
             scheduled_seq_group = scheduler_outputs.scheduled_seq_groups[i]
+
             seq_group = scheduled_seq_group.seq_group
             seq_group.maybe_set_first_token_time(now)
             request_output = RequestOutputFactory.create(
@@ -1051,6 +1077,7 @@ class AphroditeEngine:
                 self.process_request_outputs_callback(ctx.request_outputs)
                 ctx.request_outputs.clear()
             return
+
         for seq_group in scheduler_outputs.ignored_seq_groups:
             params = seq_group.sampling_params
             if params is not None and params.output_kind == (
@@ -1101,11 +1128,12 @@ class AphroditeEngine:
                     # decodes after the very first step. Therefore,
                     # we skip the update to the num_computed_tokens
                     # here.
-                    pass
+                    seq_group.update_num_computed_tokens(1)
                 else:
                     seq_group.update_num_computed_tokens(
                         seq_group_metadata.token_chunk_size)
-
+            else:
+                seq_group.update_num_computed_tokens(1)
             if seq_group_metadata.do_sample:
                 assert len(sequence_group_outputs.samples) == 1, (
                     "Async output processor expects a single sample"
@@ -1116,7 +1144,6 @@ class AphroditeEngine:
                 assert len(seq_group.seqs) == 1
                 seq = seq_group.seqs[0]
                 seq.append_token_id(sample.output_token, sample.logprobs)
-                seq_group.update_num_computed_tokens(1)
 
     def step(self) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
         """Performs one decoding iteration and returns newly generated results.

@@ -63,10 +63,10 @@ def test_correctly_calls_draft_model(k: int, batch_size: int,
 @pytest.mark.parametrize("acceptance_sampler_method",
                          ["rejection_sampler", "typical_acceptance_sampler"])
 @torch.inference_mode()
-def test_correctly_calls_target_model(k: int, batch_size: int,
-                                      acceptance_sampler_method: str):
+def test_batch_expansion_correctly_calls_target_model(
+        k: int, batch_size: int, acceptance_sampler_method: str):
     """Verify SpecDecodeWorker calls the target model with correct
-    inputs. Everything else is mocked out.
+    inputs with batch expansion. Everything else is mocked out.
     """
     draft_worker = mock_worker(cls=MultiStepWorker, use_spec=False)
     target_worker = mock_worker(use_spec=False)
@@ -82,7 +82,8 @@ def test_correctly_calls_target_model(k: int, batch_size: int,
         target_worker,
         mock_spec_decode_sampler(acceptance_sampler_method),
         disable_logprobs=False,
-        metrics_collector=metrics_collector)
+        metrics_collector=metrics_collector,
+        disable_mqa_scorer=True)
     worker.init_device()
 
     vocab_size = 32_000
@@ -230,9 +231,8 @@ def test_correctly_calls_spec_decode_sampler(k: int, batch_size: int,
 
     assert torch.equal(actual.bonus_token_ids,
                        target_token_ids.reshape(batch_size, k + 1)[:, -1:])
-    assert torch.equal(
-        actual.target_probs,
-        target_token_probs.reshape(batch_size, k + 1, -1)[:, :-1])
+    assert torch.equal(actual.target_with_bonus_probs,
+                       target_token_probs.reshape(batch_size, k + 1, -1))
     assert torch.equal(actual.draft_token_ids, proposal_token_ids)
     assert torch.equal(actual.draft_probs, proposal_probs)
 
@@ -776,11 +776,11 @@ def test_populate_seq_ids_with_bonus_tokens():
 @torch.inference_mode()
 def test_handle_finished_requests():
     """
-    Test to verify that finished request IDs are appropriately processed to
+    Test to verify that finished request IDs are appropriately processed to 
     update the internal state of the SpecDecodeWorker.
 
-    This test initializes the SpecDecodeWorker with mock data, marks certain
-    requests as finished, and ensures that the corresponding sequence IDs are
+    This test initializes the SpecDecodeWorker with mock data, marks certain 
+    requests as finished, and ensures that the corresponding sequence IDs are 
     correctly removed from the internal mappings.
     """
     batch_size = 32

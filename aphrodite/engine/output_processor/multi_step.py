@@ -1,5 +1,5 @@
 import functools
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from transformers import PreTrainedTokenizer
 
@@ -69,7 +69,7 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
     def process_outputs(self,
                         sequence_group: SequenceGroup,
                         outputs: List[SequenceGroupOutput],
-                        is_async: bool = False) -> None:
+                        is_async: bool = False) -> Optional[int]:
         """Append new tokens in the outputs to sequences in the sequence group.
 
         This only supports sequence groups of size 1. It supports greater than
@@ -83,6 +83,10 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
             tokens from the previous step. If this is true, then
             no tokens need to be appended since it is already done
             externally (before the next schedule() call)
+
+        Returns:
+            The number of tokens appended to the sequence. This is optional
+            because only speculative decode uses this return value.
         """
 
         # Sequences can be in RUNNING or FINISHED_ABORTED state
@@ -107,6 +111,7 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
             # was already appended, so we only need to do the rest of the
             # postprocessor: Detokenization + stopping logic
             self._process_decode_and_stop(seq, sequence_group.sampling_params)
+            return None
         else:
             # Standard multi-step case
             # Since there's only one sequence per sequence group,
@@ -121,8 +126,9 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
             ]
             assert valid_samples
 
-            self._process_seq_outputs(seq, valid_samples,
-                                      sequence_group.sampling_params)
+            return self._process_seq_outputs(seq, valid_samples,
+                                             sequence_group.sampling_params)
+
     def _process_decode_and_stop(self, seq: Sequence,
                                  sampling_params: SamplingParams) -> None:
         new_char_count = 0
@@ -138,7 +144,7 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
 
     def _process_seq_outputs(self, seq: Sequence,
                              valid_samples: List[SequenceOutput],
-                             sampling_params: SamplingParams) -> None:
+                             sampling_params: SamplingParams) -> int:
         output_token_ids = [sample.output_token for sample in valid_samples]
         output_logprobs = [sample.logprobs for sample in valid_samples]
 
@@ -146,7 +152,6 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
         remaining_tokens = sampling_params.max_tokens - (seq.get_output_len() +
                                                          len(output_token_ids))
         if remaining_tokens < 0:
-            valid_samples = valid_samples[:remaining_tokens]
             output_token_ids = output_token_ids[:remaining_tokens]
 
         # Truncate any tokens after EOS. This is required as spec decode
@@ -160,7 +165,6 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
             for i in range(len(output_token_ids)):
                 if output_token_ids[i] == eos_token_id:
                     output_token_ids = output_token_ids[:i + 1]
-                    valid_samples = valid_samples[:i + 1]
                     break
 
         # Incrementally append tokens to the sequence, as if we had only one new
@@ -171,7 +175,6 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
                 token_id=output_token_id,
                 logprobs=output_logprob,
             )
-            seq.data.update_num_computed_tokens(1)
 
             self._process_decode_and_stop(seq, sampling_params)
 
