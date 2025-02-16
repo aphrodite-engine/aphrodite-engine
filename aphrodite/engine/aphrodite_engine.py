@@ -1334,6 +1334,7 @@ class AphroditeEngine:
                 self.do_log_stats(scheduler_outputs, outputs)
         else:
             # Multi-step case
+            self.do_log_stats(scheduler_outputs, outputs)
             return ctx.request_outputs
 
         if not self.has_unfinished_requests():
