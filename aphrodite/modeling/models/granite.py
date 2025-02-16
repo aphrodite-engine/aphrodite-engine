@@ -418,9 +418,11 @@ class GraniteForCausalLM(nn.Module, SupportsLoRA):
             if config.tie_word_embeddings:
                 self.lm_head.weight = self.model.embed_tokens.weight
             logit_scale = getattr(config, "logit_scale", 1.0)
-            self.logits_processor = LogitsProcessor(
-                self.unpadded_vocab_size, config.vocab_size, logit_scale
-            )
+            if hasattr(config, "logits_scaling"):
+                logit_scale /= config.logits_scaling
+            self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
+                                                    config.vocab_size,
+                                                    scale=logit_scale)
             self.sampler = Sampler()
         else:
             self.lm_head = PPMissingLayer()
@@ -443,8 +445,6 @@ class GraniteForCausalLM(nn.Module, SupportsLoRA):
             sampling_metadata: SamplingMetadata) -> Optional[torch.Tensor]:
         logits = self.logits_processor(self.lm_head, hidden_states,
                                        sampling_metadata)
-        if logits is not None:
-            logits /= self.config.logits_scaling
         return logits
 
     def sample(
