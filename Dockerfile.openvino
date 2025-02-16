@@ -4,8 +4,9 @@
 FROM ubuntu:22.04 AS dev
 
 RUN apt-get update -y && \
-    apt-get install -y python3-pip git && \
-    apt-get install -y ffmpeg libsm6 libxext6 libgl1 
+    apt-get install -y \
+        git python3-pip \
+        ffmpeg libsm6 libxext6 libgl1
 WORKDIR /workspace
 
 # copy requirements
@@ -22,11 +23,7 @@ COPY setup.py /workspace/aphrodite-engine/
 # install build requirements
 RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" python3 -m pip install -r /workspace/aphrodite-engine/requirements-build.txt
 # build Aphrodite with OpenVINO backend
-RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu https://storage.openvinotoolkit.org/simple/wheels/pre-release" APHRODITE_TARGET_DEVICE="openvino" python3 -m pip install -e /workspace/aphrodite-engine/
-
-# temporary hack until the dependencies are upgraded
-RUN pip install 'transformers==4.43.0'
-RUN pip install triton
+RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" APHRODITE_TARGET_DEVICE="openvino" python3 -m pip install /workspace/aphrodite-engine/
 
 COPY examples/ /workspace/aphrodite-engine/examples
 COPY tests/benchmarks/ /workspace/aphrodite-engine/tests/benchmarks

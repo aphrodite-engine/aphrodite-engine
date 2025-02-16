@@ -39,6 +39,7 @@ class OpenVINOModelRunner:
 
     def __init__(
         self,
+        ov_core: ov.Core,
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         scheduler_config: SchedulerConfig,
@@ -52,6 +53,7 @@ class OpenVINOModelRunner:
         *args,
         **kwargs,
     ):
+        self.ov_core = ov_core
         self.model_config = model_config
         self.parallel_config = parallel_config
         self.scheduler_config = scheduler_config
@@ -74,6 +76,7 @@ class OpenVINOModelRunner:
             self.model_config.dtype,
             self.kv_cache_dtype,
             self.block_size,
+            self.model_config.is_attention_free(),
         )
 
         # Multi-modal data support
@@ -84,11 +87,10 @@ class OpenVINOModelRunner:
         self.model: nn.Module  # Set after init_Model
 
     def load_model(self) -> None:
-        self.model = get_model(
-            model_config=self.model_config,
-            device_config=self.device_config,
-            kv_cache_dtype=self.kv_cache_dtype,
-        )
+        self.model = get_model(model_config=self.model_config,
+                               device_config=self.device_config,
+                               kv_cache_dtype=self.kv_cache_dtype,
+                               ov_core=self.ov_core)
 
     def _prepare_model_input(
         self,

@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     APHRODITE_PP_LAYER_PARTITION: Optional[str] = None
     APHRODITE_CPU_KVCACHE_SPACE: int = 0
     APHRODITE_CPU_OMP_THREADS_BIND: str = ""
+    APHRODITE_OPENVINO_DEVICE: str = "CPU"
     APHRODITE_OPENVINO_KVCACHE_SPACE: int = 0
     APHRODITE_OPENVINO_CPU_KV_CACHE_PRECISION: Optional[str] = None
     APHRODITE_OPENVINO_ENABLE_QUANTIZED_WEIGHTS: bool = False
@@ -287,6 +288,11 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # "0,1,2", "0-31,33". CPU cores of different ranks are separated by '|'.
     "APHRODITE_CPU_OMP_THREADS_BIND":
     lambda: os.getenv("APHRODITE_CPU_OMP_THREADS_BIND", "all"),
+
+    # OpenVINO device selection
+    # default is CPU
+    "APHRODITE_OPENVINO_DEVICE":
+    lambda: os.getenv("APHRODITE_OPENVINO_DEVICE", "CPU").upper(),
 
     # OpenVINO key-value cache space
     # default is 4GB
