@@ -1,4 +1,5 @@
 import enum
+import inspect
 import json
 import os
 from dataclasses import dataclass, field, fields
@@ -75,7 +76,51 @@ _OPTIMIZED_QUANTS = [
 ]
 
 
-class ModelConfig:
+class ConfigMixin:
+    def get_config_diff(self) -> Dict[str, Any]:
+        """Returns a dictionary of config values that differ from defaults."""
+        sig = inspect.signature(self.__init__)
+        diff = {}
+
+        for param_name, param in sig.parameters.items():
+            if param_name == 'self':
+                continue
+
+            if not hasattr(self, param_name):
+                continue
+
+            current_val = getattr(self, param_name)
+
+            # Skip served_model_name and tokenizer if they match model
+            if (param_name in ('served_model_name', 'tokenizer') and
+                current_val == self.model):
+                continue
+
+            # Skip max_model_len since it comes from model config
+            if param_name == 'max_model_len' and not isinstance(
+                self, ModelConfig):
+                continue
+
+            # Skip ignore_patterns if it matches the default
+            if param_name == 'ignore_patterns' and current_val == [
+                "original/**/*"]:
+                continue
+
+            # Skip config objects that have no non-default values
+            if isinstance(current_val, ConfigMixin):
+                nested_diff = current_val.get_config_diff()
+                if not nested_diff:
+                    continue
+
+            if param.default is param.empty:  # noqa: SIM114
+                diff[param_name] = current_val
+            elif current_val != param.default and current_val is not None:
+                diff[param_name] = current_val
+
+        return diff
+
+
+class ModelConfig(ConfigMixin):
     """Configuration for the model.
 
     Args:
@@ -155,10 +200,10 @@ class ModelConfig:
         self,
         model: str,
         tokenizer: str,
-        tokenizer_mode: str,
-        trust_remote_code: bool,
         dtype: Union[str, torch.dtype],
-        seed: int,
+        tokenizer_mode: str = "auto",
+        trust_remote_code: bool = False,
+        seed: int = 0,
         revision: Optional[str] = None,
         code_revision: Optional[str] = None,
         rope_scaling: Optional[dict] = None,
@@ -171,10 +216,10 @@ class ModelConfig:
         quant_llm_fp_bits: Optional[int] = None,
         quant_llm_exp_bits: Optional[int] = None,
         quantization_param_path: Optional[str] = None,
-        enforce_eager: Optional[bool] = None,
+        enforce_eager: Optional[bool] = False,
         max_context_len_to_capture: Optional[int] = None,
         max_seq_len_to_capture: Optional[int] = None,
-        max_logprobs: int = 5,
+        max_logprobs: int = 10,
         disable_sliding_window: bool = False,
         skip_tokenizer_init: bool = False,
         served_model_name: Optional[Union[str, List[str]]] = None,
@@ -735,7 +780,7 @@ class ModelConfig:
         return self.multimodal_config is not None
 
 
-class CacheConfig:
+class CacheConfig(ConfigMixin):
     """Configuration for the KV cache.
 
     Args:
@@ -750,15 +795,15 @@ class CacheConfig:
 
     def __init__(
         self,
-        block_size: int,
-        gpu_memory_utilization: float,
         swap_space: float,
-        cache_dtype: str,
         is_attention_free: bool = False,
         num_gpu_blocks_override: Optional[int] = None,
         sliding_window: Optional[int] = None,
         enable_prefix_caching: bool = False,
         cpu_offload_gb: float = 0.0,
+        block_size: int = 16,
+        gpu_memory_utilization: float = 0.9,
+        cache_dtype: str = "auto",
     ) -> None:
         self.block_size = block_size
         self.gpu_memory_utilization = gpu_memory_utilization
@@ -910,7 +955,7 @@ class LoadFormat(str, enum.Enum):
 
 
 @dataclass
-class LoadConfig:
+class LoadConfig(ConfigMixin):
     """
         download_dir: Directory to download and load the weights, default to the
             default cache directory of huggingface.
@@ -935,7 +980,8 @@ class LoadConfig:
     download_dir: Optional[str] = None
     model_loader_extra_config: Optional[Union[str, dict]] = field(
         default_factory=dict)
-    ignore_patterns: Optional[Union[List[str], str]] = None
+    ignore_patterns: Optional[Union[List[str], str]] = field(
+        default_factory=lambda: ["original/**/*"])
 
     def __post_init__(self):
         model_loader_extra_config = self.model_loader_extra_config or {}
@@ -970,7 +1016,7 @@ class LoadConfig:
                 f"{rocm_supported_load_format}")
 
 
-class ParallelConfig:
+class ParallelConfig(ConfigMixin):
     """Configuration for the distributed execution.
 
     Args:
@@ -995,8 +1041,8 @@ class ParallelConfig:
 
     def __init__(
         self,
-        pipeline_parallel_size: int,
-        tensor_parallel_size: int,
+        pipeline_parallel_size: int = 1,
+        tensor_parallel_size: int = 1,
         worker_use_ray: Optional[bool] = None,
         max_parallel_loading_workers: Optional[int] = None,
         disable_custom_all_reduce: bool = False,
@@ -1091,7 +1137,7 @@ class ParallelConfig:
                              "run with Ray.")
 
 
-class SchedulerConfig:
+class SchedulerConfig(ConfigMixin):
     """Scheduler configuration.
 
     Args:
@@ -1129,9 +1175,9 @@ class SchedulerConfig:
     """
 
     def __init__(self,
-                 max_num_batched_tokens: Optional[int],
-                 max_num_seqs: int,
                  max_model_len: int,
+                 max_num_seqs: int = 256,
+                 max_num_batched_tokens: Optional[int] = 512,
                  cache_config: Optional["CacheConfig"] = None,
                  is_attention_free: bool = False,
                  use_v2_block_manager: bool = False,
@@ -1247,7 +1293,7 @@ class SchedulerConfig:
         return self.num_scheduler_steps > 1
 
 
-class DeviceConfig:
+class DeviceConfig(ConfigMixin):
 
     def __init__(self, device: str = "auto") -> None:
         if device == "auto":
@@ -1280,7 +1326,7 @@ class DeviceConfig:
             self.device = torch.device(self.device_type)
 
 
-class SpeculativeConfig:
+class SpeculativeConfig(ConfigMixin):
     """Configuration for speculative decoding.
 
     The configuration is currently specialized to draft-model speculative
@@ -1692,7 +1738,7 @@ class SpeculativeConfig:
 
 
 @dataclass
-class LoRAConfig:
+class LoRAConfig(ConfigMixin):
     max_lora_rank: int
     max_loras: int
     fully_sharded_loras: bool = False
@@ -1749,7 +1795,7 @@ class LoRAConfig:
 
 
 @dataclass
-class PromptAdapterConfig:
+class PromptAdapterConfig(ConfigMixin):
     max_prompt_adapters: int
     max_prompt_adapter_token: int
     max_cpu_prompt_adapters: Optional[int] = None
@@ -2002,7 +2048,7 @@ def get_served_model_name(model: str,
 
 
 @dataclass
-class DecodingConfig:
+class DecodingConfig(ConfigMixin):
     """Dataclass which contains the decoding strategy of the engine"""
 
     # Which guided decoding algo to use. 'outlines' / 'lm-format-enforcer'

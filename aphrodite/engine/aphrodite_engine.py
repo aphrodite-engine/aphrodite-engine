@@ -13,9 +13,9 @@ from loguru import logger
 from typing_extensions import TypeVar
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import (CacheConfig, DecodingConfig, DeviceConfig,
-                                     EngineConfig, LoadConfig, LoRAConfig,
-                                     ModelConfig, ParallelConfig,
+from aphrodite.common.config import (CacheConfig, ConfigMixin, DecodingConfig,
+                                     DeviceConfig, EngineConfig, LoadConfig,
+                                     LoRAConfig, ModelConfig, ParallelConfig,
                                      PromptAdapterConfig, SchedulerConfig,
                                      SpeculativeConfig)
 from aphrodite.common.logger import setup_logger
@@ -235,45 +235,57 @@ class AphroditeEngine:
         except ImportError:
             commit_id = False
 
-        config_dict = {
-            "Model": model_config.model,
-            "Speculative Config": speculative_config,
-            "DataType": model_config.dtype,
-            "Model Load Format": load_config.load_format,
-            "Tensor Parallel Size": parallel_config.tensor_parallel_size,
-            "Pipeline Parallel Size": parallel_config.pipeline_parallel_size,
-            "Disable Custom All-Reduce":
-            parallel_config.disable_custom_all_reduce,
-            "Quantization Format": model_config.quantization,
-            "Context Length": model_config.max_model_len,
-            "Enforce Eager Mode": model_config.enforce_eager,
-            "Prefix Caching": cache_config.enable_prefix_caching,
-            "KV Cache DataType": cache_config.cache_dtype,
-            "Device": device_config.device,
-            "Rope Scaling": model_config.rope_scaling,
-            "Guided Decoding Backend": decoding_config,
-            "Scheduler Steps": scheduler_config.num_scheduler_steps,
-            "Async Output Processing": model_config.use_async_output_proc,
+        # Get non-default configs from each config object
+        config_diffs = []
+        configs = {
+            "model": model_config,
+            "cache": cache_config,
+            "parallel": parallel_config,
+            "scheduler": scheduler_config,
+            "device": device_config,
+            "load": load_config,
+            "lora": lora_config,
+            "speculative": speculative_config,
+            "decoding": decoding_config,
+            "prompt_adapter": prompt_adapter_config,
         }
+
+        for prefix, config in configs.items():
+            if config is None:
+                continue
+            # Get non-default values using config's get_config_diff() method
+            diff = config.get_config_diff()
+            if diff:
+                for k, v in diff.items():
+                    if isinstance(v, ConfigMixin):
+                        nested_diff = v.get_config_diff()
+                        config_diffs.extend(
+                            f"{prefix}.{k}.{nk}={repr(nv)}" 
+                            for nk, nv in nested_diff.items()
+                        )
+                    else:
+                        config_diffs.append(
+                            f"{prefix}.{k}={repr(v) if not isinstance(v, ConfigMixin) else str(v)}"  # noqa: E501
+                        )
 
         logger.info("-" * 85)
         if not commit_id:
             logger.info(
                 f"Initializing Aphrodite Engine (v{APHRODITE_VERSION}) "
-                "with the following config:")
+                "with the following non-default config:")
         else:
-            logger.info(f"Initializing Aphrodite Engine (v{APHRODITE_VERSION} "
-                        f"commit {aphrodite.__short_commit__}) with the "
-                        "following config:")
+            logger.info(
+                f"Initializing Aphrodite Engine (v{APHRODITE_VERSION} "
+                f"commit {aphrodite.__short_commit__}) with the following "
+                "non-default config:")
 
-        for key, value in config_dict.items():
-            if value is not None and not ((key == "Model Load Format" or key ==\
-                                           "KV Cache DataType") and value == \
-                                            "auto"):
-                logger.info(f"{key} = {value!r}")
+        if config_diffs:
+            for config in sorted(config_diffs):
+                logger.info(config)
+        else:
+            logger.info("All configurations are using default values")
 
         logger.info("-" * 85)
-        # TODO: Print more configs in debug mode.
 
         from aphrodite.plugins import load_general_plugins
         load_general_plugins()
