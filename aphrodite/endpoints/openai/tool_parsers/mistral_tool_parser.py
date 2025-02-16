@@ -5,6 +5,7 @@ from string import ascii_letters, digits
 from typing import Dict, List, Sequence, Union
 
 import partial_json_parser
+from loguru import logger
 from partial_json_parser.core.options import Allow
 from pydantic import Field
 
@@ -19,7 +20,6 @@ from aphrodite.endpoints.openai.tool_parsers.utils import (
     extract_intermediate_diff)
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
                                                     MistralTokenizer)
-
 
 ALPHANUMERIC = ascii_letters + digits
 
