@@ -1180,7 +1180,7 @@ class SchedulerConfig(ConfigMixin):
                  max_num_batched_tokens: Optional[int] = 512,
                  cache_config: Optional["CacheConfig"] = None,
                  is_attention_free: bool = False,
-                 use_v2_block_manager: bool = False,
+                 use_v2_block_manager: bool = True,
                  num_lookahead_slots: int = 0,
                  delay_factor: float = 0.0,
                  enable_chunked_prefill: bool = False,

@@ -7,14 +7,15 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite._core_ext import ScalarType
-from aphrodite.common.utils import is_hip
+from aphrodite.common.utils import is_hip, print_warning_once
 from aphrodite.platforms import current_platform
 
 if not current_platform.is_tpu():
     try:
         import aphrodite._C
     except ImportError as e:
-        logger.warning(f"Failed to import from aphrodite._C with {e}")
+        if current_platform.is_cuda() or current_platform.is_rocm():
+            print_warning_once(f"Failed to import from aphrodite._C with {e}")
 
 if current_platform.is_rocm():
     import aphrodite._rocm_C  # noqa: F401
