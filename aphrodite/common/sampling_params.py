@@ -54,6 +54,15 @@ class GuidedDecodingParams:
         if isinstance(json, (BaseModel, type(BaseModel))):
             json = json.model_json_schema()
 
+        if isinstance(json, dict) and not json:
+            json = None
+        if isinstance(grammar, str) and not grammar:
+            grammar = None
+        if isinstance(regex, str) and not regex:
+            regex = None
+        if isinstance(choice, list) and not choice:
+            choice = None
+
         return GuidedDecodingParams(
             json=json,
             regex=regex,
@@ -729,7 +738,12 @@ class SamplingParams(
         repr_str = "SamplingParams("
         for param, default_value in self.default_values.items():
             current_value = getattr(self, param)
-            if current_value != default_value:
+            if ((param != "guided_decoding" or current_value is None or 
+                 not all(getattr(current_value, field) is None 
+                        for field in ["json", "regex", "choice", "grammar", 
+                                    "json_object", "backend",
+                                    "whitespace_pattern"]))
+                and current_value != default_value):
                 repr_str += f"{param}={current_value}, "
         repr_str = repr_str.rstrip(', ') + ")"
         return repr_str
