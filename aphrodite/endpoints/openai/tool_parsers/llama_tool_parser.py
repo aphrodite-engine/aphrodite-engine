@@ -9,12 +9,13 @@ from partial_json_parser.core.options import Allow
 from transformers import PreTrainedTokenizerBase
 
 from aphrodite.common.utils import random_uuid
-from aphrodite.endpoints.openai.protocol import (DeltaFunctionCall,
+from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
+                                                 DeltaFunctionCall,
                                                  DeltaMessage, DeltaToolCall,
                                                  ExtractedToolCallInformation,
                                                  FunctionCall, ToolCall)
 from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParser)
+    ToolParser, ToolParserManager)
 from aphrodite.endpoints.openai.tool_parsers.utils import find_common_prefix
 
 
@@ -39,6 +40,7 @@ def is_complete_json(input_str):
         return False
 
 
+@ToolParserManager.register_module("llama3_json")
 class Llama3JsonToolParser(ToolParser):
     """
     Tool call parser for Llama 3.1 models intended for use with the
@@ -63,8 +65,8 @@ class Llama3JsonToolParser(ToolParser):
         self.tool_call_regex = re.compile(r"\[{.*?}\]", re.DOTALL)
 
     def extract_tool_calls(
-        self, model_output: str
-    ) -> ExtractedToolCallInformation:
+            self, model_output: str,
+            request: ChatCompletionRequest) -> ExtractedToolCallInformation:
         """
         Extract the tool calls from a complete model response.
         """
@@ -127,6 +129,7 @@ class Llama3JsonToolParser(ToolParser):
         previous_token_ids: Sequence[int],
         current_token_ids: Sequence[int],
         delta_token_ids: Sequence[int],
+        request: ChatCompletionRequest,
     ) -> Union[DeltaMessage, None]:
         if not (
             current_text.startswith(self.bot_token)

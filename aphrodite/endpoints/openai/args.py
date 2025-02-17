@@ -11,6 +11,7 @@ import ssl
 from aphrodite.common.utils import FlexibleArgumentParser
 from aphrodite.endpoints.openai.serving_engine import (LoRAModulePath,
                                                        PromptAdapterPath)
+from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
 from aphrodite.engine.args_tools import AsyncEngineArgs
 
 
@@ -182,15 +183,25 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
         help=
         "Enable auto tool choice for supported models. Use --tool-call-parser"
         "to specify which parser to use")
+    valid_tool_parsers = ToolParserManager.tool_parsers.keys()
     parser.add_argument(
         "--tool-call-parser",
         type=str,
-        choices=["mistral", "hermes", "llama3_json"],
+        metavar="{" + ",".join(valid_tool_parsers) + "} or name registered in "
+        "--tool-parser-plugin",
         default=None,
         help=
         "Select the tool call parser depending on the model that you're using."
         " This is used to parse the model-generated tool call into OpenAI API "
         "format. Required for --enable-auto-tool-choice.")
+    parser.add_argument(
+        "--tool-parser-plugin",
+        type=str,
+        default="",
+        help=
+        "Specify the tool parser plugin path to parse model-generated tool "
+        "calls into OpenAI API format. The parsers registered in this plugin "
+        "can be referenced in --tool-call-parser.")
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     return parser

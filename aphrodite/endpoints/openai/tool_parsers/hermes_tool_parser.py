@@ -7,18 +7,20 @@ from loguru import logger
 from partial_json_parser.core.options import Allow
 
 from aphrodite.common.utils import random_uuid
-from aphrodite.endpoints.openai.protocol import (DeltaFunctionCall,
+from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
+                                                 DeltaFunctionCall,
                                                  DeltaMessage, DeltaToolCall,
                                                  ExtractedToolCallInformation,
                                                  FunctionCall, ToolCall)
 from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParser)
+    ToolParser, ToolParserManager)
 from aphrodite.endpoints.openai.tool_parsers.utils import (
     extract_intermediate_diff)
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
                                                     MistralTokenizer)
 
 
+@ToolParserManager.register_module("hermes")
 class Hermes2ProToolParser(ToolParser):
     def __init__(self, tokenizer: AnyTokenizer):
         super().__init__(tokenizer)
@@ -57,7 +59,9 @@ class Hermes2ProToolParser(ToolParser):
             )
 
     def extract_tool_calls(
-        self, model_output: str
+        self,
+        model_output: str,
+        request: ChatCompletionRequest,
     ) -> ExtractedToolCallInformation:
         # sanity check; avoid unnecessary processing
         if self.tool_call_start_token not in model_output:
@@ -112,6 +116,7 @@ class Hermes2ProToolParser(ToolParser):
         previous_token_ids: Sequence[int],
         current_token_ids: Sequence[int],
         delta_token_ids: Sequence[int],
+        request: ChatCompletionRequest,
     ) -> Union[DeltaMessage, None]:
         logger.debug(f"delta_text: {delta_text}")
         logger.debug(f"delta_token_ids: {delta_token_ids}")

@@ -53,6 +53,7 @@ from aphrodite.endpoints.openai.serving_engine import (BaseModelPath,
                                                        PromptAdapterPath)
 from aphrodite.endpoints.openai.serving_tokenization import (
     OpenAIServingTokenization)
+from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_aphrodite import AsyncAphrodite
 from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,
@@ -1176,6 +1177,14 @@ def init_app_state(
 
 
 async def run_server(args, **uvicorn_kwargs) -> None:
+
+    if args.tool_parser_plugin and len(args.tool_parser_plugin) > 3:
+        ToolParserManager.import_tool_parser(args.tool_parser_plugin)
+    valide_tool_parses = ToolParserManager.tool_parsers.keys()
+    if args.enable_auto_tool_choice \
+        and args.tool_call_parser not in valide_tool_parses:
+        raise KeyError(f"invalid tool call parser: {args.tool_call_parser} "
+                       f"(chose from {{ {','.join(valide_tool_parses)} }})")
 
     def signal_handler(*_) -> None:
         # Interrupt server on sigterm while initializing

@@ -32,10 +32,8 @@ from aphrodite.endpoints.openai.serving_engine import (BaseModelPath,
                                                        OpenAIServing,
                                                        PromptAdapterPath,
                                                        TextTokensPrompt)
-from aphrodite.endpoints.openai.tool_parsers import (Hermes2ProToolParser,
-                                                     Llama3JsonToolParser,
-                                                     MistralToolParser,
-                                                     ToolParser)
+from aphrodite.endpoints.openai.tool_parsers import (ToolParser,
+                                                     ToolParserManager)
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs import TokensPrompt
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
@@ -79,15 +77,13 @@ class OpenAIServingChat(OpenAIServing):
 
         self.tool_parser: Optional[Callable[[AnyTokenizer], ToolParser]] = None
         if self.enable_auto_tools:
-            if tool_parser == "mistral":
-                self.tool_parser = MistralToolParser
-            elif tool_parser == "hermes":
-                self.tool_parser = Hermes2ProToolParser
-            elif tool_parser == "llama3_json":
-                self.tool_parser = Llama3JsonToolParser
-            else:
+            try:
+                self.tool_parser = ToolParserManager.get_tool_parser(
+                    tool_parser)
+            except Exception as e:
                 raise TypeError("Error: --enable-auto-tool-choice requires "
-                                "--tool-call-parser")
+                                f"tool_parser:'{tool_parser}' which has not "
+                                "been registered") from e
 
     async def create_chat_completion(
         self,
