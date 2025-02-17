@@ -35,6 +35,14 @@ def hint_on_error(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
+        except NotImplementedError as e:
+            msg = (
+                f"Error in calling custom op {fn.__name__}: {e}\n"
+                "Not implemented or built, mostly likely because the current current device "
+                "does not support this kernel (less likely TORCH_CUDA_ARCH_LIST was set "
+                "incorrectly while building)")
+            logger.error(msg)
+            raise NotImplementedError(msg) from e
         except AttributeError as e:
             msg = (
                 f"Error in calling custom op {fn.__name__}: {e}\n"
@@ -446,8 +454,7 @@ try:
     @torch.library.register_fake("_C::machete_gemm")
     def machete_gemm_fake(
         a: torch.Tensor,
-        b_q: torch.
-        Tensor,  # Should be the tensor returned by machete_prepack_B
+        b_q: torch.Tensor,  # Should be the tensor returned by machete_prepack_B
         b_type: ScalarType,
         b_scales: Optional[torch.Tensor] = None,
         b_zeros: Optional[torch.Tensor] = None,
