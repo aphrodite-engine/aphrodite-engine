@@ -142,8 +142,8 @@ def ReadTargets(log, show_all):
 def GetExtension(target, extra_patterns):
     """Return the file extension that best represents a target.
     For targets that generate multiple outputs it is important to return a
-    consistent 'canonical' extension. Ultimately the goal is to group build steps
-    by type."""
+    consistent 'canonical' extension. Ultimately the goal is to group build
+    steps by type."""
     for output in target.targets:
         if extra_patterns:
             for fn_pattern in extra_patterns.split(";"):

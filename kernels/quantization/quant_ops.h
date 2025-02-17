@@ -76,7 +76,7 @@ at::Tensor e8p_mm_origorder(const at::Tensor& A, const at::Tensor& B,
 void decompress_e8p_origorder(torch::Tensor YIs, torch::Tensor CB,
                               torch::Tensor& Y);
 
-#ifndef _WIN32
+  #ifndef _WIN32
 // Cutlass Kernels
 bool cutlass_scaled_mm_supports_fp8(int64_t cuda_device_capability);
 
@@ -93,7 +93,7 @@ void cutlass_scaled_mm_azp(torch::Tensor& out, torch::Tensor const& a,
                            c10::optional<torch::Tensor> const& azp,
                            c10::optional<torch::Tensor> const& bias);
 
-#endif
+  #endif
 #endif
 
 void static_scaled_int8_quant(torch::Tensor& out, torch::Tensor const& input,

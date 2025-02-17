@@ -2299,7 +2299,6 @@ torch::Tensor gptq_marlin_gemm(torch::Tensor& a, torch::Tensor& b_q_weight,
 
 #endif
 
-
 TORCH_LIBRARY_IMPL_EXPAND(TORCH_EXTENSION_NAME, CUDA, m) {
   m.impl("gptq_marlin_gemm", &gptq_marlin_gemm);
 }

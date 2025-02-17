@@ -103,7 +103,7 @@ __global__ void awq_marlin_repack_kernel(
     }
 
     uint32_t vals[8];
-  #pragma unroll
+#pragma unroll
     for (int i = 0; i < 4; i++) {
       int cur_elem = tc_row + tc_offsets[i];
 
@@ -124,7 +124,7 @@ __global__ void awq_marlin_repack_kernel(
       constexpr int pack_idx[8] = {0, 2, 4, 6, 1, 3, 5, 7};
 
       uint32_t res = 0;
-  #pragma unroll
+#pragma unroll
       for (int i = 0; i < 8; i++) {
         res |= vals[pack_idx[i]] << (i * 4);
       }
@@ -136,7 +136,7 @@ __global__ void awq_marlin_repack_kernel(
 
       uint32_t res1 = 0;
       uint32_t res2 = 0;
-  #pragma unroll
+#pragma unroll
       for (int i = 0; i < 4; i++) {
         res1 |= vals[pack_idx[i]] << (i * 8);
         res2 |= vals[4 + pack_idx[i]] << (i * 8);
@@ -148,21 +148,21 @@ __global__ void awq_marlin_repack_kernel(
   };
 
   auto start_pipes = [&](int k_tile_id, int n_tile_id) {
-  #pragma unroll
+#pragma unroll
     for (int pipe = 0; pipe < repack_stages - 1; pipe++) {
       fetch_to_shared(pipe, k_tile_id, n_tile_id + pipe);
     }
 
     wait_for_stage();
   };
-  #pragma unroll
+#pragma unroll
   for (int k_tile_id = start_k_tile; k_tile_id < finish_k_tile; k_tile_id++) {
     int n_tile_id = 0;
 
     start_pipes(k_tile_id, n_tile_id);
 
     while (n_tile_id < n_tiles) {
-  #pragma unroll
+#pragma unroll
       for (int pipe = 0; pipe < repack_stages; pipe++) {
         fetch_to_shared((pipe + repack_stages - 1) % repack_stages, k_tile_id,
                         n_tile_id + pipe + repack_stages - 1);
@@ -176,15 +176,15 @@ __global__ void awq_marlin_repack_kernel(
 
 }  // namespace marlin
 
-  #define CALL_IF(NUM_BITS)                                                   \
-    else if (num_bits == NUM_BITS) {                                          \
-      cudaFuncSetAttribute(                                                   \
-          marlin::awq_marlin_repack_kernel<marlin::repack_threads, NUM_BITS>, \
-          cudaFuncAttributeMaxDynamicSharedMemorySize, max_shared_mem);       \
-      marlin::awq_marlin_repack_kernel<marlin::repack_threads, NUM_BITS>      \
-          <<<blocks, marlin::repack_threads, max_shared_mem, stream>>>(       \
-              b_q_weight_ptr, out_ptr, size_k, size_n);                       \
-    }
+#define CALL_IF(NUM_BITS)                                                   \
+  else if (num_bits == NUM_BITS) {                                          \
+    cudaFuncSetAttribute(                                                   \
+        marlin::awq_marlin_repack_kernel<marlin::repack_threads, NUM_BITS>, \
+        cudaFuncAttributeMaxDynamicSharedMemorySize, max_shared_mem);       \
+    marlin::awq_marlin_repack_kernel<marlin::repack_threads, NUM_BITS>      \
+        <<<blocks, marlin::repack_threads, max_shared_mem, stream>>>(       \
+            b_q_weight_ptr, out_ptr, size_k, size_n);                       \
+  }
 
 torch::Tensor awq_marlin_repack(torch::Tensor& b_q_weight, int64_t size_k,
                                 int64_t size_n, int64_t num_bits) {

@@ -183,7 +183,6 @@ void cutlass_scaled_mm_azp(torch::Tensor& c, torch::Tensor const& a,
   TORCH_CHECK(!bias || bias->dtype() == c.dtype(),
               "currently bias dtype must match output dtype ", c.dtype());
 
-
   at::cuda::OptionalCUDAGuard const device_guard(device_of(a));
 
   int32_t version_num = get_sm_version_num();
