@@ -166,6 +166,10 @@ export default defineConfig({
 						link: "/pages/developer/input-processing",
 					},
 					{
+						text: "Tool Parser Plugin",
+						link: "/pages/developer/tool-plugin",
+					},
+					{
 						text: "Paged Attention",
 						link: "/pages/developer/paged-attention",
 					},
