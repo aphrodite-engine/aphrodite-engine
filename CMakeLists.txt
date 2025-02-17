@@ -508,6 +508,7 @@ set(APHRODITE_MOE_EXT_SRC
 set_gencode_flags_for_srcs(
   SRCS "${APHRODITE_MOE_EXT_SRC}"
   CUDA_ARCHS "${CUDA_ARCHS}")
+
 if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   cuda_archs_loose_intersection(MARLIN_MOE_ARCHS "8.0;8.6;8.9;9.0" "${CUDA_ARCHS}")
   if (MARLIN_MOE_ARCHS)
@@ -523,23 +524,27 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
       CUDA_ARCHS "${MARLIN_MOE_ARCHS}")
     list(APPEND APHRODITE_MOE_EXT_SRC "${MARLIN_MOE_SRC}")
     message(STATUS "Building Marlin MoE kernels for archs: ${MARLIN_MOE_ARCHS}")
-
-    define_gpu_extension_target(
-      _moe_C
-      DESTINATION aphrodite
-      LANGUAGE ${APHRODITE_GPU_LANG}
-      SOURCES ${APHRODITE_MOE_EXT_SRC}
-      COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
-      ARCHITECTURES ${APHRODITE_GPU_ARCHES}
-      USE_SABI 3
-      WITH_SOABI)
-
-    add_dependencies(default _moe_C)
-    message(STATUS "Enabling MoE extension.")
   else()
     message(STATUS "Not building Marlin MoE kernels as no compatible archs found"
                    "in CUDA target architectures")
   endif()
+endif()
+
+if(APHRODITE_MOE_EXT_SRC)
+  define_gpu_extension_target(
+    _moe_C
+    DESTINATION aphrodite
+    LANGUAGE ${APHRODITE_GPU_LANG}
+    SOURCES ${APHRODITE_MOE_EXT_SRC}
+    COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
+    ARCHITECTURES ${APHRODITE_GPU_ARCHES}
+    USE_SABI 3
+    WITH_SOABI)
+
+  add_dependencies(default _moe_C)
+  message(STATUS "Enabling MoE extension.")
+else()
+  message(STATUS "Skipping MoE extension build - no source files available for current architecture.")
 endif()
 
 
