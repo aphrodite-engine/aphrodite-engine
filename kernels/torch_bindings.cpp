@@ -182,7 +182,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def(
       "marlin_gemm(Tensor a, Tensor b_q_weight, Tensor b_scales, "
       "Tensor! workspace, int size_m, int size_n, int size_k) -> Tensor");
-  ops.impl("marlin_gemm", torch::kCUDA, &marlin_gemm);
+  // conditionally compiled so impl in source file
 
   // Marlin_24 (Sparse) Optimized Quantized GEMM for GPTQ.
   ops.def(
@@ -190,7 +190,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "Tensor b_scales, Tensor workspace, "
       "__torch__.torch.classes._core_C.ScalarType b_q_type, "
       "int size_m, int size_n, int size_k) -> Tensor");
-  ops.impl("gptq_marlin_24_gemm", torch::kCUDA, &gptq_marlin_24_gemm);
+  // conditionally compiled so impl in source file
 
   // gptq_marlin Optimized Quantized GEMM for GPTQ.
   ops.def(
@@ -199,28 +199,26 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "__torch__.torch.classes._core_C.ScalarType b_q_type, "
       "int size_m, int size_n, int size_k, bool is_k_full, "
       "bool has_zp, bool use_fp32_reduce) -> Tensor");
-  ops.impl("gptq_marlin_gemm", torch::kCUDA, &gptq_marlin_gemm);
+  // conditionally compiled so impl in source file
 
   // gptq_marlin repack from GPTQ.
   ops.def(
       "gptq_marlin_repack(Tensor b_q_weight, Tensor perm, "
       "SymInt size_k, SymInt size_n, int num_bits) -> Tensor");
-  ops.impl("gptq_marlin_repack", torch::kCUDA, &gptq_marlin_repack);
-  ops.impl("gptq_marlin_repack", torch::kMeta, &gptq_marlin_repack_meta);
+  // conditionally compiled so impl in source file
 
   // awq_marlin repack from AWQ.
   ops.def(
       "awq_marlin_repack(Tensor b_q_weight, SymInt size_k, "
       "SymInt size_n, int num_bits) -> Tensor");
-  ops.impl("awq_marlin_repack", torch::kCUDA, &awq_marlin_repack);
-  ops.impl("awq_marlin_repack", torch::kMeta, &awq_marlin_repack_meta);
+  // conditionally compiled so impl in source file
 
   // fp8_marlin Optimized Quantized GEMM for FP8 weight-only.
   ops.def(
       "fp8_marlin_gemm(Tensor a, Tensor b_q_weight, Tensor b_scales, "
       "Tensor! workspace, int num_bits, int size_m, int size_n, "
       "int size_k) -> Tensor");
-  ops.impl("fp8_marlin_gemm", torch::kCUDA, &fp8_marlin_gemm);
+  // conditionally compiled so impl in source file
 
   #ifndef _WIN32
   // marlin_qqq_gemm for QQQ.
@@ -229,7 +227,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "Tensor s_tok, Tensor s_ch, Tensor s_group, "
       "Tensor! workspace, int size_m, int size_n, "
       "int size_k) -> Tensor");
-  ops.impl("marlin_qqq_gemm", torch::kCUDA, &marlin_qqq_gemm);
+  // conditionally compiled so impl in source file
 
   // CUTLASS w8a8 GEMM, supporting symmetric per-tensor or per-row/column
   // quantization.
@@ -254,19 +252,21 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.impl("cutlass_scaled_mm_azp", torch::kCUDA, &cutlass_scaled_mm_azp);
 
   // Machete (Dense) Optimized Mixed Precision GEMM for Hopper.
-  ops.def("machete_supported_schedules", &machete::supported_schedules);
+  ops.def(
+      "machete_supported_schedules("
+      "   __torch__.torch.classes._core_C.ScalarType btype"
+      ") -> str[]");
   ops.def(
       "machete_gemm(Tensor A, Tensor B,"
       "             __torch__.torch.classes._core_C.ScalarType btype,"
       "             Tensor? scales, Tensor? zeros, int? group_size,"
       "             Tensor? C, float? alpha, float? beta, str? schedule)"
       "-> Tensor");
-  ops.impl("machete_gemm", torch::kCUDA, &machete::gemm);
   ops.def(
       "machete_prepack_B(Tensor B,"
       "                  __torch__.torch.classes._core_C.ScalarType btype)"
       "-> Tensor");
-  ops.impl("machete_prepack_B", torch::kCUDA, &machete::prepack_B);
+  // conditionally compiled so impl registration is in source file
 
   ops.def("permute_cols(Tensor A, Tensor perm) -> Tensor");
   ops.impl("permute_cols", torch::kCUDA, &permute_cols);
@@ -288,8 +288,7 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "fp_eXmY_linear_forward_cuda(int EXPONENT, int MANTISSA,"
       "                            Tensor _in_feats, Tensor _weights,"
       "                            Tensor _scales, int splitK=1) -> Tensor");
-  ops.impl("fp_eXmY_linear_forward_cuda", torch::kCUDA,
-           &fp_eXmY_linear_forward_cuda);
+  // conditionally compiled so impl in source file
 
   // Sampling Kernels
   ops.def(
