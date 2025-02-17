@@ -87,6 +87,18 @@ CONFIGS: Dict[str, ServerConfig] = {
         "call the tool. Otherwise, answer the user's query directly "
         "without calling a tool. DO NOT CALL A TOOL THAT IS IRRELEVANT "
         "to the user's question - just respond to it normally."
+    },
+    "internlm": {
+        "model":
+        "internlm/internlm2_5-7b-chat",
+        "arguments": [
+            "--tool-call-parser", "internlm", "--chat-template",
+            str(APHRODITE_PATH /
+                "examples/chat_templates/internlm2_tools.jinja"),
+            "--trust_remote_code"
+        ],
+        "supports_parallel":
+        False,
     }
 }
 

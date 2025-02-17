@@ -139,7 +139,8 @@ Launch a local Aphrodite instance:
 aphrodite run <your_model> \
     --tool-parser-plugin /path/to/my_tool_parser.py \
     --tool-call-parser my_parser \
-    --enable-auto-tool-choice
+    --enable-auto-tool-choice \
+    --chat-template /path/to/chat_template.jinja
 ```
 
 ### Making API calls
