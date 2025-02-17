@@ -15,147 +15,15 @@ from aphrodite.attention.backends.utils import (PAD_SLOT_ID,
                                                 compute_slot_mapping,
                                                 compute_slot_mapping_start_idx,
                                                 is_block_tables_empty)
-from aphrodite.attention.ops.aphrodite_flash_attn import (
-    flash_attn_varlen_func as _flash_attn_varlen_func)
-from aphrodite.attention.ops.aphrodite_flash_attn import (
-    flash_attn_with_kvcache as _flash_attn_with_kvcache)
 from aphrodite.common.utils import async_tensor_h2d, make_tensor_with_pad
+from aphrodite.forward_context import get_forward_context
 
 if TYPE_CHECKING:
-    from aphrodite.worker.model_runner import (
-        ModelInputForGPUBuilder, ModelInputForGPUWithSamplingMetadata)
+    from aphrodite.worker.model_runner import (ModelInputForGPUBuilder,
+                                          ModelInputForGPUWithSamplingMetadata)
 
-
-@torch.library.custom_op("aphrodite::flash_attn_varlen_func", mutates_args=[])
-def flash_attn_varlen_func(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    cu_seqlens_q: torch.Tensor,
-    cu_seqlens_k: torch.Tensor,
-    max_seqlen_q: int,
-    max_seqlen_k: int,
-    softmax_scale: Optional[float] = None,
-    causal: bool = False,
-    window_size: Optional[List[int]] = None,
-    softcap: float = 0.0,
-    alibi_slopes: Optional[torch.Tensor] = None,
-    block_table: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
-    # custom op does not support tuple input
-    real_window_size: Tuple[int, int]
-    if window_size is None:
-        real_window_size = (-1, -1)
-    else:
-        assert len(window_size) == 2
-        real_window_size = (window_size[0], window_size[1])
-    return _flash_attn_varlen_func(
-        q=q,
-        k=k,
-        v=v,
-        cu_seqlens_q=cu_seqlens_q,
-        cu_seqlens_k=cu_seqlens_k,
-        max_seqlen_q=max_seqlen_q,
-        max_seqlen_k=max_seqlen_k,
-        softmax_scale=softmax_scale,
-        causal=causal,
-        window_size=real_window_size,
-        softcap=softcap,
-        alibi_slopes=alibi_slopes,
-        block_table=block_table,
-    )
-
-
-@flash_attn_varlen_func.register_fake  # type: ignore
-def _(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    cu_seqlens_q: torch.Tensor,
-    cu_seqlens_k: torch.Tensor,
-    max_seqlen_q: int,
-    max_seqlen_k: int,
-    softmax_scale: Optional[float] = None,
-    causal: bool = False,
-    window_size: Optional[List[int]] = None,
-    softcap: float = 0.0,
-    alibi_slopes: Optional[torch.Tensor] = None,
-    block_table: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
-    return torch.empty_like(q)
-
-
-@torch.library.custom_op("aphrodite::flash_attn_with_kvcache", mutates_args=[])
-def flash_attn_with_kvcache(
-    decode_query: torch.Tensor,
-    key_cache: torch.Tensor,
-    value_cache: torch.Tensor,
-    cache_seqlens: Optional[torch.Tensor] = None,
-    block_table: Optional[torch.Tensor] = None,
-    softmax_scale: Optional[float] = None,
-    causal: bool = False,
-    alibi_slopes: Optional[torch.Tensor] = None,
-    softcap: float = 0.0,
-) -> torch.Tensor:
-    return _flash_attn_with_kvcache(
-        decode_query,
-        key_cache,
-        value_cache,
-        cache_seqlens=cache_seqlens,
-        block_table=block_table,
-        softmax_scale=softmax_scale,
-        causal=causal,
-        alibi_slopes=alibi_slopes,
-        softcap=softcap,
-    )
-
-
-@flash_attn_with_kvcache.register_fake  # type: ignore
-def _(
-    decode_query: torch.Tensor,
-    key_cache: torch.Tensor,
-    value_cache: torch.Tensor,
-    cache_seqlens: Optional[torch.Tensor] = None,
-    block_table: Optional[torch.Tensor] = None,
-    softmax_scale: Optional[float] = None,
-    causal: bool = False,
-    alibi_slopes: Optional[torch.Tensor] = None,
-    softcap: float = 0.0,
-) -> torch.Tensor:
-    return torch.empty_like(decode_query)
-
-
-@torch.library.custom_op("aphrodite::reshape_and_cache_flash",
-                         mutates_args=["kv_cache"])
-def reshape_and_cache_flash(
-    key: torch.Tensor,
-    value: torch.Tensor,
-    kv_cache: torch.Tensor,
-    slot_mapping: torch.Tensor,
-    kv_cache_dtype: str,
-    k_scale: float,
-    v_scale: float,
-) -> None:
-    """Inductor cannot deal with inplace operations on views.
-    See https://github.com/pytorch/pytorch/issues/131192
-    and https://github.com/pytorch/pytorch/issues/130174
-    This is a workaround to hide the view operation from the inductor.
-    """
-    return torch.ops._C_cache_ops.reshape_and_cache_flash(
-        key, value, kv_cache[0], kv_cache[1], slot_mapping, kv_cache_dtype,
-        k_scale, v_scale)
-
-@reshape_and_cache_flash.register_fake  # type: ignore
-def _(
-    key: torch.Tensor,
-    value: torch.Tensor,
-    kv_cache: torch.Tensor,
-    slot_mapping: torch.Tensor,
-    kv_cache_dtype: str,
-    k_scale: float,
-    v_scale: float,
-) -> None:
-    pass
+from aphrodite.attention.ops.aphrodite_flash_attn import (
+    flash_attn_varlen_func, flash_attn_with_kvcache)
 
 
 class FlashAttentionBackend(AttentionBackend):
@@ -239,16 +107,18 @@ class FlashAttentionMetadata(AttentionMetadata):
     # |---------------- N iteration ---------------------|
     # |- tokenA -|......................|-- newTokens ---|
     # |---------- context_len ----------|
-    # |-------------------- seq_len ----------------------|
+    # |-------------------- seq_len ---------------------|
     #                                   |-- query_len ---|
 
     # Maximum query length in the batch.
     max_query_len: Optional[int]
+
     # Number of query tokens for each request in the batch.
     # Currently, we require that all requests have the same number of query
     # tokens during the decoding phase. When speculavie decoding is enabled,
     # decode_query_len might be greater than 1. In all other cases, it is 1.
     decode_query_len: Optional[int]
+
     # Maximum sequence length among prefill batch. 0 if there are decoding
     # requests only.
     max_prefill_seq_len: int
@@ -356,7 +226,6 @@ class FlashAttentionMetadata(AttentionMetadata):
         """
         Update metadata in-place to advance one decode step.
         """
-
         # When using cudagraph, the num_seqs is padded to the next captured
         # batch sized, but num_queries tracks the actual number of requests in
         # the batch. For --enforce-eager mode, num_seqs == num_queries
@@ -375,6 +244,7 @@ class FlashAttentionMetadata(AttentionMetadata):
             self.num_prefill_tokens = 0
             self.max_prefill_seq_len = 0
             self.max_query_len = 1
+
             self.slot_mapping = self.slot_mapping[:num_seqs]
         else:
             assert self.seq_lens is not None
@@ -502,6 +372,7 @@ class FlashAttentionMetadataBuilder(
         # [max batch size, max context len // block size].
         max_batch_size, max_blocks = self.runner.graph_block_tables.shape
         assert max_batch_size >= num_seqs
+
         graph_block_tables = self.runner.graph_block_tables[:num_seqs]
         for i, block_table in enumerate(block_tables):
             if block_table:
@@ -514,12 +385,14 @@ class FlashAttentionMetadataBuilder(
                     # not used anyway, so can be safely ignored.
                     graph_block_tables[
                         i, :max_blocks] = block_table[:max_blocks]
+
         return torch.from_numpy(graph_block_tables).to(
             device=self.runner.device, non_blocking=True)
 
     def build(self, seq_lens: List[int], query_lens: List[int],
               cuda_graph_pad_size: int, batch_size: int):
         """Build attention metadata with on-device tensors.
+
         Args:
             seq_lens: The maybe padded sequence lengths of the input sequences.
             query_lens: The query lengths of the input sequences.
@@ -611,11 +484,11 @@ class FlashAttentionMetadataBuilder(
 class FlashAttentionImpl(AttentionImpl):
     """
     If the input tensors contain prompt tokens, the layout is as follows:
-    |<--------------- num_prefill_tokens ----------------->|
+    |<--------------- num_prefill_tokens ----------------->|	
     |<--prefill_0-->|<--prefill_1-->|...|<--prefill_N-1--->|
 
-    Otherwise, the layout is as follows:
-    |<----------------- num_decode_tokens ------------------>|
+    Otherwise, the layout is as follows:	
+    |<----------------- num_decode_tokens ------------------>|	
     |<--decode_0-->|..........|<--decode_M-1-->|<--padding-->|
 
     Generation tokens can contain padding when cuda-graph is used.
@@ -708,121 +581,187 @@ class FlashAttentionImpl(AttentionImpl):
                                       "encoder/decoder cross-attention "
                                       "are not implemented for "
                                       "FlashAttentionImpl")
+
         # NOTE: FlashAttention does not support FP8 KV cache.
         assert k_scale == 1.0 and v_scale == 1.0, (
             "key/v_scale is not supported in FlashAttention.")
 
-        num_tokens, hidden_size = query.shape
-        # Reshape the query, key, and value tensors.
-        query = query.view(-1, self.num_heads, self.head_size)
-        key = key.view(-1, self.num_kv_heads, self.head_size)
-        value = value.view(-1, self.num_kv_heads, self.head_size)
+        output = torch.ops.aphrodite.unified_flash_attention(
+            query,
+            key,
+            value,
+            self.num_heads,
+            self.head_size,
+            self.num_kv_heads,
+            kv_cache,
+            self.kv_cache_dtype,
+            k_scale,
+            v_scale,
+            self.scale,
+            self.sliding_window,
+            self.alibi_slopes,
+            self.logits_soft_cap,
+        )
 
-        if kv_cache.numel() > 0:
-            key_cache = kv_cache[0]
-            value_cache = kv_cache[1]
+        return output
 
-            # Reshape the input keys and values and store them in the cache.
-            # If kv_cache is not provided, the new key and value tensors are
-            # not cached. This happens during the initial memory profiling run.
-            torch.ops.aphrodite.reshape_and_cache_flash(
-                key,
-                value,
-                kv_cache,
-                attn_metadata.slot_mapping.flatten(),
-                self.kv_cache_dtype,
-                k_scale,
-                v_scale,
-            )
 
-        num_prefill_tokens = attn_metadata.num_prefill_tokens
-        num_decode_tokens = attn_metadata.num_decode_tokens
-        assert key.shape[0] == num_prefill_tokens + num_decode_tokens, \
-                    f"key : {key.shape} : #prefill tokens {num_prefill_tokens} : #decode tokens {num_decode_tokens}" # noqa
-        assert value.shape[0] == num_prefill_tokens + num_decode_tokens, \
-                    f"value : {value.shape} : #prefill toks {num_prefill_tokens} : #decode toks {num_decode_tokens}" # noqa
+@torch.library.custom_op("aphrodite::unified_flash_attention",
+                         mutates_args=["kv_cache"])
+def unified_flash_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    num_heads: int,
+    head_size: int,
+    num_kv_heads: int,
+    kv_cache: torch.Tensor,
+    kv_cache_dtype: str,
+    k_scale: float,
+    v_scale: float,
+    softmax_scale: float,
+    window_size: Optional[List[int]] = None,
+    alibi_slopes: Optional[torch.Tensor] = None,
+    logits_soft_cap: Optional[float] = None,
+) -> torch.Tensor:
 
-        # Query for decode. KV is not needed because it is already cached.
-        decode_query = query[num_prefill_tokens:]
-        # QKV for prefill.
-        query = query[:num_prefill_tokens]
-        key = key[:num_prefill_tokens]
-        value = value[:num_prefill_tokens]
+    current_metadata = get_forward_context()
+    assert current_metadata is not None
+    assert isinstance(current_metadata, FlashAttentionMetadata)
+    attn_metadata: FlashAttentionMetadata = current_metadata
 
-        assert query.shape[0] == num_prefill_tokens
-        assert decode_query.shape[0] == num_decode_tokens
+    num_tokens, hidden_size = query.shape
+    # Reshape the query, key, and value tensors.
+    query = query.view(-1, num_heads, head_size)
+    key = key.view(-1, num_kv_heads, head_size)
+    value = value.view(-1, num_kv_heads, head_size)
 
-        prefill_output: Optional[torch.Tensor] = None
-        decode_output: Optional[torch.Tensor] = None
+    if kv_cache.numel() > 0:
+        key_cache = kv_cache[0]
+        value_cache = kv_cache[1]
 
-        if prefill_meta := attn_metadata.prefill_metadata:
-            # Prompt run.
-            if (kv_cache.numel() == 0 or prefill_meta.block_tables is None
-                    or prefill_meta.block_tables.numel() == 0):
-                # normal attention
-                # When block_tables are not filled, it means q and k are the
-                # prompt, and they have the same length.
-                prefill_output = torch.ops.aphrodite.flash_attn_varlen_func(
-                    q=query,
-                    k=key,
-                    v=value,
-                    cu_seqlens_q=prefill_meta.seq_start_loc,
-                    cu_seqlens_k=prefill_meta.seq_start_loc,
-                    max_seqlen_q=prefill_meta.max_prefill_seq_len,
-                    max_seqlen_k=prefill_meta.max_prefill_seq_len,
-                    softmax_scale=self.scale,
-                    causal=True,
-                    window_size=self.sliding_window,
-                    alibi_slopes=self.alibi_slopes,
-                    softcap=self.logits_soft_cap,
-                )
-            else:
-                # prefix-enabled attention
-                assert prefill_meta.seq_lens is not None
-                max_seq_len = max(prefill_meta.seq_lens)
-                prefill_output = torch.ops.aphrodite.flash_attn_varlen_func(  # noqa
-                    q=query,
-                    k=key_cache,
-                    v=value_cache,
-                    cu_seqlens_q=prefill_meta.query_start_loc,
-                    max_seqlen_q=prefill_meta.max_query_len,
-                    cu_seqlens_k=prefill_meta.seq_start_loc,
-                    max_seqlen_k=max_seq_len,
-                    softmax_scale=self.scale,
-                    causal=True,
-                    alibi_slopes=self.alibi_slopes,
-                    block_table=prefill_meta.block_tables,
-                    softcap=self.logits_soft_cap,
-                )
+        # Reshape the input keys and values and store them in the cache.
+        # If kv_cache is not provided, the new key and value tensors are
+        # not cached. This happens during the initial memory profiling run.
+        torch.ops._C_cache_ops.reshape_and_cache_flash(
+            key,
+            value,
+            kv_cache[0],
+            kv_cache[1],
+            attn_metadata.slot_mapping.flatten(),
+            kv_cache_dtype,
+            k_scale,
+            v_scale,
+        )
 
-        if decode_meta := attn_metadata.decode_metadata:
-            # Decoding run.
-            _, num_head, head_dim = decode_query.shape
-            decode_query = decode_query.reshape(-1,
-                                                decode_meta.decode_query_len,
-                                                num_head, head_dim)
-            decode_output = torch.ops.aphrodite.flash_attn_with_kvcache(
-                decode_query,
-                key_cache,
-                value_cache,
-                block_table=decode_meta.block_tables,
-                cache_seqlens=decode_meta.seq_lens_tensor,
-                softmax_scale=self.scale,
+    num_prefill_tokens = attn_metadata.num_prefill_tokens
+    num_decode_tokens = attn_metadata.num_decode_tokens
+    assert key.shape[0] == num_prefill_tokens + num_decode_tokens, \
+                f"key : {key.shape} : #prefill tokens {num_prefill_tokens} : #decode tokens {num_decode_tokens}" # noqa
+    assert value.shape[0] == num_prefill_tokens + num_decode_tokens, \
+                f"value : {value.shape} : #prefill toks {num_prefill_tokens} : #decode toks {num_decode_tokens}" # noqa
+
+    # Query for decode. KV is not needed because it is already cached.
+    decode_query = query[num_prefill_tokens:]
+    # QKV for prefill.
+    query = query[:num_prefill_tokens]
+    key = key[:num_prefill_tokens]
+    value = value[:num_prefill_tokens]
+
+    assert query.shape[0] == num_prefill_tokens
+    assert decode_query.shape[0] == num_decode_tokens
+
+    prefill_output: Optional[torch.Tensor] = None
+    decode_output: Optional[torch.Tensor] = None
+
+    if prefill_meta := attn_metadata.prefill_metadata:
+        # Prompt run.
+        if (kv_cache.numel() == 0 or prefill_meta.block_tables is None
+                or prefill_meta.block_tables.numel() == 0):
+            # normal attention
+            # When block_tables are not filled, it means q and k are the
+            # prompt, and they have the same length.
+            prefill_output = flash_attn_varlen_func(
+                q=query,
+                k=key,
+                v=value,
+                cu_seqlens_q=prefill_meta.seq_start_loc,
+                cu_seqlens_k=prefill_meta.seq_start_loc,
+                max_seqlen_q=prefill_meta.max_prefill_seq_len,
+                max_seqlen_k=prefill_meta.max_prefill_seq_len,
+                softmax_scale=softmax_scale,
                 causal=True,
-                alibi_slopes=self.alibi_slopes,
-                softcap=self.logits_soft_cap,
+                window_size=window_size,
+                alibi_slopes=alibi_slopes,
+                softcap=logits_soft_cap,
+            )
+        else:
+            # prefix-enabled attention
+            assert prefill_meta.seq_lens is not None
+            max_seq_len = max(prefill_meta.seq_lens)
+            prefill_output = flash_attn_varlen_func(  # noqa
+                q=query,
+                k=key_cache,
+                v=value_cache,
+                cu_seqlens_q=prefill_meta.query_start_loc,
+                max_seqlen_q=prefill_meta.max_query_len,
+                cu_seqlens_k=prefill_meta.seq_start_loc,
+                max_seqlen_k=max_seq_len,
+                softmax_scale=softmax_scale,
+                causal=True,
+                alibi_slopes=alibi_slopes,
+                block_table=prefill_meta.block_tables,
+                softcap=logits_soft_cap,
             )
 
-        if prefill_output is None:
-            assert decode_output is not None
-            return decode_output.view(num_decode_tokens, hidden_size)
-        if decode_output is None:
-            assert prefill_output is not None
-            return prefill_output.view(num_prefill_tokens, hidden_size)
-        # Chunked prefill does not work with speculative decoding.
-        # Therefore, the query length for decode should be 1 in chunked prefill.
-        assert decode_meta is not None
-        assert decode_meta.decode_query_len == 1
-        decode_output = decode_output.squeeze(1)
-        output = torch.cat([prefill_output, decode_output], dim=0)
-        return output.view(num_tokens, hidden_size)
+    if decode_meta := attn_metadata.decode_metadata:
+        # Decoding run.
+        _, num_head, head_dim = decode_query.shape
+        decode_query = decode_query.reshape(-1, decode_meta.decode_query_len,
+                                            num_head, head_dim)
+        decode_output = flash_attn_with_kvcache(
+            q=decode_query,
+            k_cache=key_cache,
+            v_cache=value_cache,
+            block_table=decode_meta.block_tables,
+            cache_seqlens=decode_meta.seq_lens_tensor,
+            softmax_scale=softmax_scale,
+            causal=True,
+            alibi_slopes=alibi_slopes,
+            softcap=logits_soft_cap,
+        ).squeeze(1)
+
+    if prefill_output is None:
+        assert decode_output is not None
+        return decode_output.view(num_decode_tokens, hidden_size)
+    if decode_output is None:
+        assert prefill_output is not None
+        return prefill_output.view(num_prefill_tokens, hidden_size)
+
+    # Chunked prefill does not work with speculative decoding.
+    # Therefore, the query length for decode should be 1 in chunked prefill.
+    assert decode_meta is not None
+    assert decode_meta.decode_query_len == 1
+    decode_output = decode_output.squeeze(1)
+    output = torch.cat([prefill_output, decode_output], dim=0)
+    return output.view(num_tokens, hidden_size)
+
+
+@unified_flash_attention.register_fake
+def _(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    num_heads: int,
+    head_size: int,
+    num_kv_heads: int,
+    kv_cache: torch.Tensor,
+    kv_cache_dtype: str,
+    k_scale: float,
+    v_scale: float,
+    softmax_scale: float,
+    window_size: Optional[List[int]] = None,
+    alibi_slopes: Optional[torch.Tensor] = None,
+    logits_soft_cap: Optional[float] = None,
+) -> torch.Tensor:
+    return torch.empty_like(query)

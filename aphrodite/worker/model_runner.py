@@ -32,6 +32,7 @@ from aphrodite.distributed import get_pp_group
 from aphrodite.distributed.parallel_state import (
     get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size,
     graph_capture)
+from aphrodite.forward_context import set_forward_context
 from aphrodite.inputs import INPUT_REGISTRY, InputRegistry
 from aphrodite.lora.layers import LoRAMapping
 from aphrodite.lora.request import LoRARequest
@@ -1545,7 +1546,8 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         # encoder-decoder models.
                         self._update_inputs_to_capture_for_enc_dec_model(
                             capture_inputs)
-                    graph_runner.capture(**capture_inputs)
+                    with set_forward_context(attn_metadata):
+                        graph_runner.capture(**capture_inputs)
                     self.graph_memory_pool = graph_runner.graph.pool()
                     self.graph_runners[virtual_engine][batch_size] = (
                         graph_runner)
@@ -1681,16 +1683,17 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             "finished_requests_ids": model_input.finished_requests_ids,
             "request_ids_to_seq_ids": model_input.request_ids_to_seq_ids,
         } if self.has_seqlen_agnostic else {}
-        hidden_or_intermediate_states = model_executable(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            kv_caches=kv_caches,
-            attn_metadata=model_input.attn_metadata,
-            intermediate_tensors=intermediate_tensors,
-            **MultiModalInputs.as_kwargs(multi_modal_kwargs,
-                                         device=self.device),
-            **seqlen_agnostic_kwargs,
-        )
+
+        with set_forward_context(model_input.attn_metadata):
+            hidden_or_intermediate_states = model_executable(
+                input_ids=model_input.input_tokens,
+                positions=model_input.input_positions,
+                kv_caches=kv_caches,
+                attn_metadata=model_input.attn_metadata,
+                intermediate_tensors=intermediate_tensors,
+                **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                                             device=self.device),
+                **seqlen_agnostic_kwargs)
 
         # Compute the logits in the last pipeline stage.
         if not get_pp_group().is_last_rank:

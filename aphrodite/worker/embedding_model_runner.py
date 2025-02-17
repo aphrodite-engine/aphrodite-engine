@@ -9,6 +9,7 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sequence import (IntermediateTensors, PoolerOutput,
                                        SequenceData, SequenceGroupMetadata)
+from aphrodite.forward_context import set_forward_context
 from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.multimodal import MultiModalInputs
 from aphrodite.worker.model_runner import (GPUModelRunnerBase,
@@ -116,7 +117,8 @@ class EmbeddingModelRunner(
             **MultiModalInputs.as_kwargs(model_input.multi_modal_kwargs or {},
                                          device=self.device),
         }
-        hidden_states = model_executable(**execute_model_kwargs)
+        with set_forward_context(model_input.attn_metadata):
+            hidden_states = model_executable(**execute_model_kwargs)
 
         # Only perform pooling in the driver worker.
         if not self.is_driver_worker:

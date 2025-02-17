@@ -7,7 +7,8 @@ try:
     from flashinfer.decode import CUDAGraphBatchDecodeWithPagedKVCacheWrapper
     from flashinfer.prefill import BatchPrefillWithPagedKVCacheWrapper
 
-    import aphrodite.attention.backends.flash_attn  # noqa
+    from aphrodite.attention.ops.aphrodite_flash_attn import (
+        flash_attn_varlen_func)
     FLASHINFER_WORKSPACE_BUFFER_SIZE = 256 * 1024 * 1024
 except ImportError:
     BatchDecodeWithPagedKVCacheWrapper = None
@@ -802,7 +803,7 @@ class FlashInferImpl(AttentionImpl):
             # This happens when aphrodite runs the profiling to
             # determine the number of blocks.
             if kv_cache.numel() == 0:
-                output = torch.ops.aphrodite.flash_attn_varlen_func(
+                output = flash_attn_varlen_func(
                     q=query,
                     k=key,
                     v=value,
