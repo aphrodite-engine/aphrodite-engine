@@ -1,26 +1,6 @@
 #include "marlin.cuh"
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
-
-namespace marlin {
-
-template <int const num_threads, int const num_bits, bool const has_perm>
-__global__ void gptq_marlin_repack_kernel(
-    uint32_t const* __restrict__ b_q_weight_ptr,
-    uint32_t const* __restrict__ perm_ptr, uint32_t* __restrict__ out_ptr,
-    int size_k, int size_n) {}
-
-}  // namespace marlin
-
-torch::Tensor gptq_marlin_repack(torch::Tensor& b_q_weight, torch::Tensor& perm,
-                                 int64_t size_k, int64_t size_n,
-                                 int64_t num_bits) {
-  TORCH_CHECK_NOT_IMPLEMENTED(
-      false, "marlin_repack_from_gptq(..) requires CUDA_ARCH >= 8.0");
-  return torch::empty({1, 1});
-}
-
-#else
+#include "core/registration.h"
 
 namespace marlin {
 
@@ -341,8 +321,6 @@ torch::Tensor gptq_marlin_repack(torch::Tensor& b_q_weight, torch::Tensor& perm,
   return out;
 }
 
-#endif
-
 torch::Tensor gptq_marlin_repack_meta(torch::Tensor& b_q_weight,
                                       torch::Tensor& perm, c10::SymInt size_k,
                                       c10::SymInt size_n, int64_t num_bits) {
@@ -353,4 +331,11 @@ torch::Tensor gptq_marlin_repack_meta(torch::Tensor& b_q_weight,
   return torch::empty_symint(
       {size_k / marlin::tile_size, size_n * marlin::tile_size / pack_factor},
       options);
+}
+
+TORCH_LIBRARY_IMPL_EXPAND(TORCH_EXTENSION_NAME, CUDA, m) {
+  m.impl("gptq_marlin_repack", &gptq_marlin_repack);
+}
+TORCH_LIBRARY_IMPL_EXPAND(TORCH_EXTENSION_NAME, Meta, m) {
+  m.impl("gptq_marlin_repack", &gptq_marlin_repack_meta);
 }

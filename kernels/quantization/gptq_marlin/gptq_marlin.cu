@@ -22,6 +22,7 @@
 #include "marlin.cuh"
 #include "marlin_dtypes.cuh"
 #include "core/scalar_type.hpp"
+#include "core/registration.h"
 
 #define STATIC_ASSERT_SCALAR_TYPE_VALID(scalar_t)               \
   static_assert(std::is_same<scalar_t, half>::value ||          \
@@ -2297,3 +2298,8 @@ torch::Tensor gptq_marlin_gemm(torch::Tensor& a, torch::Tensor& b_q_weight,
 }
 
 #endif
+
+
+TORCH_LIBRARY_IMPL_EXPAND(TORCH_EXTENSION_NAME, CUDA, m) {
+  m.impl("gptq_marlin_gemm", &gptq_marlin_gemm);
+}
