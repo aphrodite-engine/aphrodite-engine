@@ -281,6 +281,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
       "kernels/quantization/gptq_marlin/gptq_marlin.cu"
       "kernels/quantization/gptq_marlin/gptq_marlin_repack.cu"
       "kernels/quantization/gptq_marlin/awq_marlin_repack.cu"
+      "kernels/flash_attn/flash_api.cpp"
       "kernels/flash_attn/flash_fwd_hdim32_bf16_causal_sm80.cu"
       "kernels/flash_attn/flash_fwd_hdim32_bf16_sm80.cu"
       "kernels/flash_attn/flash_fwd_hdim32_fp16_causal_sm80.cu"
