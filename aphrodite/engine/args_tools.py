@@ -129,7 +129,7 @@ class EngineArgs:
     max_num_batched_tokens: Optional[int] = None
     max_num_seqs: int = 256
     num_scheduler_steps: int = 1
-    multi_step_stream_outputs: bool = False
+    multi_step_stream_outputs: bool = True
     single_user_mode: bool = False
     # Speculative Decoding Options
     num_lookahead_slots: int = 0
@@ -678,8 +678,12 @@ class EngineArgs:
                                   'scheduler call.'))
         parser.add_argument(
             '--multi-step-stream-outputs',
-            action='store_true',
-            help='If True, then multi-step will stream outputs for every step')
+            action=StoreBoolean,
+            default=EngineArgs.multi_step_stream_outputs,
+            nargs="?",
+            const="True",
+            help='If False, then multi-step will stream outputs at the end '
+            'of all steps')
         # Speculative Decoding Options
         parser.add_argument("--num-lookahead-slots",
                             type=int,
