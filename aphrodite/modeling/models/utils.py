@@ -23,7 +23,7 @@ class WeightsGroup(UserDict):
     Wraps grouped weights dictionary for a more informative error message
     when attempting to access a weight component that does not exist.
     """
-    def __getitem__(self, key: str) -> int:
+    def __getitem__(self, key: str) -> Iterable[Tuple[str, torch.Tensor]]:
         try:
             return super().__getitem__(key)
         except KeyError as exc:
@@ -51,7 +51,7 @@ def filter_weights(weights: Iterable[Tuple[str, torch.Tensor]],
 
 def group_weights_with_prefix(
     weights: Iterable[Tuple[str, torch.Tensor]]
-) -> Dict[str, Iterable[Tuple[str, torch.Tensor]]]:
+) -> WeightsGroup:
     """
     Helper function to group weights with prefix
     """
@@ -175,7 +175,7 @@ class LayerFn(Protocol):
 
     def __call__(
         self,
-        prefix="",
+        prefix: str,
     ) -> torch.nn.Module:
         ...
 
@@ -330,7 +330,15 @@ class LLMWrapper(nn.Module):
         super().__init__()
         self.model_name = name
         setattr(self, name, llm)
-    def forward(self, *args, **kwargs) -> Any:
-        return getattr(self, self.model_name)(*args, **kwargs)
-    def embed_tokens(self, *args, **kwargs) -> Any:
-        return getattr(self, self.model_name).embed_tokens(*args, **kwargs)
+
+    def getattr(self, key: str):
+        llm = super().__getattr__(self.model_name)
+        if key == self.model_name:
+            return llm
+
+        return getattr(llm, key)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        llm = super().__getattr__(self.model_name)
+        return llm(*args, **kwargs)
+

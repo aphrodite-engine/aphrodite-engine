@@ -36,25 +36,6 @@ APHRODITE_USE_MODELSCOPE = envs.APHRODITE_USE_MODELSCOPE
 
 _EMBEDDING_MODEL_MAX_NUM_BATCHED_TOKENS = 32768
 _MULTIMODAL_MODEL_MAX_NUM_BATCHED_TOKENS = 4096
-
-_PP_SUPPORTED_MODELS = [
-    "AquilaModel",
-    "AquilaForCausalLM",
-    "InternLMForCausalLM",
-    "LlamaForCausalLM",
-    "LLaMAForCausalLM",
-    "MistralForCausalLM",
-    "Phi3ForCausalLM",
-    "MixtralForCausalLM",
-    "NemotronForCausalLM",
-    "Qwen2ForCausalLM",
-    "Qwen2MoeForCausalLM",
-    "QWenLMHeadModel",
-    "InternLM2ForCausalLM",
-    "InternVLChatModel",
-    "Qwen2VLForConditionalGeneration",
-]
-
 _OPTIMIZED_QUANTS = [
     "awq_marlin",
     "compressed-tensors",
@@ -303,20 +284,17 @@ class ModelConfig(ConfigMixin):
         self._verify_quantization()
         self._verify_cuda_graph()
         self._verify_bnb_config()
+
     def _init_multimodal_config(
         self, limit_mm_per_prompt: Optional[Mapping[str, int]]
     ) -> Optional["MultiModalConfig"]:
         architectures = getattr(self.hf_config, "architectures", [])
-        if any(
-                ModelRegistry.is_multimodal_model(arch)
-                for arch in architectures):
+        if ModelRegistry.is_multimodal_model(architectures):
             return MultiModalConfig(limit_per_prompt=limit_mm_per_prompt or {})
-        else:
-            if limit_mm_per_prompt:
-                raise ValueError(
-                    "limit_mm_per_prompt is only supported for multimodal "
-                    "models.")
-            return None
+        if limit_mm_per_prompt:
+            raise ValueError("`limit_mm_per_prompt` is only supported for "
+                             "multimodal models.")
+        return None
 
     def _verify_tokenizer_mode(self) -> None:
         tokenizer_mode = self.tokenizer_mode.lower()
@@ -328,8 +306,7 @@ class ModelConfig(ConfigMixin):
 
     def _verify_embedding_mode(self) -> None:
         architectures = getattr(self.hf_config, "architectures", [])
-        self.embedding_mode = any(
-            ModelRegistry.is_embedding_model(arch) for arch in architectures)
+        self.embedding_mode = ModelRegistry.is_embedding_model(architectures)
 
     def _parse_quant_hf_config(self):
         quant_cfg = getattr(self.hf_config, "quantization_config", None)
@@ -568,17 +545,17 @@ class ModelConfig(ConfigMixin):
 
         pipeline_parallel_size = parallel_config.pipeline_parallel_size
         architectures = getattr(self.hf_config, "architectures", [])
-        if not all(arch in _PP_SUPPORTED_MODELS
-                   for arch in architectures) and pipeline_parallel_size > 1:
-            raise NotImplementedError(
-                "Pipeline parallelism is only supported for the following "
-                f" architectures: {_PP_SUPPORTED_MODELS}. You are using "
-                f"the following architecture: {architectures}.")
-
-        if pipeline_parallel_size > 1 and self.use_async_output_proc:
-            logger.warning("Async output processor is not supported with "
-                           "pipeline parallelism currently. Disabling it.")
-            self.use_async_output_proc = False
+        if pipeline_parallel_size > 1:
+            architectures = getattr(self.hf_config, "architectures", [])
+            if not ModelRegistry.is_pp_supported_model(architectures):
+                raise NotImplementedError(
+                    "Pipeline parallelism is not supported for this model. "
+                    "Supported models implement the `SupportsPP` interface.")
+    
+            if self.use_async_output_proc:
+                logger.warning("Async output processor is not supported with "
+                                "pipeline parallelism currently. Disabling it.")
+                self.use_async_output_proc = False
 
     def is_attention_free(self) -> bool:
         """Returns True if the model has no attention, i.e. the model has no
