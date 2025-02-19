@@ -125,7 +125,7 @@ class EngineArgs:
     use_v2_block_manager: bool = True
     scheduler_delay_factor: float = 0.0
     enable_chunked_prefill: Optional[bool] = None
-    guided_decoding_backend: str = 'lm-format-enforcer'
+    guided_decoding_backend: str = 'xgrammar'
     max_num_batched_tokens: Optional[int] = None
     max_num_seqs: int = 256
     num_scheduler_steps: int = 1
@@ -641,12 +641,12 @@ class EngineArgs:
         parser.add_argument(
             '--guided-decoding-backend',
             type=str,
-            default='lm-format-enforcer',
-            choices=['outlines', 'lm-format-enforcer'],
-            help='Category: Scheduler Options\n'
-            'Which engine will be used for guided decoding'
+            default=EngineArgs.guided_decoding_backend,
+            choices=['outlines', 'lm-format-enforcer', 'xgrammar'],
+            help='Which engine will be used for guided decoding'
             ' (JSON schema / regex etc) by default. Currently support '
-            'https://github.com/outlines-dev/outlines and '
+            'https://github.com/outlines-dev/outlines,'
+            'https://github.com/mlc-ai/xgrammar, and '
             'https://github.com/noamgat/lm-format-enforcer.'
             ' Can be overridden per request via guided_decoding_backend'
             ' parameter.')

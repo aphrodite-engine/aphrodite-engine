@@ -1,6 +1,6 @@
 import torch
 
-from .interface import Platform, PlatformEnum, UnspecifiedPlatform
+from .interface import CpuArchEnum, Platform, PlatformEnum, UnspecifiedPlatform
 
 current_platform: Platform
 
@@ -43,4 +43,4 @@ elif is_xpu:
 else:
     current_platform = UnspecifiedPlatform()
 
-__all__ = ['Platform', 'PlatformEnum', 'current_platform']
+__all__ = ['Platform', 'PlatformEnum', 'current_platform', 'CpuArchEnum']

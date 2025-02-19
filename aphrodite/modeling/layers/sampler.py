@@ -627,12 +627,39 @@ def _get_custom_token_bans(
         sampling_params = sampling_metadata.seq_groups[i].sampling_params
         seq_ids = seq_group.seq_ids
         custom_token_bans = sampling_params.custom_token_bans
+        token_ban_ranges = sampling_params.token_ban_ranges
+
         if (i < sampling_metadata.num_prompts
                 and sampling_params.prompt_logprobs is not None):
             prompt_len = len(seq_group.prompt_logprob_indices)
             banned_tokens += [custom_token_bans] * (prompt_len - 1)
-        banned_tokens += [custom_token_bans] * len(seq_ids)
+
+        for seq_id in seq_ids:
+            seq_data = seq_group.seq_data[seq_id]
+            output_len = len(seq_data.output_token_ids_array)
+
+            if token_ban_ranges:
+                curr_banned = []
+                for tokens, start, length in token_ban_ranges:
+                    # only apply ban if we're within the specified range
+                    # start=0 means start from first output token
+                    if output_len >= start and output_len < start + length:
+                        curr_banned.extend(tokens)
+                banned_tokens.append(curr_banned)
+            else:
+                banned_tokens.append(custom_token_bans)
+
     return banned_tokens
+
+def _apply_token_bans(logits: torch.Tensor,
+                      banned_tokens: List[List[int]]) -> torch.Tensor:
+    for i, banned_token_ids in enumerate(banned_tokens):
+        if i >= logits.size(0):
+            break
+        if not banned_token_ids:
+            continue
+        logits[i, banned_token_ids] = -float("inf")
+    return logits
 
 
 def _apply_penalties(logits: torch.Tensor, prompt_tokens_tensor: torch.Tensor,
@@ -691,17 +718,6 @@ def _apply_temperatures(
     low_temps = temperatures < 0.1
     logits[low_temps] -= logits.max(dim=-1, keepdim=True).values[low_temps] - 1
     logits.div_(temperatures.unsqueeze(dim=1))
-
-
-def _apply_token_bans(logits: torch.Tensor,
-                      banned_tokens: List[List[int]]) -> torch.Tensor:
-    for i, banned_token_ids in enumerate(banned_tokens):
-        if i >= logits.size(0):
-            break
-        if not banned_token_ids:
-            continue
-        logits[i, banned_token_ids] = -float("inf")
-    return logits
 
 
 def _apply_min_tokens_penalty(
