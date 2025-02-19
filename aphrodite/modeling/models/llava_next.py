@@ -1,3 +1,4 @@
+from functools import cached_property
 from typing import (Iterable, List, Literal, Mapping, Optional, Tuple,
                     TypedDict, Union)
 
@@ -14,16 +15,16 @@ from aphrodite.common.config import CacheConfig, MultiModalConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.common.utils import is_list_of
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
-from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 
 from .clip import (CLIPVisionModel, dummy_image_for_clip,
                    dummy_seq_data_for_clip, get_clip_image_feature_size,
                    get_clip_patch_grid_length, input_processor_for_clip)
-from .interfaces import SupportsMultiModal
+from .interfaces import SupportsMultiModal, SupportsPP
 from .llava import LlavaMultiModalProjector
 from .siglip import (SiglipVisionModel, dummy_image_for_siglip,
                      dummy_seq_data_for_siglip, get_siglip_image_feature_size,
@@ -42,6 +43,7 @@ class LlavaNextImagePixelInputs(TypedDict):
     """
     Shape:
     `(batch_size * num_images, 1 + num_patches, num_channels, height, width)`
+
     Note that `num_patches` may be different per batch and image,
     in which case the data is passed as a list instead of a batched tensor.
     """
@@ -49,6 +51,7 @@ class LlavaNextImagePixelInputs(TypedDict):
     image_sizes: NotRequired[torch.Tensor]
     """
     Shape: `(batch_size * num_images, 2)`
+
     This should be in `(height, width)` format.
     """
 
@@ -57,6 +60,7 @@ class LlavaNextImageEmbeddingInputs(TypedDict):
     type: Literal["image_embeds"]
     data: torch.Tensor
     """Shape: `(batch_size * num_images, image_feature_size, hidden_size)`
+
     `hidden_size` must match the hidden size of language model backbone.
     """
 
@@ -175,6 +179,7 @@ def dummy_data_for_llava_next(ctx: InputContext, seq_len: int,
             image_width_override=MAX_IMAGE_FEATURE_SIZE_WIDTH,
             image_height_override=MAX_IMAGE_FEATURE_SIZE_HEIGHT,
         )
+
         return seq_data, mm_data
     elif isinstance(vision_config, SiglipVisionConfig):
         seq_data = dummy_seq_data_for_siglip(
@@ -283,7 +288,8 @@ def _init_vision_tower(hf_config: LlavaNextConfig):
 @MULTIMODAL_REGISTRY.register_max_image_tokens(get_max_llava_next_image_tokens)
 @INPUT_REGISTRY.register_dummy_data(dummy_data_for_llava_next)
 @INPUT_REGISTRY.register_input_processor(input_processor_for_llava_next)
-class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal):
+class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal,
+                                        SupportsPP):
 
     def __init__(self,
                  config: LlavaNextConfig,
@@ -297,6 +303,8 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal):
 
         # TODO: Optionally initializes this for supporting embeddings.
         self.vision_tower = _init_vision_tower(config)
+        self.image_newline = nn.Parameter(
+            torch.empty(config.text_config.hidden_size))
         self.multi_modal_projector = LlavaMultiModalProjector(
             vision_hidden_size=config.vision_config.hidden_size,
             text_hidden_size=config.text_config.hidden_size,
@@ -305,18 +313,28 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal):
         self.language_model = init_aphrodite_registered_model(
             config.text_config, cache_config, quant_config)
 
-        self.image_newline = nn.Parameter(
-            torch.empty(config.text_config.hidden_size))
+        self.make_empty_intermediate_tensors = (
+            self.language_model.make_empty_intermediate_tensors)
+
+    @cached_property
+    def sampler(self):
+        if hasattr(self.language_model, "sampler"):
+            return self.language_model.sampler
+
+        return Sampler()
 
     def _validate_image_sizes(self, data: torch.Tensor) -> torch.Tensor:
         expected_dims = (2, )
+
         def _validate_shape(d: torch.Tensor):
             actual_dims = tuple(d.shape)
+
             if actual_dims != expected_dims:
                 expected_expr = str(expected_dims)
                 raise ValueError(
                     f"The expected shape of image sizes per image per batch "
                     f"is {expected_expr}. You supplied {tuple(d.shape)}.")
+
         for d in data:
             _validate_shape(d)
 
@@ -435,6 +453,7 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal):
                     self.config.vision_config.image_size,
                 )
                 num_patches = num_patch_height * num_patch_width
+
                 # Image patches might be padded for batch processing
                 other_patch_embeds = other_patch_embeds[:num_patches] \
                     .view(num_patch_height, num_patch_width, height, width, -1)
@@ -507,7 +526,6 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal):
         self,
         image_input: LlavaNextImageInputs,
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
-
         if image_input["type"] == "image_embeds":
             return [image_input["data"]]
 
@@ -536,7 +554,7 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal):
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         **kwargs: object,
-    ) -> SamplerOutput:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         """Run forward pass for LlaVA-NeXT.
 
         One key thing to understand is the `input_ids` already accounts for the
@@ -581,26 +599,30 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal):
         See also:
             :class:`LlavaNextImageInputs`
         """
-        image_input = self._parse_and_validate_image_input(**kwargs)
-
-        if image_input is not None:
-            vision_embeddings = self._process_image_input(image_input)
-            inputs_embeds = self.language_model.model.get_input_embeddings(
-                input_ids)
-
-            inputs_embeds = merge_multimodal_embeddings(
-                input_ids, inputs_embeds, vision_embeddings,
-                self.config.image_token_index)
-
+        if intermediate_tensors is not None:
             input_ids = None
-        else:
             inputs_embeds = None
+        else:
+            image_input = self._parse_and_validate_image_input(**kwargs)
+
+            if image_input is not None:
+                vision_embeddings = self._process_image_input(image_input)
+                inputs_embeds = self.language_model.model.get_input_embeddings(
+                    input_ids)
+
+                inputs_embeds = merge_multimodal_embeddings(
+                    input_ids, inputs_embeds, vision_embeddings,
+                    self.config.image_token_index)
+
+                input_ids = None
+            else:
+                inputs_embeds = None
 
         hidden_states = self.language_model.model(input_ids,
                                                   positions,
                                                   kv_caches,
                                                   attn_metadata,
-                                                  None,
+                                                  intermediate_tensors,
                                                   inputs_embeds=inputs_embeds)
 
         return hidden_states
@@ -645,4 +667,3 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal):
 
         # load llm backbone
         self.language_model.load_weights(weights_group["language_model"])
-

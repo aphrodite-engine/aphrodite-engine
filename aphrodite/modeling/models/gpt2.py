@@ -17,7 +17,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only GPT-2 model compatible with HuggingFace weights."""
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -26,7 +26,8 @@ from transformers import GPT2Config
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.distributed.parallel_state import (
+    get_pp_group, get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               QKVParallelLinear,
@@ -34,10 +35,14 @@ from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+    ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
+
+from .interfaces import SupportsPP
+from .utils import (is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 
 class GPT2Attention(nn.Module):
@@ -47,6 +52,7 @@ class GPT2Attention(nn.Module):
         config: GPT2Config,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ):
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -64,12 +70,14 @@ class GPT2Attention(nn.Module):
             total_num_heads,
             bias=True,
             quant_config=quant_config,
+            prefix=f"{prefix}.c_attn",
         )
         self.c_proj = RowParallelLinear(
             self.hidden_size,
             self.hidden_size,
             bias=True,
             quant_config=quant_config,
+            prefix=f"{prefix}.c_proj",
         )
         self.attn = Attention(self.num_heads,
                               self.head_dim,
@@ -97,6 +105,7 @@ class GPT2MLP(nn.Module):
         intermediate_size: int,
         config: GPT2Config,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ):
         super().__init__()
         hidden_size = config.hidden_size
@@ -105,12 +114,14 @@ class GPT2MLP(nn.Module):
             intermediate_size,
             bias=True,
             quant_config=quant_config,
+            prefix=f"{prefix}.c_fc",
         )
         self.c_proj = RowParallelLinear(
             intermediate_size,
             hidden_size,
             bias=True,
             quant_config=quant_config,
+            prefix=f"{prefix}.c_proj",
         )
         self.act = get_act_fn(config.activation_function, quant_config,
                               intermediate_size)
@@ -129,6 +140,7 @@ class GPT2Block(nn.Module):
         config: GPT2Config,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ):
         super().__init__()
         hidden_size = config.hidden_size
@@ -136,9 +148,15 @@ class GPT2Block(nn.Module):
                      hidden_size)
 
         self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
-        self.attn = GPT2Attention(config, cache_config, quant_config)
+        self.attn = GPT2Attention(config,
+                                  cache_config,
+                                  quant_config,
+                                  prefix=f"{prefix}.attn")
         self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
-        self.mlp = GPT2MLP(inner_dim, config, quant_config)
+        self.mlp = GPT2MLP(inner_dim,
+                           config,
+                           quant_config,
+                           prefix=f"{prefix}.mlp")
 
     def forward(
         self,
@@ -171,6 +189,7 @@ class GPT2Model(nn.Module):
         config: GPT2Config,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ):
         super().__init__()
         self.config = config
@@ -180,11 +199,15 @@ class GPT2Model(nn.Module):
         self.embed_dim = config.hidden_size
         self.wte = VocabParallelEmbedding(config.vocab_size, self.embed_dim)
         self.wpe = nn.Embedding(config.max_position_embeddings, self.embed_dim)
-        self.h = nn.ModuleList([
-            GPT2Block(config, cache_config, quant_config)
-            for _ in range(config.num_hidden_layers)
-        ])
+        self.start_layer, self.end_layer, self.h = make_layers(
+            config.num_hidden_layers,
+            lambda prefix: GPT2Block(
+                config, cache_config, quant_config, prefix=prefix),
+            prefix=f"{prefix}.h")
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(["hidden_states"],
+                                                    config.n_embd))
 
     def forward(
         self,
@@ -192,20 +215,30 @@ class GPT2Model(nn.Module):
         position_ids: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-    ) -> torch.Tensor:
-        inputs_embeds = self.wte(input_ids)
-        position_embeds = self.wpe(position_ids)
-        hidden_states = inputs_embeds + position_embeds
+        intermediate_tensors: Optional[IntermediateTensors],
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        if get_pp_group().is_first_rank:
+            inputs_embeds = self.wte(input_ids)
+            position_embeds = self.wpe(position_ids)
+            hidden_states = inputs_embeds + position_embeds
+        else:
+            assert intermediate_tensors is not None
+            hidden_states = intermediate_tensors["hidden_states"]
 
-        for i in range(len(self.h)):
+        for i in range(self.start_layer, self.end_layer):
             layer = self.h[i]
-            hidden_states = layer(hidden_states, kv_caches[i], attn_metadata)
+            hidden_states = layer(hidden_states,
+                                  kv_caches[i - self.start_layer],
+                                  attn_metadata)
+
+        if not get_pp_group().is_last_rank:
+            return IntermediateTensors({"hidden_states": hidden_states})
 
         hidden_states = self.ln_f(hidden_states)
         return hidden_states
 
 
-class GPT2LMHeadModel(nn.Module):
+class GPT2LMHeadModel(nn.Module, SupportsPP):
 
     def __init__(
         self,
@@ -216,10 +249,19 @@ class GPT2LMHeadModel(nn.Module):
         super().__init__()
         self.config = config
         self.quant_config = quant_config
-        self.transformer = GPT2Model(config, cache_config, quant_config)
-        self.lm_head = self.transformer.wte
+        self.transformer = GPT2Model(config,
+                                     cache_config,
+                                     quant_config,
+                                     prefix="transformer")
+        if self.config.tie_word_embeddings:
+            self.lm_head = self.transformer.wte
+        else:
+            self.lm_head = ParallelLMHead(self.config.vocab_size,
+                                          self.config.hidden_size)
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.sampler = Sampler()
+        self.make_empty_intermediate_tensors = (
+            self.transformer.make_empty_intermediate_tensors)
 
     def forward(
         self,
@@ -228,9 +270,9 @@ class GPT2LMHeadModel(nn.Module):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         hidden_states = self.transformer(input_ids, positions, kv_caches,
-                                         attn_metadata)
+                                         attn_metadata, intermediate_tensors)
         return hidden_states
 
     def compute_logits(
@@ -263,6 +305,10 @@ class GPT2LMHeadModel(nn.Module):
                 continue
             if not name.startswith("transformer."):
                 name = "transformer." + name
+
+            if is_pp_missing_parameter(name, self):
+                continue
+
             param = params_dict[name]
             # The HF's GPT-2 implementation uses Conv1D instead of Linear.
             # Because of this, we need to transpose the weights.

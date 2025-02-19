@@ -246,7 +246,7 @@ class SiglipParallelAttention(nn.Module):
 
     def __init__(
         self,
-        config,
+        config: SiglipVisionConfig,
         quant_config: Optional[QuantizationConfig] = None,
     ):
         super().__init__()
@@ -258,6 +258,7 @@ class SiglipParallelAttention(nn.Module):
             raise ValueError(f"embed_dim must be divisible by num_heads (got "
                              f"`embed_dim`: {self.embed_dim} and `num_heads`:"
                              f" {self.num_heads}).")
+
         self.scale = self.head_dim**-0.5
         self.dropout = config.attention_dropout
         self.qkv_proj = QKVParallelLinear(
@@ -266,6 +267,7 @@ class SiglipParallelAttention(nn.Module):
             total_num_heads=self.num_heads,
             quant_config=quant_config,
         )
+
         self.out_proj = RowParallelLinear(
             input_size=self.embed_dim,
             output_size=self.embed_dim,
@@ -284,6 +286,7 @@ class SiglipParallelAttention(nn.Module):
 
         qkv_states, _ = self.qkv_proj(hidden_states)
         query_states, key_states, value_states = qkv_states.chunk(3, dim=-1)
+
         query_states = query_states.view(batch_size, q_len,
                                          self.num_heads_per_partition,
                                          self.head_dim)
@@ -293,6 +296,7 @@ class SiglipParallelAttention(nn.Module):
         value_states = value_states.view(batch_size, q_len,
                                          self.num_heads_per_partition,
                                          self.head_dim)
+
         out = xops.memory_efficient_attention_forward(query_states,
                                                       key_states,
                                                       value_states,
@@ -308,7 +312,7 @@ class SiglipMLP(nn.Module):
 
     def __init__(
         self,
-        config,
+        config: SiglipVisionConfig,
         quant_config: Optional[QuantizationConfig] = None,
     ):
         super().__init__()
@@ -353,6 +357,7 @@ class SiglipEncoderLayer(nn.Module):
                                                      quant_config=quant_config)
         else:
             self.self_attn = SiglipSdpaAttention(config)
+
         self.layer_norm1 = nn.LayerNorm(self.embed_dim,
                                         eps=config.layer_norm_eps)
         self.mlp = SiglipMLP(
@@ -423,7 +428,7 @@ class SiglipMultiheadAttentionPoolingHead(nn.Module):
         super().__init__()
 
         self.probe = nn.Parameter(torch.randn(1, 1, config.hidden_size))
-        # TODO(ChristopherCho): Implement aphrodite version of MHA
+        # TODO: Implement Aphrodite's version of MultiheadAttention
         self.attention = torch.nn.MultiheadAttention(
             config.hidden_size, config.num_attention_heads, batch_first=True)
         self.layernorm = nn.LayerNorm(config.hidden_size,
@@ -461,6 +466,7 @@ class SiglipVisionTransformer(nn.Module):
             quant_config=quant_config,
             num_hidden_layers_override=num_hidden_layers_override,
         )
+
         if len(self.encoder.layers) > config.num_hidden_layers:
             raise ValueError(
                 f"The original encoder only has {config.num_hidden_layers} "
@@ -470,9 +476,10 @@ class SiglipVisionTransformer(nn.Module):
             self.post_layernorm = nn.LayerNorm(embed_dim,
                                                eps=config.layer_norm_eps)
         else:
-          # post_layernorm is unused when we extract intermediate features
+            # post_layernorm is unused when we extract intermediate features
             # In this case, we can skip it to conserve memory
             self.post_layernorm = None
+
         self.use_head = (True if not hasattr(config, "vision_use_head") else
                          config.vision_use_head)
         if self.use_head:
@@ -495,7 +502,6 @@ class SiglipVisionTransformer(nn.Module):
             return encoder_outputs
 
         last_hidden_state = self.post_layernorm(encoder_outputs)
-
         # TODO: add this back when pooled_output is used in inference
         # if self.use_head:
         # pooled_output = self.head(last_hidden_state)
@@ -514,9 +520,11 @@ class SiglipVisionModel(nn.Module):
         num_hidden_layers_override: Optional[int] = None,
     ):
         super().__init__()
+
         num_heads = config.num_attention_heads
         tp_size = get_tensor_model_parallel_world_size()
         self.shard_weight = USE_XFORMERS_OPS and num_heads % tp_size == 0
+
         self.vision_model = SiglipVisionTransformer(
             config,
             quant_config,
@@ -551,6 +559,7 @@ class SiglipVisionModel(nn.Module):
             if (name.startswith("vision_model.post_layernorm")
                     and self.vision_model.post_layernorm is None):
                 continue
+
             # omit layers when num_hidden_layers_override is set
             if name.startswith("vision_model.encoder.layers"):
                 layer_idx = int(name.split(".")[3])

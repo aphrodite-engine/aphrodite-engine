@@ -27,7 +27,7 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_weight_attrs
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.deepspeedfp import (DeepSpeedFPConfig,
                                                 DeepSpeedFPParameter)
 from aphrodite.transformers_utils.configs.arctic import ArcticConfig
@@ -383,9 +383,8 @@ class ArcticModel(nn.Module):
         self._attn_implementation = config._attn_implementation
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.make_empty_intermediate_tensors = (
-            make_empty_intermediate_tensors_factory(
-                ["hidden_states"], config.hidden_size)
-        )
+            make_empty_intermediate_tensors_factory(["hidden_states"],
+                                                    config.hidden_size))
 
     def forward(
         self,
@@ -393,7 +392,7 @@ class ArcticModel(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
+        intermediate_tensors: Optional[IntermediateTensors],
     ) -> Union[torch.Tensor, IntermediateTensors]:
         if get_pp_group().is_first_rank:
             hidden_states = self.embed_tokens(input_ids)
@@ -405,7 +404,7 @@ class ArcticModel(nn.Module):
             hidden_states = layer(positions, hidden_states,
                                   kv_caches[i - self.start_layer],
                                   attn_metadata)
-        if not get_pp_group().is_first_rank:
+        if not get_pp_group().is_last_rank:
             return IntermediateTensors({"hidden_states": hidden_states})
         hidden_states = self.norm(hidden_states)
         return hidden_states
@@ -427,6 +426,8 @@ class ArcticForCausalLM(nn.Module, SupportsPP):
             config.hidden_size,
             quant_config=quant_config,
         )
+        if self.config.tie_word_embeddings:
+            self.lm_head.weight = self.model.embed_tokens.weight
         self.num_experts = config.num_local_experts
         self.num_experts_per_tok = config.num_experts_per_tok
         self.unpadded_vocab_size = config.vocab_size
@@ -445,8 +446,7 @@ class ArcticForCausalLM(nn.Module, SupportsPP):
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
         hidden_states = self.model(input_ids, positions, kv_caches,
-                                   attn_metadata,
-                                   intermediate_tensors)
+                                   attn_metadata, intermediate_tensors)
         return hidden_states
 
     def compute_logits(
@@ -474,8 +474,8 @@ class ArcticForCausalLM(nn.Module, SupportsPP):
             ("qkv_proj", "v_proj", "v"),
         ]
 
-        mlp_params_mapping = []
-        expert_params_mapping = []
+        mlp_params_mapping: List[Tuple[str, str, int]] = []
+        expert_params_mapping: List[Tuple[str, str, int]] = []
         num_layers = self.config.num_hidden_layers
 
         for layer in range(num_layers):

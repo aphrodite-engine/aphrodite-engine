@@ -22,6 +22,7 @@ from typing import Iterable, List, Optional, Tuple
 import torch
 from torch import nn
 from transformers import BartConfig
+from transformers.utils import logging
 
 from aphrodite.attention import Attention, AttentionMetadata, AttentionType
 from aphrodite.common.config import CacheConfig, LoRAConfig
@@ -38,6 +39,8 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization.base_config import QuantizationConfig
+
+logger = logging.get_logger(__name__)
 
 
 def get_bsz_seq_len(input_ids):
@@ -76,7 +79,7 @@ class BartLearnedPositionalEmbedding(VocabParallelEmbedding):
 
 class BartScaledWordEmbedding(VocabParallelEmbedding):
     """
-    This module overrides VocabParallelEmbedding's
+    This module overrides VocabParallelEmbedding's 
     forward by multiplying with embeddings scale.
     """
 
@@ -817,6 +820,8 @@ class BartForConditionalGeneration(nn.Module):
                  lora_config: Optional[LoRAConfig] = None):
 
         super().__init__()
+        # currently all existing BART models have `tie_word_embeddings` enabled
+        assert config.tie_word_embeddings
         self.config = config
         self.model = BartModel(config,
                                cache_config,
@@ -932,10 +937,12 @@ class BartForConditionalGeneration(nn.Module):
         model_params_dict = dict(self.model.named_parameters())
         top_params_dict = dict(self.named_parameters())
 
+        weights_tuple_list = list(weights)
+
         shared_embedding_weight = None
         shared_embedding_shard_id = None
 
-        for name, loaded_weight in weights:
+        for name, loaded_weight in weights_tuple_list:
 
             name = self._rename_key(name)
             name, shard_id = self._rename_stacked_param(name)

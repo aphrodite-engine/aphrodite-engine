@@ -2,7 +2,6 @@
 # Adapted from
 # https://github.com/huggingface/transformers/blob/v4.28.0/src/transformers/models/llama/modeling_llama.py
 # Copyright 2024 The ModelBest team.
-# Copyright 2023 The PygmalionAI team.
 # Copyright 2023 The vLLM team.
 # Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.
 #
@@ -27,6 +26,7 @@ from typing import Any, Dict, Optional
 
 import torch
 from torch import nn
+from transformers import PretrainedConfig
 
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
@@ -39,14 +39,16 @@ from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.models.minicpm import (MiniCPMDecoderLayer,
                                                MiniCPMForCausalLM,
                                                MiniCPMModel)
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
+
+from .utils import make_layers
 
 
 class MiniCPM3Attention(nn.Module):
 
     def __init__(
         self,
-        config,
+        config: PretrainedConfig,
         hidden_size: int,
         num_heads: int,
         qk_nope_head_dim: int,
@@ -199,12 +201,18 @@ class MiniCPM3DecoderLayer(MiniCPMDecoderLayer):
 
 class MiniCPM3Model(MiniCPMModel):
 
-    def _init_layers(self):
-        self.layers = nn.ModuleList([
-            MiniCPM3DecoderLayer(self.config, self.cache_config,
-                                 self.quant_config)
-            for _ in range(self.config.num_hidden_layers)
-        ])
+    def _init_layers(
+        self,
+        prefix: str,
+        config: PretrainedConfig,
+        cache_config: Optional[CacheConfig],
+        quant_config: Optional[QuantizationConfig],
+    ):
+        self.start_layer, self.end_layer, self.layers = make_layers(
+            config.num_hidden_layers,
+            lambda prefix: MiniCPM3DecoderLayer(config, cache_config,
+                                                quant_config),
+            prefix=f"{prefix}.layers")
 
 
 class MiniCPM3ForCausalLM(MiniCPMForCausalLM):

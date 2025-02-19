@@ -1,4 +1,4 @@
-"""Minimal implementation of BlipVisionModel intended to be only used
+"""Minimal implementation of BlipVisionModel intended to be only used 
 within a vision language model."""
 from typing import Iterable, Optional, Tuple, Union
 
@@ -40,13 +40,13 @@ def get_blip_num_patches(*, image_size: int, patch_size: int) -> int:
 
 
 def get_blip_image_feature_size(
-    hf_config: Union[BlipVisionConfig, Blip2VisionConfig], ) -> int:
+        hf_config: Union[BlipVisionConfig, Blip2VisionConfig]) -> int:
     return get_blip_num_patches(image_size=hf_config.image_size,
                                 patch_size=hf_config.patch_size)
 
 
 def get_max_blip_image_tokens(
-    hf_config: Union[BlipVisionConfig, Blip2VisionConfig], ) -> int:
+        hf_config: Union[BlipVisionConfig, Blip2VisionConfig]) -> int:
     return get_blip_image_feature_size(hf_config)
 
 
@@ -164,6 +164,7 @@ class BlipVisionEmbeddings(nn.Module):
 
 class BlipParallelAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
+
     def __init__(
         self,
         config: BlipVisionConfig,
@@ -181,6 +182,7 @@ class BlipParallelAttention(nn.Module):
                 f" {self.num_heads}).")
         self.scale = self.head_dim**-0.5
         self.dropout = config.attention_dropout
+
         self.qkv = QKVParallelLinear(
             self.embed_dim,
             self.head_dim,
@@ -193,6 +195,7 @@ class BlipParallelAttention(nn.Module):
             self.embed_dim,
             quant_config=quant_config,
         )
+
         self.tp_size = get_tensor_model_parallel_world_size()
         self.num_heads_per_partition = divide(self.num_heads, self.tp_size)
 
@@ -206,6 +209,7 @@ class BlipParallelAttention(nn.Module):
     ):
         """Input shape: Batch x Time x Channel"""
         bsz, tgt_len, _ = hidden_states.size()
+
         qkv_states, _ = self.qkv(hidden_states)
         query_states, key_states, value_states = qkv_states.chunk(3, dim=-1)
         query_states = query_states.view(bsz, tgt_len,
@@ -217,6 +221,7 @@ class BlipParallelAttention(nn.Module):
         value_states = value_states.view(bsz, tgt_len,
                                          self.num_heads_per_partition,
                                          self.head_dim)
+
         out = xops.memory_efficient_attention_forward(query_states,
                                                       key_states,
                                                       value_states,
@@ -224,6 +229,7 @@ class BlipParallelAttention(nn.Module):
                                                       scale=self.scale)
         out = out.view(bsz, tgt_len, -1)
         attn_output, _ = self.projection(out)
+
         return attn_output, None
 
 
@@ -294,8 +300,9 @@ class BlipEncoderLayer(nn.Module):
 
 class BlipEncoder(nn.Module):
     """
-    Transformer encoder consisting of `config.num_hidden_layers` self
+    Transformer encoder consisting of `config.num_hidden_layers` self 
     attention layers. Each layer is a [`BlipEncoderLayer`].
+
     Args:
         config: BlipConfig
     """
@@ -339,6 +346,7 @@ class BlipVisionModel(nn.Module):
         tp_size = get_tensor_model_parallel_world_size()
         num_heads = config.num_attention_heads
         self.shard_weight = USE_XFORMERS_OPS and num_heads % tp_size == 0
+
         self.config = config
 
         self.embeddings = BlipVisionEmbeddings(config)
@@ -347,6 +355,7 @@ class BlipVisionModel(nn.Module):
             quant_config=quant_config,
             num_hidden_layers_override=num_hidden_layers_override,
         )
+
         if len(self.encoder.layers) > config.num_hidden_layers:
             raise ValueError(
                 f"The original encoder only has {config.num_hidden_layers} "
@@ -366,7 +375,9 @@ class BlipVisionModel(nn.Module):
 
         if self.post_layernorm is None:
             return hidden_states
+
         return self.post_layernorm(hidden_states)
+
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
@@ -376,19 +387,23 @@ class BlipVisionModel(nn.Module):
         ] if self.shard_weight else []
         params_dict = dict(self.named_parameters())
         layer_count = len(self.encoder.layers)
+
         for name, loaded_weight in weights:
             # post_layernorm is not needed in BlipVisionModel
             if (name.startswith("post_layernorm")
                     and self.post_layernorm is None):
                 continue
+
             # omit layers when num_hidden_layers_override is set
             if name.startswith("encoder.layers"):
                 layer_idx = int(name.split(".")[2])
                 if layer_idx >= layer_count:
                     continue
+
             for (param_name, weight_name, shard_id) in stacked_params_mapping:
                 if weight_name not in name:
                     continue
+
                 param = params_dict[name.replace(weight_name, param_name)]
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)

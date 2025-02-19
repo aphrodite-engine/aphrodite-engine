@@ -45,7 +45,6 @@ from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.model_loader.utils import set_default_torch_dtype
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import SupportsMultiModal
 from aphrodite.modeling.models.llama import LlamaModel
 from aphrodite.modeling.models.minicpm import MiniCPMModel
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
@@ -59,7 +58,8 @@ from aphrodite.multimodal.utils import cached_get_tokenizer
 from aphrodite.quantization import QuantizationConfig
 
 from .idefics2_vision_model import Idefics2VisionTransformer
-from .interfaces import SupportsLoRA
+from .interfaces import SupportsLoRA, SupportsMultiModal, SupportsPP
+from .utils import is_pp_missing_parameter
 
 _KEYS_TO_MODIFY_MAPPING = {
     "llm.lm_head": "lm_head",
@@ -322,7 +322,7 @@ def input_mapper_for_minicpmv(ctx: InputContext, data: object):
 
     if not isinstance(data, list):
         raise ValueError(
-            f"Image input must be list of MiniCPMVImageInput, got ({data})")
+            "Image input must be list of MiniCPMVImageInput, got (%s)", data)
     batch_data = image_processor \
         .preprocess([img["image"] for img in data], return_tensors="pt") \
         .data
@@ -337,7 +337,7 @@ def input_mapper_for_minicpmv(ctx: InputContext, data: object):
     return MultiModalInputs(batch_data)
 
 
-class MiniCPMVBaseModel(nn.Module, SupportsMultiModal):
+class MiniCPMVBaseModel(nn.Module, SupportsMultiModal, SupportsPP):
     """
     The abstract class of MiniCPMV can only be inherited, but cannot be
     instantiated.
@@ -373,6 +373,9 @@ class MiniCPMVBaseModel(nn.Module, SupportsMultiModal):
                                       quant_config=quant_config)
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.sampler = Sampler()
+
+        self.make_empty_intermediate_tensors = (
+            self.llm.make_empty_intermediate_tensors)
 
     def get_embedding(
         self,
@@ -498,9 +501,12 @@ class MiniCPMVBaseModel(nn.Module, SupportsMultiModal):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
-        image_inputs = self._parse_and_validate_inputs(input_ids, **kwargs)
+        if intermediate_tensors is not None:
+            vlm_embeddings = None
+        else:
+            image_inputs = self._parse_and_validate_inputs(input_ids, **kwargs)
 
-        vlm_embeddings, _ = self.get_embedding(input_ids, image_inputs)
+            vlm_embeddings, _ = self.get_embedding(input_ids, image_inputs)
 
         output = self.llm(
             input_ids=None,
@@ -557,6 +563,9 @@ class MiniCPMVBaseModel(nn.Module, SupportsMultiModal):
                 for param_name, weight_name, shard_id in stacked_params_mapping:
                     if weight_name not in name:
                         continue
+                    if is_pp_missing_parameter(
+                            name.replace(weight_name, param_name), self):
+                        continue
                     param = params_dict[name.replace(weight_name, param_name)]
                     weight_loader = param.weight_loader
                     weight_loader(param, loaded_weight, shard_id)
@@ -564,6 +573,8 @@ class MiniCPMVBaseModel(nn.Module, SupportsMultiModal):
                 else:
                     use_default_weight_loading = True
             if use_default_weight_loading:
+                if is_pp_missing_parameter(name, self):
+                    continue
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
@@ -576,6 +587,7 @@ class MiniCPMVBaseModel(nn.Module, SupportsMultiModal):
         return MultiModelKeys.from_string_field(language_model="llm",
                                                 connector="resampler",
                                                 tower_model="vpm")
+
     def init_llm(
         self,
         config: PretrainedConfig,
@@ -624,6 +636,7 @@ class MiniCPMV2_0(MiniCPMVBaseModel):
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
     ) -> nn.Module:
+
         return LLMWrapper(MiniCPMModel(config,
                                        cache_config=cache_config,
                                        quant_config=quant_config),
@@ -859,6 +872,7 @@ class MiniCPMV2_6(MiniCPMVBaseModel, SupportsLoRA):
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
     ) -> nn.Module:
+
         return LLMWrapper(Qwen2Model(config,
                                      cache_config=cache_config,
                                      quant_config=quant_config),
@@ -880,7 +894,6 @@ class MiniCPMV2_6(MiniCPMVBaseModel, SupportsLoRA):
                 num_heads=embed_dim // 128,
                 kv_dim=vision_dim,
             )
-
         return resampler
 
     def get_vision_embedding(
@@ -948,9 +961,8 @@ class MiniCPMV(MiniCPMVBaseModel, SupportsLoRA):
     """
     Different versions of MiniCPMV use different visual encoders and LLMs,
     which is not conducive to the current integration logic of LoRA and
-    bitsandbytes in Aphrodite. Therefore, it is necessary to separate them.
+    bitsandbytes in vLLM. Therefore, it is necessary to separate them.
     """
-
     # Ensure that the LoRA support check passes when the class is not
     # initialized, but set all these attributes to empty.
     packed_modules_mapping = {}
@@ -973,7 +985,7 @@ class MiniCPMV(MiniCPMVBaseModel, SupportsLoRA):
             version = str(config.version).split(".")
             version = tuple([int(x) for x in version])
         # Dispatch class based on version
-        instance_class = _SUPPORT_VERSION.get(version, None)
+        instance_class = _SUPPORT_VERSION.get(version)
         if instance_class is None:
             raise ValueError(
                 "Currently, MiniCPMV only supports versions 2.0, 2.5, and 2.6")

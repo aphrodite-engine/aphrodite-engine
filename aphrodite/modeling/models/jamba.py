@@ -30,14 +30,13 @@ from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import HasInnerState
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_weight_attrs
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 from aphrodite.worker.model_runner import (_BATCH_SIZES_TO_CAPTURE,
                                            _get_graph_batch_size)
 
-from .interfaces import SupportsLoRA
+from .interfaces import HasInnerState, SupportsLoRA
 
 KVCache = Tuple[torch.Tensor, torch.Tensor]
 

@@ -20,7 +20,7 @@
 
 # This file is based on the LLama model definition file in transformers
 """PyTorch Cohere model."""
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.utils.checkpoint
@@ -30,7 +30,8 @@ from transformers import CohereConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.distributed import (get_pp_group,
+                                   get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
                                               QKVParallelLinear,
@@ -44,9 +45,11 @@ from aphrodite.modeling.model_loader.weight_utils import (
     default_weight_loader, row_parallel_weight_loader)
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_weight_attrs
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import SupportsLoRA
+from .interfaces import SupportsLoRA, SupportsPP
+from .utils import (is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 
 @torch.compile
@@ -81,7 +84,7 @@ class CohereMLP(nn.Module):
 
     def __init__(
         self,
-        config,
+        config: CohereConfig,
         quant_config: Optional[QuantizationConfig] = None,
     ):
         super().__init__()
@@ -255,6 +258,7 @@ class CohereModel(nn.Module):
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         lora_config: Optional[LoRAConfig] = None,
+        prefix: str = "",
     ):
         super().__init__()
         self.config = config
@@ -264,12 +268,16 @@ class CohereModel(nn.Module):
         self.org_vocab_size = config.vocab_size
         self.embed_tokens = VocabParallelEmbedding(config.vocab_size,
                                                    config.hidden_size)
-        self.layers = nn.ModuleList([
-            CohereDecoderLayer(config, cache_config, quant_config=quant_config)
-            for _ in range(config.num_hidden_layers)
-        ])
+        self.start_layer, self.end_layer, self.layers = make_layers(
+            config.num_hidden_layers,
+            lambda prefix: CohereDecoderLayer(config, cache_config,
+                                              quant_config),
+            prefix=f"{prefix}.layers")
         self.norm = LayerNorm(param_shape=(config.hidden_size),
                               eps=config.layer_norm_eps)
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(
+                ["hidden_states", "residual"], config.hidden_size))
 
     def forward(
         self,
@@ -277,24 +285,34 @@ class CohereModel(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-    ) -> torch.Tensor:
-        hidden_states = self.embed_tokens(input_ids)
-        residual = None
-        for i in range(len(self.layers)):
+        intermediate_tensors: Optional[IntermediateTensors],
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        if get_pp_group().is_first_rank:
+            hidden_states = self.embed_tokens(input_ids)
+            residual = None
+        else:
+            assert intermediate_tensors is not None
+            hidden_states = intermediate_tensors["hidden_states"]
+            residual = intermediate_tensors["residual"]
+        for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
-                kv_caches[i],
+                kv_caches[i - self.start_layer],
                 attn_metadata,
                 residual,
             )
+        if not get_pp_group().is_last_rank:
+            return IntermediateTensors({
+                "hidden_states": hidden_states,
+                "residual": residual
+            })
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
 
-class CohereForCausalLM(nn.Module, SupportsLoRA):
-
+class CohereForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -322,6 +340,9 @@ class CohereForCausalLM(nn.Module, SupportsLoRA):
     ) -> None:
         super().__init__()
         self.config = config
+        # currently all existing command R models have `tie_word_embeddings`
+        # enabled
+        assert config.tie_word_embeddings
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -334,6 +355,8 @@ class CohereForCausalLM(nn.Module, SupportsLoRA):
                                  quant_config,
                                  lora_config=lora_config)
         self.sampler = Sampler()
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors)
 
     @torch.no_grad()
     def forward(
@@ -343,9 +366,9 @@ class CohereForCausalLM(nn.Module, SupportsLoRA):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         hidden_states = self.model(input_ids, positions, kv_caches,
-                                   attn_metadata)
+                                   attn_metadata, intermediate_tensors)
         return hidden_states
 
     def compute_logits(
@@ -381,7 +404,7 @@ class CohereForCausalLM(nn.Module, SupportsLoRA):
             ("gate_up_proj", "up_proj", 1),
         ]
         params_dict = dict(self.named_parameters())
-        loaded_params = set()
+        loaded_params: Set[str] = set()
         for name, loaded_weight in weights:
             for param_name, shard_name, shard_id in stacked_params_mapping:
                 if shard_name not in name:
@@ -389,6 +412,8 @@ class CohereForCausalLM(nn.Module, SupportsLoRA):
                 name = name.replace(shard_name, param_name)
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
+                    continue
+                if is_pp_missing_parameter(name, self):
                     continue
                 param = params_dict[name]
                 weight_loader = param.weight_loader
@@ -401,6 +426,8 @@ class CohereForCausalLM(nn.Module, SupportsLoRA):
                     continue
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
+                    continue
+                if is_pp_missing_parameter(name, self):
                     continue
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",

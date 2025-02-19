@@ -1,6 +1,5 @@
 # coding=utf-8
 # adapted from https://github.com/huggingface/transformers/blob/v4.39.3/src/transformers/models/persimmon/modeling_persimmon.py
-# Copyright 2023 The PygmalionAI team.
 # Copyright 2023 The vLLM team.
 # Copyright 2023 EleutherAI and the HuggingFace Inc. team. All rights reserved.
 #
@@ -21,7 +20,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only persimmon model compatible with HuggingFace weights."""
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -30,7 +29,8 @@ from transformers import PersimmonConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.distributed import (get_pp_group,
+                                   get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               QKVParallelLinear,
@@ -42,7 +42,11 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
+
+from .interfaces import SupportsPP
+from .utils import (is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 
 class PersimmonMLP(nn.Module):
@@ -211,20 +215,23 @@ class PersimmonModel(nn.Module):
     def __init__(self,
                  config: PersimmonConfig,
                  cache_config: Optional[CacheConfig] = None,
-                 quant_config: Optional[QuantizationConfig] = None):
+                 quant_config: Optional[QuantizationConfig] = None,
+                 prefix: str = ""):
         super().__init__()
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = VocabParallelEmbedding(config.vocab_size,
                                                    config.hidden_size)
-        self.layers = nn.ModuleList([
-            PersimmonDecoderLayer(config,
-                                  cache_config=cache_config,
-                                  quant_config=quant_config)
-            for _ in range(config.num_hidden_layers)
-        ])
+        self.start_layer, self.end_layer, self.layers = make_layers(
+            config.num_hidden_layers,
+            lambda prefix: PersimmonDecoderLayer(config, cache_config,
+                                                 quant_config),
+            prefix=f"{prefix}.layers")
         self.final_layernorm = nn.LayerNorm(config.hidden_size,
                                             eps=config.layer_norm_eps)
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(["hidden_states"],
+                                                    config.hidden_size))
 
     def forward(
         self,
@@ -232,24 +239,31 @@ class PersimmonModel(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
+        intermediate_tensors: Optional[IntermediateTensors],
         inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        if inputs_embeds is not None:
-            hidden_states = inputs_embeds
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        if get_pp_group().is_first_rank:
+            if inputs_embeds is not None:
+                hidden_states = inputs_embeds
+            else:
+                hidden_states = self.embed_tokens(input_ids)
         else:
-            hidden_states = self.embed_tokens(input_ids)
-        for i in range(len(self.layers)):
+            assert intermediate_tensors is not None
+            hidden_states = intermediate_tensors["hidden_states"]
+        for i in range(self.start_layer, self.end_layer):
             hidden_states = self.layers[i](
                 positions,
                 hidden_states,
-                kv_caches[i],
+                kv_caches[i - self.start_layer],
                 attn_metadata,
             )
+        if not get_pp_group().is_last_rank:
+            return IntermediateTensors({"hidden_states": hidden_states})
         hidden_states = self.final_layernorm(hidden_states)
         return hidden_states
 
 
-class PersimmonForCausalLM(nn.Module):
+class PersimmonForCausalLM(nn.Module, SupportsPP):
 
     def __init__(self,
                  config: PersimmonConfig,
@@ -266,6 +280,8 @@ class PersimmonForCausalLM(nn.Module):
                                       bias=False)
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.sampler = Sampler()
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors)
 
     def forward(
         self,
@@ -281,6 +297,7 @@ class PersimmonForCausalLM(nn.Module):
             positions=positions,
             kv_caches=kv_caches,
             attn_metadata=attn_metadata,
+            intermediate_tensors=intermediate_tensors,
             inputs_embeds=inputs_embeds,
         )
         return hidden_states
@@ -311,6 +328,8 @@ class PersimmonForCausalLM(nn.Module):
                     or "rotary_emb.sin_cached" in name):
                 # Models trained using ColossalAI may include these tensors in
                 # the checkpoint. Skip them.
+                continue
+            if is_pp_missing_parameter(name, self):
                 continue
             param = params_dict[name]
 

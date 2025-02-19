@@ -41,8 +41,7 @@ from aphrodite.modeling.layers.rotary_embedding import MRotaryEmbedding
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.model_loader import get_model
 from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
-from aphrodite.modeling.models.interfaces import (supports_lora,
-                                                  supports_multimodal)
+from aphrodite.modeling.models import supports_lora, supports_multimodal
 from aphrodite.modeling.models.utils import set_cpu_offload_max_bytes
 from aphrodite.modeling.sampling_metadata import (SamplingMetadata,
                                                   SamplingMetadataCache)

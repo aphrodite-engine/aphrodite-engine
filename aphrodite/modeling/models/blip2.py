@@ -1,3 +1,4 @@
+from functools import cached_property
 from typing import (Iterable, List, Literal, Mapping, Optional, Tuple,
                     TypedDict, Union)
 
@@ -11,7 +12,7 @@ from aphrodite.common.config import CacheConfig, MultiModalConfig
 from aphrodite.common.sequence import IntermediateTensors, SequenceData
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
@@ -19,7 +20,7 @@ from aphrodite.quantization import QuantizationConfig
 
 from .blip import (BlipVisionModel, dummy_image_for_blip,
                    get_max_blip_image_tokens)
-from .interfaces import SupportsMultiModal
+from .interfaces import SupportsMultiModal, SupportsPP
 from .utils import (group_weights_with_prefix, init_aphrodite_registered_model,
                     merge_multimodal_embeddings)
 
@@ -39,6 +40,7 @@ class Blip2ImageEmbeddingInputs(TypedDict):
     type: Literal["image_embeds"]
     data: torch.Tensor
     """Shape: `(batch_size * num_images, image_feature_size, hidden_size)`
+
     `hidden_size` must match the hidden size of language model backbone.
     """
 
@@ -474,7 +476,7 @@ def input_processor_for_blip2(ctx: InputContext, llm_inputs: LLMInputs):
 @MULTIMODAL_REGISTRY.register_max_image_tokens(get_max_blip2_image_tokens)
 @INPUT_REGISTRY.register_dummy_data(dummy_data_for_blip2)
 @INPUT_REGISTRY.register_input_processor(input_processor_for_blip2)
-class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal):
+class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
 
     def __init__(self,
                  config: Blip2Config,
@@ -506,6 +508,16 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal):
 
         self.language_model = init_aphrodite_registered_model(
             config.text_config, cache_config, quant_config)
+
+        self.make_empty_intermediate_tensors = (
+            self.language_model.make_empty_intermediate_tensors)
+
+    @cached_property
+    def sampler(self):
+        if hasattr(self.language_model, "sampler"):
+            return self.language_model.sampler
+
+        return Sampler()
 
     def _validate_pixel_values(self, data: torch.Tensor) -> torch.Tensor:
         h = w = self.config.vision_config.image_size
@@ -545,8 +557,10 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal):
             if not isinstance(image_embeds, torch.Tensor):
                 raise ValueError("Incorrect type of image embeddings. "
                                  f"Got type: {type(image_embeds)}")
+
             # Remove the N dimension until multiple images are supported.
             image_embeds = image_embeds.squeeze(1)
+
             return Blip2ImageEmbeddingInputs(
                 type="image_embeds",
                 data=image_embeds,
@@ -597,50 +611,63 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal):
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         **kwargs: object,
-    ) -> SamplerOutput:
+    ) -> Union[SamplerOutput, IntermediateTensors]:
         """Run forward pass for BLIP-2.
+
         One key thing to understand is the `input_ids` already accounts for the
         positions of the to-be-inserted image embeddings.
+
         Concretely, consider a text prompt:
         `"Question: What's the content of the image? Answer:"`.
+
         Tokenizer outputs:
         `[2, 45641, 35, 653, 18, 5, 1383, 9, 5, 2274, 116, 31652, 35]`.
+
         To reserve space in KV cache, we have to insert placeholder tokens
-        before they are inputted to the model, so the input processor prepends
+        before they are inputted to the model, so the input processor prepends 
         dummy tokens (denoted as `50265`), resulting in:
         `[50265, ..., 50265, 2, 45641, 35, ..., 31652, 35]`.
+
         We insert 32 tokens since it corresponds to the number of query
         embeddings outputted by the Q-Former and inputted to the language model.
+
         This way, the `positions` and `attn_metadata` are consistent
         with the `input_ids`.
+
         Args:
             input_ids: Flattened (concatenated) input_ids corresponding to a
                 batch.
             pixel_values: The pixels in each input image.
-
+        
         See also:
             :class:`Blip2ImageInputs`
         """
-        image_input = self._parse_and_validate_image_input(**kwargs)
-
-        if image_input is not None:
-            vision_embeddings = self._process_image_input(image_input)
-            inputs_embeds = self.language_model.model.get_input_embeddings(
-                input_ids)
-
-            inputs_embeds = merge_multimodal_embeddings(
-                input_ids, inputs_embeds, vision_embeddings,
-                BLIP2_IMAGE_TOKEN_ID)
-
+        if intermediate_tensors is not None:
             input_ids = None
-        else:
             inputs_embeds = None
+        else:
+            image_input = self._parse_and_validate_image_input(**kwargs)
 
-        hidden_states = self.language_model.model(input_ids,
-                                                  positions,
-                                                  kv_caches,
-                                                  attn_metadata,
-                                                  inputs_embeds=inputs_embeds)
+            if image_input is not None:
+                vision_embeddings = self._process_image_input(image_input)
+                inputs_embeds = self.language_model.model.get_input_embeddings(
+                    input_ids)
+
+                inputs_embeds = merge_multimodal_embeddings(
+                    input_ids, inputs_embeds, vision_embeddings,
+                    BLIP2_IMAGE_TOKEN_ID)
+
+                input_ids = None
+            else:
+                inputs_embeds = None
+
+        hidden_states = self.language_model.model(
+            input_ids,
+            positions,
+            kv_caches,
+            attn_metadata,
+            intermediate_tensors=intermediate_tensors,
+            inputs_embeds=inputs_embeds)
 
         return hidden_states
 
@@ -662,8 +689,10 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal):
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         # prepare weight iterators for components
         weights_group = group_weights_with_prefix(weights)
+
         # load vision encoder
         self.vision_model.load_weights(weights_group["vision_model"])
+
         # load query tokens
         for name, loaded_weight in weights_group["query_tokens"]:
             assert name == ""
@@ -671,6 +700,7 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal):
             weight_loader = getattr(param, "weight_loader",
                                     default_weight_loader)
             weight_loader(param, loaded_weight)
+
         # load qformer
         qformer_params_dict = dict(self.qformer.named_parameters())
         for name, loaded_weight in weights_group["qformer"]:
@@ -678,6 +708,7 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal):
             weight_loader = getattr(param, "weight_loader",
                                     default_weight_loader)
             weight_loader(param, loaded_weight)
+
         # load mlp projector
         mlp_params_dict = dict(self.language_projection.named_parameters())
         for name, loaded_weight in weights_group["language_projection"]:
@@ -685,5 +716,6 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal):
             weight_loader = getattr(param, "weight_loader",
                                     default_weight_loader)
             weight_loader(param, loaded_weight)
+
         # load llm backbone
         self.language_model.load_weights(weights_group["language_model"])

@@ -32,13 +32,13 @@ class ResidualBlock(nn.Module):
 class Medusa(nn.Module):
     """This class implements the Medusa draft model from the paper: https://arxiv.org/abs/2401.10774
     Reference implementation: https://github.com/FasterDecoding/Medusa
-
+    
     Differences from reference implementation:
     1. Currently this only supports generating proposals from top-1 tokens.
-    2. We have an optional token_map which reduces draft vocab to most
-       frequently used tokens to give some additional speed-up by reducing
-       sampling overhead. This is disabled unless the checkpoint file has
-       explicit token_map tensor and config has an optional attribute
+    2. We have an optional token_map which reduces draft vocab to most 
+       frequently used tokens to give some additional speed-up by reducing 
+       sampling overhead. This is disabled unless the checkpoint file has 
+       explicit token_map tensor and config has an optional attribute 
        truncated_vocab_size < vocab_size. To use this technique, one has to find
        the top-k most frequent tokens in target dataset and add that as a tensor
        in the draft checkpoint (using key token_map). Also, the draft config

@@ -10,17 +10,15 @@ from aphrodite.attention import AttentionMetadata
 from aphrodite.common.config import CacheConfig, MultiModalConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
-from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.gemma import GemmaForCausalLM
-from aphrodite.modeling.models.gemma2 import Gemma2ForCausalLM
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.utils import cached_get_tokenizer
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import SupportsMultiModal
+from .interfaces import SupportsMultiModal, SupportsPP
 from .siglip import (SiglipVisionModel, dummy_image_for_siglip,
                      dummy_seq_data_for_siglip, get_max_siglip_image_tokens)
 from .utils import group_weights_with_prefix, merge_multimodal_embeddings
@@ -36,6 +34,7 @@ class PaliGemmaImageEmbeddingInputs(TypedDict):
     type: Literal["image_embeds"]
     data: torch.Tensor
     """Shape: `(batch_size * num_images, image_feature_size, hidden_size)`
+
     `hidden_size` must match the hidden size of language model backbone.
     """
 
@@ -73,6 +72,7 @@ def input_processor_for_paligemma(ctx: InputContext, llm_inputs: LLMInputs):
     """
     The correct prompt format needs to be:
     '<image>' * image_feature_size + '<bos>' + prompt + '\n'
+
     See https://github.com/huggingface/transformers/blob/25245ec26dc29bcf6102e1b4ddd0dfd02e720cf5/src/transformers/models/paligemma/processing_paligemma.py#L55
     """ # noqa
 
@@ -95,16 +95,13 @@ def input_processor_for_paligemma(ctx: InputContext, llm_inputs: LLMInputs):
 
     if orig_prompt is not None and image_token_str in orig_prompt:
         logger.warning(
-            f"The image token '{image_token_str}' was detected in the prompt "
-            "and will be removed. Please follow the proper prompt format"
-            " documented on HuggingFace.")
+            "The image token '%s' was detected in the prompt and "
+            "will be removed. Please follow the proper prompt format"
+            " documented on HuggingFace.", image_token_str)
         orig_prompt = orig_prompt.replace(image_token_str, "")
         orig_prompt_ids.remove(hf_config.image_token_index)
 
     new_prompt = f"{image_token_str_pad}{bos_token}{orig_prompt}\n"
-    # The PaliGemma 2 tokenizer does not include a starting BOS token
-    if orig_prompt_ids[0] != hf_config.bos_token_id:
-        orig_prompt_ids = [hf_config.bos_token_id] + orig_prompt_ids
     new_token_ids = image_token_ids_pad + orig_prompt_ids + [108]  #newline
 
     # NOTE: Create a defensive copy of the original inputs
@@ -129,7 +126,8 @@ class PaliGemmaMultiModalProjector(nn.Module):
 @MULTIMODAL_REGISTRY.register_max_image_tokens(get_max_paligemma_image_tokens)
 @INPUT_REGISTRY.register_dummy_data(dummy_data_for_paligemma)
 @INPUT_REGISTRY.register_input_processor(input_processor_for_paligemma)
-class PaliGemmaForConditionalGeneration(nn.Module, SupportsMultiModal):
+class PaliGemmaForConditionalGeneration(nn.Module, SupportsMultiModal,
+                                        SupportsPP):
 
     def __init__(self,
                  config: PaliGemmaConfig,
@@ -147,19 +145,17 @@ class PaliGemmaForConditionalGeneration(nn.Module, SupportsMultiModal):
             projection_dim=config.vision_config.projection_dim)
 
         self.quant_config = quant_config
-        if config.text_config.model_type == "gemma":
-            self.language_model = GemmaForCausalLM(config.text_config,
-                                                cache_config, quant_config)
-        else:
-            self.language_model = Gemma2ForCausalLM(config.text_config,
-                                                    cache_config,
-                                                    quant_config)
-        self.unpadded_vocab_size = config.text_config.vocab_size
+        self.language_model = GemmaForCausalLM(config.text_config,
+                                               cache_config, quant_config)
         logit_scale = getattr(config, "logit_scale", 1.0)
-        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
-                                                config.text_config.vocab_size,
-                                                logit_scale)
-        self.sampler = Sampler()
+        self.language_model.logits_processor.scale *= logit_scale
+
+        self.make_empty_intermediate_tensors = (
+            self.language_model.make_empty_intermediate_tensors)
+
+    @property
+    def sampler(self):
+        return self.language_model.sampler
 
     def _validate_pixel_values(self, data: torch.Tensor) -> torch.Tensor:
         h = w = self.config.vision_config.image_size
@@ -186,8 +182,10 @@ class PaliGemmaForConditionalGeneration(nn.Module, SupportsMultiModal):
             if not isinstance(pixel_values, torch.Tensor):
                 raise ValueError("Incorrect type of pixel values. "
                                  f"Got type: {type(pixel_values)}")
+
             # Remove the N dimension until multiple images are supported.
             pixel_values = pixel_values.squeeze(1)
+
             return PaliGemmaImagePixelInputs(
                 type="pixel_values",
                 data=self._validate_pixel_values(pixel_values),
@@ -197,8 +195,10 @@ class PaliGemmaForConditionalGeneration(nn.Module, SupportsMultiModal):
             if not isinstance(image_embeds, torch.Tensor):
                 raise ValueError("Incorrect type of image embeddings. "
                                  f"Got type: {type(image_embeds)}")
+
             # Remove the N dimension until multiple images are supported.
             image_embeds = image_embeds.squeeze(1)
+
             return PaliGemmaImageEmbeddingInputs(
                 type="image_embeds",
                 data=image_embeds,
@@ -240,32 +240,36 @@ class PaliGemmaForConditionalGeneration(nn.Module, SupportsMultiModal):
                 kv_caches: List[torch.Tensor],
                 attn_metadata: AttentionMetadata,
                 intermediate_tensors: Optional[IntermediateTensors] = None,
-                **kwargs: object) -> SamplerOutput:
-
-        parsed_image_input = self._parse_and_validate_image_input(**kwargs)
-
-        if parsed_image_input is not None:
-            vision_embeddings = self._process_image_input(parsed_image_input)
-            # https://github.com/huggingface/transformers/blob/main/src/transformers/models/paligemma/modeling_paligemma.py#L294 # noqa
-            vision_embeddings = vision_embeddings * (self.config.hidden_size**
-                                                     -0.5)
-
-            inputs_embeds = self.language_model.model.get_input_embeddings(
-                input_ids)
-
-            inputs_embeds = merge_multimodal_embeddings(
-                input_ids, inputs_embeds, vision_embeddings,
-                self.config.image_token_index)
-
+                **kwargs: object) -> Union[SamplerOutput, IntermediateTensors]:
+        if intermediate_tensors is not None:
             input_ids = None
-        else:
             inputs_embeds = None
+        else:
+            parsed_image_input = self._parse_and_validate_image_input(**kwargs)
+
+            if parsed_image_input is not None:
+                vision_embeddings = self._process_image_input(
+                    parsed_image_input)
+                # https://github.com/huggingface/transformers/blob/main/src/transformers/models/paligemma/modeling_paligemma.py#L294 # noqa
+                vision_embeddings = vision_embeddings * (
+                    self.config.hidden_size**-0.5)
+
+                inputs_embeds = self.language_model.model.get_input_embeddings(
+                    input_ids)
+
+                inputs_embeds = merge_multimodal_embeddings(
+                    input_ids, inputs_embeds, vision_embeddings,
+                    self.config.image_token_index)
+
+                input_ids = None
+            else:
+                inputs_embeds = None
 
         hidden_states = self.language_model.model(input_ids,
                                                   positions,
                                                   kv_caches,
                                                   attn_metadata,
-                                                  None,
+                                                  intermediate_tensors,
                                                   inputs_embeds=inputs_embeds)
 
         return hidden_states

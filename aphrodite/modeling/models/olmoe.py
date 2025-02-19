@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only OLMoE model compatible with HuggingFace weights."""
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -19,7 +19,9 @@ from transformers import PretrainedConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.common.utils import print_warning_once
+from aphrodite.distributed import (get_pp_group,
+                                   get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import (QKVParallelLinear,
@@ -32,7 +34,11 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
+
+from .interfaces import SupportsPP
+from .utils import (is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 
 class OlmoeMoE(nn.Module):
@@ -81,6 +87,7 @@ class OlmoeMoE(nn.Module):
         final_hidden_states = self.experts(hidden_states=hidden_states,
                                            router_logits=router_logits)
         return final_hidden_states.view(orig_shape)
+
 
 class OlmoeAttention(nn.Module):
 
@@ -240,6 +247,7 @@ class OlmoeModel(nn.Module):
         config: PretrainedConfig,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.padding_idx = config.pad_token_id
@@ -249,14 +257,16 @@ class OlmoeModel(nn.Module):
             config.vocab_size,
             config.hidden_size,
         )
-        self.layers = nn.ModuleList([
-            OlmoeDecoderLayer(config,
-                              layer_idx,
-                              cache_config,
-                              quant_config=quant_config)
-            for layer_idx in range(config.num_hidden_layers)
-        ])
+        self.start_layer, self.end_layer, self.layers = make_layers(
+            config.num_hidden_layers,
+            lambda prefix: OlmoeDecoderLayer(config, int(
+                prefix.split(".")[-1]), cache_config, quant_config),
+            prefix=f"{prefix}.layers")
         self.norm = RMSNorm(config.hidden_size, eps=1e-5)
+
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(
+                ["hidden_states", "residual"], config.hidden_size))
 
     def forward(
         self,
@@ -264,19 +274,37 @@ class OlmoeModel(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-    ) -> torch.Tensor:
-        hidden_states = self.embed_tokens(input_ids)
-        residual = None
-        for i in range(len(self.layers)):
+        intermediate_tensors: Optional[IntermediateTensors],
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        if get_pp_group().is_first_rank:
+            hidden_states = self.embed_tokens(input_ids)
+            residual = None
+        else:
+            assert intermediate_tensors is not None
+            hidden_states = intermediate_tensors["hidden_states"]
+            residual = intermediate_tensors["residual"]
+
+        for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
-            hidden_states, residual = layer(positions, hidden_states,
-                                            kv_caches[i], attn_metadata,
-                                            residual)
+            hidden_states, residual = layer(
+                positions,
+                hidden_states,
+                kv_caches[i - self.start_layer],
+                attn_metadata,
+                residual,
+            )
+
+        if not get_pp_group().is_last_rank:
+            return IntermediateTensors({
+                "hidden_states": hidden_states,
+                "residual": residual
+            })
+
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
 
-class OlmoeForCausalLM(nn.Module):
+class OlmoeForCausalLM(nn.Module, SupportsPP):
 
     fall_back_to_pt_during_load = False
 
@@ -296,6 +324,9 @@ class OlmoeForCausalLM(nn.Module):
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.sampler = Sampler()
 
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors)
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -303,9 +334,9 @@ class OlmoeForCausalLM(nn.Module):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         hidden_states = self.model(input_ids, positions, kv_caches,
-                                   attn_metadata)
+                                   attn_metadata, intermediate_tensors)
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor,
@@ -360,6 +391,9 @@ class OlmoeForCausalLM(nn.Module):
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
+                # Skip layers on other devices.
+                if is_pp_missing_parameter(name, self):
+                    continue
                 if name not in params_dict:
                     continue
 
@@ -373,6 +407,9 @@ class OlmoeForCausalLM(nn.Module):
                     if weight_name not in name:
                         continue
                     name = name.replace(weight_name, param_name)
+                    # Skip layers on other devices.
+                    if is_pp_missing_parameter(name, self):
+                        continue
                     param = params_dict[name]
                     weight_loader = param.weight_loader
                     weight_loader(param,
@@ -385,16 +422,20 @@ class OlmoeForCausalLM(nn.Module):
                     # Skip loading extra bias for GPTQ models.
                     if name.endswith(".bias") and name not in params_dict:
                         continue
+                    # Skip layers on other devices.
+                    if is_pp_missing_parameter(name, self):
+                        continue
                     # Remapping the name of FP8 kv-scale.
                     if name.endswith("kv_scale"):
                         remapped_kv_scale_name = name.replace(
                             ".kv_scale", ".attn.kv_scale")
                         if remapped_kv_scale_name not in params_dict:
-                            print(f"Warning: Found kv scale in the checkpoint "
-                                  f"(e.g. {name}), but not found the expected "
-                                  f"name in the model "
-                                  f"(e.g. {remapped_kv_scale_name}). "
-                                  "kv-scale is not loaded.")
+                            print_warning_once(
+                                "Found kv scale in the checkpoint "
+                                f"(e.g. {name}), but not found the expected "
+                                f"name in the model "
+                                f"(e.g. {remapped_kv_scale_name}). "
+                                "kv-scale is not loaded.")
                             continue
                         else:
                             name = remapped_kv_scale_name

@@ -22,7 +22,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only Qwen2MoE model compatible with HuggingFace weights."""
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -50,9 +50,11 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 
-from .utils import is_pp_missing_parameter, make_layers
+from .interfaces import SupportsPP
+from .utils import (is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 
 class Qwen2MoeMLP(nn.Module):
@@ -337,6 +339,9 @@ class Qwen2MoeModel(nn.Module):
             prefix=f"{prefix}.layers",
         )
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(
+                ["hidden_states", "residual"], config.hidden_size))
 
     def forward(
         self,
@@ -345,7 +350,7 @@ class Qwen2MoeModel(nn.Module):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         if get_pp_group().is_first_rank:
             hidden_states = self.embed_tokens(input_ids)
             residual = None
@@ -367,7 +372,7 @@ class Qwen2MoeModel(nn.Module):
         return hidden_states
 
 
-class Qwen2MoeForCausalLM(nn.Module):
+class Qwen2MoeForCausalLM(nn.Module, SupportsPP):
 
     fall_back_to_pt_during_load = False
 
@@ -384,8 +389,12 @@ class Qwen2MoeForCausalLM(nn.Module):
         self.lm_head = ParallelLMHead(config.vocab_size,
                                       config.hidden_size,
                                       quant_config=quant_config)
+        if self.config.tie_word_embeddings:
+            self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.sampler = Sampler()
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors)
 
     def forward(
         self,
@@ -394,7 +403,7 @@ class Qwen2MoeForCausalLM(nn.Module):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         hidden_states = self.model(input_ids, positions, kv_caches,
                                    attn_metadata, intermediate_tensors)
         return hidden_states
@@ -407,20 +416,6 @@ class Qwen2MoeForCausalLM(nn.Module):
         logits = self.logits_processor(self.lm_head, hidden_states,
                                        sampling_metadata)
         return logits
-
-    def make_empty_intermediate_tensors(
-            self, batch_size: int, dtype: torch.dtype,
-            device: torch.device) -> IntermediateTensors:
-        return IntermediateTensors({
-            "hidden_states":
-            torch.zeros((batch_size, self.config.hidden_size),
-                        dtype=dtype,
-                        device=device),
-            "residual":
-            torch.zeros((batch_size, self.config.hidden_size),
-                        dtype=dtype,
-                        device=device),
-        })
 
     def sample(
         self,
@@ -522,7 +517,6 @@ class Qwen2MoeForCausalLM(nn.Module):
                             continue
                         else:
                             name = remapped_kv_scale_name
-
                     param = params_dict[name]
                     weight_loader = getattr(param, "weight_loader",
                                             default_weight_loader)

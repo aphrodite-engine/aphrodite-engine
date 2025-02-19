@@ -26,8 +26,9 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 
+from .interfaces import SupportsPP
 from .utils import (is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers)
 
@@ -137,12 +138,14 @@ class InternLM2Attention(nn.Module):
             qkv = torch.split(qkv, qkv_map, dim=-1)
             qkv = qkv[::3] + qkv[1::3] + qkv[2::3]
             qkv = torch.cat(qkv, dim=-1)
+
         qkv = qkv.view(seq_len, self.total_num_kv_heads,
                        self.key_value_groups + 2, self.head_dim)
         q, k, v = torch.split(qkv, [self.key_value_groups, 1, 1], dim=-2)
         q = q.reshape(seq_len, self.q_size * self.tp_size)
         k = k.reshape(seq_len, self.kv_size * self.tp_size)
         v = v.reshape(seq_len, self.kv_size * self.tp_size)
+
         if self.tp_size > 1:
             splitter = partial(split_tensor_along_last_dim,
                                num_partitions=self.tp_size)
@@ -264,7 +267,7 @@ class InternLM2Model(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-        intermediate_tensors: IntermediateTensors = None,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
         if get_pp_group().is_first_rank:
@@ -295,7 +298,7 @@ class InternLM2Model(nn.Module):
         return hidden_states
 
 
-class InternLM2ForCausalLM(nn.Module):
+class InternLM2ForCausalLM(nn.Module, SupportsPP):
 
     def __init__(
         self,
@@ -323,7 +326,7 @@ class InternLM2ForCausalLM(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-        intermediate_tensors: IntermediateTensors,
+        intermediate_tensors: Optional[IntermediateTensors],
     ) -> torch.Tensor:
         hidden_states = self.model(input_ids, positions, kv_caches,
                                    attn_metadata, intermediate_tensors)

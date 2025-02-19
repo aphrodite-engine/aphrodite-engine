@@ -658,7 +658,7 @@ class MllamaTextCrossAttention(nn.Module):
             input_is_parallel=True,
             quant_config=quant_config,
         )
-        # aphrodite.modeling.layers.layernorm.RMSNorm has precision issue,
+        # vllm.model_executor.layers.layernorm.RMSNorm has precision issue,
         # use huggingface's instead
         self.q_norm = MllamaTextRMSNorm(self.head_dim, eps=config.rms_norm_eps)
         self.k_norm = MllamaTextRMSNorm(self.head_dim, eps=config.rms_norm_eps)

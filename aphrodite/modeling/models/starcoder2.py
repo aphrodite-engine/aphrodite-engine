@@ -18,7 +18,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ PyTorch Starcoder2 model."""
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -27,7 +27,8 @@ from transformers import Starcoder2Config
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.distributed import (get_pp_group,
+                                   get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               QKVParallelLinear,
@@ -39,7 +40,11 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
+
+from .interfaces import SupportsPP
+from .utils import (is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 
 class Starcoder2Attention(nn.Module):
@@ -194,7 +199,8 @@ class Starcoder2Model(nn.Module):
     def __init__(self,
                  config: Starcoder2Config,
                  cache_config: Optional[CacheConfig] = None,
-                 quant_config: Optional[QuantizationConfig] = None):
+                 quant_config: Optional[QuantizationConfig] = None,
+                 prefix: str = ""):
         super().__init__()
         self.config = config
         self.padding_idx = config.pad_token_id
@@ -203,13 +209,16 @@ class Starcoder2Model(nn.Module):
         # TODO: consider padding_idx (currently removed)
         self.embed_tokens = VocabParallelEmbedding(config.vocab_size,
                                                    config.hidden_size)
-        self.layers = nn.ModuleList([
-            Starcoder2DecoderLayer(config,
-                                   cache_config,
-                                   quant_config=quant_config)
-            for _ in range(config.num_hidden_layers)
-        ])
+        self.start_layer, self.end_layer, self.layers = make_layers(
+            config.num_hidden_layers,
+            lambda prefix: Starcoder2DecoderLayer(
+                config, cache_config, quant_config=quant_config),
+            prefix=f"{prefix}.layers",
+        )
         self.norm = nn.LayerNorm(config.hidden_size, eps=config.norm_epsilon)
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(["hidden_states"],
+                                                    config.hidden_size))
 
     def forward(
         self,
@@ -217,17 +226,25 @@ class Starcoder2Model(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-    ) -> torch.Tensor:
-        hidden_states = self.embed_tokens(input_ids)
-        for i in range(len(self.layers)):
+        intermediate_tensors: Optional[IntermediateTensors],
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        if get_pp_group().is_first_rank:
+            hidden_states = self.embed_tokens(input_ids)
+        else:
+            assert intermediate_tensors is not None
+            hidden_states = intermediate_tensors["hidden_states"]
+        for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
-            hidden_states = layer(positions, hidden_states, kv_caches[i],
+            hidden_states = layer(positions, hidden_states,
+                                  kv_caches[i - self.start_layer],
                                   attn_metadata)
+        if not get_pp_group().is_last_rank:
+            return IntermediateTensors({"hidden_states": hidden_states})
         hidden_states = self.norm(hidden_states)
         return hidden_states
 
 
-class Starcoder2ForCausalLM(nn.Module):
+class Starcoder2ForCausalLM(nn.Module, SupportsPP):
 
     def __init__(self,
                  config: Starcoder2Config,
@@ -254,6 +271,8 @@ class Starcoder2ForCausalLM(nn.Module):
         self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
                                                 config.vocab_size)
         self.sampler = Sampler()
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors)
 
     def forward(
         self,
@@ -262,9 +281,9 @@ class Starcoder2ForCausalLM(nn.Module):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         hidden_states = self.model(input_ids, positions, kv_caches,
-                                   attn_metadata)
+                                   attn_metadata, intermediate_tensors)
         return hidden_states
 
     def compute_logits(
@@ -301,12 +320,16 @@ class Starcoder2ForCausalLM(nn.Module):
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
+                if is_pp_missing_parameter(name, self):
+                    continue
                 param = params_dict[name]
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)
                 break
             else:
                 if self.config.tie_word_embeddings and "lm_head.weight" in name:
+                    continue
+                if is_pp_missing_parameter(name, self):
                     continue
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",

@@ -125,6 +125,7 @@ class InternParallelAttention(nn.Module):
             self.embed_dim,
             quant_config=quant_config,
         )
+
         self.tp_size = get_tensor_model_parallel_world_size()
         self.num_heads_per_partition = divide(self.num_heads, self.tp_size)
 
@@ -143,14 +144,17 @@ class InternParallelAttention(nn.Module):
                                                      -1)).view(B_, N_, H_, D_)
             k = self.k_norm.forward_native(k.flatten(-2,
                                                      -1)).view(B_, N_, H_, D_)
+
         x = xops.memory_efficient_attention_forward(q, k, v, scale=self.scale)
         x = x.view(B, N, -1)
+
         x, _ = self.proj(x)
         return x
 
 
 class InternSdpaAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
+
     def __init__(self, config: PretrainedConfig):
         super().__init__()
         self.config = config
@@ -162,22 +166,29 @@ class InternSdpaAttention(nn.Module):
                 f'embed_dim must be divisible by num_heads '
                 f'(got `embed_dim`: {self.embed_dim} and `num_heads`:'
                 f' {self.num_heads}).')
+
         self.scale = self.head_dim**-0.5
         self.qkv = nn.Linear(self.embed_dim,
                              3 * self.embed_dim,
                              bias=config.qkv_bias)
+
         self.qk_normalization = config.qk_normalization
+
         if self.qk_normalization:
             self.q_norm = RMSNorm(self.embed_dim, eps=config.layer_norm_eps)
             self.k_norm = RMSNorm(self.embed_dim, eps=config.layer_norm_eps)
+
         self.proj = nn.Linear(self.embed_dim, self.embed_dim)
+
     def forward(self, x):
         B, N, C = x.shape
         qkv = self.qkv(x)
         q, k, v = qkv.chunk(3, dim=-1)
+
         q = q.view(B, N, self.num_heads, self.head_dim)
         k = k.view(B, N, self.num_heads, self.head_dim)
         v = v.view(B, N, self.num_heads, self.head_dim)
+
         if self.qk_normalization:
             B_, N_, H_, D_ = q.shape
             q = self.q_norm.forward_native(q.flatten(-2,
@@ -187,8 +198,10 @@ class InternSdpaAttention(nn.Module):
         q = q.transpose(1, 2)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
+
         x = F.scaled_dot_product_attention(q, k, v, scale=self.scale)
         x = x.transpose(1, 2).view(B, N, -1)
+
         x = self.proj(x)
         return x
 

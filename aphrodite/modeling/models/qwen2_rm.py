@@ -26,6 +26,7 @@ from .utils import is_pp_missing_parameter
 
 
 class ReLU(nn.Module):
+
     def __init__(self):
         super().__init__()
         self.activation = nn.ReLU()
@@ -47,6 +48,7 @@ class Qwen2ForRewardModel(nn.Module):
             "up_proj",
         ],
     }
+
     # LoRA specific attributes
     supported_lora_modules = [
         "qkv_proj",
@@ -71,27 +73,27 @@ class Qwen2ForRewardModel(nn.Module):
             raise ValueError(
                 "Sliding window for some but all layers is not "
                 "supported. This model uses sliding window "
-                "but `max_window_layers` = %s is less than "
-                "`num_hidden_layers` = %s. Please open an issue "
-                "to discuss this feature."
-                % (
-                    config.max_window_layers,
-                    config.num_hidden_layers,
-                )
-            )
+                f"but `max_window_layers` = {config.max_window_layers} "
+                "is less than "
+                "`num_hidden_layers` = {config.num_hidden_layers}. "
+                "Please open an issue "
+                "to discuss this feature.")
+
         super().__init__()
+
         self.config = config
         self.lora_config = lora_config
+
         self.quant_config = quant_config
         self.model = Qwen2Model(config, cache_config, quant_config)
+
         self.score = nn.Sequential(
-            ColumnParallelLinear(
-                config.hidden_size,
-                config.hidden_size,
-                quant_config=quant_config,
-            ),
+            ColumnParallelLinear(config.hidden_size,
+                                 config.hidden_size,
+                                 quant_config=quant_config),
             ReLU(),
-            RowParallelLinear(config.hidden_size, 1, quant_config=quant_config),
+            RowParallelLinear(config.hidden_size, 1,
+                              quant_config=quant_config),
         )
         self._pooler = Pooler(pooling_type=PoolingType.ALL, normalize=False)
 
@@ -103,9 +105,8 @@ class Qwen2ForRewardModel(nn.Module):
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> torch.Tensor:
-        hidden_states = self.model(
-            input_ids, positions, kv_caches, attn_metadata, intermediate_tensors
-        )
+        hidden_states = self.model(input_ids, positions, kv_caches,
+                                   attn_metadata, intermediate_tensors)
         logits, _ = self.score(hidden_states)
         return logits
 
@@ -132,7 +133,7 @@ class Qwen2ForRewardModel(nn.Module):
                 continue
             if "rotary_emb.inv_freq" in name:
                 continue
-            for param_name, weight_name, shard_id in stacked_params_mapping:
+            for (param_name, weight_name, shard_id) in stacked_params_mapping:
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
@@ -156,7 +157,6 @@ class Qwen2ForRewardModel(nn.Module):
                 if is_pp_missing_parameter(name, self):
                     continue
                 param = params_dict[name]
-                weight_loader = getattr(
-                    param, "weight_loader", default_weight_loader
-                )
+                weight_loader = getattr(param, "weight_loader",
+                                        default_weight_loader)
                 weight_loader(param, loaded_weight)

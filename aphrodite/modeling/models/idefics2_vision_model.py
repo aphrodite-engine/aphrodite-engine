@@ -1,7 +1,6 @@
 # coding=utf-8
 
 # adapted from https://github.com/huggingface/transformers/blob/v4.43.2/src/transformers/models/idefics2/modeling_idefics2.py
-# Copyright 2024 The PygmalionAI team.
 # Copyright 2024 The vLLM team.
 # Copyright 2024 the HuggingFace Inc. team. All rights reserved.
 #
@@ -39,6 +38,7 @@ class Idefics2VisionEmbeddings(nn.Module):
     This is a modified version of `siglip.modelign_siglip.SiglipVisionEmbeddings
     ` to enable images of variable
     resolution.
+
     The modifications are adapted from [Patch n' Pack: NaViT, a Vision
     Transformer for any Aspect Ratio and Resolution](https://arxiv.org/abs/2307.06304)
     which allows treating images in their native aspect ratio and without the
@@ -222,6 +222,7 @@ class Idefics2EncoderLayer(nn.Module):
         Args:
             hidden_states (`torch.FloatTensor`):
                 Input to the layer of shape `(batch, seq_len, embed_dim)`.
+
         """
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
@@ -239,6 +240,7 @@ class Idefics2Encoder(nn.Module):
     Transformer encoder consisting of `config.num_hidden_layers` self attention
     layers. Each layer is a
     [`Idefics2EncoderLayer`].
+
     Args:
         config: Idefics2Config
     """

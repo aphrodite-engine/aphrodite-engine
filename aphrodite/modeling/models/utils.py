@@ -23,6 +23,7 @@ class WeightsGroup(UserDict):
     Wraps grouped weights dictionary for a more informative error message
     when attempting to access a weight component that does not exist.
     """
+
     def __getitem__(self, key: str) -> Iterable[Tuple[str, torch.Tensor]]:
         try:
             return super().__getitem__(key)
@@ -50,14 +51,14 @@ def filter_weights(weights: Iterable[Tuple[str, torch.Tensor]],
 
 
 def group_weights_with_prefix(
-    weights: Iterable[Tuple[str, torch.Tensor]]
-) -> WeightsGroup:
+    weights: Iterable[Tuple[str, torch.Tensor]], ) -> WeightsGroup:
     """
     Helper function to group weights with prefix
     """
     init_weights, repeated_weights = itertools.tee(weights, 2)
     weights_prefix = {name.split(".")[0] for name, _ in init_weights}
     repeated_weights = itertools.tee(repeated_weights, len(weights_prefix))
+
     return WeightsGroup({
         prefix: filter_weights(component, prefix)
         for component, prefix in zip(repeated_weights, weights_prefix)
@@ -74,8 +75,8 @@ def init_aphrodite_registered_model(
     scheduler_config: Optional[SchedulerConfig] = None,
 ) -> nn.Module:
     """
-    Helper function to initialize an inner model registered to aphrodite,
-    based on the arguments passed to the outer aphrodite model.
+    Helper function to initialize an inner model registered to vLLM,
+    based on the arguments passed to the outer vLLM model.
     """
     model_class, _ = ModelRegistry.resolve_model_cls(hf_config.architectures)
 
@@ -94,9 +95,11 @@ def init_aphrodite_registered_model(
 def flatten_bn(x: torch.Tensor) -> torch.Tensor:
     ...
 
+
 @overload
 def flatten_bn(x: List[torch.Tensor]) -> List[torch.Tensor]:
     ...
+
 
 @overload
 def flatten_bn(
@@ -106,6 +109,7 @@ def flatten_bn(
 ) -> torch.Tensor:
     ...
 
+
 def flatten_bn(
     x: Union[List[torch.Tensor], torch.Tensor],
     *,
@@ -113,12 +117,15 @@ def flatten_bn(
 ) -> Union[List[torch.Tensor], torch.Tensor]:
     """
     Flatten the ``B`` and ``N`` dimensions of batched multimodal inputs.
+
     The input tensor should have shape ``(B, N, ...)```.
     """
     if isinstance(x, torch.Tensor):
         return x.flatten(0, 1)
+
     if concat:
         return torch.cat(x)
+
     return [x_n for x_b in x for x_n in x_b]
 
 
@@ -134,13 +141,16 @@ def _flatten_embeddings(embeddings: NestedTensors) -> torch.Tensor:
 
     return torch.cat(tuple(_flatten_embeddings(t) for t in embeddings))
 
+
 def _embedding_count_expression(embeddings: NestedTensors) -> str:
     """
     Constructs a debugging representation of the number of embeddings in the
     NestedTensors.
     """
+
     if isinstance(embeddings, torch.Tensor):
         return " x ".join([str(dim) for dim in embeddings.shape[:-1]])
+
     return " + ".join(
         _embedding_count_expression(inner) for inner in embeddings)
 
@@ -153,6 +163,7 @@ def merge_multimodal_embeddings(input_ids: torch.Tensor,
     Merge ``multimodal_embeddings`` into ``inputs_embeds`` by overwriting the
     positions in ``inputs_embeds`` corresponding to placeholder tokens in
     ``input_ids``.
+
     Note:
         This updates ``inputs_embeds`` in place.
     """
@@ -173,10 +184,7 @@ def merge_multimodal_embeddings(input_ids: torch.Tensor,
 
 class LayerFn(Protocol):
 
-    def __call__(
-        self,
-        prefix: str,
-    ) -> torch.nn.Module:
+    def __call__(self, prefix: str) -> torch.nn.Module:
         ...
 
 
@@ -309,8 +317,10 @@ def is_pp_missing_parameter(name: str, model: torch.nn.Module) -> bool:
 def make_empty_intermediate_tensors_factory(keys: List[str], hidden_size: int):
 
     def make_empty_intermediate_tensors(
-            batch_size: int, dtype: torch.dtype,
-            device: torch.device) -> IntermediateTensors:
+        batch_size: int,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> IntermediateTensors:
         return IntermediateTensors({
             key: torch.zeros((batch_size, hidden_size),
                              dtype=dtype,
@@ -326,19 +336,20 @@ class LLMWrapper(nn.Module):
     To align with the key names of LoRA trained with PEFT, we need to add an 
     additional layer to the llm's implementation.
     """
+
     def __init__(self, llm: nn.Module, name: str) -> None:
         super().__init__()
         self.model_name = name
         setattr(self, name, llm)
 
-    def getattr(self, key: str):
+    def __getattr__(self, key: str):
         llm = super().__getattr__(self.model_name)
         if key == self.model_name:
             return llm
 
         return getattr(llm, key)
 
+    # We need to explicitly override this
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         llm = super().__getattr__(self.model_name)
         return llm(*args, **kwargs)
-

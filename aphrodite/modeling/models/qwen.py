@@ -40,18 +40,19 @@ from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import SupportsMultiModal
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.base import MultiModalInputs
 from aphrodite.multimodal.utils import cached_get_tokenizer
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 
-from .utils import flatten_bn, is_pp_missing_parameter, make_layers
+from .interfaces import SupportsMultiModal, SupportsPP
+from .utils import (flatten_bn, is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 # NOTE: Qwen models have a few other special tags, e.g., ref, bbox, quad;
 # for the time being, these tags are not considered as special at encoding
-# time. This may change as APHRODITEs multimodal API changes in the future.
+# time. This may change as Aphrodite's multimodal API changes in the future.
 IMG_START = "<img>"
 IMG_END = "</img>"
 IMG_PAD = "<imgpad>"
@@ -566,6 +567,9 @@ class QWenModel(nn.Module):
             lambda prefix: QWenBlock(config, cache_config, quant_config),
             prefix=f"{prefix}.h")
         self.ln_f = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(
+                ["hidden_states", "residual"], config.hidden_size))
         self.visual = VisionTransformer(**config.visual,
                                         quant_config=quant_config) if hasattr(
                                             config, "visual") else None
@@ -578,7 +582,7 @@ class QWenModel(nn.Module):
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors],
         pixel_values: Optional[QwenImageInputs],
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         img_pos = None
         # If pixel / visual embeddings are provided, this is a visual model
         if pixel_values is not None and self.visual is not None:
@@ -770,7 +774,6 @@ def input_mapper_for_qwen(ctx: InputContext, data: object) -> MultiModalInputs:
                 f"[# images, {MAX_QWEN_IMG_TOKENS}, {img_emb_size}], but "
                 f"received shape [{data.shape}]")
         pixel_values = data
-
     else:
         transform = build_normalization_transform(image_size)
         if not isinstance(data, (list, tuple)):
@@ -804,7 +807,7 @@ def dummy_data_for_qwen(
     mm_counts: Mapping[str, int],
 ) -> Tuple[SequenceData, Optional[Dict]]:
     """Build dummy data for warming up Qwen models; this will only contain text
-    matching the defaults for APHRODITE unless the model has a visual config.
+    matching the defaults for VLLM unless the model has a visual config.
 
     Args:
         ctx: Context of the loaded model.
@@ -860,7 +863,7 @@ def dummy_data_for_qwen(
 @MULTIMODAL_REGISTRY.register_max_image_tokens(MAX_QWEN_IMG_TOKENS)
 @INPUT_REGISTRY.register_dummy_data(dummy_data_for_qwen)
 @INPUT_REGISTRY.register_input_processor(input_processor_for_qwen)
-class QWenLMHeadModel(nn.Module, SupportsMultiModal):
+class QWenLMHeadModel(nn.Module, SupportsMultiModal, SupportsPP):
 
     def __init__(
         self,
@@ -881,6 +884,8 @@ class QWenLMHeadModel(nn.Module, SupportsMultiModal):
             self.lm_head.weight = self.transformer.wte.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.sampler = Sampler()
+        self.make_empty_intermediate_tensors = (
+            self.transformer.make_empty_intermediate_tensors)
 
     def _get_image_input_type(
             self,
@@ -912,32 +917,25 @@ class QWenLMHeadModel(nn.Module, SupportsMultiModal):
                 )
         return None
 
-    def forward(self,
-                input_ids: torch.Tensor,
-                positions: torch.Tensor,
-                kv_caches: List[torch.Tensor],
-                attn_metadata: AttentionMetadata,
-                intermediate_tensors: Optional[IntermediateTensors] = None,
-                pixel_values: Optional[torch.Tensor] = None) -> torch.Tensor:
-        pixel_values = self._get_image_input_type(pixel_values)
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        kv_caches: List[torch.Tensor],
+        attn_metadata: AttentionMetadata,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
+        pixel_values: Optional[torch.Tensor] = None
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        if intermediate_tensors is not None:
+            input_ids = None
+            pixel_values = None
+        else:
+            pixel_values = self._get_image_input_type(pixel_values)
+
         hidden_states = self.transformer(input_ids, positions, kv_caches,
                                          attn_metadata, intermediate_tensors,
                                          pixel_values)
         return hidden_states
-
-    def make_empty_intermediate_tensors(
-            self, batch_size: int, dtype: torch.dtype,
-            device: torch.device) -> IntermediateTensors:
-        return IntermediateTensors({
-            "hidden_states":
-            torch.zeros((batch_size, self.config.hidden_size),
-                        dtype=dtype,
-                        device=device),
-            "residual":
-            torch.zeros((batch_size, self.config.hidden_size),
-                        dtype=dtype,
-                        device=device),
-        })
 
     def compute_logits(
         self,

@@ -1,7 +1,6 @@
 # coding=utf-8
 # Adapted from
 # https://github.com/huggingface/transformers/blob/v4.28.0/src/transformers/models/llama/modeling_llama.py
-# Copyright 2023 The PygmalionAI team.
 # Copyright 2023 The vLLM team.
 # Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.
 #
@@ -22,10 +21,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only Solar model compatible with HuggingFace weights."""
+
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
+from transformers import PretrainedConfig
 
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
@@ -46,14 +47,14 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import (
     default_weight_loader, kv_cache_scales_loader, maybe_remap_kv_scale_name)
-from aphrodite.modeling.models.interfaces import SupportsLoRA
-from aphrodite.modeling.models.utils import (PPMissingLayer,
-                                             is_pp_missing_parameter,
-                                             make_layers)
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.compressed_tensors.utils import (
     get_compressed_tensors_cache_scale)
+
+from .interfaces import SupportsLoRA, SupportsPP
+from .utils import (PPMissingLayer, is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 
 class SolarMLP(nn.Module):
@@ -73,12 +74,15 @@ class SolarMLP(nn.Module):
             output_sizes=[intermediate_size] * 2,
             bias=bias,
             quant_config=quant_config,
-            prefix=f"{prefix}.gate_up_proj")
-        self.down_proj = RowParallelLinear(input_size=intermediate_size,
-                                           output_size=hidden_size,
-                                           bias=bias,
-                                           quant_config=quant_config,
-                                           prefix=f"{prefix}.down_proj")
+            prefix=f"{prefix}.gate_up_proj",
+        )
+        self.down_proj = RowParallelLinear(
+            input_size=intermediate_size,
+            output_size=hidden_size,
+            bias=bias,
+            quant_config=quant_config,
+            prefix=f"{prefix}.down_proj",
+        )
         if hidden_act != "silu":
             raise ValueError(f"Unsupported activation: {hidden_act}. "
                              "Only silu is supported for now.")
@@ -95,7 +99,7 @@ class SolarAttention(nn.Module):
 
     def __init__(
         self,
-        config,
+        config: PretrainedConfig,
         hidden_size: int,
         num_heads: int,
         num_kv_heads: int,
@@ -156,12 +160,14 @@ class SolarAttention(nn.Module):
             base=rope_theta,
             rope_scaling=rope_scaling,
         )
-        self.attn = Attention(self.num_heads,
-                              self.head_dim,
-                              self.scaling,
-                              num_kv_heads=self.num_kv_heads,
-                              cache_config=cache_config,
-                              quant_config=quant_config)
+        self.attn = Attention(
+            self.num_heads,
+            self.head_dim,
+            self.scaling,
+            num_kv_heads=self.num_kv_heads,
+            cache_config=cache_config,
+            quant_config=quant_config,
+        )
 
     def forward(
         self,
@@ -182,7 +188,7 @@ class SolarDecoderLayer(nn.Module):
 
     def __init__(
         self,
-        config,
+        config: PretrainedConfig,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -191,10 +197,11 @@ class SolarDecoderLayer(nn.Module):
         self.hidden_size = config.hidden_size
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
+
         if rope_scaling is not None and getattr(
                 config, "original_max_position_embeddings", None):
-            rope_scaling["original_max_position_embeddings"] = (
-                config.original_max_position_embeddings)
+            rope_scaling["original_max_position_embeddings"] \
+                = config.original_max_position_embeddings
         max_position_embeddings = getattr(config, "max_position_embeddings",
                                           8192)
         # Support abacusai/Smaug-72B-v0.1 with attention_bias
@@ -261,7 +268,7 @@ class SolarModel(nn.Module):
 
     def __init__(
         self,
-        config,
+        config: PretrainedConfig,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         lora_config: Optional[LoRAConfig] = None,
@@ -270,8 +277,8 @@ class SolarModel(nn.Module):
         super().__init__()
         self.config = config
         self.padding_idx = config.pad_token_id
-        lora_vocab = (lora_config.lora_extra_vocab_size *
-                      (lora_config.max_loras or 1)) if lora_config else 0
+        lora_vocab = ((lora_config.lora_extra_vocab_size *
+                       (lora_config.max_loras or 1)) if lora_config else 0)
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
         if get_pp_group().is_first_rank or (config.tie_word_embeddings
@@ -285,15 +292,22 @@ class SolarModel(nn.Module):
             self.embed_tokens = PPMissingLayer()
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: SolarDecoderLayer(config=config,
-                                             cache_config=cache_config,
-                                             quant_config=quant_config,
-                                             prefix=prefix),
-            prefix=f"{prefix}.layers")
+            lambda prefix: SolarDecoderLayer(
+                config=config,
+                cache_config=cache_config,
+                quant_config=quant_config,
+                prefix=prefix,
+            ),
+            prefix=f"{prefix}.layers",
+        )
         if get_pp_group().is_last_rank:
             self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         else:
             self.norm = PPMissingLayer()
+
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(
+                ["hidden_states", "residual"], config.hidden_size))
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -322,7 +336,7 @@ class SolarModel(nn.Module):
         bskcn_h_2 = None
         bskcn_r_1 = None
         bskcn_r_2 = None
-        bskcn_tv = (self.config.bskcn_tv[0] \
+        bskcn_tv = (self.config.bskcn_tv[0]
                     if self.training else self.config.bskcn_tv[1])
 
         for i in range(self.start_layer, self.end_layer):
@@ -333,11 +347,13 @@ class SolarModel(nn.Module):
                 bskcn_h_2 = hidden_states.clone()
                 bskcn_r_2 = residual.clone()
             if i in self.config.bskcn_3:
-                hidden_states = bskcn_h_1*bskcn_tv + hidden_states*(1-bskcn_tv)
-                residual = bskcn_r_1*bskcn_tv + residual*(1-bskcn_tv)
+                hidden_states = bskcn_h_1 * bskcn_tv + hidden_states * (
+                    1 - bskcn_tv)
+                residual = bskcn_r_1 * bskcn_tv + residual * (1 - bskcn_tv)
             if i in self.config.bskcn_4:
-                hidden_states = bskcn_h_2*bskcn_tv + hidden_states*(1-bskcn_tv)
-                residual = bskcn_r_2*bskcn_tv + residual*(1-bskcn_tv)
+                hidden_states = bskcn_h_2 * bskcn_tv + hidden_states * (
+                    1 - bskcn_tv)
+                residual = bskcn_r_2 * bskcn_tv + residual * (1 - bskcn_tv)
             layer = self.layers[i]
             hidden_states, residual = layer(
                 positions,
@@ -357,7 +373,7 @@ class SolarModel(nn.Module):
         return hidden_states
 
 
-class SolarForCausalLM(nn.Module, SupportsLoRA):
+class SolarForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -372,8 +388,12 @@ class SolarForCausalLM(nn.Module, SupportsLoRA):
 
     # LoRA specific attributes
     supported_lora_modules = [
-        "qkv_proj", "o_proj", "gate_up_proj", "down_proj", "embed_tokens",
-        "lm_head"
+        "qkv_proj",
+        "o_proj",
+        "gate_up_proj",
+        "down_proj",
+        "embed_tokens",
+        "lm_head",
     ]
     embedding_modules = {
         "embed_tokens": "input_embeddings",
@@ -391,7 +411,7 @@ class SolarForCausalLM(nn.Module, SupportsLoRA):
 
     def __init__(
         self,
-        config,
+        config: PretrainedConfig,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         lora_config: Optional[LoRAConfig] = None,
@@ -401,11 +421,13 @@ class SolarForCausalLM(nn.Module, SupportsLoRA):
         self.config = config
         self.lora_config = lora_config
 
-        self.model = SolarModel(config,
-                                cache_config,
-                                quant_config,
-                                lora_config=lora_config,
-                                prefix="model")
+        self.model = SolarModel(
+            config,
+            cache_config,
+            quant_config,
+            lora_config=lora_config,
+            prefix="model",
+        )
         if get_pp_group().is_last_rank:
             self.unpadded_vocab_size = config.vocab_size
             if lora_config:
@@ -430,6 +452,9 @@ class SolarForCausalLM(nn.Module, SupportsLoRA):
             self.sampler = Sampler()
         else:
             self.lm_head = PPMissingLayer()
+
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors)
 
     def forward(
         self,
@@ -457,20 +482,6 @@ class SolarForCausalLM(nn.Module, SupportsLoRA):
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
 
-    def make_empty_intermediate_tensors(
-            self, batch_size: int, dtype: torch.dtype,
-            device: torch.device) -> IntermediateTensors:
-        return IntermediateTensors({
-            "hidden_states":
-            torch.zeros((batch_size, self.config.hidden_size),
-                        dtype=dtype,
-                        device=device),
-            "residual":
-            torch.zeros((batch_size, self.config.hidden_size),
-                        dtype=dtype,
-                        device=device),
-        })
-
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
@@ -497,7 +508,7 @@ class SolarForCausalLM(nn.Module, SupportsLoRA):
                 loaded_weight = loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 continue
-            for (param_name, weight_name, shard_id) in stacked_params_mapping:
+            for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
@@ -537,9 +548,12 @@ class SolarForCausalLM(nn.Module, SupportsLoRA):
         tp_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
         for layer_idx, scaling_factor in kv_cache_scales_loader(
-                quantization_param_path, tp_rank, tp_size,
+                quantization_param_path,
+                tp_rank,
+                tp_size,
                 self.config.num_hidden_layers,
-                self.config.__class__.model_type):
+                self.config.__class__.model_type,
+        ):
             if not isinstance(self.model.layers[layer_idx], nn.Identity):
                 layer_self_attn = self.model.layers[layer_idx].self_attn
 

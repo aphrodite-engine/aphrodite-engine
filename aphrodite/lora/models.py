@@ -27,8 +27,7 @@ from aphrodite.lora.punica import PunicaWrapper
 from aphrodite.lora.utils import (from_layer, from_layer_logits_processor,
                                   parse_fine_tuned_lora_name,
                                   replace_submodule)
-from aphrodite.modeling.models.interfaces import (SupportsLoRA,
-                                                  supports_multimodal)
+from aphrodite.modeling.models import SupportsLoRA, supports_multimodal
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.models.utils import PPMissingLayer
 
