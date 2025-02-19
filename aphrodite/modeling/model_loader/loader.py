@@ -40,12 +40,11 @@ from aphrodite.modeling.model_loader.weight_utils import (
     get_gguf_extra_tensor_names, get_quant_config, gguf_quant_weights_iterator,
     initialize_dummy_weights, np_cache_weights_iterator, pt_weights_iterator,
     safetensors_weights_iterator)
-from aphrodite.modeling.models.interfaces import (has_inner_state,
-                                                  supports_lora,
-                                                  supports_multimodal)
+from aphrodite.modeling.models import (has_inner_state, supports_lora,
+                                       supports_multimodal)
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 
 
 @contextmanager
