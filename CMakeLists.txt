@@ -255,6 +255,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
     "kernels/mamba/mamba_ssm/selective_scan_fwd.cu"
     "kernels/mamba/causal_conv1d/causal_conv1d.cu"
     "kernels/quantization/aqlm/gemm_kernels.cu"
+    "kernels/quantization/vptq/gemm_kernels.cu"
     "kernels/quantization/awq/gemm_kernels.cu"
     "kernels/quantization/quip/origin_order.cu"
     "kernels/quantization/gguf/gguf_kernel.cu"

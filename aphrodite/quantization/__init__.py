@@ -25,6 +25,7 @@ from aphrodite.quantization.qqq import QQQConfig
 from aphrodite.quantization.quip import QuipConfig
 from aphrodite.quantization.squeezellm import SqueezeLLMConfig
 from aphrodite.quantization.tpu_int8 import Int8TpuConfig
+from aphrodite.quantization.vptq import VPTQConfig
 
 QUANTIZATION_METHODS = {
     "aqlm": AQLMConfig,
@@ -60,6 +61,7 @@ QUANTIZATION_METHODS = {
     "fp6": QuantLLMFPConfig,
     "fp7": QuantLLMFPConfig,
     "neuron_quant": NeuronQuantConfig,
+    "vptq": VPTQConfig,
 }
 
 

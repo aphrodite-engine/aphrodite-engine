@@ -151,6 +151,37 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "Tensor _zeros, int split_k_iters, int thx, int thy) -> Tensor");
   ops.impl("awq_dequantize", torch::kCUDA, &awq_dequantize);
 
+  // Quantized GEMM for VPTQ.
+  ops.def(
+      "vptq_gemm(Tensor input,"
+      "          Tensor q_indice,"
+      "          Tensor centroids,"
+      "          Tensor weight_scale,"
+      "          Tensor weight_bias,"
+      "          int[] g_i_o,"
+      "          Tensor? q_indice_residual,"
+      "          Tensor? residual_centroids,"
+      "          Tensor? q_indice_outliers,"
+      "          Tensor? outliers_centroids,"
+      "          Tensor? invperm,"
+      "          Tensor? bias) -> Tensor");
+  ops.impl("vptq_gemm", torch::kCUDA, &vptq_gemm);
+
+  // Decompression method for VPTQ.
+  ops.def(
+      "vptq_dequant("
+      "  Tensor q_indice, "
+      "  Tensor centroids,"
+      "  Tensor weight_scale,"
+      "  Tensor weight_bias,"
+      "  int[] g_i_o,"
+      "  Tensor? q_indice_residual,"
+      "  Tensor? residual_centroids,"
+      "  Tensor? q_indice_outliers,"
+      "  Tensor? outliers_centroids,"
+      "  Tensor? invperm) -> Tensor");
+  ops.impl("vptq_dequant", torch::kCUDA, &vptq_dequant);
+
   // Dequantization for GGML.
   ops.def("ggml_dequantize(Tensor W, int type, int m, int n) -> Tensor");
   ops.impl("ggml_dequantize", torch::kCUDA, &ggml_dequantize);

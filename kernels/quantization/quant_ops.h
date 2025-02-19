@@ -57,6 +57,29 @@ torch::Tensor dequant_gptq(torch::Tensor b_q_weight,
                            torch::Tensor b_gptq_scales, torch::Tensor b_g_idx,
                            int64_t bits, bool use_exllama);
 
+torch::Tensor vptq_gemm(const torch::Tensor& input,
+                        const torch::Tensor& q_indice,
+                        const torch::Tensor& centroids,
+                        const torch::Tensor& weight_scale,
+                        const torch::Tensor& weight_bias,
+                        const std::vector<int64_t>& g_i_o,
+                        const c10::optional<torch::Tensor>& q_indice_residual,
+                        const c10::optional<torch::Tensor>& residual_centroids,
+                        const c10::optional<torch::Tensor>& q_indice_outliers,
+                        const c10::optional<torch::Tensor>& outliers_centroids,
+                        const c10::optional<torch::Tensor>& invperm,
+                        const c10::optional<torch::Tensor>& bias);
+
+torch::Tensor vptq_dequant(
+    const torch::Tensor& q_indice, const torch::Tensor& centroids,
+    const torch::Tensor& weight_scale, const torch::Tensor& weight_bias,
+    const std::vector<int64_t>& g_i_o,
+    const c10::optional<torch::Tensor>& q_indice_residual,
+    const c10::optional<torch::Tensor>& residual_centroids,
+    const c10::optional<torch::Tensor>& q_indice_outliers,
+    const c10::optional<torch::Tensor>& outliers_centroids,
+    const c10::optional<torch::Tensor>& invperm);
+
 #ifndef USE_ROCM
 
 // GGUF
