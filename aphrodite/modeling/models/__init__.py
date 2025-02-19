@@ -43,6 +43,7 @@ _GENERATION_MODELS = {
     "MiniCPM3ForCausalLM": ("minicpm3", "MiniCPM3ForCausalLM"),
     "NemotronForCausalLM": ("nemotron", "NemotronForCausalLM"),
     "OlmoForCausalLM": ("olmo", "OlmoForCausalLM"),
+    "Olmo2ForCausalLM": ("olmo2", "Olmo2ForCausalLM"),
     "OlmoeForCausalLM": ("olmoe", "OlmoeForCausalLM"),
     "OPTForCausalLM": ("opt", "OPTForCausalLM"),
     "OrionForCausalLM": ("orion", "OrionForCausalLM"),
