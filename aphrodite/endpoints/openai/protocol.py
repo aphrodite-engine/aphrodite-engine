@@ -2,7 +2,7 @@
 # https://github.com/lm-sys/FastChat/blob/168ccc29d3f7edc50823016105c024fe2282732a/fastchat/protocol/openai_api_protocol.py
 import json
 import time
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import torch
 from openai.types.chat import ChatCompletionContentPartParam
@@ -201,6 +201,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     nsigma: Optional[float] = 0.0
     skew: Optional[float] = 0.0
     custom_token_bans: Optional[List[int]] = None
+    token_ban_ranges: Optional[List[Tuple[List[int], int, int]]] = None
     sampler_priority: Optional[Union[List[int], List[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority",
@@ -386,6 +387,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             nsigma=self.nsigma,
             skew=self.skew,
             custom_token_bans=self.custom_token_bans,
+            token_ban_ranges=self.token_ban_ranges,
             sampler_priority=self.sampler_priority,
             output_kind=RequestOutputKind.DELTA if self.stream \
                 else RequestOutputKind.FINAL_ONLY,
@@ -578,6 +580,7 @@ class CompletionRequest(OpenAIBaseModel):
     nsigma: Optional[float] = 0.0
     skew: Optional[float] = 0.0
     custom_token_bans: Optional[List[int]] = None
+    token_ban_ranges: Optional[List[Tuple[List[int], int, int]]] = None
     sampler_priority: Optional[Union[List[int], List[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority",
@@ -715,6 +718,7 @@ class CompletionRequest(OpenAIBaseModel):
             nsigma=self.nsigma,
             skew=self.skew,
             custom_token_bans=self.custom_token_bans,
+            token_ban_ranges=self.token_ban_ranges,
             sampler_priority=self.sampler_priority,
             output_kind=RequestOutputKind.DELTA if self.stream \
                 else RequestOutputKind.FINAL_ONLY,

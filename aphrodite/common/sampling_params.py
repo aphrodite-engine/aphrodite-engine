@@ -3,7 +3,7 @@ import copy
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 from functools import cached_property
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import msgspec
 import torch
@@ -250,6 +250,8 @@ class SamplingParams(
         prompt_logprobs: Number of log probabilities to return per prompt token.
         detokenize: Whether to detokenize the output. Defaults to True.
         custom_token_bans: List of token IDs to ban from generating
+        token_ban_ranges: List of tuples (tokens, start, length) to ban from
+            generating. start=0 means start from first output token.
         skip_special_tokens: Whether to skip special tokens in the output.
             defaults to true.
         spaces_between_special_tokens: Whether to add spaces between special
@@ -340,6 +342,7 @@ class SamplingParams(
     prompt_logprobs: Optional[int] = None
     detokenize: bool = True
     custom_token_bans: Optional[List[int]] = None
+    token_ban_ranges: Optional[List[Tuple[List[int], int, int]]] = None
     skip_special_tokens: bool = True
     spaces_between_special_tokens: bool = True
     # Optional[List[LogitsProcessorFunc]] type.
@@ -406,6 +409,7 @@ class SamplingParams(
         "prompt_logprobs": None,
         "detokenize": True,
         "custom_token_bans": None,
+        "token_ban_ranges": None,
         "skip_special_tokens": True,
         "spaces_between_special_tokens": True,
         "include_stop_str_in_output": False,
@@ -604,6 +608,14 @@ class SamplingParams(
             raise ValueError(
                 "skew must be non-negative, got "
                 f"{self.skew}.")
+        if self.custom_token_bans is not None and not isinstance(
+            self.custom_token_bans, list):
+            raise ValueError(
+                "custom_token_bans must be a list of integers")
+        if self.token_ban_ranges is not None and not isinstance(
+            self.token_ban_ranges, list):
+            raise ValueError(
+                "token_ban_ranges must be a list of tuples")
 
         if self.sampler_priority is not None:
             if not self.sampler_priority:
