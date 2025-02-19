@@ -1,5 +1,4 @@
 import asyncio
-import copy
 import time
 import weakref
 from functools import partial
@@ -442,9 +441,7 @@ class _AsyncAphrodite(AphroditeEngine):
                 sampling_params=params,
                 tokenizer=self.get_tokenizer(lora_request),
                 default_guided_backend=self.decoding_config.
-                guided_decoding_backend,
-                model_config=self.model_config
-                )
+                guided_decoding_backend)
 
         self._add_processed_request(
             request_id=request_id,
@@ -466,28 +463,21 @@ async def build_guided_decoding_logits_processor_async(
     sampling_params: SamplingParams,
     tokenizer: AnyTokenizer,
     default_guided_backend: str,
-    model_config: ModelConfig,
 ) -> SamplingParams:
     """Constructs logits processors based on the guided_decoding,
     logits_bias, and allowed_token_ids fields in sampling_params. Deletes
     those fields and adds the constructed logits processors to the
     logits_processors field. Modifies sampling params in-place and returns
     the modified sampling params."""
-    if sampling_params.guided_decoding is None:
+    if (guided_decoding := sampling_params.guided_decoding) is None:
         return sampling_params
-
-    # Defensively copy sampling params since guided decoding logits
-    # processors can have different state for each request
-    sampling_params = copy.copy(sampling_params)
-    guided_decoding = sampling_params.guided_decoding
     logger.debug(
         "Building guided decoding logits processor. "
         f"Params: {guided_decoding}"
     )
     guided_decoding.backend = guided_decoding.backend or default_guided_backend
     processor = await get_guided_decoding_logits_processor(
-        guided_params=guided_decoding, tokenizer=tokenizer,
-        model_config=model_config
+        guided_params=guided_decoding, tokenizer=tokenizer
     )
     if processor:
         if sampling_params.logits_processors is None:

@@ -447,8 +447,7 @@ class MQAphroditeEngineClient:
                 build_guided_decoding_logits_processor_async(
                     sampling_params=params,
                     tokenizer=await self.get_tokenizer(lora_request),
-                    default_guided_backend=self.decoding_config.guided_decoding_backend,
-                    model_config=self.model_config
+                    default_guided_backend=self.decoding_config.guided_decoding_backend
                 )
     
         # 1) Create output queue for this requests.

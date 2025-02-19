@@ -1,4 +1,3 @@
-import copy
 import time
 from collections import deque
 from contextlib import contextmanager
@@ -1730,11 +1729,7 @@ class AphroditeEngine:
         those fields and adds the constructed logits processors to the
         logits_processors field. Returns the modified sampling params."""
         logits_processors = []
-        if sampling_params.guided_decoding is not None:
-            # Defensively copy sampling params since guided decoding logits
-            # processors can have different state for each request
-            sampling_params = copy.copy(sampling_params)
-            guided_decoding = sampling_params.guided_decoding
+        if (guided_decoding := sampling_params.guided_decoding) is not None:
             logger.debug(
                 "Building guided decoding logits processor in "
                 f"AphroditeEngine. Params: {guided_decoding}"
@@ -1745,8 +1740,7 @@ class AphroditeEngine:
                 or self.decoding_config.guided_decoding_backend
             )
             processor = get_local_guided_decoding_logits_processor(
-                guided_params=guided_decoding, tokenizer=tokenizer,
-                model_config=self.model_config
+                guided_params=guided_decoding, tokenizer=tokenizer
             )
             if processor:
                 logits_processors.append(processor)

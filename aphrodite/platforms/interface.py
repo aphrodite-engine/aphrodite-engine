@@ -1,5 +1,4 @@
 import enum
-import platform
 from typing import NamedTuple, Optional, Tuple
 
 import torch
@@ -12,14 +11,6 @@ class PlatformEnum(enum.Enum):
     XPU = enum.auto()
     CPU = enum.auto()
     UNSPECIFIED = enum.auto()
-
-
-class CpuArchEnum(enum.Enum):
-    X86 = enum.auto()
-    ARM = enum.auto()
-    POWERPC = enum.auto()
-    OTHER = enum.auto()
-    UNKNOWN = enum.auto()
 
 
 class DeviceCapability(NamedTuple):
@@ -72,24 +63,6 @@ class Platform:
         back to `torch.no_grad` by overriding this method.
         """
         return torch.inference_mode(mode=True)
-
-
-    @classmethod
-    def get_cpu_architecture(cls) -> CpuArchEnum:
-        """
-        Determine the CPU architecture of the current system.
-        Returns CpuArchEnum indicating the architecture type.
-        """
-        machine = platform.machine().lower()
-
-        if machine in ("x86_64", "amd64", "i386", "i686"):
-            return CpuArchEnum.X86
-        elif machine.startswith("arm") or machine.startswith("aarch"):
-            return CpuArchEnum.ARM
-        elif machine.startswith("ppc"):
-            return CpuArchEnum.POWERPC
-
-        return CpuArchEnum.OTHER if machine else CpuArchEnum.UNKNOWN
 
 
 class UnspecifiedPlatform(Platform):

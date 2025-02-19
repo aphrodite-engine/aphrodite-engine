@@ -2048,12 +2048,11 @@ def get_served_model_name(model: str,
 class DecodingConfig(ConfigMixin):
     """Dataclass which contains the decoding strategy of the engine"""
 
-    # Which guided decoding algo to use.
-    # 'outlines' / 'lm-format-enforcer' / 'xgrammar'
-    guided_decoding_backend: str = 'xgrammar'
+    # Which guided decoding algo to use. 'outlines' / 'lm-format-enforcer'
+    guided_decoding_backend: str = 'lm-format-enforcer'
 
     def __post_init__(self):
-        valid_guided_backends = ['outlines', 'lm-format-enforcer', 'xgrammar']
+        valid_guided_backends = ['outlines', 'lm-format-enforcer']
         backend = self.guided_decoding_backend
         if backend not in valid_guided_backends:
             raise ValueError(f"Invalid guided_decoding_backend '{backend},"

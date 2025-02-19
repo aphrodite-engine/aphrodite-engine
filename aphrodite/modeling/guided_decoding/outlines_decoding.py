@@ -1,6 +1,5 @@
 import asyncio
 import concurrent.futures
-import os
 from enum import Enum
 from json import dumps as json_dumps
 from re import escape as regex_escape
@@ -27,6 +26,7 @@ class GuidedDecodingMode(Enum):
 # without stop.
 JSON_GRAMMAR = r"""
 ?start: object | array
+
 ?value: object
 | array
 | UNESCAPED_STRING
@@ -34,21 +34,20 @@ JSON_GRAMMAR = r"""
 | "true"             -> true
 | "false"            -> false
 | "null"             -> null
+
 array  : "[" [value ("," value)*] "]"
 object : "{" [pair ("," pair)*] "}"
 pair   : UNESCAPED_STRING ":" value
+
 %import common.UNESCAPED_STRING
 %import common.SIGNED_NUMBER
 %import common.WS
+
 %ignore WS
 """
 
 global_thread_pool = None  # used for generating logits processor fsm
 
-# It's not yet clear that using more provides a benefit, and it could
-# potentially starve other processes on the machine. We'll cap this for now and
-# adjust later if testing proves it to help overcome a bottleneck.
-_MAX_THREADPOOL_WORKERS = 16
 
 async def get_outlines_guided_decoding_logits_processor(
     guided_params: GuidedDecodingParams, tokenizer: PreTrainedTokenizerBase
@@ -66,11 +65,8 @@ async def get_outlines_guided_decoding_logits_processor(
         return None
 
     if global_thread_pool is None:
-        max_workers = os.cpu_count() or 2
-        if max_workers > _MAX_THREADPOOL_WORKERS:
-            max_workers = _MAX_THREADPOOL_WORKERS
         global_thread_pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=max_workers)
+            max_workers=2)
     loop = asyncio.get_running_loop()
 
     return await loop.run_in_executor(global_thread_pool,

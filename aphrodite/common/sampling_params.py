@@ -723,14 +723,13 @@ class SamplingParams(
         return self._all_stop_token_ids
 
     def clone(self) -> "SamplingParams":
-        """Deep copy, but maybe not the LogitsProcessor objects.
-        LogitsProcessor objects may contain an arbitrary, nontrivial amount of
-        data that is expensive to copy. However, if not copied, the processor
-        needs to support parallel decoding for multiple sequences
+        """Deep copy excluding LogitsProcessor objects.
+        LogitsProcessor objects are excluded because they may contain an
+        arbitrary, nontrivial amount of data.
         """
 
         logit_processor_refs = None if self.logits_processors is None else {
-            id(lp): lp.clone() if hasattr(lp, 'clone') else lp
+            id(lp): lp
             for lp in self.logits_processors
         }
         return copy.deepcopy(self, memo=logit_processor_refs)
