@@ -1,10 +1,13 @@
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 import torch
 from loguru import logger
 
-from aphrodite.common.utils import is_hip
-from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
+from aphrodite import _custom_ops as ops
+from aphrodite.modeling.layers.fused_moe.layer import (
+    FusedMoE, FusedMoEMethodBase, FusedMoeWeightScaleSupported)
+from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
+                                              set_weight_attrs)
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
                                           GroupQuantScaleParameter,
@@ -14,9 +17,10 @@ from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
 from aphrodite.quantization.base_config import QuantizationConfig
 from aphrodite.quantization.kernels import (MPLinearLayerConfig,
                                             choose_mp_linear_kernel)
+from aphrodite.quantization.utils import replace_parameter
 from aphrodite.quantization.utils.marlin_utils import (
-    check_marlin_supported, marlin_repeat_scales_on_all_ranks,
-    verify_marlin_supported)
+    check_marlin_supported, marlin_moe_permute_scales,
+    marlin_repeat_scales_on_all_ranks, verify_marlin_supported)
 from aphrodite.scalar_type import scalar_types
 
 
@@ -29,8 +33,14 @@ class GPTQMarlinConfig(QuantizationConfig):
         (8, True): scalar_types.uint8b128,
     }
 
-    def __init__(self, weight_bits: int, group_size: int, desc_act: bool,
-                 is_sym: bool, lm_head_quantized: bool) -> None:
+    def __init__(
+        self,
+        weight_bits: int,
+        group_size: int,
+        desc_act: bool,
+        is_sym: bool,
+        lm_head_quantized: bool,
+    ) -> None:
         if desc_act and group_size == -1:
             # In this case, act_order == True is the same as act_order == False
             # (since we have only one group per output channel)
@@ -88,9 +98,6 @@ class GPTQMarlinConfig(QuantizationConfig):
         is_valid_user_quant = (user_quant is None or user_quant == "marlin"
                                or user_quant == "gptq_marlin")
 
-        if is_hip():
-            return None
-
         if can_convert and is_valid_user_quant:
             msg = ("The model is convertible to {} during runtime."
                    " Using {} kernel.".format(cls.get_name(), cls.get_name()))
@@ -104,12 +111,14 @@ class GPTQMarlinConfig(QuantizationConfig):
                         " faster inference")
         return None
 
-
-    def get_quant_method(self, layer: torch.nn.Module,
-                         prefix: str) -> Optional["GPTQMarlinLinearMethod"]:
-        if (isinstance(layer, LinearBase) or
-            (isinstance(layer, ParallelLMHead) and self.lm_head_quantized)):
+    def get_quant_method(
+        self, layer: torch.nn.Module, prefix: str
+    ) -> Optional[Union["GPTQMarlinLinearMethod", "GPTQMarlinMoEMethod"]]:
+        if isinstance(layer, LinearBase) or (isinstance(layer, ParallelLMHead)
+                                             and self.lm_head_quantized):
             return GPTQMarlinLinearMethod(self)
+        elif isinstance(layer, FusedMoE):
+            return GPTQMarlinMoEMethod(self)
         return None
 
     def get_scaled_act_names(self) -> List[str]:
@@ -119,10 +128,10 @@ class GPTQMarlinConfig(QuantizationConfig):
     def is_gptq_marlin_compatible(cls, quant_config: Dict[str, Any]):
         # Extract data from quant config.
         quant_method = quant_config.get("quant_method", "").lower()
-        num_bits = quant_config.get("bits", None)
-        group_size = quant_config.get("group_size", None)
-        sym = quant_config.get("sym", None)
-        desc_act = quant_config.get("desc_act", None)
+        num_bits = quant_config.get("bits")
+        group_size = quant_config.get("group_size")
+        sym = quant_config.get("sym")
+        desc_act = quant_config.get("desc_act")
 
         if quant_method != "gptq":
             return False
@@ -145,6 +154,7 @@ class GPTQMarlinLinearMethod(LinearMethodBase):
     Args:
         quant_config: The GPTQ Marlin quantization config.
     """
+
     _kernel_backends_being_used: Set[str] = set()
 
     def __init__(self, quant_config: GPTQMarlinConfig) -> None:
@@ -164,7 +174,6 @@ class GPTQMarlinLinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ) -> None:
-
         output_size_per_partition = sum(output_partition_sizes)
         is_row_parallel = input_size != input_size_per_partition
         weight_loader = extra_weight_attrs.get("weight_loader")
@@ -290,3 +299,269 @@ class GPTQMarlinLinearMethod(LinearMethodBase):
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         return self.kernel.apply_weights(layer, x, bias)
+
+
+class GPTQMarlinMoEMethod(FusedMoEMethodBase):
+    """MoE Marlin method with quantization."""
+
+    def __init__(self, quant_config: GPTQMarlinConfig) -> None:
+        self.quant_config = quant_config
+
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        num_experts: int,
+        hidden_size: int,
+        intermediate_size: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ):
+        # Currently assuming is_k_full is always True
+        # (input size per partition is the same as full input size)
+        # Supports only sym for now (no zp)
+        if self.quant_config.group_size != -1:
+            scales_size13 = hidden_size // self.quant_config.group_size
+            scales_size2 = intermediate_size // self.quant_config.group_size
+            strategy = FusedMoeWeightScaleSupported.GROUP.value
+        else:
+            scales_size13 = 1
+            scales_size2 = 1
+            strategy = FusedMoeWeightScaleSupported.CHANNEL.value
+
+        extra_weight_attrs.update({
+            "quant_method": strategy,
+            "is_transposed": True
+        })
+        # Fused gate_up_proj (column parallel)
+        w13_qweight = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                hidden_size // self.quant_config.pack_factor,
+                2 * intermediate_size,
+                dtype=torch.int32,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_qweight", w13_qweight)
+        set_weight_attrs(w13_qweight, extra_weight_attrs)
+        # down_proj (row parallel)
+        w2_qweight = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                intermediate_size // self.quant_config.pack_factor,
+                hidden_size,
+                dtype=torch.int32,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_qweight", w2_qweight)
+        set_weight_attrs(w2_qweight, extra_weight_attrs)
+        # up_proj scales
+        w13_scales = torch.nn.Parameter(
+            torch.empty(num_experts,
+                        scales_size13,
+                        2 * intermediate_size,
+                        dtype=torch.half),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_scales", w13_scales)
+        set_weight_attrs(w13_scales, extra_weight_attrs)
+        # down_proj scales
+        w2_scales = torch.nn.Parameter(
+            torch.empty(num_experts,
+                        scales_size2,
+                        hidden_size,
+                        dtype=torch.half),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_scales", w2_scales)
+        set_weight_attrs(w2_scales, extra_weight_attrs)
+        # up_proj scales
+        w13_qzeros = torch.nn.Parameter(
+            torch.empty(num_experts,
+                        scales_size13,
+                        2 * intermediate_size // self.quant_config.pack_factor,
+                        dtype=params_dtype),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_qzeros", w13_qzeros)
+        set_weight_attrs(w13_qzeros, extra_weight_attrs)
+        # down_proj scales
+        w2_qzeros = torch.nn.Parameter(
+            torch.empty(num_experts,
+                        scales_size2,
+                        hidden_size // self.quant_config.pack_factor,
+                        dtype=params_dtype),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_qzeros", w2_qzeros)
+        set_weight_attrs(w2_qzeros, extra_weight_attrs)
+        w13_g_idx = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                hidden_size,
+                dtype=torch.int32,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_g_idx", w13_g_idx)
+        set_weight_attrs(w13_g_idx, extra_weight_attrs)
+        w2_g_idx = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                intermediate_size,
+                dtype=torch.int32,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_g_idx", w2_g_idx)
+        set_weight_attrs(w2_g_idx, extra_weight_attrs)
+        w13_g_idx_sort_indices = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                hidden_size,
+                dtype=torch.int32,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_g_idx_sort_indices",
+                                 w13_g_idx_sort_indices)
+        set_weight_attrs(w13_g_idx_sort_indices, extra_weight_attrs)
+        w2_g_idx_sort_indices = torch.nn.Parameter(
+            torch.empty(
+                num_experts,
+                intermediate_size,
+                dtype=torch.int32,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_g_idx_sort_indices",
+                                 w2_g_idx_sort_indices)
+        set_weight_attrs(w2_g_idx_sort_indices, extra_weight_attrs)
+
+    def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+
+        # Process act_order
+        if self.quant_config.desc_act:
+            # Get sorting based on g_idx
+            num_experts = layer.w13_g_idx.shape[0]
+            w13_g_idx_sort_indices = torch.empty_like(layer.w13_g_idx)
+            w2_g_idx_sort_indices = torch.empty_like(layer.w2_g_idx)
+            w13_sorted_g_idx = torch.empty_like(layer.w13_g_idx)
+            w2_sorted_g_idx = torch.empty_like(layer.w2_g_idx)
+            for e in range(num_experts):
+                w13_g_idx_sort_indices[e] = torch.argsort(
+                    layer.w13_g_idx[e]).to(torch.int32)
+                w2_g_idx_sort_indices[e] = torch.argsort(layer.w2_g_idx[e]).to(
+                    torch.int32)
+                w13_sorted_g_idx[e] = layer.w13_g_idx[e][
+                    w13_g_idx_sort_indices[e]]
+                w2_sorted_g_idx[e] = layer.w2_g_idx[e][
+                    w2_g_idx_sort_indices[e]]
+            replace_parameter(layer, "w13_g_idx", w13_sorted_g_idx)
+            replace_parameter(layer, "w2_g_idx", w2_sorted_g_idx)
+            replace_parameter(layer, "w13_g_idx_sort_indices",
+                              w13_g_idx_sort_indices)
+            replace_parameter(layer, "w2_g_idx_sort_indices",
+                              w2_g_idx_sort_indices)
+        else:
+            # Reset g_idx related tensors
+            num_experts = layer.w13_g_idx.shape[0]
+            device = layer.w13_g_idx.device
+            layer.w13_g_idx = torch.nn.Parameter(
+                torch.empty((num_experts, 0), dtype=torch.int32,
+                            device=device),
+                requires_grad=False,
+            )
+            layer.w2_g_idx = torch.nn.Parameter(
+                torch.empty((num_experts, 0), dtype=torch.int32,
+                            device=device),
+                requires_grad=False,
+            )
+            layer.w13_g_idx_sort_indices = torch.nn.Parameter(
+                torch.empty((num_experts, 0), dtype=torch.int32,
+                            device=device),
+                requires_grad=False,
+            )
+            layer.w2_g_idx_sort_indices = torch.nn.Parameter(
+                torch.empty((num_experts, 0), dtype=torch.int32,
+                            device=device),
+                requires_grad=False,
+            )
+        # Repack weights
+        marlin_w13_qweight = ops.gptq_marlin_moe_repack(
+            layer.w13_qweight,
+            layer.w13_g_idx_sort_indices,
+            layer.w13_qweight.shape[1] * self.quant_config.pack_factor,
+            layer.w13_qweight.shape[2],
+            self.quant_config.quant_type.size_bits,
+        )
+        replace_parameter(layer, "w13_qweight", marlin_w13_qweight)
+        marlin_w2_qweight = ops.gptq_marlin_moe_repack(
+            layer.w2_qweight,
+            layer.w2_g_idx_sort_indices,
+            layer.w2_qweight.shape[1] * self.quant_config.pack_factor,
+            layer.w2_qweight.shape[2],
+            self.quant_config.quant_type.size_bits,
+        )
+        replace_parameter(layer, "w2_qweight", marlin_w2_qweight)
+        # Repack scales
+        marlin_w13_scales = marlin_moe_permute_scales(
+            s=layer.w13_scales,
+            size_k=layer.intermediate_size_per_partition,
+            size_n=layer.w13_scales.shape[2],
+            group_size=self.quant_config.group_size,
+        )
+        replace_parameter(layer, "w13_scales", marlin_w13_scales)
+        marlin_w2_scales = marlin_moe_permute_scales(
+            s=layer.w2_scales,
+            size_k=layer.w2_scales.shape[1] * self.quant_config.pack_factor,
+            size_n=layer.w2_scales.shape[2],
+            group_size=self.quant_config.group_size,
+        )
+        replace_parameter(layer, "w2_scales", marlin_w2_scales)
+
+    def apply(
+        self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        router_logits: torch.Tensor,
+        top_k: int,
+        renormalize: bool = True,
+        use_grouped_topk: bool = False,
+        num_expert_group: Optional[int] = None,
+        topk_group: Optional[int] = None,
+        custom_routing_function: Optional[Callable] = None,
+    ) -> torch.Tensor:
+        from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
+            fused_marlin_moe)
+
+        # The input must currently be float16
+        orig_dtype = x.dtype
+        x = x.half()
+
+        topk_weights, topk_ids = FusedMoE.select_experts(
+            hidden_states=x,
+            router_logits=router_logits,
+            use_grouped_topk=use_grouped_topk,
+            top_k=top_k,
+            renormalize=renormalize,
+            topk_group=topk_group,
+            num_expert_group=num_expert_group,
+            custom_routing_function=None)
+
+        return fused_marlin_moe(
+            x,
+            layer.w13_qweight,
+            layer.w2_qweight,
+            layer.w13_scales,
+            layer.w2_scales,
+            router_logits,
+            topk_weights,
+            topk_ids,
+            g_idx1=layer.w13_g_idx,
+            g_idx2=layer.w2_g_idx,
+            sort_indices1=layer.w13_g_idx_sort_indices,
+            sort_indices2=layer.w2_g_idx_sort_indices,
+            num_bits=self.quant_config.quant_type.size_bits,
+        ).to(orig_dtype)

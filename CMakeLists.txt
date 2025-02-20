@@ -518,6 +518,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
         "kernels/moe/marlin_kernels/marlin_moe_kernel_ku4b8.cu"
         "kernels/moe/marlin_kernels/marlin_moe_kernel_ku8b128.h"
         "kernels/moe/marlin_kernels/marlin_moe_kernel_ku8b128.cu"
+        "kernels/moe/marlin_kernels/marlin_moe_kernel_ku4.h"
+        "kernels/moe/marlin_kernels/marlin_moe_kernel_ku4.cu"
         "kernels/moe/marlin_moe_ops.cu")
     set_gencode_flags_for_srcs(
       SRCS "${MARLIN_MOE_SRC}"

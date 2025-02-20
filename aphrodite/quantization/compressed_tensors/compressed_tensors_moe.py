@@ -39,6 +39,7 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
         weight_quant = quant_config.target_scheme_map["Linear"].get("weights")
         input_quant = quant_config.target_scheme_map["Linear"].get(
             "input_activations")
+
         if quant_config._is_wNa16_group_channel(weight_quant, input_quant):
             return CompressedTensorsWNA16MoEMethod(quant_config)
         elif quant_config._is_fp8_w8a8(weight_quant, input_quant):
@@ -49,6 +50,7 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
 
 
 class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
+
     def __init__(
             self,
             quant_config: "CompressedTensorsConfig"  # type: ignore # noqa E501
@@ -58,18 +60,22 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
             "weights")
         self.input_quant = self.quant_config.target_scheme_map["Linear"].get(
             "input_activations")
+
         if not (self.weight_quant.strategy == QuantizationStrategy.TENSOR
                 and self.input_quant.strategy == QuantizationStrategy.TENSOR):
             raise ValueError(
                 "For FP8 Fused MoE layers, only per-tensor scales"
                 "for weights and activations are supported. Found "
                 f"{self.weight_quant}, {self.input_quant}")
+
         self.static_input_scales = not self.input_quant.dynamic
 
     def create_weights(self, layer: torch.nn.Module, num_experts: int,
                        hidden_size: int, intermediate_size: int,
                        params_dtype: torch.dtype, **extra_weight_attrs):
+
         params_dtype = torch.float8_e4m3fn
+
         # WEIGHTS
         w13_weight = torch.nn.Parameter(torch.empty(num_experts,
                                                     2 * intermediate_size,
@@ -78,6 +84,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
                                         requires_grad=False)
         layer.register_parameter("w13_weight", w13_weight)
         set_weight_attrs(w13_weight, extra_weight_attrs)
+
         w2_weight = torch.nn.Parameter(torch.empty(num_experts,
                                                    hidden_size,
                                                    intermediate_size,
@@ -85,6 +92,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
                                        requires_grad=False)
         layer.register_parameter("w2_weight", w2_weight)
         set_weight_attrs(w2_weight, extra_weight_attrs)
+
         # WEIGHT_SCALES
         # Allocate 2 scales for w1 and w3 respectively.
         # They will be combined to a single scale after weight loading.
@@ -93,6 +101,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
                                                          dtype=torch.float32),
                                               requires_grad=False)
         layer.register_parameter("w13_weight_scale", w13_weight_scale)
+
         w2_weight_scale = torch.nn.Parameter(torch.ones(num_experts,
                                                         dtype=torch.float32),
                                              requires_grad=False)
@@ -103,6 +112,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
             {"quant_method": FusedMoeWeightScaleSupported.TENSOR.value})
         set_weight_attrs(w13_weight_scale, extra_weight_attrs)
         set_weight_attrs(w2_weight_scale, extra_weight_attrs)
+
         # INPUT_SCALES
         if self.static_input_scales:
             w13_input_scale = torch.nn.Parameter(torch.ones(
@@ -110,6 +120,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
                                                  requires_grad=False)
             layer.register_parameter("w13_input_scale", w13_input_scale)
             set_weight_attrs(w13_input_scale, extra_weight_attrs)
+
             w2_input_scale = torch.nn.Parameter(torch.ones(
                 num_experts, dtype=torch.float32),
                                                 requires_grad=False)
@@ -137,6 +148,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
                 layer.w13_input_scale.max(), requires_grad=False)
             layer.w2_input_scale = torch.nn.Parameter(
                 layer.w2_input_scale.max(), requires_grad=False)
+
         # If rocm, normalize the weights and scales to e4m3fnuz
         if is_hip():
             # Normalize the weights and scales
@@ -163,6 +175,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
             if w2_input_scale is not None:
                 layer.w2_input_scale = torch.nn.Parameter(w2_input_scale,
                                                           requires_grad=False)
+
         # Fp8 moe kernel needs single weight scale for w13 per expert.
         # We take the max then dequant and requant each expert.
         assert layer.w13_weight_scale is not None
@@ -178,6 +191,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
                     start:start + shard_size, :], _ = ops.scaled_fp8_quant(
                         dq_weight, max_w13_scales[expert_id])
                 start += shard_size
+
         layer.w13_weight_scale = torch.nn.Parameter(max_w13_scales,
                                                     requires_grad=False)
 
@@ -193,7 +207,9 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
         topk_group: Optional[int] = None,
         custom_routing_function: Optional[Callable] = None,
     ) -> torch.Tensor:
+
         from aphrodite.modeling.layers.fused_moe import fused_experts
+
         topk_weights, topk_ids = FusedMoE.select_experts(
             hidden_states=x,
             router_logits=router_logits,
@@ -203,6 +219,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
             topk_group=topk_group,
             num_expert_group=num_expert_group,
             custom_routing_function=custom_routing_function)
+
         return fused_experts(x,
                              layer.w13_weight,
                              layer.w2_weight,
@@ -223,12 +240,12 @@ class CompressedTensorsWNA16MoEMethod(CompressedTensorsMoEMethod):
             quant_config: "CompressedTensorsConfig"  # type: ignore # noqa E501
     ):
         self.quant_config = quant_config
-        # TODO: refactor this to use schemes as other kernels
+        # TODO: @dsikka: refactor this to use schemes as other kernels
         # are supported + check if the layer is being ignored.
         config = self.quant_config.target_scheme_map["Linear"].get("weights")
         self.num_bits = config.num_bits
         self.packed_factor = 32 // config.num_bits
-        self.strategy = config.strategy
+        self.strategy = config.strategy.value
         self.group_size = config.group_size
         assert config.symmetric, (
             "Only symmetric quantization is supported for MoE")
@@ -481,14 +498,14 @@ class CompressedTensorsWNA16MoEMethod(CompressedTensorsMoEMethod):
             x,
             layer.w13_weight_packed,
             layer.w2_weight_packed,
+            layer.w13_weight_scale,
+            layer.w2_weight_scale,
             router_logits,
-            layer.w13_g_idx,
-            layer.w2_g_idx,
-            layer.w13_g_idx_sort_indices,
-            layer.w2_g_idx_sort_indices,
             topk_weights,
             topk_ids,
-            w1_scale=layer.w13_weight_scale,
-            w2_scale=layer.w2_weight_scale,
+            g_idx1=layer.w13_g_idx,
+            g_idx2=layer.w2_g_idx,
+            sort_indices1=layer.w13_g_idx_sort_indices,
+            sort_indices2=layer.w2_g_idx_sort_indices,
             num_bits=self.num_bits,
         )

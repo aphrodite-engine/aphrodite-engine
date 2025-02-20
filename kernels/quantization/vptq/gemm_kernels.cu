@@ -68,7 +68,7 @@ struct TypeVec2<float> {
 };
 
 template <typename T>
-T __device__ __forceinline__ ConvertFromFloat(float v, T vv) {
+T __device__ __forceinline__ ConvertFromFloat(float v, [[maybe_unused]] T vv) {
   (void)(vv);
   if constexpr (std::is_same<T, __bfloat16>::value) {
     return vv = __float2bfloat16(v);
