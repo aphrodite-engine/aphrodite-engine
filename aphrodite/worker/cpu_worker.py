@@ -20,8 +20,6 @@ from aphrodite.worker.worker_base import (LocalOrDistributedWorkerBase,
                                           LoraNotSupportedWorkerBase,
                                           WorkerInput)
 
-APHRODITE_CPU_OMP_THREADS_BIND = envs.APHRODITE_CPU_OMP_THREADS_BIND
-
 
 class CPUCacheEngine:
     """Manages the KV cache for CPU backend.
@@ -114,8 +112,8 @@ class CPUCacheEngine:
 class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     """A worker class that executes (a partition of) the model on a CPU socket.
 
-    Each worker is associated with a single CPU socket. The worker is
-    responsible for maintaining the KV cache and executing the model on the
+    Each worker is associated with a single CPU socket. The worker is 
+    responsible for maintaining the KV cache and executing the model on the 
     CPU. In case of distributed inference, each worker is assigned a partition
     of the model.
     """
@@ -157,7 +155,7 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             init_cached_hf_modules()
 
         # Setup OpenMP threads affinity.
-        omp_cpuids = APHRODITE_CPU_OMP_THREADS_BIND
+        omp_cpuids = envs.APHRODITE_CPU_OMP_THREADS_BIND
         if omp_cpuids == "all":
             self.local_omp_cpuid = "all"
         else:
@@ -183,6 +181,7 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         if self.local_omp_cpuid != "all":
             ret = torch.ops._C_utils.init_cpu_threads_env(self.local_omp_cpuid)
             logger.info(ret)
+
         self.init_distributed_environment()
         # Set random seed.
         set_random_seed(self.model_config.seed)
@@ -240,10 +239,9 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         """Raise errors if the num_cpu_blocks is invalid.
         """
         if num_cpu_blocks <= 0:
-            raise ValueError(
-                "No available memory for the cache blocks. "
-                "Try increasing `APHRODITE_CPU_KVCACHE_SPACE` when "
-                "initializing the engine.")
+            raise ValueError("No available memory for the cache blocks. "
+                             "Try increasing `APHRODITE_CPU_KVCACHE_SPACE` when"
+                             " initializing the engine.")
 
         max_seq_len = self.cache_config.block_size * num_cpu_blocks
         if self.model_config.max_model_len > max_seq_len:
