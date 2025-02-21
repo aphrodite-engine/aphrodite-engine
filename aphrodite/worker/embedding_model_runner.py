@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import torch
 
@@ -9,6 +9,7 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sequence import (IntermediateTensors, PoolerOutput,
                                        SequenceData, SequenceGroupMetadata)
+from aphrodite.distributed import get_pp_group
 from aphrodite.forward_context import set_forward_context
 from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.multimodal import MultiModalInputs
@@ -41,8 +42,8 @@ class EmbeddingModelRunner(
         load_config: LoadConfig,
         lora_config: Optional[LoRAConfig],
         kv_cache_dtype: Optional[str] = "auto",
-        prompt_adapter_config: Optional[PromptAdapterConfig] = None,
         is_driver_worker: bool = False,
+        prompt_adapter_config: Optional[PromptAdapterConfig] = None,
         tp_rank: int = 0,
     ):
         super().__init__(model_config,
@@ -64,7 +65,7 @@ class EmbeddingModelRunner(
         kv_caches: List[torch.Tensor],
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
-    ) -> Optional[List[PoolerOutput]]:
+    ) -> Optional[Union[List[PoolerOutput], IntermediateTensors]]:
         if num_steps > 1:
             raise ValueError(
                 "EmbeddingModelRunner does not support multi-step execution.")
@@ -105,27 +106,31 @@ class EmbeddingModelRunner(
             for _ in range(num_layers)
         ]
 
-        execute_model_kwargs = {
-            "input_ids":
-            model_input.input_tokens,
-            "positions":
-            model_input.input_positions,
-            "kv_caches":
-            kv_caches,
-            "attn_metadata":
-            model_input.attn_metadata,
-            **MultiModalInputs.as_kwargs(model_input.multi_modal_kwargs or {},
-                                         device=self.device),
-        }
+        multi_modal_kwargs = model_input.multi_modal_kwargs or {}
+
         with set_forward_context(model_input.attn_metadata):
-            hidden_states = model_executable(**execute_model_kwargs)
+            hidden_or_intermediate_states = model_executable(
+                input_ids=model_input.input_tokens,
+                positions=model_input.input_positions,
+                kv_caches=kv_caches,
+                attn_metadata=model_input.attn_metadata,
+                intermediate_tensors=intermediate_tensors,
+                **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                                             device=self.device))
+
+        # Only perform pooling in the last pipeline stage.
+        if not get_pp_group().is_last_rank and (self.is_driver_worker
+                and hidden_or_intermediate_states is not None
+                and isinstance(hidden_or_intermediate_states,
+                               IntermediateTensors)):
+            return hidden_or_intermediate_states
 
         # Only perform pooling in the driver worker.
         if not self.is_driver_worker:
             return []
 
         return [
-            self.model.pooler(hidden_states=hidden_states,
+            self.model.pooler(hidden_states=hidden_or_intermediate_states,
                               pooling_metadata=model_input.pooling_metadata)
         ]
 
