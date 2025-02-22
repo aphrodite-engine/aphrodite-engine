@@ -1,4 +1,3 @@
-import inspect
 from typing import (TYPE_CHECKING, ClassVar, Dict, List, Literal, Optional,
                     Protocol, Type, Union, overload, runtime_checkable)
 
@@ -6,8 +5,9 @@ import torch
 from loguru import logger
 from typing_extensions import TypeIs
 
+from aphrodite.common.utils import supports_kw
+
 if TYPE_CHECKING:
-    from aphrodite.attention import AttentionMetadata
     from aphrodite.common.config import (LoRAConfig, MultiModalConfig,
                                          SchedulerConfig)
     from aphrodite.common.sequence import IntermediateTensors
@@ -138,9 +138,7 @@ def supports_lora(
     return result
 
 
-def _supports_lora(
-    model: Union[Type[object], object],
-) -> Union[TypeIs[Type[SupportsLoRA]], TypeIs[SupportsLoRA]]:
+def _supports_lora(model: Union[Type[object], object]) -> bool:
     if isinstance(model, type):
         return isinstance(model, _SupportsLoRAType)
 
@@ -171,10 +169,7 @@ class SupportsPP(Protocol):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
-        kv_caches: List[torch.Tensor],
-        attn_metadata: "AttentionMetadata",
+        *,
         intermediate_tensors: Optional["IntermediateTensors"],
     ) -> Union[torch.Tensor, "IntermediateTensors"]:
         """
@@ -201,10 +196,7 @@ class _SupportsPPType(Protocol):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
-        kv_caches: List[torch.Tensor],
-        attn_metadata: "AttentionMetadata",
+        *,
         intermediate_tensors: Optional["IntermediateTensors"],
     ) -> Union[torch.Tensor, "IntermediateTensors"]:
         ...
@@ -250,24 +242,19 @@ def supports_pp(
     return supports_attributes and supports_inspect
 
 
-def _supports_pp_attributes(
-    model: Union[Type[object], object],
-) -> Union[bool, TypeIs[Type[SupportsPP]], TypeIs[SupportsPP]]:
+def _supports_pp_attributes(model: Union[Type[object], object]) -> bool:
     if isinstance(model, type):
         return isinstance(model, _SupportsPPType)
 
     return isinstance(model, SupportsPP)
 
 
-def _supports_pp_inspect(
-    model: Union[Type[object], object],
-) -> Union[bool, TypeIs[Type[SupportsPP]], TypeIs[SupportsPP]]:
+def _supports_pp_inspect(model: Union[Type[object], object]) -> bool:
     model_forward = getattr(model, "forward", None)
     if not callable(model_forward):
         return False
 
-    forward_params = inspect.signature(model_forward).parameters
-    return "intermediate_tensors" in forward_params
+    return supports_kw(model_forward, "intermediate_tensors")
 
 
 @runtime_checkable

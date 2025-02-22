@@ -1205,6 +1205,14 @@ def tensor_progress_bar(iterable:Iterable[Tuple[str, torch.Tensor]],
     else:
         yield from iterable
 
+def supports_kw(callable: Callable[..., object], kw_name: str) -> bool:
+    params = inspect.signature(callable).parameters
+    if kw_name in params:
+        return True
+
+    return any(param.kind == inspect.Parameter.VAR_KEYWORD
+               for param in params.values())
+
 def get_allowed_kwarg_only_overrides(
     callable: Callable[..., object],
     overrides: Optional[Dict[str, Any]],
