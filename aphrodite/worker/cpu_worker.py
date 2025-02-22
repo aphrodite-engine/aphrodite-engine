@@ -1,5 +1,5 @@
 """A CPU worker class."""
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Type
 
 import torch
 import torch.distributed
@@ -15,6 +15,8 @@ from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
 from aphrodite.modeling import set_random_seed
+from aphrodite.worker.cpu_enc_dec_model_runner import (
+    CPUEncoderDecoderModelRunner)
 from aphrodite.worker.cpu_model_runner import CPUModelRunner
 from aphrodite.worker.worker_base import (LocalOrDistributedWorkerBase,
                                           LoraNotSupportedWorkerBase,
@@ -161,7 +163,10 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         else:
             self.local_omp_cpuid = omp_cpuids.split("|")[rank]
 
-        self.model_runner: CPUModelRunner = CPUModelRunner(
+        ModelRunnerClass: Type[CPUModelRunner] = CPUModelRunner
+        if self._is_encoder_decoder_model():
+            ModelRunnerClass = CPUEncoderDecoderModelRunner
+        self.model_runner: CPUModelRunner = ModelRunnerClass(
             model_config,
             parallel_config,
             scheduler_config,
@@ -176,6 +181,9 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # initialize_cache.
         self.cache_engine: List[CPUCacheEngine]
         self.cpu_cache: List[List[torch.Tensor]]
+
+    def _is_encoder_decoder_model(self):
+        return self.model_config.is_encoder_decoder_model
 
     def init_device(self) -> None:
         if self.local_omp_cpuid != "all":

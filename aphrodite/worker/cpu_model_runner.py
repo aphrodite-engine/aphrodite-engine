@@ -12,8 +12,7 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
                                      PromptAdapterConfig, SchedulerConfig)
 from aphrodite.common.sequence import (IntermediateTensors, SequenceData,
                                        SequenceGroupMetadata)
-from aphrodite.common.utils import (STR_NOT_IMPL_ENC_DEC_ERR_STRS,
-                                    make_tensor_with_pad)
+from aphrodite.common.utils import make_tensor_with_pad
 from aphrodite.modeling.layers.rotary_embedding import MRotaryEmbedding
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.model_loader import get_model
@@ -431,10 +430,6 @@ class CPUModelRunner(ModelRunnerBase[ModelInputForCPU]):
         # Lazy initialization.
         self.model: nn.Module  # Set after init_Model
 
-        if self.model_config.is_encoder_decoder_model:
-            raise NotImplementedError(
-                STR_NOT_IMPL_ENC_DEC_ERR_STRS['STR_NOT_IMPL_ENC_DEC_CPU'])
-
     @property
     def model_is_mrope(self) -> bool:
         """Detect if the model has "mrope" rope_scaling type.
@@ -456,8 +451,8 @@ class CPUModelRunner(ModelRunnerBase[ModelInputForCPU]):
     def make_model_input_from_broadcasted_tensor_dict(
         self,
         tensor_dict: Dict[str, Any],
-    ) -> ModelInputForCPU:
-        return ModelInputForCPU.from_broadcasted_tensor_dict(
+    ) -> ModelInputForCPUWithSamplingMetadata:
+        return ModelInputForCPUWithSamplingMetadata.from_broadcasted_tensor_dict(  # noqa: E501
             tensor_dict,
             attn_backend=self.attn_backend,
         )
