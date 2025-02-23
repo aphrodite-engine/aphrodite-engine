@@ -743,14 +743,25 @@ class ShardedStateLoader(BaseModelLoader):
 class BitsAndBytesModelLoader(BaseModelLoader):
     """Model loader to load model weights with BitAndBytes quantization."""
 
-    # TODO: these module names are for Llama only,
-    # change so that it works with other models as well
-    default_target_modules = [
-        "gate_proj", "down_proj", "up_proj", "q_proj", "k_proj", "v_proj",
-        "o_proj"
-    ]
-
     possible_config_file_names = ["adapter_config.json"]
+
+    default_target_modules = [
+        ".gate_proj.",
+        ".down_proj.",
+        ".up_proj.",
+        ".q_proj.",
+        ".k_proj.",
+        ".v_proj.",
+        ".o_proj.",
+        '.fc1.',
+        '.fc2.',
+        '.dense.',
+        '.query_key_value.',
+        '.qkv_proj.',
+        '.dense_h_to_4h.',
+        '.dense_4h_to_h.',
+        '.out_proj.',
+    ]
 
     def __init__(self, load_config: LoadConfig):
         super().__init__(load_config)
@@ -761,7 +772,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         if (not load_config.model_loader_extra_config
                 or "qlora_adapter_name_or_path"
                 not in load_config.model_loader_extra_config):
-            self.target_modules = self.default_target_modules
+            self.target_modules = []
             return
 
         qlora_adapter = load_config.model_loader_extra_config[
@@ -905,7 +916,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
             quant_state_dict[weight_key] = weight_tensor
         for weight_name, weight_tensor in self._hf_weight_iter(
                 hf_weights_files, use_safetensors):
-            if not weight_name.endswith(".weight"):
+            if not weight_name.endswith((".weight", ".bias")):
                 continue
             qweight_name = weight_name.replace(".weight", ".qweight")
             if qweight_name in quant_state_dict:
@@ -923,7 +934,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                                                use_safetensors)
         temp_state_dict = {}
         for weight_name, weight_tensor in weight_iterator:
-            if weight_name.endswith(".weight"):
+            if weight_name.endswith((".weight", ".bias")):
                 continue
             # bitsandbytes library requires
             # weight.quant_state.bitsandbytes__* in CPU
@@ -944,8 +955,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         # pre quantized weights would have a quant_state
         for weight_name, weight_tensor in self._hf_weight_iter(
                 hf_weights_files, use_safetensors):
-            # Filter out all weights whose suffix is not ".weight"
-            if not weight_name.endswith(".weight"):
+            if not weight_name.endswith((".weight", ".bias")):
                 continue
             if (f"{weight_name}.quant_state.bitsandbytes__nf4" \
                     in temp_state_dict) or \
@@ -965,14 +975,11 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         tp_rank = get_tensor_model_parallel_rank()
         for weight_name, weight_tensor in self._hf_weight_iter(
                 hf_weights_files, use_safetensors):
-            if any(target_module in weight_name
-                   for target_module in self.target_modules):
+            if any(target_module in weight_name for target_module in
+                   self.target_modules) and weight_name.endswith(".weight"):
                 weight_name = weight_name.replace(".weight", ".qweight")
-                # weight partitions of different modules occur at
-                # different dimensions
-                # TODO: these module names are for Llama only,
-                # change so that it works with other models as well
-                if 'down_proj' in weight_name or 'o_proj' in weight_name:
+                if any(module in weight_name
+                       for module in self.column_parallel_weights_modules):
                     total_size = weight_tensor.size(-1)
                     start_index = total_size // tp_size * tp_rank
                     end_index = total_size // tp_size * (tp_rank + 1)
@@ -1015,8 +1022,22 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 f"Model {type(self).__name__} does not support BitsAndBytes "
                 "quantization yet.")
 
+        if len(self.target_modules) == 0:
+            if hasattr(model, 'default_bitsandbytes_target_modules'):
+                self.target_modules = model.default_bitsandbytes_target_modules
+            else:
+                self.target_modules = self.default_target_modules
+
+        if hasattr(model, 'column_parallel_weights_modules'):
+            self.column_parallel_weights_modules = \
+                model.column_parallel_weights_modules
+        else:
+            self.column_parallel_weights_modules = []
+
+        self.model_type = type(model).__name__
+
         logger.info("Loading weights with BitsAndBytes quantization. "
-                    "This May take a while ...")
+                    "This may take a while ...")
 
         quant_config = getattr(model_config.hf_config, "quantization_config",
                                None)
