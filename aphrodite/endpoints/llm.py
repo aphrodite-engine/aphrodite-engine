@@ -368,6 +368,7 @@ class LLM:
         add_generation_prompt: bool = True,
         continue_final_message: bool = False,
         tools: Optional[List[Dict[str, Any]]] = None,
+        mm_processor_kwargs: Optional[Dict[str, Any]] = None,
     ) -> List[RequestOutput]:
         """
         Generate responses for a chat conversation.
@@ -397,6 +398,8 @@ class LLM:
             continue_final_message: If True, continues the final message in
                 the conversation instead of starting a new one. Cannot be `True`
                 if `add_generation_prompt` is also `True`.
+            mm_processor_kwargs: Multimodal processor kwarg overrides for this
+                chat request. Only used for offline requests.
 
         Returns:
             A list of ``RequestOutput`` objects containing the generated
@@ -415,6 +418,9 @@ class LLM:
         for msgs in list_of_messages:
             tokenizer = self.get_tokenizer()
             model_config = self.llm_engine.get_model_config()
+            # NOTE: _parse_chat_message_content_parts() currently doesn't
+            # handle mm_processor_kwargs, since there is no implementation in
+            # the chat message parsing for it.
             conversation, mm_data = parse_chat_messages(
                 msgs, model_config, tokenizer)
             prompt_data: Union[str, List[int]]
@@ -444,6 +450,9 @@ class LLM:
 
             if mm_data is not None:
                 prompt["multi_modal_data"] = mm_data
+
+            if mm_processor_kwargs is not None:
+                prompt["mm_processor_kwargs"] = mm_processor_kwargs
 
             prompts.append(prompt)
 
