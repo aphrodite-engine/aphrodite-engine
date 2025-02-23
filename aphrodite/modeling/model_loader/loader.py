@@ -18,6 +18,8 @@ import numpy as np
 import torch
 from huggingface_hub import HfApi, hf_hub_download
 from loguru import logger
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
 from torch import nn
 from transformers import AutoModelForCausalLM, PretrainedConfig
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
@@ -1154,15 +1156,25 @@ class GGUFModelLoader(BaseModelLoader):
             raise RuntimeError(f"Unknown gguf model_type: {model_type}")
         num_layers = config.num_hidden_layers
         name_map = gguf.get_tensor_name_map(arch, num_layers)
-        with torch.device("meta"):
-            dummy_model = AutoModelForCausalLM.from_config(config)
-        state_dict = dummy_model.state_dict()
 
-        gguf_to_hf_name_map = {}
-        for hf_name in state_dict:
-            name, suffix = hf_name.rsplit(".", 1)
-            gguf_name = name_map.get_name(name)
-            gguf_to_hf_name_map[f"{gguf_name}.{suffix}"] = hf_name
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+        ) as progress:
+            task = progress.add_task("Creating tensor name mapping...", total=1)
+            with torch.device("meta"):
+                dummy_model = AutoModelForCausalLM.from_config(config)
+            state_dict = dummy_model.state_dict()
+
+            gguf_to_hf_name_map = {}
+            for hf_name in state_dict:
+                name, suffix = hf_name.rsplit(".", 1)
+                gguf_name = name_map.get_name(name)
+                gguf_to_hf_name_map[f"{gguf_name}.{suffix}"] = hf_name
+            progress.update(task, advance=1)
+            
         return gguf_to_hf_name_map
 
     def _get_weights_iterator(

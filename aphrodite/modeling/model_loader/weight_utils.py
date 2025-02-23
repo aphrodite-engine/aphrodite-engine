@@ -15,6 +15,8 @@ import numpy as np
 import torch
 from huggingface_hub import HfFileSystem, hf_hub_download, snapshot_download
 from loguru import logger
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
 from safetensors.torch import load_file, safe_open, save_file
 from tqdm.auto import tqdm
 
@@ -476,29 +478,41 @@ def gguf_quant_weights_iterator(
     Iterate over the quant weights in the model gguf files and convert
     them to torch tensors
     """
-
     reader = gguf.GGUFReader(gguf_file)
+    total_tensors = len(reader.tensors)
 
-    for tensor in reader.tensors:
-        if tensor.name in gguf_to_hf_name_map:
-            weight_type = tensor.tensor_type
-            name = gguf_to_hf_name_map[tensor.name]
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+    ) as progress:
+        task1 = progress.add_task("Loading quantization types...",
+                                  total=total_tensors)
+        for tensor in reader.tensors:
+            if tensor.name in gguf_to_hf_name_map:
+                weight_type = tensor.tensor_type
+                name = gguf_to_hf_name_map[tensor.name]
 
-            if weight_type.name != "F32":
-                weight_type_name = name.replace("weight", "qweight_type")
-                weight_type = torch.tensor(weight_type)
-                yield weight_type_name, weight_type
+                if weight_type.name != "F32":
+                    weight_type_name = name.replace("weight", "qweight_type")
+                    weight_type = torch.tensor(weight_type)
+                    yield weight_type_name, weight_type
+            progress.update(task1, advance=1)
 
-    for tensor in reader.tensors:
-        if tensor.name in gguf_to_hf_name_map:
-            weight = tensor.data
-            weight_type = tensor.tensor_type
-            name = gguf_to_hf_name_map[tensor.name]
+        task2 = progress.add_task("Loading model weights...",
+                                  total=total_tensors)
+        for tensor in reader.tensors:
+            if tensor.name in gguf_to_hf_name_map:
+                weight = tensor.data
+                weight_type = tensor.tensor_type
+                name = gguf_to_hf_name_map[tensor.name]
 
-            if weight_type.name != "F32":
-                name = name.replace("weight", "qweight")
-            param = torch.tensor(weight)
-            yield name, param
+                if weight_type.name != "F32":
+                    name = name.replace("weight", "qweight")
+                param = torch.tensor(weight)
+                yield name, param
+            progress.update(task2, advance=1)
 
 
 def kv_cache_scales_loader(

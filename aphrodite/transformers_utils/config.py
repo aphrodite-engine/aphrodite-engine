@@ -7,7 +7,9 @@ import huggingface_hub
 from huggingface_hub import (file_exists, hf_hub_download,
                              try_to_load_from_cache)
 from loguru import logger
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from transformers import GenerationConfig, PretrainedConfig
+from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 from transformers.models.auto.image_processing_auto import (
     get_image_processor_config)
 from transformers.models.auto.modeling_auto import (
@@ -84,6 +86,80 @@ def file_or_path_exists(model: Union[str, Path], config_name, revision,
         return False
 
 
+def extract_gguf_config(checkpoint: str) -> PretrainedConfig:
+    """Extract config directly from GGUF file for supported architectures."""
+    import gguf
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+    ) as progress:
+        task = progress.add_task("Reading GGUF configuration...", total=None)
+        
+        result = gguf.GGUFReader(checkpoint)
+        architecture = result.fields["general.architecture"]
+        architecture = str(bytes(architecture.parts[architecture.data[0]]),
+                          encoding="utf-8")
+
+        # Only support llama/mixtral for now, fallback to HF for others
+        if architecture != "llama":
+            return None
+
+        progress.update(task, description="Extracting model parameters...")
+        # Extract config values
+        vocab_size = len(result.fields["tokenizer.ggml.token_type"].data)
+        context_length = int(result.fields["llama.context_length"].parts[-1])
+        n_layer = int(result.fields["llama.block_count"].parts[-1])
+        n_head = int(result.fields["llama.attention.head_count"].parts[-1])
+        n_local_heads = int(
+            result.fields["llama.attention.head_count_kv"].parts[-1])
+        intermediate_size = int(
+            result.fields["llama.feed_forward_length"].parts[-1])
+        norm_eps = float(
+            result.fields["llama.attention.layer_norm_rms_epsilon"].parts[-1])
+        dim = int(result.fields["llama.embedding_length"].parts[-1])
+
+        # Determine if mixtral or regular llama
+        is_mixtral = "llama.expert_count" in result.fields
+        arch = "MixtralForCausalLM" if is_mixtral else "LlamaForCausalLM"
+        model_type = "mixtral" if is_mixtral else "llama"
+
+        progress.update(task, description="Building configuration...")
+        model_config = {
+            "architectures": [arch],
+            "bos_token_id": 1,
+            "eos_token_id": 2,
+            "hidden_act": "silu",
+            "hidden_size": dim,
+            "intermediate_size": intermediate_size,
+            "max_position_embeddings": context_length,
+            "model_type": model_type,
+            "num_attention_heads": n_head,
+            "num_hidden_layers": n_layer,
+            "num_key_value_heads": n_local_heads,
+            "rms_norm_eps": norm_eps,
+            "torch_dtype": "float16",
+            "vocab_size": vocab_size,
+        }
+
+        if "llama.rope.freq_base" in result.fields:
+            model_config["rope_theta"] = float(
+                result.fields["llama.rope.freq_base"].parts[-1])
+
+        if is_mixtral:
+            model_config["num_local_experts"] = int(
+                result.fields["llama.expert_count"].parts[-1])
+            model_config["num_experts_per_tok"] = int(
+                result.fields["llama.expert_used_count"].parts[-1])
+
+        if model_type in _CONFIG_REGISTRY:
+            config_class = _CONFIG_REGISTRY[model_type]
+        else:
+            config_class = CONFIG_MAPPING[model_type]
+
+        progress.update(task, description="Finalizing configuration...")
+        return config_class.from_dict(model_config)
+
+
 def get_config(
     model: Union[str, Path],
     trust_remote_code: bool,
@@ -94,13 +170,24 @@ def get_config(
     config_format: ConfigFormat = ConfigFormat.AUTO,
     **kwargs,
 ) -> PretrainedConfig:
-    # Separate model folder from file path for GGUF models
-
     is_gguf = check_gguf_file(model)
     if is_gguf:
-        kwargs["gguf_file"] = Path(model).name
-        model = Path(model).parent
+        try:
+            config = extract_gguf_config(model)
+            if config is not None:
+                if rope_scaling is not None:
+                    logger.info(f"Updating rope_scaling to {rope_scaling}")
+                    config.update({"rope_scaling": rope_scaling})
+                if rope_theta is not None:
+                    logger.info(f"Updating rope_theta to {rope_theta}")
+                    config.update({"rope_theta": rope_theta})
+                kwargs["gguf_file"] = Path(model).name
+                return config
+        except Exception as e:
+            logger.warning(f"Fast GGUF config extraction failed: {e}. "
+                         "Falling back to HF config loading.")
 
+    # Fallback to HF
     if config_format == ConfigFormat.AUTO:
         if is_gguf or file_or_path_exists(model,
                                           HF_CONFIG_NAME,
