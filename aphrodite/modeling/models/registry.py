@@ -54,6 +54,7 @@ _TEXT_GENERATION_MODELS = {
     "MixtralForCausalLM": ('mixtral', 'MixtralForCausalLM'),
     "MptForCausalLM": ('mpt', 'MPTForCausalLM'),
     "NemotronForCausalLM": ('nemotron', 'NemotronForCausalLM'),
+    "NVLM_D": ("nvlm_d", "NVLM_D_Model"),
     "OPTForCausalLM": ('opt', 'OPTForCausalLM'),
     "OlmoForCausalLM": ('olmo', 'OlmoForCausalLM'),
     "OlmoeForCausalLM": ('olmoe', 'OlmoeForCausalLM'),

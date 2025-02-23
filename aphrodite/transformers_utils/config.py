@@ -23,8 +23,9 @@ from aphrodite.transformers_utils.configs import (ChatGLMConfig, DbrxConfig,
                                                   JAISConfig, MedusaConfig,
                                                   MllamaConfig,
                                                   MLPSpeculatorConfig,
-                                                  MPTConfig, Qwen2VLConfig,
-                                                  RWConfig, UltravoxConfig)
+                                                  MPTConfig, NVLM_D_Config,
+                                                  Qwen2VLConfig, RWConfig,
+                                                  UltravoxConfig)
 from aphrodite.transformers_utils.utils import check_gguf_file
 
 APHRODITE_USE_MODELSCOPE = envs.APHRODITE_USE_MODELSCOPE
@@ -53,6 +54,7 @@ _CONFIG_REGISTRY: Dict[str, Type[PretrainedConfig]] = {
     "ultravox": UltravoxConfig,
     "eagle": EAGLEConfig,
     "qwen2_vl": Qwen2VLConfig,
+    "NVLM_D": NVLM_D_Config,
     **_CONFIG_REGISTRY_OVERRIDE_HF
 }
 
