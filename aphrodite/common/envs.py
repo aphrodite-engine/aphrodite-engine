@@ -65,7 +65,6 @@ if TYPE_CHECKING:
     APHRODITE_FORCE_P2P: bool = False
     APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT: bool = False
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
-    APHRODITE_USE_FAST_GGUF_CONFIG: bool = False
 
 
 def get_default_cache_root():
@@ -431,10 +430,6 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # interval-based metrics.
     "APHRODITE_REQUEST_LEVEL_METRICS":
     lambda: bool(int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "0"))),
-
-    # If set, Aphrodite will use fast GGUF config loading.
-    "APHRODITE_USE_FAST_GGUF_CONFIG":
-    lambda: bool(int(os.getenv("APHRODITE_USE_FAST_GGUF_CONFIG", "0"))),
 }
 
 # end-env-vars-definition
