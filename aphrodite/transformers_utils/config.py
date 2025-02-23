@@ -175,19 +175,23 @@ def get_config(
         try:
             config = extract_gguf_config(model)
             if config is not None:
-                if rope_scaling is not None:
-                    logger.info(f"Updating rope_scaling to {rope_scaling}")
-                    config.update({"rope_scaling": rope_scaling})
-                if rope_theta is not None:
-                    logger.info(f"Updating rope_theta to {rope_theta}")
-                    config.update({"rope_theta": rope_theta})
                 kwargs["gguf_file"] = Path(model).name
+                for key, value in [("rope_scaling", rope_scaling),
+                                   ("rope_theta", rope_theta)]:
+                    if value is not None:
+                        logger.info(
+                            f"Updating {key} from {getattr(config, key, None)} "
+                            f"to {value}")
+                        config.update({key: value})
                 return config
         except Exception as e:
-            logger.warning(f"Fast GGUF config extraction failed: {e}. "
-                         "Falling back to HF config loading.")
+            logger.debug(
+                f"GGUF config extraction failed: {e}, falling back to regular "
+                "config loading")
 
-    # Fallback to HF
+        kwargs["gguf_file"] = Path(model).name
+        model = Path(model).parent
+
     if config_format == ConfigFormat.AUTO:
         if is_gguf or file_or_path_exists(model,
                                           HF_CONFIG_NAME,
@@ -200,28 +204,23 @@ def get_config(
                                  token=kwargs.get("token")):
             config_format = ConfigFormat.MISTRAL
         else:
-            # If we're in offline mode and found no valid config format, then
-            # raise an offline mode error to indicate to the user that they
-            # don't have files cached and may need to go online.
-            # This is conveniently triggered by calling file_exists().
             file_exists(model,
                         HF_CONFIG_NAME,
                         revision=revision,
                         token=kwargs.get("token"))
-
             raise ValueError(f"No supported config format found in {model}")
 
     if config_format == ConfigFormat.HF:
         config_dict, _ = PretrainedConfig.get_config_dict(
             model, revision=revision, code_revision=code_revision, **kwargs)
 
-        # Use custom model class if it's in our registry
         model_type = config_dict.get("model_type")
         if model_type in _CONFIG_REGISTRY:
             config_class = _CONFIG_REGISTRY[model_type]
             config = config_class.from_pretrained(model,
                                                   revision=revision,
-                                                  code_revision=code_revision)
+                                                  code_revision=code_revision,
+                                                  **kwargs)
         else:
             try:
                 config = AutoConfig.from_pretrained(
