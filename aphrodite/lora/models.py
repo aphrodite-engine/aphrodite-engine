@@ -326,6 +326,7 @@ class LoRAModelManager(AdapterModelManager):
         max_num_batched_tokens: int,
         vocab_size: int,
         lora_config: LoRAConfig,
+        device: torch.device,
     ):
         """Create a LoRAModelManager and adapter for a given model.
 
@@ -339,6 +340,7 @@ class LoRAModelManager(AdapterModelManager):
             lora_config: the LoRA configuration.
         """
         self.lora_config = lora_config
+        self.device = device
         self.max_num_seqs = max_num_seqs
         assert self.capacity >= self.lora_slots
         self.max_num_batched_tokens = math.ceil(max_num_batched_tokens / 8) * 8
@@ -347,7 +349,7 @@ class LoRAModelManager(AdapterModelManager):
         self.long_lora_context: Optional[LongContextLoRAContext] = None
         self.punica_wrapper = PunicaWrapper(max_num_batched_tokens,
                                             max_batches=self.max_num_seqs,
-                                            device="cuda")
+                                            device=self.device)
         # Scaling factor -> offset to the sin_cos_cache to it.
         # Used for long context lora.
         self.scaling_factor_to_offset: Dict[float, int] = {}
@@ -674,16 +676,11 @@ class LoRALRUCache(AdapterLRUCache[LoRAModel]):
 class LRUCacheLoRAModelManager(LoRAModelManager):
     """A model manager that manages multiple LoRAs with LRU cache."""
 
-    def __init__(
-        self,
-        model: nn.Module,
-        max_num_seqs: int,
-        max_num_batched_tokens: int,
-        vocab_size: int,
-        lora_config: LoRAConfig,
-    ):
+    def __init__(self, model: nn.Module, max_num_seqs: int,
+                 max_num_batched_tokens: int, vocab_size: int,
+                 lora_config: LoRAConfig, device: torch.device):
         super().__init__(model, max_num_seqs, max_num_batched_tokens,
-                         vocab_size, lora_config)
+                         vocab_size, lora_config, device)
         self._registered_adapters: LoRALRUCache = LoRALRUCache(
             self.capacity, self.deactivate_adapter)
         self._active_adapters: LoRALRUCache = LoRALRUCache(
@@ -753,6 +750,7 @@ def create_lora_manager(
         max_num_batched_tokens: int,
         vocab_size: int,
         lora_config: LoRAConfig,
+        device: torch.device,
         lora_manager_cls: Type[LoRAModelManager] = LoRAModelManager,
         **kwargs) -> LoRAModelManager:
     """Create a LoRA adapter for a given model."""
@@ -764,5 +762,6 @@ def create_lora_manager(
         max_num_batched_tokens=max_num_batched_tokens,
         vocab_size=vocab_size,
         lora_config=lora_config,
+        device=device,
         **kwargs)
     return lora_manager
