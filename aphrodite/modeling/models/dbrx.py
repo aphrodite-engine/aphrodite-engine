@@ -19,7 +19,8 @@ from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
+from aphrodite.modeling.model_loader.weight_utils import (
+    default_weight_loader, maybe_remap_kv_scale_name)
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.configs.dbrx import DbrxConfig
@@ -426,6 +427,10 @@ class DbrxForCausalLM(nn.Module, SupportsPP):
                 weight_loader(param, loaded_weight, weight_name)
                 break
             else:
+                # Remapping the name of FP8 kv-scale.
+                name = maybe_remap_kv_scale_name(name, params_dict)
+                if name is None:
+                    continue
                 if is_pp_missing_parameter(name, self):
                     continue
                 param = params_dict[name]

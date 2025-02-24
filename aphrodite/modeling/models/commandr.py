@@ -42,7 +42,8 @@ from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, row_parallel_weight_loader)
+    default_weight_loader, maybe_remap_kv_scale_name,
+    row_parallel_weight_loader)
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationConfig
@@ -420,12 +421,16 @@ class CohereForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
                 weight_loader(param, loaded_weight, shard_id)
                 break
             else:
-                # lm_head is not used in vllm as it is tied with embed_token.
-                # To prevent errors, skip loading lm_head.weight.
+                # lm_head is not used in Aphrodite as it is tied with
+                # embed_token. To prevent errors, skip loading lm_head.weight.
                 if "lm_head.weight" in name:
                     continue
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
+                    continue
+                # Remapping the name of FP8 kv-scale.
+                name = maybe_remap_kv_scale_name(name, params_dict)
+                if name is None:
                     continue
                 if is_pp_missing_parameter(name, self):
                     continue
