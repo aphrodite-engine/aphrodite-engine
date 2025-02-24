@@ -32,7 +32,6 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.common.utils import is_list_of
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
-from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.clip import CLIPVisionModel
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
@@ -43,7 +42,7 @@ from aphrodite.quantization import QuantizationConfig
 
 from .clip import dummy_image_for_clip, dummy_seq_data_for_clip
 from .interfaces import SupportsMultiModal, SupportsPP
-from .utils import (flatten_bn, group_weights_with_prefix,
+from .utils import (AutoWeightsLoader, WeightsMapper, flatten_bn,
                     merge_multimodal_embeddings)
 
 _KEYS_TO_MODIFY_MAPPING = {
@@ -294,35 +293,8 @@ class Phi3HDImageEmbedding(Phi3ImageEmbeddingBase):
         return image_features_hd_newline
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        # prepare weight iterators for components
-        weights_group = group_weights_with_prefix(weights)
-
-        # load vision encoder
-        self.img_processor.load_weights(weights_group["img_processor"])
-
-        # load glb_GN
-        for name, loaded_weight in weights_group["glb_GN"]:
-            assert name == ""
-            param = self.glb_GN
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
-
-        # load sub_GN
-        for name, loaded_weight in weights_group["sub_GN"]:
-            assert name == ""
-            param = self.sub_GN
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
-
-        # load mlp projector
-        mlp_params_dict = dict(self.img_projection.named_parameters())
-        for name, loaded_weight in weights_group["img_projection"]:
-            param = mlp_params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
+        loader = AutoWeightsLoader(self)
+        loader.load_weights(weights)
 
 
 # Based on https://huggingface.co/microsoft/Phi-3-vision-128k-instruct/blob/main/image_processing_phi3_v.py#L57
@@ -714,27 +686,12 @@ class Phi3VForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         return self.language_model.sample(logits, sampling_metadata)
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        hf_to_vllm_mapping = {
-            "model.vision_embed_tokens.": "vision_embed_tokens.",
-            "lm_head.": "language_model.lm_head.",
-            "model.": "language_model.model.",
-        }
+        hf_to_aphrodite_mapper = WeightsMapper(
+            orig_to_new_prefix={
+                "model.vision_embed_tokens.": "vision_embed_tokens.",
+                "lm_head.": "language_model.lm_head.",
+                "model.": "language_model.model.",
+            })
 
-        def hf_to_vllm_name(key: str) -> str:
-            for hf_name, vllm_name in hf_to_vllm_mapping.items():
-                if key.startswith(hf_name):
-                    return key.replace(hf_name, vllm_name, 1)
-
-            return key
-
-        vllm_weights = {hf_to_vllm_name(k): v for k, v in weights}
-
-        # prepare weight iterators for components
-        weights_group = group_weights_with_prefix(vllm_weights.items())
-
-        # load vision embeddings and encoder
-        self.vision_embed_tokens.load_weights(
-            weights_group["vision_embed_tokens"])
-
-        # load llm backbone
-        self.language_model.load_weights(weights_group["language_model"])
+        loader = AutoWeightsLoader(self)
+        loader.load_weights(weights, mapper=hf_to_aphrodite_mapper)

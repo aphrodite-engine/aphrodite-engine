@@ -32,7 +32,6 @@ from aphrodite.common.sequence import (APHRODITE_TOKEN_ID_ARRAY_TYPE,
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
 from aphrodite.modeling.layers.linear import ColumnParallelLinear
 from aphrodite.modeling.layers.sampler import SamplerOutput
-from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.persimmon import PersimmonForCausalLM
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
@@ -42,8 +41,7 @@ from aphrodite.multimodal.utils import cached_get_tokenizer
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsMultiModal, SupportsPP
-from .utils import (flatten_bn, group_weights_with_prefix,
-                    merge_multimodal_embeddings)
+from .utils import AutoWeightsLoader, flatten_bn, merge_multimodal_embeddings
 
 # Cannot find the following 2 numbers from hf config.
 _IMAGE_TOKEN_ID = 71011
@@ -350,16 +348,5 @@ class FuyuForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         return next_tokens
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        # prepare weight iterators for components
-        weights_group = group_weights_with_prefix(weights)
-
-        # load vision embeddings
-        vision_params_dict = dict(self.vision_embed_tokens.named_parameters())
-        for name, loaded_weight in weights_group["vision_embed_tokens"]:
-            param = vision_params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
-
-        # load llm backbone
-        self.language_model.load_weights(weights_group["language_model"])
+        loader = AutoWeightsLoader(self)
+        loader.load_weights(weights)

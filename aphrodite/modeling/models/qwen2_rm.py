@@ -16,13 +16,12 @@ from aphrodite.common.sequence import IntermediateTensors, PoolerOutput
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.pooler import Pooler, PoolingType
-from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsPP
 from .qwen2 import Qwen2Model
-from .utils import group_weights_with_prefix
+from .utils import AutoWeightsLoader
 
 
 class ReLU(nn.Module):
@@ -121,13 +120,5 @@ class Qwen2ForRewardModel(nn.Module, SupportsPP):
         return self._pooler(hidden_states, pooling_metadata)
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        weights_group = group_weights_with_prefix(weights)
-
-        self.model.load_weights(weights_group["model"])
-
-        score_dict = dict(self.score.named_parameters())
-        for name, loaded_weight in weights_group["score"]:
-            param = score_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
+        loader = AutoWeightsLoader(self)
+        loader.load_weights(weights)

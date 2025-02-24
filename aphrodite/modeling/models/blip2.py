@@ -13,7 +13,6 @@ from aphrodite.common.sequence import IntermediateTensors, SequenceData
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
-from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.quantization import QuantizationConfig
@@ -21,7 +20,7 @@ from aphrodite.quantization import QuantizationConfig
 from .blip import (BlipVisionModel, dummy_image_for_blip,
                    get_max_blip_image_tokens)
 from .interfaces import SupportsMultiModal, SupportsPP
-from .utils import (group_weights_with_prefix, init_aphrodite_registered_model,
+from .utils import (AutoWeightsLoader, init_aphrodite_registered_model,
                     merge_multimodal_embeddings)
 
 # We use this internally as placeholders since there is no image token
@@ -687,35 +686,5 @@ class Blip2ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
         return self.language_model.sample(logits, sampling_metadata)
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        # prepare weight iterators for components
-        weights_group = group_weights_with_prefix(weights)
-
-        # load vision encoder
-        self.vision_model.load_weights(weights_group["vision_model"])
-
-        # load query tokens
-        for name, loaded_weight in weights_group["query_tokens"]:
-            assert name == ""
-            param = self.query_tokens
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
-
-        # load qformer
-        qformer_params_dict = dict(self.qformer.named_parameters())
-        for name, loaded_weight in weights_group["qformer"]:
-            param = qformer_params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
-
-        # load mlp projector
-        mlp_params_dict = dict(self.language_projection.named_parameters())
-        for name, loaded_weight in weights_group["language_projection"]:
-            param = mlp_params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
-
-        # load llm backbone
-        self.language_model.load_weights(weights_group["language_model"])
+        loader = AutoWeightsLoader(self)
+        loader.load_weights(weights)

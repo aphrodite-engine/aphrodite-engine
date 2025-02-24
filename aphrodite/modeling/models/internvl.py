@@ -21,7 +21,6 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.common.utils import is_list_of
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
-from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.intern_vit import InternVisionModel
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
@@ -32,7 +31,7 @@ from aphrodite.quantization import QuantizationConfig
 from .clip import (dummy_image_for_clip, dummy_seq_data_for_clip,
                    get_clip_num_patches)
 from .interfaces import SupportsMultiModal, SupportsPP
-from .utils import (flatten_bn, group_weights_with_prefix,
+from .utils import (AutoWeightsLoader, flatten_bn,
                     init_aphrodite_registered_model,
                     merge_multimodal_embeddings)
 
@@ -609,19 +608,5 @@ class InternVLChatModel(nn.Module, SupportsMultiModal, SupportsPP):
         return self.language_model.sample(logits, sampling_metadata)
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        # prepare weight iterators for components
-        weights_group = group_weights_with_prefix(weights)
-
-        # load vision encoder
-        self.vision_model.load_weights(weights_group["vision_model"])
-
-        # load mlp projector
-        mlp_params_dict = dict(self.mlp1.named_parameters())
-        for name, loaded_weight in weights_group["mlp1"]:
-            param = mlp_params_dict[name]
-            weight_loader = getattr(param, "weight_loader",
-                                    default_weight_loader)
-            weight_loader(param, loaded_weight)
-
-        # load llm backbone
-        self.language_model.load_weights(weights_group["language_model"])
+        loader = AutoWeightsLoader(self)
+        loader.load_weights(weights)
