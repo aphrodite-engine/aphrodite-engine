@@ -17,7 +17,6 @@ from aphrodite.distributed import (get_tensor_model_parallel_rank,
                                    tensor_model_parallel_all_reduce,
                                    tensor_model_parallel_gather)
 from aphrodite.distributed.utils import divide
-from aphrodite.lora.punica import PunicaWrapper
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear, LinearBase,
                                               MergedColumnParallelLinear,
                                               QKVParallelLinear,
@@ -30,6 +29,7 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 
 if TYPE_CHECKING:
+    from aphrodite.lora.punica_wrapper import PunicaWrapperBase
     pass
 
 
@@ -112,9 +112,9 @@ class BaseLayerWithLoRA(nn.Module):
 
     def set_mapping(
         self,
-        punica_wrapper: PunicaWrapper,
+        punica_wrapper,
     ):
-        self.punica_wrapper: PunicaWrapper = punica_wrapper
+        self.punica_wrapper: PunicaWrapperBase = punica_wrapper
 
     @classmethod
     def can_replace_layer(

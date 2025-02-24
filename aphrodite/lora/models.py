@@ -23,7 +23,7 @@ from aphrodite.lora.layers import (BaseLayerWithLoRA,
                                    LinearScalingRotaryEmbeddingWithLora,
                                    LoRAMapping)
 from aphrodite.lora.lora import LoRALayerWeights, PackedLoRALayerWeights
-from aphrodite.lora.punica import PunicaWrapper
+from aphrodite.lora.punica_wrapper import get_punica_wrapper
 from aphrodite.lora.utils import (from_layer, from_layer_logits_processor,
                                   is_regex_target_modules,
                                   parse_fine_tuned_lora_name,
@@ -123,9 +123,6 @@ class LoRAModel(AdapterModel):
             parsed = parse_fine_tuned_lora_name(tensor_name)
             if parsed is None:
                 skipped_count += 1
-                print(f"\rSkipping {skipped_count} "
-                      "unsupported LoRA weight tensors... Latest: "
-                      f"{tensor_name}", end="", flush=True)
                 continue
             module_name, is_lora_a, is_bias = parsed
             if module_name not in loras:
@@ -355,9 +352,9 @@ class LoRAModelManager(AdapterModelManager):
         self.lora_index_to_id: List[Optional[int]] = [None] * self.lora_slots
         self.vocab_size = vocab_size
         self.long_lora_context: Optional[LongContextLoRAContext] = None
-        self.punica_wrapper = PunicaWrapper(max_num_batched_tokens,
-                                            max_batches=self.max_num_seqs,
-                                            device=self.device)
+        self.punica_wrapper = get_punica_wrapper(max_num_batched_tokens,
+                                                 max_batches=self.max_num_seqs,
+                                                 device=self.device)
         # Scaling factor -> offset to the sin_cos_cache to it.
         # Used for long context lora.
         self.scaling_factor_to_offset: Dict[float, int] = {}
