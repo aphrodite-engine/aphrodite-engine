@@ -1,9 +1,10 @@
 """
 Based on:
-Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023).
-Punica: Multi-Tenant LoRA Serving.
+Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023). 
+Punica: Multi-Tenant LoRA Serving. 
 https://arxiv.org/abs/2310.18547
 """
+
 import torch
 import triton
 import triton.language as tl
@@ -74,7 +75,9 @@ def _bgmv_expand_kernel(
             other=0.0,
         )  # [BLOCK_N,BLOCK_K]
         if ADD_INPUTS:
-            tiled_out = tl.load(c_ptr + current_n * cn_stride, mask=c_mask)
+            tiled_out = tl.load(c_ptr + current_n * cn_stride,
+                                mask=c_mask,
+                                other=0.0)
             accumulator = tl.sum(tiled_a * tiled_b, 1) + tiled_out
         else:
             accumulator = tl.sum(tiled_a * tiled_b, 1)
@@ -99,7 +102,7 @@ def _bgmv_expand(
             corresponding to each batch, An index of -1 means no lora should be
             applied.
         batches (int): batch size
-        add_inputs (bool, optional):  Defaults to False. adds the final lora
+        add_inputs (bool, optional):  Defaults to False, adds the final lora 
             results to the output.
     """
     assert inputs.dtype in [torch.float16, torch.bfloat16, torch.float32]
