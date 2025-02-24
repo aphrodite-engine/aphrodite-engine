@@ -4,19 +4,16 @@ hidden_sizes included in the LoRA models currently supported by vLLM. It tests
 whether the corresponding Triton kernel can run normally when tensor parallelism
 is set to [1, 2, 4, 8, 16, 32, 64].
 """
-import random
-from unittest.mock import patch
-
 import pytest
 import torch
 
+from aphrodite.common.utils import seed_everything
 from aphrodite.lora.ops.bgmv_expand import bgmv_expand
 from aphrodite.lora.ops.bgmv_expand_slice import bgmv_expand_slice
 from aphrodite.lora.ops.bgmv_shrink import bgmv_shrink
 from aphrodite.lora.ops.sgmv_expand import sgmv_expand
 from aphrodite.lora.ops.sgmv_expand_slice import sgmv_expand_slice
 from aphrodite.lora.ops.sgmv_shrink import sgmv_shrink
-from aphrodite.triton_utils.libentry import LibEntry
 
 from .utils import (generate_data, generate_data_for_expand_nslices,
                     ref_torch_groupgemm)
@@ -145,11 +142,8 @@ def test_punica_sgmv(
     seed: int,
     device: str,
 ):
-    random.seed(seed)
     torch.set_default_device(device)
-    torch.random.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    seed_everything(seed)
 
     seq_length = 128
     (
@@ -238,14 +232,8 @@ def test_punica_bgmv(
     seed: int,
     device: str,
 ):
-    from aphrodite.lora.ops.bgmv_expand import _bgmv_expand_kernel
-    from aphrodite.lora.ops.bgmv_shrink import _bgmv_shrink_kernel
-
-    random.seed(seed)
     torch.set_default_device(device)
-    torch.random.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    seed_everything(seed)
 
     seq_length = 1
     (
@@ -268,33 +256,21 @@ def test_punica_bgmv(
         device,
     )
     if op_type == "shrink":
-        # The current _bgmv_shrink_kernel does not require the libentry
-        # decoration. The purpose of adding this patch is to test the
-        # correctness of libentry.
-        with patch(
-                "aphrodite.lora.ops.bgmv_shrink._bgmv_shrink_kernel",
-                LibEntry(_bgmv_shrink_kernel),
-        ):
-            bgmv_shrink(
-                inputs_tensor,
-                lora_weights,
-                our_out_tensor,
-                indices,
-                scaling,
-            )
+        bgmv_shrink(
+            inputs_tensor,
+            lora_weights,
+            our_out_tensor,
+            indices,
+            scaling,
+        )
     else:
-        # ditto
-        with patch(
-                "aphrodite.lora.ops.bgmv_expand._bgmv_expand_kernel",
-                LibEntry(_bgmv_expand_kernel),
-        ):
-            bgmv_expand(
-                inputs_tensor,
-                lora_weights,
-                our_out_tensor,
-                indices,
-                add_inputs=True,
-            )
+        bgmv_expand(
+            inputs_tensor,
+            lora_weights,
+            our_out_tensor,
+            indices,
+            add_inputs=True,
+        )
     ref_torch_groupgemm(
         ref_out_tensor,
         inputs_tensor,
@@ -330,13 +306,10 @@ def test_punica_expand_nslices(
     seed: int,
     device: str,
 ):
-    from aphrodite.lora.ops.bgmv_expand_slice import _bgmv_expand_slice_kernel
 
-    random.seed(seed)
     torch.set_default_device(device)
-    torch.random.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    seed_everything(seed)
+
     seq_length = 128 if op_type == "sgmv" else 1
     (
         inputs_tensor,
@@ -382,22 +355,16 @@ def test_punica_expand_nslices(
                 add_inputs=True,
             )
         else:
-            # The current _bgmv_expand_slice_kernel does not require the
-            # libentry decoration. The purpose of adding this patch is to test
-            # the correctness of libentry.
-            with patch(
-                    "aphrodite.lora.ops.bgmv_expand_slice._bgmv_expand_slice_kernel",
-                    LibEntry(_bgmv_expand_slice_kernel),
-            ):
-                bgmv_expand_slice(
-                    inputs_tensor,
-                    lora_weights,
-                    our_outputs,
-                    indices,
-                    slice_offset,
-                    slice_size=hidden_size,
-                    add_inputs=True,
-                )
+
+            bgmv_expand_slice(
+                inputs_tensor,
+                lora_weights,
+                our_outputs,
+                indices,
+                slice_offset,
+                slice_size=hidden_size,
+                add_inputs=True,
+            )
         ref_torch_groupgemm(
             ref_outputs[:, slice_offset:slice_offset + hidden_size],
             inputs_tensor,

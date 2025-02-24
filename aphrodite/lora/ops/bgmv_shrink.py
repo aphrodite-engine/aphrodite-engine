@@ -8,6 +8,8 @@ import torch
 import triton
 import triton.language as tl
 
+from aphrodite.common.utils import direct_register_custom_op
+
 from .utils import get_lora_op_configs
 
 
@@ -141,9 +143,24 @@ def _bgmv_shrink(
     return
 
 
+def bgmv_shrink_fake(
+    inputs: torch.Tensor,
+    lora_a_weights: torch.Tensor,
+    output_tensor: torch.Tensor,
+    lora_indices_tensor: torch.Tensor,
+    scaling: float = 1.0,
+) -> None:
+    return
+
+
 try:
-    bgmv_shrink = torch.library.custom_op("lora::bgmv_shrink",
-                                          _bgmv_shrink,
-                                          mutates_args=["output_tensor"])
+    direct_register_custom_op(
+        op_name="bgmv_shrink",
+        op_func=_bgmv_shrink,
+        mutates_args=["output_tensor"],
+        fake_impl=bgmv_shrink_fake,
+    )
+    bgmv_shrink = torch.ops.aphrodite.bgmv_shrink
+
 except AttributeError:
     bgmv_shrink = _bgmv_shrink
