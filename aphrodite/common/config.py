@@ -1162,7 +1162,7 @@ class SchedulerConfig(ConfigMixin):
                  is_multimodal_model: bool = False,
                  preemption_mode: Optional[str] = None,
                  num_scheduler_steps: int = 1,
-                 multi_step_stream_outputs: bool = False,
+                 multi_step_stream_outputs: bool = True,
                  send_delta_data: bool = False,
                  single_user_mode: bool = False,
                  policy: str = "fcfs") -> None:
@@ -1722,6 +1722,7 @@ class LoRAConfig(ConfigMixin):
     # This is a constant.
     lora_vocab_padding_size: ClassVar[int] = 256
     long_lora_scaling_factors: Optional[Tuple[float]] = None
+    bias_enabled: bool = False
 
     def __post_init__(self):
         # Setting the maximum rank to 256 should be able to satisfy the vast

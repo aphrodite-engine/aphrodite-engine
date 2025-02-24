@@ -103,7 +103,7 @@ class OutputData(NamedTuple):
 
 
 class SchedulerContext:
-    def __init__(self, multi_step_stream_outputs: bool = False):
+    def __init__(self, multi_step_stream_outputs: bool = True):
         self.output_queue: Deque[OutputData] = deque()
         self.request_outputs: List[Union[RequestOutput,
                                          EmbeddingRequestOutput]] = []

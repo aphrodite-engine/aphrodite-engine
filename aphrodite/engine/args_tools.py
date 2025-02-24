@@ -148,6 +148,7 @@ class EngineArgs:
     disable_logprobs_during_spec_decoding: Optional[bool] = None
     # Adapter Options
     enable_lora: bool = False
+    enable_lora_bias: bool = False
     max_loras: int = 1
     max_lora_rank: int = 16
     lora_extra_vocab_size: int = 256
@@ -812,6 +813,9 @@ class EngineArgs:
             help="Category: Adapter Options\n"
             "If True, enable handling of LoRA adapters.",
         )
+        parser.add_argument('--enable-lora-bias',
+                            action='store_true',
+                            help='If True, enable bias for LoRA adapters.')
         parser.add_argument(
             "--max-loras",
             type=int,
@@ -1143,6 +1147,7 @@ class EngineArgs:
             raise ValueError("Triton is not installed, LoRA will not work.")
 
         lora_config = LoRAConfig(
+            bias_enabled=self.enable_lora_bias,
             max_lora_rank=self.max_lora_rank,
             max_loras=self.max_loras,
             fully_sharded_loras=self.fully_sharded_loras,

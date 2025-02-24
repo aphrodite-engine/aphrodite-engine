@@ -4,7 +4,7 @@ import math
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type
 
 import safetensors.torch
 import torch
@@ -127,7 +127,7 @@ class LoRAModel(AdapterModel):
                       "unsupported LoRA weight tensors... Latest: "
                       f"{tensor_name}", end="", flush=True)
                 continue
-            module_name, is_lora_a = parsed
+            module_name, is_lora_a, is_bias = parsed
             if module_name not in loras:
                 lora_embeddings_tensor = None
                 if embeddings:
@@ -144,8 +144,16 @@ class LoRAModel(AdapterModel):
                                 lora_embeddings_tensor.pin_memory())
                 loras[module_name] = LoRALayerWeights(module_name, rank,
                                                       lora_alpha, None, None,
+                                                      None,
                                                       lora_embeddings_tensor)
-            if is_lora_a:
+            if is_bias:
+                loras[module_name].bias = tensor.to(device=device,
+                                                    dtype=dtype).t()
+                bias = tensor.to(device=device, dtype=dtype).t()
+                if pin_memory:
+                    bias = bias.pin_memory()
+                loras[module_name].bias = bias
+            elif is_lora_a:
                 loras[module_name].lora_a = tensor.to(device=device,
                                                       dtype=dtype).t()
                 if pin_memory:
@@ -231,7 +239,7 @@ class LoRAModel(AdapterModel):
                     if parsed is None:
                         skipped_count += 1
                         continue
-                    module_name, _ = parsed
+                    module_name, _, _ = parsed
                     part_name = module_name.split(".")[-1]
                     if part_name not in expected_lora_modules:
                         unexpected_modules.append(module_name)
@@ -411,8 +419,19 @@ class LoRAModelManager(AdapterModelManager):
             module_lora = lora_model.get_lora(module_name)
             if module_lora:
                 module_lora.optimize()
+                # Bias is not explicitly enabled with the flag enable_lora_bias.
+                bias = module_lora.bias
+                if ((torch.is_tensor(bias) or
+                     (isinstance(bias, Sequence) and any(b is not None
+                                                         for b in bias)))
+                        and not self.lora_config.bias_enabled):
+                    module_lora.bias = None
+                    raise ValueError(
+                        f"Adapter bias cannot be used for {module_name}"
+                        " without --enable-lora-bias.")
                 module.set_lora(index, module_lora.lora_a, module_lora.lora_b,
-                                module_lora.embeddings_tensor)
+                                module_lora.embeddings_tensor,
+                                module_lora.bias)
             else:
                 module.reset_lora(index)
         return True
@@ -531,6 +550,7 @@ class LoRAModelManager(AdapterModelManager):
         """Create zero-initialized LoRAModel for warmup."""
         model = LoRAModel(lora_id, rank, {}, scaling_factor)
         for module_name, module in self.model.named_modules():
+            bias_enabled = self.lora_config.bias_enabled
             if (not self._match_target_modules(module_name)
                     or not isinstance(module, BaseLayerWithLoRA)
                     or isinstance(module, LinearScalingRotaryEmbeddingWithLora)
@@ -558,7 +578,8 @@ class LoRAModelManager(AdapterModelManager):
                         rank,
                         module.lora_a_stacked.dtype,
                         "cpu",
-                        embeddings_tensor_dim=embeddings_tensor_dim)
+                        embeddings_tensor_dim=embeddings_tensor_dim,
+                        bias_enabled=bias_enabled)
                 else:
                     lora = LoRALayerWeights.create_dummy_lora_weights(
                         module_name,
@@ -567,6 +588,7 @@ class LoRAModelManager(AdapterModelManager):
                         rank,
                         module.lora_a_stacked.dtype,
                         "cpu",
+                        bias_enabled=bias_enabled,
                     )
                 lora.optimize()
             else:
@@ -581,6 +603,7 @@ class LoRAModelManager(AdapterModelManager):
                         rank,
                         module.lora_a_stacked[i].dtype,
                         "cpu",
+                        bias_enabled=bias_enabled,
                     )
                     lora.optimize()
                     subloras.append(lora)
