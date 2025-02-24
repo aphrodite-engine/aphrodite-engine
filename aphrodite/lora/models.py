@@ -25,6 +25,7 @@ from aphrodite.lora.layers import (BaseLayerWithLoRA,
 from aphrodite.lora.lora import LoRALayerWeights, PackedLoRALayerWeights
 from aphrodite.lora.punica import PunicaWrapper
 from aphrodite.lora.utils import (from_layer, from_layer_logits_processor,
+                                  is_regex_target_modules,
                                   parse_fine_tuned_lora_name,
                                   replace_submodule)
 from aphrodite.modeling.models import SupportsLoRA, supports_multimodal
@@ -229,9 +230,6 @@ class LoRAModel(AdapterModel):
                     parsed = parse_fine_tuned_lora_name(lora_module)
                     if parsed is None:
                         skipped_count += 1
-                        print(f"\rSkipping {skipped_count} unsupported LoRA "
-                              "weight tensors... Latest: "
-                              f"{lora_module}", end="", flush=True)
                         continue
                     module_name, _ = parsed
                     part_name = module_name.split(".")[-1]
@@ -256,14 +254,14 @@ class LoRAModel(AdapterModel):
             unexpected_modules = []
             target_modules = config["target_modules"]
             skipped_count = 0
+            if not isinstance(target_modules, list):
+                target_modules = [target_modules]
             for module in target_modules:
                 # Compatible with more modules,
                 # such as:layers.11.self_attn.k_proj
                 part_name = module.split(".")[-1]
                 if part_name not in expected_lora_modules:
                     skipped_count += 1
-                    print(f"\rSkipping {skipped_count} unexpected modules... "
-                          f"Latest: {module}", end="", flush=True)
                     unexpected_modules.append(module)
             if skipped_count > 0:
                 print(f"\rSkipped {skipped_count} unexpected modules.")
@@ -271,7 +269,9 @@ class LoRAModel(AdapterModel):
             # expected_lora_modules. It is not reliable. See
             # https://github.com/vllm-project/vllm/pull/5909. But there's no
             # other better mechanism.
-            if unexpected_modules:
+            if unexpected_modules and not is_regex_target_modules(
+                config["target_modules"], expected_lora_modules
+            ):
                 raise ValueError(
                     f"While loading {lora_dir}, expected"
                     f" target modules in {expected_lora_modules}"
