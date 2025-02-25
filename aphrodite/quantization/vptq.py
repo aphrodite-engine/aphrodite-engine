@@ -330,23 +330,33 @@ class VPTQConfig(QuantizationConfig):
 
         return cls(config_for_layers, shared_layer_config)
 
+    def get_config_for_key(self, prefix:str, key:str):
+        merged_name = '.'.join([prefix,key])
+        if merged_name in self.config_for_layers:
+            return self.config_for_layers[merged_name]
+        elif key in self.shared_layer_config:
+            return self.shared_layer_config[key]
+        else:
+            raise ValueError(f"Cannot find config for ({prefix}, {key})")
+
     def get_quant_method(self, layer: torch.nn.Module,
                          prefix: str) -> Optional["VPTQLinearMethod"]:
         if isinstance(layer, LinearBase):
             linear_name = prefix.split(".")[-1]
+            base_name = prefix[:prefix.rfind('.')]
             if linear_name == "qkv_proj":
                 quant_config = {
-                    "q_proj": self.shared_layer_config["q_proj"],
-                    "k_proj": self.shared_layer_config["k_proj"],
-                    "v_proj": self.shared_layer_config["v_proj"]
+                    "q_proj": self.get_config_for_key(base_name, "q_proj"),
+                    "k_proj": self.get_config_for_key(base_name, "k_proj"),
+                    "v_proj": self.get_config_for_key(base_name, "v_proj"),
                 }
             elif linear_name == "gate_up_proj":
                 quant_config = {
-                    "gate_proj": self.shared_layer_config["gate_proj"],
-                    "up_proj": self.shared_layer_config["up_proj"]
+                    "gate_proj": self.get_config_for_key(base_name, "gate_proj"),
+                    "up_proj": self.get_config_for_key(base_name, "up_proj"),
                 }
             else:
-                quant_config = self.shared_layer_config[linear_name]
+                quant_config = self.get_config_for_key(base_name, linear_name)
             return VPTQLinearMethod(quant_config)
         return None
 
@@ -419,7 +429,8 @@ class VPTQLinearMethod(LinearMethodBase):
         enable_perm = quant_config["enable_perm"]
         assert not enable_perm, (
             "perm is not absorbed in this model, please process it \
-                by `VPTQ.tools.pre_process --input_path xx --output_path xx`")
+by `pip install vptq && python -m vptq.tools.pre_process \
+--input_path xx --output_path xx`")
         assert input_size == group_size
         group_size = input_size_per_partition
         metadata = MetaData()
