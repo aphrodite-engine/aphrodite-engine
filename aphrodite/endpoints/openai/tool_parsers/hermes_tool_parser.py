@@ -22,41 +22,35 @@ from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
 
 @ToolParserManager.register_module("hermes")
 class Hermes2ProToolParser(ToolParser):
+
     def __init__(self, tokenizer: AnyTokenizer):
         super().__init__(tokenizer)
         if isinstance(self.model_tokenizer, MistralTokenizer):
-            logger.error("Detected Mistral tokenizer when using a Hermes model")
+            logger.error(
+                "Detected Mistral tokenizer when using a Hermes model")
             self.model_tokenizer = self.model_tokenizer.tokenizer
         self.current_tool_name_sent: bool = False
         self.prev_tool_call_arr: List[Dict] = []
         self.current_tool_id: int = -1
-        self.streamed_args_for_tool: List[
-            str
-        ] = []  # map what has been streamed for each tool so far to a list
+        self.streamed_args_for_tool: List[str] = [
+        ]  # map what has been streamed for each tool so far to a list
         self.tool_call_start_token: str = "<tool_call>"
         self.tool_call_end_token: str = "</tool_call>"
         self.tool_call_regex = re.compile(
-            r"<tool_call>(.*?)</tool_call>|<tool_call>(.*)", re.DOTALL
-        )
+            r"<tool_call>(.*?)</tool_call>|<tool_call>(.*)", re.DOTALL)
         self.scratch_pad_regex = re.compile(
-            r"<scratch_pad>(.*?)</scratch_pad>", re.DOTALL
-        )
+            r"<scratch_pad>(.*?)</scratch_pad>", re.DOTALL)
         if not self.model_tokenizer:
             raise ValueError(
                 "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
-        self.tool_call_start_token_id: int = self.model_tokenizer.vocab[
-            self.tool_call_start_token
-        ]
-        self.tool_call_end_token_id: int = self.model_tokenizer.vocab[
-            self.tool_call_end_token
-        ]
+                "constructor during construction.")
+        self.tool_call_start_token_id = self.vocab.get(
+            self.tool_call_start_token)
+        self.tool_call_end_token_id = self.vocab.get(self.tool_call_end_token)
         if not self.tool_call_start_token_id or not self.tool_call_end_token_id:
             raise RuntimeError(
                 "Hermes 2 Pro Tool parser could not locate tool call start/end "
-                "tokens in the tokenizer!"
-            )
+"tokens in the tokenizer!")
 
     def extract_tool_calls(
         self,
