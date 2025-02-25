@@ -420,7 +420,7 @@ class MQAphroditeEngineClient:
             for the request.
         """
         return self._process_request(prompt, pooling_params, request_id,
-                                     lora_request, priority)
+                                     lora_request, None, priority)
 
     async def _process_request(
         self,
