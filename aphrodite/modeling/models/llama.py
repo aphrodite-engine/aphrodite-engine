@@ -529,9 +529,9 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
             self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
                                                     config.vocab_size,
                                                     logit_scale)
-            self.sampler = Sampler()
         else:
             self.lm_head = PPMissingLayer()
+        self.sampler = Sampler()
         self.make_empty_intermediate_tensors = (
             self.model.make_empty_intermediate_tensors)
 

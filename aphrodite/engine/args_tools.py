@@ -721,7 +721,7 @@ class EngineArgs:
                             "the draft model in speculative decoding")
         parser.add_argument(
             "--speculative-max-model-len",
-            type=str,
+            type=int,
             default=EngineArgs.speculative_max_model_len,
             help="Category: Speculative Decoding Options\n"
             "The maximum sequence length supported by the "
