@@ -12,6 +12,7 @@ from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
                                           PackedAphroditeParameter)
+from aphrodite.platforms import current_platform
 from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
 from aphrodite.quantization.utils import replace_parameter
@@ -120,6 +121,9 @@ class AWQMarlinConfig(QuantizationConfig):
         num_bits = quant_config.get("bits", None)
         group_size = quant_config.get("group_size", None)
         has_zp = quant_config.get("zero_point", None)
+
+        if not current_platform.is_cuda():
+            return False
 
         if quant_method != "awq":
             return False

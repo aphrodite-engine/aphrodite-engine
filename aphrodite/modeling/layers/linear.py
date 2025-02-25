@@ -39,6 +39,7 @@ WEIGHT_LOADER_V2_SUPPORTED = [
     "ModelOptFp8LinearMethod",
     "QQQLinearMethod",
     "TPUInt8LinearMethod",
+    "IPEXAWQLinearMethod",
 ]
 
 

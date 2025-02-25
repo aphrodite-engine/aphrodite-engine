@@ -18,6 +18,7 @@ from aphrodite.quantization.gptq import GPTQConfig
 from aphrodite.quantization.gptq_marlin import GPTQMarlinConfig
 from aphrodite.quantization.gptq_marlin_24 import GPTQMarlin24Config
 from aphrodite.quantization.hqq_marlin import HQQMarlinConfig
+from aphrodite.quantization.ipex_quant import IPEXConfig
 from aphrodite.quantization.marlin import MarlinConfig
 from aphrodite.quantization.modelopt import ModelOptFp8Config
 from aphrodite.quantization.neuron_quant import NeuronQuantConfig
@@ -62,6 +63,7 @@ QUANTIZATION_METHODS = {
     "fp7": QuantLLMFPConfig,
     "neuron_quant": NeuronQuantConfig,
     "vptq": VPTQConfig,
+    "ipex": IPEXConfig,
 }
 
 
