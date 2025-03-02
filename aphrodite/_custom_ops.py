@@ -181,6 +181,41 @@ def paged_attention_rocm(
                                       block_size, max_seq_len, alibi_slopes,
                                       kv_cache_dtype, k_scale, v_scale)
 
+def burst_attention(
+    out: torch.Tensor,
+    query: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    num_kv_heads: int,
+    scale: float,
+    block_tables: torch.Tensor,
+    seq_lens: torch.Tensor,
+    block_size: int,
+    max_seq_len: int,
+    alibi_slopes: Optional[torch.Tensor],
+    kv_cache_dtype: str,
+    k_scale: float,
+    v_scale: float,
+    tp_rank: int,
+    blocksparse_local_blocks: int,
+    blocksparse_vert_stride: int,
+    blocksparse_block_size: int,
+    blocksparse_head_sliding_step: int,
+    ipc_handles: torch.Tensor,
+    ipc_offsets: torch.Tensor,
+    shared_signals: torch.Tensor,
+    world_size: int,
+    rank: int,
+    tile_size: int
+) -> None:
+    torch.ops._C.burst_attention(
+        out, query, key_cache, value_cache, num_kv_heads, scale, block_tables,
+        seq_lens, block_size, max_seq_len, alibi_slopes, kv_cache_dtype,
+        k_scale, v_scale, tp_rank, blocksparse_local_blocks,
+        blocksparse_vert_stride, blocksparse_block_size,
+        blocksparse_head_sliding_step, ipc_handles, ipc_offsets,
+        shared_signals, world_size, rank, tile_size
+    )
 
 def xqa_paged_attention(
     out: torch.Tensor,

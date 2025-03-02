@@ -49,6 +49,21 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "    int blocksparse_head_sliding_step) -> ()");
   ops.impl("paged_attention_v2", torch::kCUDA, &paged_attention_v2);
 
+  ops.def(
+      "burst_attention("
+      "    Tensor! out, Tensor query, Tensor key_cache,"
+      "    Tensor value_cache, int num_kv_heads, float scale,"
+      "    Tensor block_tables, Tensor seq_lens, int block_size,"
+      "    int max_seq_len, Tensor? alibi_slopes,"
+      "    str kv_cache_dtype, float k_scale, float v_scale,"
+      "    int tp_rank, int blocksparse_local_blocks,"
+      "    int blocksparse_vert_stride, int blocksparse_block_size,"
+      "    int blocksparse_head_sliding_step,"
+      "    Tensor ipc_handles, Tensor ipc_offsets, Tensor shared_signals,"
+      "    int world_size, int rank,"
+      "    int tile_size) -> ()");
+  ops.impl("burst_attention", torch::kCUDA, &burst_attention);
+
   // Activation ops
   // Activation function used in SwiGLU.
   ops.def("silu_and_mul(Tensor! out, Tensor input) -> ()");
@@ -123,7 +138,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "                         int rot_dim,"
       "                         Tensor cos_sin_cache_offsets) -> ()");
   ops.impl("batched_rotary_embedding", torch::kCUDA, &batched_rotary_embedding);
-
   // Quantization ops
 #ifndef USE_ROCM
   // Quantized GEMM for AQLM.
