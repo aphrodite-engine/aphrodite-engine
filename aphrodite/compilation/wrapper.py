@@ -3,14 +3,16 @@ import sys
 from abc import abstractmethod
 from contextlib import contextmanager
 from types import CodeType
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 import torch
 
 import aphrodite.common.envs as envs
 
+from .levels import CompilationLevel
 
-class TorchCompileWrapperWithCustomDispacther:
+
+class TorchCompileWrapperWithCustomDispatcher:
     """
     A wrapper class for torch.compile, with a custom dispatch logic.
     Subclasses should:
@@ -23,7 +25,27 @@ class TorchCompileWrapperWithCustomDispacther:
         `torch.compile` over the forward method.
     """
 
-    def __init__(self, compiled_callable: Callable):
+    def __init__(self, compiled_callable: Optional[Callable] = None):
+
+        if compiled_callable is None:
+            # default compilation settings
+            # compiling the forward method
+
+            # choose the compile backend
+
+            # if the user has set the backend, use it
+            from aphrodite.plugins import get_torch_compile_backend
+            backend = get_torch_compile_backend()
+            if backend is None:
+                from aphrodite.compilation.backends import (
+                    select_default_backend)
+                backend = select_default_backend(
+                    envs.APHRODITE_TORCH_COMPILE_LEVEL)
+
+            compiled_callable = torch.compile(
+                self.forward,
+                fullgraph=envs.APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE,
+                backend=backend)
         self.compiled_callable = compiled_callable
         self.original_code_object = self.__class__.forward.__code__
         self.compiled_codes: List[CodeType] = []
@@ -31,9 +53,8 @@ class TorchCompileWrapperWithCustomDispacther:
         # read the env var to determine whether to use the custom dispatcher
         # subclasses can use this to switch between the custom dispatcher
         # and the default Dynamo guard mechanism.
-        self.use_custom_dispatcher: bool = (
-            envs.APHRODITE_DYNAMO_USE_CUSTOM_DISPATCHER
-        )
+        self.use_custom_dispatcher: bool = \
+            envs.APHRODITE_TORCH_COMPILE_LEVEL >= CompilationLevel.DYNAMO_ONCE
 
     def __call__(self, *args, **kwargs):
         """Implement the dispatch logic here, beyond the torch.compile level.

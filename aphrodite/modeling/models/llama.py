@@ -31,6 +31,7 @@ from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.common.utils import is_hip
+from aphrodite.compilation.decorators import support_compile_llama_style
 from aphrodite.distributed import (get_current_tp_rank_partition_size,
                                    get_pp_group,
                                    get_tensor_model_parallel_rank,
@@ -264,6 +265,7 @@ class LlamaDecoderLayer(nn.Module):
         return hidden_states, residual
 
 
+@support_compile_llama_style
 class LlamaModel(nn.Module):
 
     def __init__(

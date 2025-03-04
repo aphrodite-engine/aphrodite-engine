@@ -1,6 +1,8 @@
 import torch.nn as nn
 
+import aphrodite.common.envs as envs
 from aphrodite.common.utils import is_cpu, is_hip, is_triton, is_xpu
+from aphrodite.compilation.levels import CompilationLevel
 from aphrodite.platforms import current_platform
 
 
@@ -53,6 +55,8 @@ class CustomOp(nn.Module):
     def dispatch_forward(self):
         # NOTE: Here we assume that Aphrodite was built for only one
         # specific backend. Currently, we do not support dynamic dispatching.
+        if envs.APHRODITE_TORCH_COMPILE_LEVEL >= CompilationLevel.INDUCTOR:
+            return self.forward_native
         if is_hip():
             return self.forward_hip
         elif is_cpu():

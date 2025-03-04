@@ -28,6 +28,8 @@ from aphrodite.common.sequence import (IntermediateTensors,
 from aphrodite.common.utils import (DeviceMemoryProfiler, PyObjectCache,
                                     async_tensor_h2d, flatten_2d_lists, is_hip,
                                     is_pin_memory_available, supports_dynamo)
+from aphrodite.compilation.compile_context import set_compile_context
+from aphrodite.compilation.levels import CompilationLevel
 from aphrodite.distributed import get_pp_group
 from aphrodite.distributed.parallel_state import (
     get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size,
@@ -1127,11 +1129,11 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                     "provided. Defaulting to scaling factors of 1.0. "
                     "This may lead to less accurate results!")
 
-        if envs.APHRODITE_TEST_DYNAMO_GRAPH_CAPTURE and supports_dynamo():
+        if envs.APHRODITE_TORCH_COMPILE_LEVEL == CompilationLevel.DYNAMO_AS_IS \
+            and supports_dynamo():
             logger.info("Compiling the model using torch.compile...")
-            from aphrodite.compilation.backends import aphrodite_backend
             from aphrodite.plugins import get_torch_compile_backend
-            backend = get_torch_compile_backend() or aphrodite_backend
+            backend = get_torch_compile_backend() or "eager"
             start_time = time.time()
             self.model = torch.compile(
                 self.model,
@@ -1329,7 +1331,14 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                 batch_size=batch_size,
                 dtype=self.model_config.dtype,
                 device=self.device)
-        self.execute_model(model_input, kv_caches, intermediate_tensors)
+        graph_batch_size = self.max_batchsize_to_capture
+        batch_size_capture_list = [
+            bs for bs in _BATCH_SIZES_TO_CAPTURE if bs <= graph_batch_size
+        ]
+        if self.model_config.enforce_eager:
+            batch_size_capture_list = []
+        with set_compile_context(batch_size_capture_list):
+            self.execute_model(model_input, kv_caches, intermediate_tensors)
         torch.cuda.synchronize()
 
         return

@@ -24,6 +24,7 @@ from transformers import Gemma2Config
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_compile_llama_style
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import GeluAndMul
@@ -237,6 +238,7 @@ class Gemma2DecoderLayer(nn.Module):
         return hidden_states, residual
 
 
+@support_compile_llama_style
 class Gemma2Model(nn.Module):
 
     def __init__(

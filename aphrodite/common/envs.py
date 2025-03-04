@@ -65,6 +65,7 @@ if TYPE_CHECKING:
     APHRODITE_FORCE_P2P: bool = False
     APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT: bool = False
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
+    APHRODITE_TORCH_COMPILE_LEVEL: int = 0
 
 
 def get_default_cache_root():
@@ -199,18 +200,12 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: (os.environ.get(
         "APHRODITE_USE_TRITON_FLASH_ATTN", "True").lower() in ("true", "1")),
 
-    # Internal flag to enable Dynamo graph capture
-    "APHRODITE_TEST_DYNAMO_GRAPH_CAPTURE":
-    lambda: int(os.environ.get("APHRODITE_TEST_DYNAMO_GRAPH_CAPTURE", "0")),
-    "APHRODITE_DYNAMO_USE_CUSTOM_DISPATCHER":
-    lambda:
-    (os.environ.get("APHRODITE_DYNAMO_USE_CUSTOM_DISPATCHER", "True").lower() in
-     ("true", "1")),
-
     # Internal flag to enable Dynamo fullgraph capture
     "APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE":
     lambda: bool(
         os.environ.get("APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE", "1") != "0"),
+    "APHRODITE_TORCH_COMPILE_LEVEL":
+    lambda: int(os.environ.get("APHRODITE_TORCH_COMPILE_LEVEL", "0")),
 
     # local rank of the process in the distributed setting, used to determine
     # the GPU device id

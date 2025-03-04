@@ -19,7 +19,7 @@ from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
                                        IntermediateTensors, Logprob,
                                        SequenceGroupMetadata, SequenceOutput)
 from aphrodite.compilation.wrapper import (
-    TorchCompileWrapperWithCustomDispacther)
+    TorchCompileWrapperWithCustomDispatcher)
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.model_loader import get_model
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
@@ -668,7 +668,7 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
                                                  model_input.seq_groups)
             return [sampler_output]
 
-class ModelWrapper(TorchCompileWrapperWithCustomDispacther):
+class ModelWrapper(TorchCompileWrapperWithCustomDispatcher):
 
     def __init__(self, model: nn.Module):
         self.model = model
