@@ -279,7 +279,8 @@ class MQAphroditeEngine:
                 prompt=request.prompt,
                 params=request.params,
                 lora_request=request.lora_request,
-                prompt_adapter_request=request.prompt_adapter_request)
+                prompt_adapter_request=request.prompt_adapter_request,
+                priority=request.priority)
 
             if self.log_requests:
                 logger.info(f"Added request {request.request_id}.")
