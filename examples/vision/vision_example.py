@@ -305,6 +305,21 @@ def run_mllama(question, modality):
     return llm, prompt, stop_token_ids
 
 
+# GLM-4v
+def run_glm4v(question: str, modality: str):
+    assert modality == "image"
+    model_name = "THUDM/glm-4v-9b"
+
+    llm = LLM(model=model_name,
+              max_model_len=2048,
+              max_num_seqs=2,
+              trust_remote_code=True,
+              enforce_eager=True)
+    prompt = question
+    stop_token_ids = [151329, 151336, 151338]
+    return llm, prompt, stop_token_ids
+
+
 model_example_map = {
     "llava": run_llava,
     "llava-next": run_llava_next,
@@ -321,6 +336,7 @@ model_example_map = {
     "qwen2_vl": run_qwen2_vl,
     "molmo": run_molmo,
     "mllama": run_mllama,
+    "glm4v": run_glm4v,
 }
 
 

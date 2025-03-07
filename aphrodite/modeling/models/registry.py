@@ -26,9 +26,7 @@ _TEXT_GENERATION_MODELS = {
     "BaiChuanForCausalLM": ('baichuan', 'BaiChuanForCausalLM'),
     "BaichuanForCausalLM": ('baichuan', 'BaichuanForCausalLM'),
     "BloomForCausalLM": ('bloom', 'BloomForCausalLM'),
-    "ChatGLMForConditionalGeneration":
-    ('chatglm', 'ChatGLMForCausalLM'),
-    "ChatGLMModel": ('chatglm', 'ChatGLMForCausalLM'),
+    # ChatGLMModel supports multimodal
     "CohereForCausalLM": ('commandr', 'CohereForCausalLM'),
     "DbrxForCausalLM": ('dbrx', 'DbrxForCausalLM'),
     "DeciLMForCausalLM": ('decilm', 'DeciLMForCausalLM'),
@@ -95,6 +93,8 @@ _MULTIMODAL_MODELS = {
     "Blip2ForConditionalGeneration": ('blip2', 'Blip2ForConditionalGeneration'),
     "ChameleonForConditionalGeneration":
     ('chameleon', 'ChameleonForConditionalGeneration'),
+    "ChatGLMModel": ("chatglm", "ChatGLMForCausalLM"),
+    "ChatGLMForConditionalGeneration": ("chatglm", "ChatGLMForCausalLM"),
     "FuyuForCausalLM": ('fuyu', 'FuyuForCausalLM'),
     "InternVLChatModel": ('internvl', 'InternVLChatModel'),
     "LlavaForConditionalGeneration": ('llava', 'LlavaForConditionalGeneration'),
