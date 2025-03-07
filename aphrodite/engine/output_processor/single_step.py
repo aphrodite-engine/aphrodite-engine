@@ -217,7 +217,7 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
         # Select the child sequences to keep in the sequence group.
         selected_child_seqs = []
         unselected_child_seqs = []
-        beam_width = sampling_params.best_of
+        beam_width = sampling_params.n
         length_penalty = sampling_params.length_penalty
 
         # Select the newly finished sequences with the highest scores

@@ -676,7 +676,7 @@ class AphroditeEngine:
         Details:
             - Set arrival_time to the current time if it is None.
             - Set prompt_token_ids to the encoded prompt if it is None.
-            - Create `best_of` number of :class:`~aphrodite.common.sequence`
+            - Create `n` number of :class:`~aphrodite.common.sequence`
                 objects.
             - Create a :class:`~aphrodite.common.sequenceGroup` object
               from the list of :class:`~aphrodite.common.sequence`.
@@ -1123,8 +1123,7 @@ class AphroditeEngine:
             if seq_group_metadata.do_sample:
                 assert len(sequence_group_outputs.samples) == 1, (
                     "Async output processor expects a single sample"
-                    " (i.e sampling_params.n == 1 and no "
-                    "sampling_params.best_of > 1)")
+                    " (i.e sampling_params.n == 1)")
                 sample = sequence_group_outputs.samples[0]
 
                 assert len(seq_group.seqs) == 1
@@ -1487,7 +1486,6 @@ class AphroditeEngine:
         time_to_first_tokens_iter: List[float] = []
         num_prompt_tokens_requests: List[int] = []
         num_generation_tokens_requests: List[int] = []
-        best_of_requests: List[int] = []
         n_requests: List[int] = []
         finished_reason_requests: List[str] = []
         request_ids: List[str] = []
@@ -1566,8 +1564,6 @@ class AphroditeEngine:
                         for seq in seq_group.get_finished_seqs()
                     ])
                     if seq_group.sampling_params is not None:
-                        best_of_requests.append(
-                            seq_group.sampling_params.best_of)
                         n_requests.append(seq_group.sampling_params.n)
                     finished_reason_requests.extend([
                         SequenceStatus.get_finished_reason(seq.status)
@@ -1620,7 +1616,6 @@ class AphroditeEngine:
             #   Metadata
             num_prompt_tokens_requests=num_prompt_tokens_requests,
             num_generation_tokens_requests=num_generation_tokens_requests,
-            best_of_requests=best_of_requests,
             n_requests=n_requests,
             finished_reason_requests=finished_reason_requests,
             request_ids=request_ids,

@@ -140,12 +140,6 @@ class Metrics:
                 labelnames=request_labelnames,
                 buckets=build_1_2_5_buckets(max_model_len),
             )
-        self.histogram_best_of_request = self._histogram_cls(
-            name="aphrodite:request_params_best_of",
-            documentation="Histogram of the best_of request parameter.",
-            labelnames=labelnames,
-            buckets=[1, 2, 5, 10, 20],
-        )
         self.histogram_n_request = self._histogram_cls(
             name="aphrodite:request_params_n",
             documentation="Histogram of the n request parameter.",
@@ -545,8 +539,6 @@ class PrometheusStatLogger(StatLoggerBase):
 
         # Log non-request-specific metrics normally
         self._log_histogram(self.metrics.histogram_n_request, stats.n_requests)
-        self._log_histogram(self.metrics.histogram_best_of_request,
-                          stats.best_of_requests)
 
     def _log_prometheus_interval(self, prompt_throughput: float,
                                  generation_throughput: float) -> None:

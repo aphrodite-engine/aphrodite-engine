@@ -50,7 +50,7 @@ class ModelInputForTPU(ModelRunnerInputBase):
     t: torch.Tensor
     p: torch.Tensor
     num_samples: int
-    best_of: List[int]
+    n: List[int]
     seq_groups: List[List[int]]
     is_first_multi_step: bool = True
     is_last_step: bool = True
@@ -66,7 +66,7 @@ class ModelInputForTPU(ModelRunnerInputBase):
             "t": self.t,
             "p": self.p,
             "num_samples": self.num_samples,
-            "best_of": self.best_of,
+            "n": self.n,
             "seq_groups": self.seq_groups,
             "is_first_multi_step": self.is_first_multi_step,
             "is_last_step": self.is_last_step,
@@ -436,7 +436,7 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
         assert len(seq_group_metadata_list) > 0
         t = []
         p = []
-        best_of = []
+        n = []
         for seq_group_metadata in seq_group_metadata_list:
             sampling_params = seq_group_metadata.sampling_params
             t.append(sampling_params.temperature)
@@ -449,11 +449,11 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
                 raise NotImplementedError(
                     "Top-k sampling is currently disabled for the TPU backend "
                     "due to performance issues.")
-            if sampling_params.best_of > _MAX_NUM_SAMPLES:
+            if sampling_params.n > _MAX_NUM_SAMPLES:
                 raise NotImplementedError(
                     f"Best of > {_MAX_NUM_SAMPLES} is not supported by the TPU "
                     "backend.")
-            best_of.append(sampling_params.best_of)
+            n.append(sampling_params.n)
             if sampling_params.use_beam_search:
                 raise NotImplementedError(
                     "Beam search is not supported by the TPU backend.")
@@ -469,7 +469,7 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
             num_seqs = len(seq_group_metadata.seq_data)
             t += [t[-1]] * (num_seqs - 1)
             p += [p[-1]] * (num_seqs - 1)
-            best_of += [best_of[-1]] * (num_seqs - 1)
+            n += [n[-1]] * (num_seqs - 1)
 
         num_paddings = padded_batch_size - len(t)
         t += [1.0] * num_paddings
@@ -477,7 +477,7 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
 
         t = torch.tensor(t, dtype=torch.float32, device="cpu")
         p = torch.tensor(p, dtype=torch.float32, device="cpu")
-        return t, p, best_of
+        return t, p, n
 
     def prepare_model_input(
         self,
@@ -497,7 +497,7 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
             inputs = self._prepare_decode(seq_group_metadata_list)
         input_tokens, input_positions, attn_metadata, input_lens = inputs
         padded_batch_size = input_tokens.shape[0]
-        t, p, best_of = self._prepare_sample(seq_group_metadata_list,
+        t, p, n = self._prepare_sample(seq_group_metadata_list,
                                              padded_batch_size)
         num_samples = _MAX_NUM_SAMPLES if is_prompt else 1
 
@@ -506,7 +506,7 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
             for metadata in seq_group_metadata_list
         ]
         return ModelInputForTPU(input_tokens, input_positions, attn_metadata,
-                                input_lens, t, p, num_samples, best_of,
+                                input_lens, t, p, num_samples, n,
                                 seq_groups)
 
     def make_model_input_from_broadcasted_tensor_dict(
@@ -608,7 +608,7 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
                 assert len(seq_ids) == 1
                 seq_id = seq_ids[0]
                 seq_outputs = []
-                for j in range(model_input.best_of[i]):
+                for j in range(model_input.n[i]):
                     next_token_id = next_token_ids[i][j]
                     seq_outputs.append(
                         SequenceOutput(seq_id, next_token_id,

@@ -162,9 +162,8 @@ class SamplingParams(
         n: Number of output sequences to return for the given prompt.
         best_of: Number of output sequences that are generated from the prompt.
             From these `best_of` sequences, the top `n` sequences are returned.
-            `best_of` must be greater than or equal to `n`. This is treated as
-            the beam width when `use_beam_search` is True. By default, `best_of`
-            is set to `n`.
+            `best_of` must be greater than or equal to `n`. By default,
+            `best_of` is set to `n`.
         presence_penalty: Float that penalizes new tokens based on whether they
             appear in the generated text so far. Values > 0 encourage the model
             to use new tokens, while values < 0 encourage the model to repeat
@@ -309,6 +308,7 @@ class SamplingParams(
 
     n: int = 1
     best_of: Optional[int] = None
+    _real_n: Optional[int] = None
     presence_penalty: float = 0.0
     frequency_penalty: float = 0.0
     repetition_penalty: float = 1.0
@@ -377,6 +377,7 @@ class SamplingParams(
     default_values = {
         "n": 1,
         "best_of": 1,
+        "_real_n": 1,
         "presence_penalty": 0.0,
         "frequency_penalty": 0.0,
         "repetition_penalty": 1.0,
@@ -434,7 +435,19 @@ class SamplingParams(
     }
 
     def __post_init__(self) -> None:
-        self.best_of = self.best_of or self.n
+        # how we deal with `best_of``:
+        # if `best_of`` is not set, we default to `n`;
+        # if `best_of`` is set, we set `n`` to `best_of`,
+        # and set `_real_n`` to the original `n`.
+        # when we return the result, we will check
+        # if we need to return `n` or `_real_n` results
+        if self.best_of:
+            if self.best_of < self.n:
+                raise ValueError(
+                    f"best_of must be greater than or equal to n, "
+                    f"got n={self.n} and best_of={self.best_of}.")
+            self._real_n = self.n
+            self.n = self.best_of
         if 0 < self.temperature < _MAX_TEMP:
             logger.warning(
                 f"temperature {self.temperature} is less than {_MAX_TEMP}, "
@@ -498,12 +511,6 @@ class SamplingParams(
                              f"type {type(self.n)}")
         if self.n < 1:
             raise ValueError(f"n must be at least 1, got {self.n}.")
-        if not isinstance(self.best_of, int):
-            raise ValueError(f'best_of must be an int, but is of '
-                             f'type {type(self.best_of)}')
-        if self.best_of < self.n:
-            raise ValueError(f"best_of must be greater than or equal to n, "
-                             f"got n={self.n} and best_of={self.best_of}.")
         if not -2.0 <= self.presence_penalty <= 2.0:
             raise ValueError("presence_penalty must be in [-2, 2], got "
                              f"{self.presence_penalty}.")
@@ -645,7 +652,7 @@ class SamplingParams(
                     f"{missing_names}"
                 )
 
-        if self.best_of != self.n and self.output_kind == (
+        if self.best_of != self._real_n and self.output_kind == (
                 RequestOutputKind.DELTA):
             raise ValueError("best_of must equal n to use output_kind=DELTA")
 
@@ -675,10 +682,6 @@ class SamplingParams(
                 "default value of 1.0 when not using beam search.")
 
     def _verify_greedy_sampling(self) -> None:
-        assert isinstance(self.best_of, int)
-        if self.best_of > 1:
-            raise ValueError("best_of must be 1 when using greedy sampling."
-                             f"Got {self.best_of}.")
         if self.top_p < 1.0 - _SAMPLING_EPS:
             raise ValueError("top_p must be 1 when using greedy sampling.")
         if self.top_k != -1:

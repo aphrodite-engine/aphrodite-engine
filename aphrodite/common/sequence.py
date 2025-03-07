@@ -796,25 +796,18 @@ class SequenceGroup:
     def get_max_num_running_seqs(self) -> int:
         """The maximum number of sequences running in parallel in the remaining
         lifetime of the request."""
-        if self.sampling_params and self.sampling_params.use_beam_search:
-            # For beam search, maximally there will always be `best_of` beam
-            # candidates running in the future.
-            best_of = self.sampling_params.best_of
-            assert isinstance(best_of, int)
-            return best_of
-        else:
-            if self.sampling_params:
-                best_of = self.sampling_params.best_of
-                assert isinstance(best_of, int)
-                if best_of > self.num_seqs():
-                    # At prompt stage, the sequence group is not yet filled up
-                    # and only have one sequence running. However, in the
-                    # generation stage, we will have `best_of` sequences
-                    # running
-                    return best_of
-            # At sampling stages, return the number of actual sequences
-            # that are not finished yet.
-            return self.num_unfinished_seqs()
+        if self.sampling_params:
+            n = self.sampling_params.n
+            assert isinstance(n, int)
+            if n > self.num_seqs():
+                # At prompt stage, the sequence group is not yet filled up
+                # and only have one sequence running. However, in the
+                # generation stage, we will have `n` sequences
+                # running.
+                return n
+        # At sampling stages, return the number of actual sequences
+        # that are not finished yet.
+        return self.num_unfinished_seqs()
 
     def get_seqs(
         self,
