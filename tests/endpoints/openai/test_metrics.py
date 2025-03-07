@@ -59,7 +59,6 @@ EXPECTED_VALUES = {
     [("_sum", _NUM_REQUESTS * _NUM_GENERATION_TOKENS_PER_REQUEST),
      ("_count", _NUM_REQUESTS)],
     "aphrodite:request_params_n": [("_count", _NUM_REQUESTS)],
-    "aphrodite:request_params_best_of": [("_count", _NUM_REQUESTS)],
     "aphrodite:prompt_tokens": [("_total",
                             _NUM_REQUESTS * _NUM_PROMPT_TOKENS_PER_REQUEST)],
     "aphrodite:generation_tokens":
@@ -140,9 +139,6 @@ EXPECTED_METRICS = [
     "aphrodite:request_params_n_sum",
     "aphrodite:request_params_n_bucket",
     "aphrodite:request_params_n_count",
-    "aphrodite:request_params_best_of_sum",
-    "aphrodite:request_params_best_of_bucket",
-    "aphrodite:request_params_best_of_count",
     "aphrodite:num_preemptions_total",
     "aphrodite:prompt_tokens_total",
     "aphrodite:generation_tokens_total",

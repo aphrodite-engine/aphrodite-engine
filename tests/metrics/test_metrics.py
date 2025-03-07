@@ -332,7 +332,6 @@ def assert_metrics(engine: AphroditeEngine, disable_log_stats: bool,
             "aphrodite:e2e_request_latency_seconds",
             "aphrodite:request_prompt_tokens",
             "aphrodite:request_generation_tokens",
-            "aphrodite:request_params_best_of",
             "aphrodite:request_params_n",
         ]
         for metric_name in request_histogram_metrics:
