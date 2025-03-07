@@ -352,7 +352,8 @@ class VPTQConfig(QuantizationConfig):
                 }
             elif linear_name == "gate_up_proj":
                 quant_config = {
-                    "gate_proj": self.get_config_for_key(base_name, "gate_proj"),
+                    "gate_proj": self.get_config_for_key(base_name,
+                                                         "gate_proj"),
                     "up_proj": self.get_config_for_key(base_name, "up_proj"),
                 }
             else:
