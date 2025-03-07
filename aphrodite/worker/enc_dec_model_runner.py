@@ -195,7 +195,7 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         seqlen_agnostic_kwargs = {
             "finished_requests_ids": model_input.finished_requests_ids,
             "request_ids_to_seq_ids": model_input.request_ids_to_seq_ids,
-        } if self.has_seqlen_agnostic else {}
+        } if self.has_inner_state else {}
         multi_modal_kwargs = model_input.multi_modal_kwargs or {}
         with set_forward_context(model_input.attn_metadata):
             hidden_or_intermediate_states = model_executable(

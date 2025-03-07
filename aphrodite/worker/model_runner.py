@@ -18,7 +18,6 @@ from loguru import logger
 import aphrodite.common.envs as envs
 from aphrodite.attention import AttentionMetadata, get_attn_backend
 from aphrodite.attention.backends.abstract import AttentionState
-from aphrodite.attention.backends.utils import CommonAttentionState
 from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
                                      LoRAConfig, ModelConfig, ParallelConfig,
                                      PromptAdapterConfig, SchedulerConfig)
@@ -977,8 +976,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         ]
         self.graph_memory_pool: Optional[Tuple[
             int, int]] = None  # Set during graph capture.
-        self.has_seqlen_agnostic = model_config.contains_seqlen_agnostic_layers(
-            parallel_config)
+        self.has_inner_state = model_config.has_inner_state
 
         # When using CUDA graph, the input block tables must be padded to
         # max_seq_len_to_capture. However, creating the block table in
@@ -995,13 +993,10 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
             self.model_config.dtype,
             self.kv_cache_dtype,
             self.block_size,
-            self.model_config.is_attention_free(),
+            self.model_config.is_attention_free,
         )
-        if self.attn_backend:
-            self.attn_state = self.attn_backend.get_state_cls()(
-                weakref.proxy(self))
-        else:
-            self.attn_state = CommonAttentionState(weakref.proxy(self))
+        self.attn_state = self.attn_backend.get_state_cls()(
+            weakref.proxy(self))
 
         # Multi-modal data support
         self.input_registry = input_registry
@@ -1544,7 +1539,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         capture_inputs[
                             "previous_hidden_states"] = previous_hidden_states[:
                                                                                batch_size]
-                    if self.has_seqlen_agnostic:
+                    if self.has_inner_state:
                         # Only used by Mamba-based models CUDA graph atm (Jamba)
                         capture_inputs.update({
                             "seqlen_agnostic_capture_inputs":
@@ -1692,7 +1687,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         seqlen_agnostic_kwargs = {
             "finished_requests_ids": model_input.finished_requests_ids,
             "request_ids_to_seq_ids": model_input.request_ids_to_seq_ids,
-        } if self.has_seqlen_agnostic else {}
+        } if self.has_inner_state else {}
 
         with set_forward_context(model_input.attn_metadata):
             hidden_or_intermediate_states = model_executable(
@@ -1858,7 +1853,7 @@ class CUDAGraphRunner:
         # Copy the input tensors to the input buffers.
         self.input_buffers["input_ids"].copy_(input_ids, non_blocking=True)
         self.input_buffers["positions"].copy_(positions, non_blocking=True)
-        if self.backend_name != "No attention":
+        if self.backend_name != "placeholder-attn":
             self.input_buffers["slot_mapping"].copy_(
                 attn_metadata.slot_mapping, non_blocking=True)
         self.attn_state.prepare_graph_input_buffers(

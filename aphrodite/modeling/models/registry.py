@@ -14,7 +14,8 @@ from loguru import logger
 
 from aphrodite.common.utils import is_hip
 
-from .interfaces import supports_multimodal, supports_pp
+from .interfaces import (has_inner_state, is_attention_free,
+                         supports_multimodal, supports_pp)
 from .interfaces_base import is_embedding_model, is_text_generation_model
 
 _TEXT_GENERATION_MODELS = {
@@ -165,6 +166,8 @@ class _ModelInfo:
     is_embedding_model: bool
     supports_multimodal: bool
     supports_pp: bool
+    has_inner_state: bool
+    is_attention_free: bool
 
     @staticmethod
     def from_model_cls(model: Type[nn.Module]) -> "_ModelInfo":
@@ -173,6 +176,8 @@ class _ModelInfo:
             is_embedding_model=is_embedding_model(model),
             supports_multimodal=supports_multimodal(model),
             supports_pp=supports_pp(model),
+            has_inner_state=has_inner_state(model),
+            is_attention_free=is_attention_free(model),
         )
 
 
@@ -385,6 +390,14 @@ class _ModelRegistry:
         architectures: Union[str, List[str]],
     ) -> bool:
         return self.inspect_model_cls(architectures).supports_pp
+
+    def model_has_inner_state(self, architectures: Union[str,
+                                                         List[str]]) -> bool:
+        return self.inspect_model_cls(architectures).has_inner_state
+
+    def is_attention_free_model(self, architectures: Union[str,
+                                                           List[str]]) -> bool:
+        return self.inspect_model_cls(architectures).is_attention_free
 
 
 ModelRegistry = _ModelRegistry({

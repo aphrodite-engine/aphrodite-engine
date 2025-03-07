@@ -76,7 +76,7 @@ class OpenVINOModelRunner:
             self.model_config.dtype,
             self.kv_cache_dtype,
             self.block_size,
-            self.model_config.is_attention_free(),
+            self.model_config.is_attention_free,
         )
 
         # Multi-modal data support
