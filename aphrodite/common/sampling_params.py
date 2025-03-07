@@ -376,8 +376,8 @@ class SamplingParams(
 
     default_values = {
         "n": 1,
-        "best_of": 1,
-        "_real_n": 1,
+        "best_of": None,
+        "_real_n": None,
         "presence_penalty": 0.0,
         "frequency_penalty": 0.0,
         "repetition_penalty": 1.0,
