@@ -24,7 +24,7 @@ from transformers import Gemma2Config
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.compilation.decorators import support_compile_llama_style
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import GeluAndMul
@@ -238,7 +238,13 @@ class Gemma2DecoderLayer(nn.Module):
         return hidden_states, residual
 
 
-@support_compile_llama_style
+@support_torch_compile(
+    dynamic_arg_dims={
+        "input_ids": 0,
+        "positions": 0,
+        "inputs_embeds": 0,
+        "intermediate_tensors": 0,
+    })
 class Gemma2Model(nn.Module):
 
     def __init__(
