@@ -129,6 +129,9 @@ class MQAphroditeEngine:
     def from_engine_args(cls, engine_args: AsyncEngineArgs, ipc_path: str):
         """Creates an MQAphroditeEngine from the engine arguments."""
 
+        from aphrodite.plugins import load_general_plugins
+        load_general_plugins()
+
         engine_config = engine_args.create_engine_config()
 
         executor_class = AphroditeEngine._get_executor_cls(engine_config)
