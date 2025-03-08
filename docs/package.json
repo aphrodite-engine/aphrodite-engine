@@ -1,15 +1,15 @@
 {
-  "scripts": {
-    "dev": "vitepress dev",
-    "build": "vitepress build",
-    "preview": "vitepress preview"
-  },
-  "dependencies": {
-    "vitepress": "~1.4.3",
-    "vitepress-sidebar": "~1.28.0",
-    "vue": "~3.5.12"
-  },
-  "devDependencies": {
-    "markdown-it-mathjax3": "~4.3.2"
-  }
+	"scripts": {
+		"dev": "vitepress dev",
+		"build": "vitepress build",
+		"preview": "vitepress preview"
+	},
+	"dependencies": {
+		"vitepress": "~1.6.3",
+		"vitepress-sidebar": "~1.31.0",
+		"vue": "~3.5.12"
+	},
+	"devDependencies": {
+		"markdown-it-mathjax3": "~4.3.2"
+	}
 }
