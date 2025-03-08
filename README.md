@@ -33,7 +33,7 @@ Aphrodite builds upon and integrates the exceptional work from [various projects
 
 Install the engine:
 ```sh
-pip install -U aphrodite-engine
+pip install -U aphrodite-engine --extra-index-url https://downloads.pygmalion.chat/whl
 ```
 
 Then launch a model:
