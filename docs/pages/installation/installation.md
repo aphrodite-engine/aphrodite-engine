@@ -30,12 +30,12 @@ You can install Aphrodite using pip:
 python -m venv ./aphrodite-venv --prompt "aphrodite"
 # You will need to run this every time you close the terminal
 source ./aphrodite-venv/bin/activate
-# Install Aphrodite with CUDA 12.1
-pip install aphrodite-engine
+# Install Aphrodite with CUDA 12.4
+pip install -U aphrodite-engine --extra-index-url https://downloads.pygmalion.chat/whl
 ```
 
 :::warning
-Since our binaries are compiled with CUDA 12.1, you may need to build from source for different CUDA versions. Please see below for instructions.
+Since our binaries are compiled with CUDA 12.4, you may need to build from source for different (major) CUDA versions. Please see below for instructions.
 :::
 
 ## Building from source
