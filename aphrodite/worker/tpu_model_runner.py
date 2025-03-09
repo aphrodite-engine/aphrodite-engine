@@ -545,7 +545,8 @@ class TPUModelRunner(ModelRunnerBase[ModelInputForTPU]):
                         seq_group_metadata_list=ctx.seq_group_metadata_list,
                         scheduler_outputs=ctx.scheduler_outputs,
                         is_async=False,
-                        is_last_step=False)
+                        is_last_step=False,
+                        is_first_output=i == 0)
                     model_input.async_callback()
             if use_async_out_proc:
                 return [sampler_outputs[-1]]
