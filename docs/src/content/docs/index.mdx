@@ -1,0 +1,55 @@
+---
+title: Aphrodite Engine
+description: Breathing Life Into Language 
+template: splash
+hero:
+  tagline: Breathing Life Into Language
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Get Started
+      link: /installation/installation
+      icon: right-arrow
+    - text: View Source Code
+      link: https://github.com/aphrodite-engine/aphrodite-engine
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Features
+
+<CardGrid stagger>
+	<Card title="Paged Attention" icon="right-caret">
+		Efficiently manage KV cache using vLLM's Paged Attention kernels.
+	</Card>
+
+	<Card title="Continuous Batching" icon="right-caret">
+		Continuously batch incoming requests in the Async server.
+	</Card>
+
+	<Card title="Hugging Face Integration" icon="right-caret">
+		Run almost any Hugging Face format LLM seamlessly.
+	</Card>
+
+	<Card title="Quantization Support" icon="right-caret">
+		Support for almost all quantization formats, with optimized kernels for efficient deployment.
+	</Card>
+
+	<Card title="OpenAI-compatible API" icon="right-caret">
+		Quickly deploy models with the integrated OpenAI API, supporting Text/Chat Completions, Vision, and Batch API.
+	</Card>
+
+	<Card title="Speculative Decoding" icon="right-caret">
+		Accelerate inference using various state-of-the-art spec-decoding methods.
+	</Card>
+
+	<Card title="Adapters" icon="right-caret">
+		Deploy hundreds or thousands of LoRAs efficiently using Punica, and PEFT-style Prompt adapters.
+	</Card>
+
+	<Card title="Hardware Support" icon="right-caret">
+		Aphrodite supports NVIDIA & AMD GPUs, Intel XPUs, Google TPUs, AWS Inferentia/Trainium, AVX2/AVX512/ppc64le CPUs.
+	</Card>
+</CardGrid>
