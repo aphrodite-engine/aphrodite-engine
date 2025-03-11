@@ -20,7 +20,7 @@ class YourModelForImage2Seq(nn.Module):  # [!code --]
 class YourModelForImage2Seq(nn.Module, SupportsMultiModal):  # [!code ++]
 ```
 
-:::info
+:::tip
 The model class does not have to be named `*ForCausalLM`. Check out the[ HuggingFace Transformers documentation](https://huggingface.co/docs/transformers/model_doc/auto#multimodal) for some examples.
 :::
 
@@ -92,7 +92,7 @@ from aphrodite.multimodal import MULTIMODAL_REGISTRY
 class YourModelForImage2Seq(nn.Module, SupportsMultiModal):
 ```
 
-:::info
+:::tip
 The dummy data should have the maximum possible number of multi-modal tokens, as described in the previous step.
 
 Here are some examples:

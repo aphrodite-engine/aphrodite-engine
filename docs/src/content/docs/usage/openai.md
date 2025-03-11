@@ -4,7 +4,7 @@ title: OpenAI-Compatible API Server
 
 This page assumes you've already installed Aphrodite and know how to launch the OpenAI-Compatible server.
 
-:::info
+:::tip
 This page is quite large and extensive; please use the table of contents ("On this page" to the top left) to navigate.
 :::
 
@@ -568,7 +568,7 @@ All NousResearch Hermes-series models newer than Hermes 2 Pro are supported:
 - `NousResearch/Hermes-2-Theta-*`
 - `NousResearch/Hermes-3-*`
 
-:::info
+:::tip
 Hermes 2 Theta models are known to have degraded tool call quality due to the merge step in their creation.
 :::
 

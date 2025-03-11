@@ -59,7 +59,7 @@ Aphrodite supports a large variety of generative Transformer models in [Hugging 
 | `Starcoder2ForCausalLM`           |                `bigcode/starcoder2-3b` |
 | `XverseForCausalLM`               |               `xverse/XVERSE-65B-Chat` |
 
-:::info
+:::tip
 On ROCm platforms, Mistral and Mixtral are capped to 4096 max context length due to sliding window issues.
 :::
 

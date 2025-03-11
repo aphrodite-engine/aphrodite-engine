@@ -43,7 +43,7 @@ aphrodite run facebook/opt-13b -tp 4 -pp 2
 ```
 This will run the model on a single node, but across 8 GPUs. A useful heuristic for the number of GPUs used is `tensor_parallel_size * pipeline_parallel_size`.
 
-:::info
+:::tip
 Pipeline Parallelism is currently in beta, and only supports Llama, Mixtral, Qwen, Qwen2, and Nemotron model architectures.
 :::
 
