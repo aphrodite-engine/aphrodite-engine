@@ -1,4 +1,3 @@
-import contextlib
 import enum
 import json
 from pathlib import Path
@@ -8,7 +7,9 @@ import huggingface_hub
 from huggingface_hub import (file_exists, hf_hub_download,
                              try_to_load_from_cache)
 from loguru import logger
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from transformers import GenerationConfig, PretrainedConfig
+from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 from transformers.models.auto.image_processing_auto import (
     get_image_processor_config)
 from transformers.models.auto.modeling_auto import (
@@ -20,8 +21,10 @@ from aphrodite.transformers_utils.configs import (ChatGLMConfig, DbrxConfig,
                                                   EAGLEConfig,
                                                   InternVLChatConfig,
                                                   JAISConfig, MedusaConfig,
+                                                  MllamaConfig,
                                                   MLPSpeculatorConfig,
-                                                  MPTConfig, RWConfig,
+                                                  MPTConfig, NVLM_D_Config,
+                                                  Qwen2VLConfig, RWConfig,
                                                   UltravoxConfig)
 from aphrodite.transformers_utils.utils import check_gguf_file
 
@@ -33,6 +36,10 @@ else:
     from transformers import AutoConfig
 
 MISTRAL_CONFIG_NAME = "params.json"
+
+_CONFIG_REGISTRY_OVERRIDE_HF: Dict[str, Type[PretrainedConfig]] = {
+    "mllama": MllamaConfig
+}
 
 _CONFIG_REGISTRY: Dict[str, Type[PretrainedConfig]] = {
     "chatglm": ChatGLMConfig,
@@ -46,11 +53,10 @@ _CONFIG_REGISTRY: Dict[str, Type[PretrainedConfig]] = {
     "internvl_chat": InternVLChatConfig,
     "ultravox": UltravoxConfig,
     "eagle": EAGLEConfig,
+    "qwen2_vl": Qwen2VLConfig,
+    "NVLM_D": NVLM_D_Config,
+    **_CONFIG_REGISTRY_OVERRIDE_HF
 }
-
-for name, cls in _CONFIG_REGISTRY.items():
-    with contextlib.suppress(ValueError):
-        AutoConfig.register(name, cls)
 
 
 class ConfigFormat(str, enum.Enum):
@@ -82,6 +88,80 @@ def file_or_path_exists(model: Union[str, Path], config_name, revision,
         return False
 
 
+def extract_gguf_config(checkpoint: str) -> PretrainedConfig:
+    """Extract config directly from GGUF file for supported architectures."""
+    import gguf
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+    ) as progress:
+        task = progress.add_task("Reading GGUF configuration...", total=None)
+        
+        result = gguf.GGUFReader(checkpoint)
+        architecture = result.fields["general.architecture"]
+        architecture = str(bytes(architecture.parts[architecture.data[0]]),
+                          encoding="utf-8")
+
+        # Only support llama/mixtral for now, fallback to HF for others
+        if architecture != "llama":
+            return None
+
+        progress.update(task, description="Extracting model parameters...")
+        # Extract config values
+        vocab_size = len(result.fields["tokenizer.ggml.token_type"].data)
+        context_length = int(result.fields["llama.context_length"].parts[-1])
+        n_layer = int(result.fields["llama.block_count"].parts[-1])
+        n_head = int(result.fields["llama.attention.head_count"].parts[-1])
+        n_local_heads = int(
+            result.fields["llama.attention.head_count_kv"].parts[-1])
+        intermediate_size = int(
+            result.fields["llama.feed_forward_length"].parts[-1])
+        norm_eps = float(
+            result.fields["llama.attention.layer_norm_rms_epsilon"].parts[-1])
+        dim = int(result.fields["llama.embedding_length"].parts[-1])
+
+        # Determine if mixtral or regular llama
+        is_mixtral = "llama.expert_count" in result.fields
+        arch = "MixtralForCausalLM" if is_mixtral else "LlamaForCausalLM"
+        model_type = "mixtral" if is_mixtral else "llama"
+
+        progress.update(task, description="Building configuration...")
+        model_config = {
+            "architectures": [arch],
+            "bos_token_id": 1,
+            "eos_token_id": 2,
+            "hidden_act": "silu",
+            "hidden_size": dim,
+            "intermediate_size": intermediate_size,
+            "max_position_embeddings": context_length,
+            "model_type": model_type,
+            "num_attention_heads": n_head,
+            "num_hidden_layers": n_layer,
+            "num_key_value_heads": n_local_heads,
+            "rms_norm_eps": norm_eps,
+            "torch_dtype": "float16",
+            "vocab_size": vocab_size,
+        }
+
+        if "llama.rope.freq_base" in result.fields:
+            model_config["rope_theta"] = float(
+                result.fields["llama.rope.freq_base"].parts[-1])
+
+        if is_mixtral:
+            model_config["num_local_experts"] = int(
+                result.fields["llama.expert_count"].parts[-1])
+            model_config["num_experts_per_tok"] = int(
+                result.fields["llama.expert_used_count"].parts[-1])
+
+        if model_type in _CONFIG_REGISTRY:
+            config_class = _CONFIG_REGISTRY[model_type]
+        else:
+            config_class = CONFIG_MAPPING[model_type]
+
+        progress.update(task, description="Finalizing configuration...")
+        return config_class.from_dict(model_config)
+
+
 def get_config(
     model: Union[str, Path],
     trust_remote_code: bool,
@@ -92,10 +172,25 @@ def get_config(
     config_format: ConfigFormat = ConfigFormat.AUTO,
     **kwargs,
 ) -> PretrainedConfig:
-    # Separate model folder from file path for GGUF models
-
     is_gguf = check_gguf_file(model)
     if is_gguf:
+        try:
+            config = extract_gguf_config(model)
+            if config is not None:
+                kwargs["gguf_file"] = Path(model).name
+                for key, value in [("rope_scaling", rope_scaling),
+                                   ("rope_theta", rope_theta)]:
+                    if value is not None:
+                        logger.info(
+                            f"Updating {key} from {getattr(config, key, None)} "
+                            f"to {value}")
+                        config.update({key: value})
+                return config
+        except Exception as e:
+            logger.debug(
+                f"GGUF config extraction failed: {e}, falling back to regular "
+                "config loading")
+
         kwargs["gguf_file"] = Path(model).name
         model = Path(model).parent
 
@@ -111,28 +206,23 @@ def get_config(
                                  token=kwargs.get("token")):
             config_format = ConfigFormat.MISTRAL
         else:
-            # If we're in offline mode and found no valid config format, then
-            # raise an offline mode error to indicate to the user that they
-            # don't have files cached and may need to go online.
-            # This is conveniently triggered by calling file_exists().
             file_exists(model,
                         HF_CONFIG_NAME,
                         revision=revision,
                         token=kwargs.get("token"))
-
             raise ValueError(f"No supported config format found in {model}")
 
     if config_format == ConfigFormat.HF:
         config_dict, _ = PretrainedConfig.get_config_dict(
             model, revision=revision, code_revision=code_revision, **kwargs)
 
-        # Use custom model class if it's in our registry
         model_type = config_dict.get("model_type")
         if model_type in _CONFIG_REGISTRY:
             config_class = _CONFIG_REGISTRY[model_type]
             config = config_class.from_pretrained(model,
                                                   revision=revision,
-                                                  code_revision=code_revision)
+                                                  code_revision=code_revision,
+                                                  **kwargs)
         else:
             try:
                 config = AutoConfig.from_pretrained(
@@ -175,11 +265,7 @@ def get_config(
     ]:
         if value is not None:
             logger.info(
-                "Updating %s from %r to %r",
-                key,
-                getattr(config, key, None),
-                value,
-            )
+                f"Updating {key} from {getattr(config, key, None)} to {value}")
             config.update({key: value})
 
 
@@ -252,6 +338,9 @@ def get_hf_image_processor_config(
     revision: Optional[str] = None,
     **kwargs,
 ) -> Dict[str, Any]:
+    # ModelScope does not provide an interface for image_processor
+    if APHRODITE_USE_MODELSCOPE:
+        return dict()
     # Separate model folder from file path for GGUF models
     if Path(model).is_file() and Path(model).suffix == ".gguf":
         model = Path(model).parent

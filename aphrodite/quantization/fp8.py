@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from loguru import logger
@@ -8,7 +8,8 @@ from torch.nn.parameter import Parameter
 import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
 from aphrodite.common.utils import is_hip, print_warning_once
-from aphrodite.modeling.layers.fused_moe import FusedMoE, FusedMoEMethodBase
+from aphrodite.modeling.layers.fused_moe import (FusedMoE, FusedMoEMethodBase,
+                                                 FusedMoeWeightScaleSupported)
 from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
                                               UnquantizedLinearMethod)
 from aphrodite.modeling.parameter import (ModelWeightParameter,
@@ -329,18 +330,17 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                                              requires_grad=False)
         layer.register_parameter("w2_weight_scale", w2_weight_scale)
 
+        # Add the quantization method used (per tensor/grouped/channel)
+        # to ensure the weight scales are loaded in properly
+        extra_weight_attrs.update(
+            {"quant_method": FusedMoeWeightScaleSupported.TENSOR.value})
+
         # If loading fp8 checkpoint, pass the weight loaders.
         # If loading an fp16 checkpoint, do not (we will quantize in
         #   process_weights_after_loading()
         if self.quant_config.is_checkpoint_fp8_serialized:
-            set_weight_attrs(w13_weight_scale, {
-                "is_fp8_scale": True,
-                **extra_weight_attrs
-            })
-            set_weight_attrs(w2_weight_scale, {
-                "is_fp8_scale": True,
-                **extra_weight_attrs
-            })
+            set_weight_attrs(w13_weight_scale, extra_weight_attrs)
+            set_weight_attrs(w2_weight_scale, extra_weight_attrs)
 
         # INPUT_SCALES
         if self.quant_config.activation_scheme == "static":
@@ -353,19 +353,13 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 num_experts, dtype=torch.float32),
                                                  requires_grad=False)
             layer.register_parameter("w13_input_scale", w13_input_scale)
-            set_weight_attrs(w13_input_scale, {
-                "is_fp8_scale": True,
-                **extra_weight_attrs
-            })
+            set_weight_attrs(w13_input_scale, extra_weight_attrs)
 
             w2_input_scale = torch.nn.Parameter(torch.ones(
                 num_experts, dtype=torch.float32),
                                                 requires_grad=False)
             layer.register_parameter("w2_input_scale", w2_input_scale)
-            set_weight_attrs(w2_input_scale, {
-                "is_fp8_scale": True,
-                **extra_weight_attrs
-            })
+            set_weight_attrs(w2_input_scale, extra_weight_attrs)
         else:
             layer.w13_input_scale = None
             layer.w2_input_scale = None
@@ -471,15 +465,18 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                                                         requires_grad=False)
             return
 
-    def apply(self,
-              layer: torch.nn.Module,
-              x: torch.Tensor,
-              router_logits: torch.Tensor,
-              top_k: int,
-              renormalize: bool,
-              use_grouped_topk: bool,
-              topk_group: Optional[int] = None,
-              num_expert_group: Optional[int] = None) -> torch.Tensor:
+    def apply(
+        self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        router_logits: torch.Tensor,
+        top_k: int,
+        renormalize: bool,
+        use_grouped_topk: bool,
+        topk_group: Optional[int] = None,
+        num_expert_group: Optional[int] = None,
+        custom_routing_function: Optional[Callable] = None,
+    ) -> torch.Tensor:
 
         from aphrodite.modeling.layers.fused_moe import fused_experts
 
@@ -490,7 +487,8 @@ class Fp8MoEMethod(FusedMoEMethodBase):
             top_k=top_k,
             renormalize=renormalize,
             topk_group=topk_group,
-            num_expert_group=num_expert_group)
+            num_expert_group=num_expert_group,
+            custom_routing_function=custom_routing_function)
 
         return fused_experts(x,
                              layer.w13_weight,

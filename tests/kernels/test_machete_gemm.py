@@ -13,6 +13,7 @@ from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.quant_utils import (pack_rows,
                                                       quantize_weights)
 from aphrodite.scalar_type import ScalarType, scalar_types
+from tests.kernels.utils import opcheck
 
 CUDA_DEVICES = [
     f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)
@@ -77,6 +78,7 @@ def machete_quantize_and_pack(w: torch.Tensor,
     w_q = w_q.t().contiguous().t()  # convert to col major
     w_q_machete = ops.machete_prepack_B(w_q, wtype)
 
+    opcheck(torch.ops._C.machete_prepack_B, (w_q, wtype))
     return w_ref, w_q_machete, w_s, w_zp
 
 
@@ -148,6 +150,9 @@ def test_machete_all_schedules(shape, atype: torch.dtype,
             schedule=schedule,
         )
 
+        opcheck(torch.ops._C.machete_gemm,
+                (a, w_q_machete, wtype, w_s, maybe_convert_zeropoints(
+                    w_zp, w_s), group_size, None, None, None, schedule))
         # Relax atol as our reduction dim becomes larger (more rounding error)
         # Relax atol when we have zeropoints since the way machete applies
         #  zeropoints (after scales) causes noise around 0

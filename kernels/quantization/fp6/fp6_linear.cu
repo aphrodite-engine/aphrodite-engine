@@ -17,6 +17,7 @@
 
 #include "kernel_matmul.cuh"
 #include "kernel_reduction.cuh"
+#include "core/registration.h"
 
 #include <stdio.h>
 #include <assert.h>
@@ -329,4 +330,8 @@ torch::Tensor fp_eXmY_linear_forward_cuda(int64_t EXPONENT, int64_t MANTISSA,
                 " is not supported.");
 
   return _out_feats;
+}
+
+TORCH_LIBRARY_IMPL_EXPAND(TORCH_EXTENSION_NAME, CUDA, m) {
+  m.impl("fp_eXmY_linear_forward_cuda", &fp_eXmY_linear_forward_cuda);
 }

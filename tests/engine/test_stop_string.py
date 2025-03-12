@@ -7,6 +7,8 @@ from aphrodite import AphroditeEngine, CompletionOutput, SamplingParams
 MODEL = "meta-llama/llama-2-7b-hf"
 MAX_TOKENS = 200
 
+IS_ASYNC = False
+
 
 @pytest.fixture(scope="session")
 def aphrodite_model(aphrodite_runner):
@@ -14,79 +16,15 @@ def aphrodite_model(aphrodite_runner):
         yield aphrodite_model
 
 
-@pytest.mark.skip_global_cleanup
-def test_stop_basic(aphrodite_model):
-    _test_stopping(aphrodite_model.model.llm_engine,
-                   stop=["."],
-                   include_in_output=False,
-                   expected_output="VLLM is a 100% volunteer organization",
-                   expected_reason=".")
-
-    _test_stopping(aphrodite_model.model.llm_engine,
-                   stop=["."],
-                   include_in_output=True,
-                   expected_output="VLLM is a 100% volunteer organization.",
-                   expected_reason=".")
-
-
-@pytest.mark.skip_global_cleanup
-def test_stop_multi_tokens(aphrodite_model):
-    _test_stopping(
-        aphrodite_model.model.llm_engine,
-        stop=["group of peo", "short"],
-        include_in_output=False,
-        expected_output="VLLM is a 100% volunteer organization. We are a ",
-        expected_reason="group of peo")
-
-    _test_stopping(
-        aphrodite_model.model.llm_engine,
-        stop=["group of peo", "short"],
-        include_in_output=True,
-        expected_output=
-        "VLLM is a 100% volunteer organization. We are a group of peo",
-        expected_reason="group of peo")
-
-
-@pytest.mark.skip_global_cleanup
-def test_stop_partial_token(aphrodite_model):
-    _test_stopping(aphrodite_model.model.llm_engine,
-                   stop=["gani"],
-                   include_in_output=False,
-                   expected_output="VLLM is a 100% volunteer or",
-                   expected_reason="gani")
-
-    _test_stopping(aphrodite_model.model.llm_engine,
-                   stop=["gani"],
-                   include_in_output=True,
-                   expected_output="VLLM is a 100% volunteer organi",
-                   expected_reason="gani")
-
-
-@pytest.mark.skip_global_cleanup
-def test_stop_token_id(aphrodite_model):
-    # token id 13013 => " organization"
-
-    _test_stopping(aphrodite_model.model.llm_engine,
-                   stop_token_ids=[13013],
-                   include_in_output=False,
-                   expected_output="VLLM is a 100% volunteer",
-                   expected_reason=13013)
-
-    _test_stopping(aphrodite_model.model.llm_engine,
-                   stop_token_ids=[13013],
-                   include_in_output=True,
-                   expected_output="VLLM is a 100% volunteer organization",
-                   expected_reason=13013)
-
-
 def _test_stopping(llm_engine: AphroditeEngine,
                    expected_output: str,
                    expected_reason: Any,
                    stop: Optional[List[str]] = None,
                    stop_token_ids: Optional[List[int]] = None,
-                   include_in_output: bool = False) -> None:
+                   include_in_output: bool = False,
+                   use_async_output_proc: bool = False) -> None:
     llm_engine.add_request(
-        "id", "A story about vLLM:\n",
+        "id", "A story about Aphrodite:\n",
         SamplingParams(
             temperature=0.0,
             max_tokens=MAX_TOKENS,
@@ -98,6 +36,10 @@ def _test_stopping(llm_engine: AphroditeEngine,
     output: Optional[CompletionOutput] = None
     output_text = ""
     stop_reason = None
+
+    if use_async_output_proc:
+        llm_engine.step()
+
     while llm_engine.has_unfinished_requests():
         (request_output, ) = llm_engine.step()
         (output, ) = request_output.outputs
@@ -110,3 +52,112 @@ def _test_stopping(llm_engine: AphroditeEngine,
     assert output is not None
     assert output_text == expected_output
     assert stop_reason == expected_reason
+
+
+def _set_async_mode(llm_engine, is_async):
+    llm_engine.scheduler[0].use_async_output_proc = is_async
+
+
+def _stop_basic(llm_engine, is_async):
+    _test_stopping(llm_engine,
+                   stop=["."],
+                   include_in_output=False,
+                   expected_output="VLLM is a 100% volunteer organization",
+                   expected_reason=".",
+                   use_async_output_proc=is_async)
+
+    _test_stopping(llm_engine,
+                   stop=["."],
+                   include_in_output=True,
+                   expected_output="VLLM is a 100% volunteer organization.",
+                   expected_reason=".",
+                   use_async_output_proc=is_async)
+
+
+def _stop_multi_tokens(llm_engine, is_async):
+    _test_stopping(
+        llm_engine,
+        stop=["group of peo", "short"],
+        include_in_output=False,
+        expected_output="VLLM is a 100% volunteer organization. We are a ",
+        expected_reason="group of peo",
+        use_async_output_proc=is_async)
+
+    _test_stopping(
+        llm_engine,
+        stop=["group of peo", "short"],
+        include_in_output=True,
+        expected_output=
+        "VLLM is a 100% volunteer organization. We are a group of peo",
+        expected_reason="group of peo",
+        use_async_output_proc=is_async)
+
+
+def _stop_partial_token(llm_engine, is_async):
+    _test_stopping(llm_engine,
+                   stop=["gani"],
+                   include_in_output=False,
+                   expected_output="VLLM is a 100% volunteer or",
+                   expected_reason="gani",
+                   use_async_output_proc=is_async)
+
+    _test_stopping(llm_engine,
+                   stop=["gani"],
+                   include_in_output=True,
+                   expected_output="VLLM is a 100% volunteer organi",
+                   expected_reason="gani",
+                   use_async_output_proc=is_async)
+
+
+def _stop_token_id(llm_engine, is_async):
+    # token id 13013 => " organization"
+
+    _test_stopping(llm_engine,
+                   stop_token_ids=[13013],
+                   include_in_output=False,
+                   expected_output="VLLM is a 100% volunteer",
+                   expected_reason=13013,
+                   use_async_output_proc=is_async)
+
+    _test_stopping(llm_engine,
+                   stop_token_ids=[13013],
+                   include_in_output=True,
+                   expected_output="VLLM is a 100% volunteer organization",
+                   expected_reason=13013,
+                   use_async_output_proc=is_async)
+
+
+@pytest.mark.skip_global_cleanup
+def test_stop_basic(aphrodite_model):
+    _set_async_mode(aphrodite_model.model.llm_engine, True)
+    _stop_basic(aphrodite_model.model.llm_engine, is_async=True)
+
+    _set_async_mode(aphrodite_model.model.llm_engine, False)
+    _stop_basic(aphrodite_model.model.llm_engine, is_async=False)
+
+
+@pytest.mark.skip_global_cleanup
+def test_stop_multi_tokens(aphrodite_model):
+    _set_async_mode(aphrodite_model.model.llm_engine, True)
+    _stop_multi_tokens(aphrodite_model.model.llm_engine, is_async=True)
+
+    _set_async_mode(aphrodite_model.model.llm_engine, False)
+    _stop_multi_tokens(aphrodite_model.model.llm_engine, is_async=False)
+
+
+@pytest.mark.skip_global_cleanup
+def test_stop_partial_token(aphrodite_model):
+    _set_async_mode(aphrodite_model.model.llm_engine, True)
+    _stop_partial_token(aphrodite_model.model.llm_engine, is_async=True)
+
+    _set_async_mode(aphrodite_model.model.llm_engine, False)
+    _stop_partial_token(aphrodite_model.model.llm_engine, is_async=False)
+
+
+@pytest.mark.skip_global_cleanup
+def test_stop_token_id(aphrodite_model):
+    _set_async_mode(aphrodite_model.model.llm_engine, True)
+    _stop_token_id(aphrodite_model.model.llm_engine, is_async=True)
+
+    _set_async_mode(aphrodite_model.model.llm_engine, False)
+    _stop_token_id(aphrodite_model.model.llm_engine, is_async=False)

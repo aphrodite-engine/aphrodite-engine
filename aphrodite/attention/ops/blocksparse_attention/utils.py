@@ -103,11 +103,11 @@ def _get_sparse_attn_mask_homo_head(
 ):
     """
     :return: a tuple of 3:
-        - tuple of crow_indices, col_indices representation 
+        - tuple of crow_indices, col_indices representation
             of CSR format.
         - block dense mask
-        - all token dense mask (be aware that it can be 
-            OOM if it is too big) if `return_dense==True`, 
+        - all token dense mask (be aware that it can be
+            OOM if it is too big) if `return_dense==True`,
             otherwise, None
     """
     with torch.no_grad():
@@ -174,10 +174,10 @@ def get_sparse_attn_mask(
     :param dense_mask_type: "binary" (0 for skip token, 1 for others)
         or "bias" (-inf for skip token, 0 or others)
     :return: a tuple of 3:
-        - tuple of crow_indices, col_indices representation 
+        - tuple of crow_indices, col_indices representation
             of CSR format.
         - block dense mask
-        - all token dense mask (be aware that it can be OOM if it 
+        - all token dense mask (be aware that it can be OOM if it
             is too big) if `return_dense==True`, otherwise, None
     """
     assert dense_mask_type in ("binary", "bias")

@@ -3,11 +3,12 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import torch
 from loguru import logger
 
-from aphrodite.common.sequence import ExecuteModelRequest, SamplerOutput
+from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.common.utils import (get_distributed_init_method, get_ip,
                                     get_open_port, make_async)
 from aphrodite.executor.executor_base import ExecutorAsyncBase, ExecutorBase
 from aphrodite.lora.request import LoRARequest
+from aphrodite.modeling.layers.sampler import SamplerOutput
 
 
 class TPUExecutor(ExecutorBase):
@@ -59,11 +60,17 @@ class TPUExecutor(ExecutorBase):
         rank: int = 0,
         distributed_init_method: Optional[str] = None,
     ):
-        from aphrodite.task_handler.tpu_worker import TPUWorker
-
-        worker = TPUWorker(**self._get_worker_kwargs(local_rank, rank,
-                                                     distributed_init_method))
-        return worker
+        if self.scheduler_config.is_multi_step:
+            from aphrodite.worker.multi_step_tpu_worker import (
+                MultiStepTPUWorker)
+            worker = MultiStepTPUWorker(**self._get_worker_kwargs(
+                local_rank, rank, distributed_init_method))
+            return worker
+        else:
+            from aphrodite.worker.tpu_worker import TPUWorker
+            worker = TPUWorker(**self._get_worker_kwargs(
+                local_rank, rank, distributed_init_method))
+            return worker
 
     def initialize_cache(
         self,

@@ -38,11 +38,11 @@ constexpr __host__ __device__ auto roundUp(U a, V b) -> decltype(a + b) {
   return divUp(a, b) * b;
 }
 
-constexpr int32_t kWarpSize = 32;
+[[maybe_unused]] constexpr int32_t kWarpSize = 32;
 [[maybe_unused]] constexpr int32_t KTilesPerWarp = 8;
-constexpr int32_t kMTileSize = 16;
-constexpr int32_t kNTileSize = 8;
-constexpr int32_t kKTileSize = 16;
+[[maybe_unused]] constexpr int32_t kMTileSize = 16;
+[[maybe_unused]] constexpr int32_t kNTileSize = 8;
+[[maybe_unused]] constexpr int32_t kKTileSize = 16;
 
 struct __align__(16) f16x2x4_u32 { uint32_t vals[4]; };
 struct __align__(16) f16x2x2_u32 { uint32_t vals[2]; };
@@ -195,6 +195,8 @@ struct BLayout_E8 {
     packed -= parity * 0x0202020202020202;
 
     return packed;
+#else
+    return 0;
 #endif
   }
 
@@ -218,6 +220,8 @@ struct BLayout_E8 {
     packed |= 0x01010101;
     packed -= parity * 0x02020202;
     return packed;
+#else
+    return 0;
 #endif
   };
 

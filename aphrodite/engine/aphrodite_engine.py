@@ -1,29 +1,35 @@
+import copy
 import time
+from collections import deque
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, Iterable, List, Optional
+from dataclasses import dataclass
+from functools import partial
+from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Deque, Dict,
+                    Iterable, List, NamedTuple, Optional)
 from typing import Sequence as GenericSequence
-from typing import Tuple, Type, TypeVar, Union
+from typing import Set, Type, Union
 
+import torch
 from loguru import logger
-from transformers import PreTrainedTokenizer
-from typing_extensions import assert_never
+from typing_extensions import TypeVar
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import (CacheConfig, DecodingConfig, DeviceConfig,
-                                     EngineConfig, LoadConfig, LoRAConfig,
-                                     ModelConfig, ParallelConfig,
+from aphrodite.common.config import (CacheConfig, ConfigMixin, DecodingConfig,
+                                     DeviceConfig, EngineConfig, LoadConfig,
+                                     LoRAConfig, ModelConfig, ParallelConfig,
                                      PromptAdapterConfig, SchedulerConfig,
                                      SpeculativeConfig)
 from aphrodite.common.logger import setup_logger
 from aphrodite.common.outputs import (EmbeddingRequestOutput, RequestOutput,
                                       RequestOutputFactory)
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.common.sampling_params import RequestOutputKind, SamplingParams
 from aphrodite.common.sequence import (EmbeddingSequenceGroupOutput,
-                                       ExecuteModelRequest, PoolerOutput,
-                                       SamplerOutput, Sequence, SequenceGroup,
-                                       SequenceGroupMetadata, SequenceStatus)
-from aphrodite.common.utils import Counter, Device
+                                       ExecuteModelRequest, Sequence,
+                                       SequenceGroup, SequenceGroupMetadata,
+                                       SequenceStatus)
+from aphrodite.common.utils import Counter, Device, weak_bind
+from aphrodite.endpoints.openai.logits_processors import get_logits_processors
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.engine.metrics_types import StatLoggerBase, Stats
 from aphrodite.engine.output_processor.interfaces import (
@@ -34,16 +40,18 @@ from aphrodite.engine.output_processor.util import (
 from aphrodite.executor.executor_base import ExecutorBase
 from aphrodite.executor.ray_utils import initialize_ray_cluster
 from aphrodite.inputs import (INPUT_REGISTRY, EncoderDecoderLLMInputs,
-                              InputRegistry, LLMInputs, PromptInputs,
-                              SingletonPromptInputs)
-from aphrodite.inputs.parse import is_explicit_encoder_decoder_prompt
+                              InputRegistry, LLMInputs, PromptType)
+from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
-from aphrodite.multimodal import MultiModalDataDict
+from aphrodite.modeling.guided_decoding import (
+    get_local_guided_decoding_logits_processor)
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.processing.scheduler import (ScheduledSequenceGroup, Scheduler,
                                             SchedulerOutputs)
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.transformers_utils.config import try_get_generation_config
 from aphrodite.transformers_utils.detokenizer import Detokenizer
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.transformers_utils.tokenizer_group import (
     BaseTokenizerGroup, init_tokenizer_from_configs)
 from aphrodite.version import __version__ as APHRODITE_VERSION
@@ -66,12 +74,58 @@ def _load_generation_config_dict(model_config: ModelConfig) -> Dict[str, Any]:
     return config.to_diff_dict()
 
 
+_G = TypeVar("_G", bound=BaseTokenizerGroup, default=BaseTokenizerGroup)
 _O = TypeVar("_O", RequestOutput, EmbeddingRequestOutput)
 
-PromptComponents = Tuple[Optional[str], List[int],
-                         Optional[MultiModalDataDict]]
-DecoderPromptComponents = Tuple[Optional[str], Optional[List[int]],
-                                Optional[MultiModalDataDict]]
+
+@dataclass
+class SchedulerOutputState:
+    """Caches the scheduler outputs for a virtual engine. Used for Multi-Step"""
+    seq_group_metadata_list: Optional[List[SequenceGroupMetadata]] = None
+    scheduler_outputs: Optional[SchedulerOutputs] = None
+    allow_async_output_proc: bool = False
+    last_output: Optional[SamplerOutput] = None
+
+
+class OutputData(NamedTuple):
+    outputs: List[SamplerOutput]
+    seq_group_metadata_list: List[SequenceGroupMetadata]
+    scheduler_outputs: SchedulerOutputs
+    is_async: bool
+    is_last_step: bool
+    # Indicates if this output is from the first step of the
+    # multi-step. When multi-step is disabled, this is always
+    # set to True.
+    # is_first_step_output is invalid when `outputs` has
+    # outputs from multiple steps.
+    is_first_step_output: Optional[bool]
+    skip: List[int]
+
+
+class SchedulerContext:
+    def __init__(self, multi_step_stream_outputs: bool = True):
+        self.output_queue: Deque[OutputData] = deque()
+        self.request_outputs: List[Union[RequestOutput,
+                                         EmbeddingRequestOutput]] = []
+        self.seq_group_metadata_list: Optional[
+            List[SequenceGroupMetadata]] = None
+        self.scheduler_outputs: Optional[SchedulerOutputs] = None
+
+        self.multi_step_stream_outputs: bool = multi_step_stream_outputs
+
+    def append_output(self, outputs: List[SamplerOutput],
+                      seq_group_metadata_list: List[SequenceGroupMetadata],
+                      scheduler_outputs: SchedulerOutputs, is_async: bool,
+                      is_last_step: bool,
+                      is_first_step_output: Optional[bool]):
+        self.output_queue.append(
+            OutputData(outputs=outputs,
+                       seq_group_metadata_list=seq_group_metadata_list,
+                       scheduler_outputs=scheduler_outputs,
+                       is_async=is_async,
+                       is_last_step=is_last_step,
+                       is_first_step_output=is_first_step_output,
+                       skip=[]))
 
 
 class AphroditeEngine:
@@ -102,7 +156,7 @@ class AphroditeEngine:
             decoding.
         executor_class: The model executor class for managing distributed
             execution.
-        prompt_adapter_config (Optional): The configuration related to serving 
+        prompt_adapter_config (Optional): The configuration related to serving
             prompt adapters.
         log_stats: Whether to log statistics.
     """
@@ -174,6 +228,7 @@ class AphroditeEngine:
         log_stats: bool,
         stat_loggers: Optional[Dict[str, StatLoggerBase]] = None,
         input_registry: InputRegistry = INPUT_REGISTRY,
+        use_cached_outputs: bool = False,
     ) -> None:
         try:
             import aphrodite.commit_id
@@ -181,43 +236,57 @@ class AphroditeEngine:
         except ImportError:
             commit_id = False
 
-        config_dict = {
-            "Model": model_config.model,
-            "Speculative Config": speculative_config,
-            "DataType": model_config.dtype,
-            "Model Load Format": load_config.load_format,
-            "Tensor Parallel Size": parallel_config.tensor_parallel_size,
-            "Pipeline Parallel Size": parallel_config.pipeline_parallel_size,
-            "Disable Custom All-Reduce":
-            parallel_config.disable_custom_all_reduce,
-            "Quantization Format": model_config.quantization,
-            "Context Length": model_config.max_model_len,
-            "Enforce Eager Mode": model_config.enforce_eager,
-            "Prefix Caching": cache_config.enable_prefix_caching,
-            "KV Cache DataType": cache_config.cache_dtype,
-            "Device": device_config.device,
-            "Rope Scaling": model_config.rope_scaling,
-            "Guided Decoding Backend": decoding_config
+        # Get non-default configs from each config object
+        config_diffs = []
+        configs = {
+            "model": model_config,
+            "cache": cache_config,
+            "parallel": parallel_config,
+            "scheduler": scheduler_config,
+            "device": device_config,
+            "load": load_config,
+            "lora": lora_config,
+            "speculative": speculative_config,
+            "decoding": decoding_config,
+            "prompt_adapter": prompt_adapter_config,
         }
+
+        for prefix, config in configs.items():
+            if config is None:
+                continue
+            # Get non-default values using config's get_config_diff() method
+            diff = config.get_config_diff()
+            if diff:
+                for k, v in diff.items():
+                    if isinstance(v, ConfigMixin):
+                        nested_diff = v.get_config_diff()
+                        config_diffs.extend(
+                            f"{prefix}.{k}.{nk}={repr(nv)}" 
+                            for nk, nv in nested_diff.items()
+                        )
+                    else:
+                        config_diffs.append(
+                            f"{prefix}.{k}={repr(v) if not isinstance(v, ConfigMixin) else str(v)}"  # noqa: E501
+                        )
 
         logger.info("-" * 85)
         if not commit_id:
             logger.info(
                 f"Initializing Aphrodite Engine (v{APHRODITE_VERSION}) "
-                "with the following config:")
+                "with the following non-default config:")
         else:
-            logger.info(f"Initializing Aphrodite Engine (v{APHRODITE_VERSION} "
-                        f"commit {aphrodite.__short_commit__}) with the "
-                        "following config:")
+            logger.info(
+                f"Initializing Aphrodite Engine (v{APHRODITE_VERSION} "
+                f"commit {aphrodite.__short_commit__}) with the following "
+                "non-default config:")
 
-        for key, value in config_dict.items():
-            if value is not None and not ((key == "Model Load Format" or key ==\
-                                           "KV Cache DataType") and value == \
-                                            "auto"):
-                logger.info(f"{key} = {value!r}")
+        if config_diffs:
+            for config in sorted(config_diffs):
+                logger.info(config)
+        else:
+            logger.info("All configurations are using default values")
 
         logger.info("-" * 85)
-        # TODO: Print more configs in debug mode.
 
         from aphrodite.plugins import load_general_plugins
         load_general_plugins()
@@ -233,6 +302,7 @@ class AphroditeEngine:
         self.decoding_config = decoding_config or DecodingConfig()
         self.prompt_adapter_config = prompt_adapter_config
         self.log_stats = log_stats
+        self.use_cached_outputs = use_cached_outputs
 
         if not self.model_config.skip_tokenizer_init:
             self.tokenizer = self._init_tokenizer()
@@ -245,7 +315,7 @@ class AphroditeEngine:
 
         # Ensure that the function doesn't contain a reference to self,
         # to avoid engine GC issues
-        def get_tokenizer_for_seq(sequence: Sequence) -> PreTrainedTokenizer:
+        def get_tokenizer_for_seq(sequence: Sequence) -> AnyTokenizer:
             assert tokenizer_group, ("tokenizer_group cannot be None, "
                                      "make sure skip_tokenizer_init is False")
             return tokenizer_group.get_lora_tokenizer(sequence.lora_request)
@@ -253,6 +323,9 @@ class AphroditeEngine:
         self.seq_counter = Counter()
         self.generation_config_fields = _load_generation_config_dict(
             model_config)
+
+        self.input_preprocessor = InputPreprocessor(model_config,
+                                                    self.tokenizer)
 
         self.input_registry = input_registry
         self.input_processor = input_registry.create_input_processor(
@@ -278,13 +351,39 @@ class AphroditeEngine:
             # different process.
             self.tokenizer.ping()
 
+        self.cached_scheduler_outputs = [
+            SchedulerOutputState()
+            for _ in range(self.parallel_config.pipeline_parallel_size)
+        ]
+        self.scheduler_contexts = [
+            SchedulerContext(multi_step_stream_outputs=self.scheduler_config.
+                             multi_step_stream_outputs)
+            for _ in range(self.parallel_config.pipeline_parallel_size)
+        ]
+        if model_config.use_async_output_proc:
+            process_model_outputs = weak_bind(self._process_model_outputs)
+            self.async_callbacks = [
+                partial(process_model_outputs,
+                        ctx=self.scheduler_contexts[v_id])
+                for v_id in range(self.parallel_config.pipeline_parallel_size)
+            ]
+        else:
+            self.async_callbacks = []
+        # Currently used by AsyncLLMEngine to ensure quick append
+        # of request outputs to asyncio queues
+        self.process_request_outputs_callback: Optional[Callable] = None
+
+
         # Create the scheduler.
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
         self.scheduler = [
-            Scheduler(scheduler_config, cache_config, lora_config,
-                      parallel_config.pipeline_parallel_size)
-            for _ in range(parallel_config.pipeline_parallel_size)
+            Scheduler(
+                scheduler_config, cache_config, lora_config,
+                parallel_config.pipeline_parallel_size,
+                self.async_callbacks[v_id]
+                if model_config.use_async_output_proc else None)
+            for v_id in range(parallel_config.pipeline_parallel_size)
         ]
 
         # Metric Logging.
@@ -298,6 +397,7 @@ class AphroditeEngine:
                 # See https://prometheus.github.io/client_python/multiprocess/
                 from aphrodite.engine.metrics import (LoggingStatLogger,
                                                       PrometheusStatLogger)
+
                 self.stat_loggers = {
                     "logging":
                     LoggingStatLogger(
@@ -310,6 +410,7 @@ class AphroditeEngine:
                 }
                 self.stat_loggers["prometheus"].info("cache_config",
                                                      self.cache_config)
+
 
         # Create sequence output processor, e.g. for beam search or
         # speculative decoding.
@@ -383,6 +484,10 @@ class AphroditeEngine:
                 initialize_ray_cluster(engine_config.parallel_config)
                 from aphrodite.executor.ray_xpu_executor import RayXPUExecutor
                 executor_class = RayXPUExecutor
+            elif distributed_executor_backend == "mp":
+                logger.error(
+                    "Both start methods (spawn and fork) have issues "
+                    "on XPU if you use mp backend, Please try ray instead.")
             else:
                 from aphrodite.executor.xpu_executor import XPUExecutor
                 executor_class = XPUExecutor
@@ -393,7 +498,7 @@ class AphroditeEngine:
         elif distributed_executor_backend == "mp":
             from aphrodite.executor.multiproc_gpu_executor import (
                 MultiprocessingGPUExecutor)
-            assert not APHRODITE_USE_RAY_SPMD_WORKER, (
+            assert not envs.APHRODITE_USE_RAY_SPMD_WORKER, (
                 "multiprocessing distributed executor backend does not "
                 "support APHRODITE_USE_RAY_SPMD_WORKER=1")
             executor_class = MultiprocessingGPUExecutor
@@ -408,11 +513,10 @@ class AphroditeEngine:
         engine_args: EngineArgs,
         stat_loggers: Optional[Dict[str, StatLoggerBase]] = None,
     ) -> "AphroditeEngine":
-        """Creates an LLM engine from the engine arguments."""
+        """Creates an Aphrodite engine from the engine arguments."""
         # Create the engine configs.
         engine_config = engine_args.create_engine_config()
         executor_class = cls._get_executor_cls(engine_config)
-
         # Create the LLM engine.
         engine = cls(
             **engine_config.to_dict(),
@@ -420,6 +524,7 @@ class AphroditeEngine:
             log_stats=not engine_args.disable_log_stats,
             stat_loggers=stat_loggers,
         )
+
         return engine
 
     def __reduce__(self):
@@ -428,28 +533,32 @@ class AphroditeEngine:
         raise RuntimeError("AphroditeEngine should not be pickled!")
 
     def __del__(self):
-        # Shutdown the model executor when engine is garbage collected.
+        # Shutdown model executor when engine is garbage collected
         # Use getattr since __init__ can fail before the field is set
         if model_executor := getattr(self, "model_executor", None):
             model_executor.shutdown()
 
-    MISSING_TOKENIZER_GROUP_MSG = ("Unable to get tokenizer because "
-                                   "skip_tokenizer_init is True")
-
     def get_tokenizer_group(
-            self,
-            fail_msg: str = MISSING_TOKENIZER_GROUP_MSG) -> BaseTokenizerGroup:
-        if self.tokenizer is None:
-            raise ValueError(fail_msg)
+        self,
+        group_type: Type[_G] = BaseTokenizerGroup,
+    ) -> _G:
+        tokenizer_group = self.tokenizer
 
-        return self.tokenizer
+        if tokenizer_group is None:
+            raise ValueError("Unable to get tokenizer because "
+                             "skip_tokenizer_init is True")
+        if not isinstance(tokenizer_group, group_type):
+            raise TypeError("Invalid type of tokenizer group. "
+                            f"Expected type: {group_type}, but "
+                            f"found type: {type(tokenizer_group)}")
+
+        return tokenizer_group
 
     def get_tokenizer(
-            self,
-            lora_request: Optional[LoRARequest] = None
-    ) -> "PreTrainedTokenizer":
+        self,
+        lora_request: Optional[LoRARequest] = None,
+    ) -> AnyTokenizer:
         return self.get_tokenizer_group().get_lora_tokenizer(lora_request)
-
 
     def _init_tokenizer(self) -> BaseTokenizerGroup:
         return init_tokenizer_from_configs(
@@ -469,52 +578,6 @@ class AphroditeEngine:
             self.prompt_adapter_config.verify_with_model_config(
                 self.model_config)
 
-    def _get_bos_token_id(self,
-                          lora_request: Optional[LoRARequest] = None
-                          ) -> Optional[int]:
-        if self.tokenizer is None:
-            logger.warning("Using None for BOS token id because tokenizer "
-                           "is not initialized")
-            return None
-
-        return self.tokenizer.get_lora_tokenizer(lora_request).bos_token_id
-
-    def _get_eos_token_id(self,
-                          lora_request: Optional[LoRARequest] = None
-                          ) -> Optional[int]:
-        if self.tokenizer is None:
-            logger.warning("Using None for EOS token id because tokenizer "
-                           "is not initialized")
-            return None
-
-        return self.tokenizer.get_lora_tokenizer(lora_request).eos_token_id
-
-    def _get_decoder_start_token_id(self) -> Optional[int]:
-        '''
-        Obtain the decoder start token id employed by an encoder/decoder
-        model. Returns None for non-encoder/decoder models or if the
-        model config is unavailable.
-        '''
-
-        if not self.is_encoder_decoder_model():
-            logger.warning("Using None for decoder start token id because "
-                           "this is not an encoder/decoder model.")
-            return None
-
-        if (self.model_config is None or self.model_config.hf_config is None):
-            logger.warning("Using None for decoder start token id because "
-                           "model config is not available.")
-            return None
-
-        dec_start_token_id = getattr(self.model_config.hf_config,
-                                     'decoder_start_token_id', None)
-        if dec_start_token_id is None:
-            logger.warning("Falling back on <BOS> for decoder start token id "
-                           "because decoder start token id is not available.")
-            dec_start_token_id = self._get_bos_token_id()
-
-        return dec_start_token_id
-
     def _add_processed_request(
         self,
         request_id: str,
@@ -522,12 +585,14 @@ class AphroditeEngine:
         params: Union[SamplingParams, PoolingParams],
         arrival_time: float,
         lora_request: Optional[LoRARequest],
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest],
+        priority: int = 0,
     ) -> None:
+        self._validate_model_inputs(processed_inputs)
         # Create the sequences.
         block_size = self.cache_config.block_size
         seq_id = next(self.seq_counter)
-        eos_token_id = self._get_eos_token_id(lora_request)
+        eos_token_id = self.input_preprocessor.get_eos_token_id(lora_request)
 
         seq = Sequence(seq_id, processed_inputs, block_size, eos_token_id,
                        lora_request, prompt_adapter_request)
@@ -552,7 +617,7 @@ class AphroditeEngine:
                 lora_request=lora_request,
                 prompt_adapter_request=prompt_adapter_request,
                 encoder_seq=encoder_seq,
-            )
+                priority=priority)
         elif isinstance(params, PoolingParams):
             seq_group = self._create_sequence_group_with_pooling(
                 request_id,
@@ -562,7 +627,7 @@ class AphroditeEngine:
                 lora_request=lora_request,
                 prompt_adapter_request=prompt_adapter_request,
                 encoder_seq=encoder_seq,
-            )
+                priority=priority)
         else:
             raise ValueError(
                 "Either SamplingParams or PoolingParams must be provided.")
@@ -578,311 +643,15 @@ class AphroditeEngine:
     def stop_remote_worker_execution_loop(self) -> None:
         self.model_executor.stop_remote_worker_execution_loop()
 
-    _LLMInputComponentsType = Tuple[str, List[int]]
-
-    def _prepare_decoder_input_ids_for_generation(
-        self,
-        decoder_input_ids: Optional[List[int]],
-    ) -> List[int]:
-        """
-        Prepares `decoder_input_ids` for generation with encoder-decoder models.
-        Based on
-        https://github.com/huggingface/transformers/blob/
-        4037a2b5b1278736e566aec12e169100275545ea/
-        src/transformers/generation/utils.py
-        specifically GenerationMixin._prepare_decoder_input_ids_for_generation()
-        Arguments:
-        * decoder_input_ids: input token ids to preprocess
-        Returns:
-        * Processed token list
-        """
-
-        decoder_start_token_id = self._get_decoder_start_token_id()
-        assert decoder_start_token_id is not None
-
-        if decoder_input_ids is None:
-            # no decoder prompt input ->
-            # use decoder_start_token_id as decoder_input_ids
-            decoder_input_ids = self._get_default_enc_dec_decoder_prompt()
-
-        if (len(decoder_input_ids) == 0
-                or decoder_input_ids[0] != decoder_start_token_id):
-            decoder_input_ids = [decoder_start_token_id] + decoder_input_ids
-
-        return decoder_input_ids
-
-    def _tokenize_prompt(
-        self,
-        prompt: str,
-        request_id: str,
-        lora_request: Optional[LoRARequest],
-    ) -> List[int]:
-        '''
-        Wrapper around application of the model's tokenizer.
-        Arguments:
-        * prompt
-        * request_id
-        * lora_request
-        Returns:
-        * prompt token ids
-        '''
-
-        tokenizer = self.get_tokenizer_group("prompts must be None if "
-                                             "skip_tokenizer_init is True")
-
-        return tokenizer.encode(request_id=request_id,
-                                prompt=prompt,
-                                lora_request=lora_request)
-
-    def _extract_prompt_components(
-        self,
-        inputs: SingletonPromptInputs,
-        request_id: str,
-        lora_request: Optional[LoRARequest] = None,
-    ) -> PromptComponents:
-        '''
-        Extract the components of any single encoder or decoder input prompt.
-        Arguments:
-        * request_id
-        * inputs: single encoder or decoder input prompt
-        * lora_request: this is only valid for decoder prompts
-        Returns:
-        * prompt
-        * prompt_token_ids
-        * multi_modal_data
-        '''
-
-        if isinstance(inputs, str):
-            prompt = inputs
-            prompt_token_ids = self._tokenize_prompt(
-                prompt,
-                request_id=request_id,
-                lora_request=lora_request,
-            )
-            multi_modal_data = None
-        elif isinstance(inputs, dict):
-            if "prompt_token_ids" in inputs:
-                prompt = None
-                prompt_token_ids = inputs["prompt_token_ids"]
-            else:
-                # NOTE: This extra assignment is required to pass mypy
-                prompt = parsed_prompt = inputs["prompt"]
-                prompt_token_ids = self._tokenize_prompt(
-                    parsed_prompt,
-                    request_id=request_id,
-                    lora_request=lora_request,
-                )
-
-            multi_modal_data = inputs.get("multi_modal_data")
-        else:
-            assert_never(inputs)
-
-        return prompt, prompt_token_ids, multi_modal_data
-
-    def _apply_prompt_adapter(
-        self,
-        prompt_token_ids: List[int],
-        prompt_adapter_request: Optional[PromptAdapterRequest],
-    ) -> List[int]:
-        if prompt_adapter_request:
-            prompt_token_ids = (
-                [0] * prompt_adapter_request.prompt_adapter_num_virtual_tokens
-                + prompt_token_ids)
-
-        return prompt_token_ids
-
-    def _get_default_enc_dec_decoder_prompt(self) -> List[int]:
-        '''
-        Specifically for encoder/decoder models:
-        generate a default decoder prompt for when
-        the user specifies only the encoder prompt.
-        Encoder/decoder models utilize the decoder
-        prompt in different ways; as new models are
-        added, it is intended that this function
-        will be extended to produce differing
-        default decoder prompts, depending on the
-        model variety.
-        Absent a special case, the default behavior
-        of this method is to mirror the behavior of
-        the HuggingFace (HF) GenerationMixin for a None
-        decoder prompt, which is to employ a logit processor
-        setting to force the first decoded token to be <BOS>.
-        Here, this behavior is approximated by having the
-        "default" decoder prompt be <BOS>.
-        However, it is possible that in the future
-        other models may have different or more 
-        complex logic for the default decoder prompt.
-        This motivates having a special helper method
-        for default decoder prompts.
-        Returns:
-        * prompt_token_ids
-        '''
-
-        bos_token_id = self._get_bos_token_id()
-        assert bos_token_id is not None
-        return [bos_token_id]
-
-    def _build_enc_dec_llm_inputs(
-        self,
-        encoder_comps: PromptComponents,
-        decoder_comps: DecoderPromptComponents,
-    ) -> EncoderDecoderLLMInputs:
-        encoder_prompt, encoder_prompt_ids, encoder_mm_data = encoder_comps
-        decoder_prompt, decoder_prompt_ids, decoder_mm_data = decoder_comps
-
-        if encoder_mm_data is not None or decoder_mm_data is not None:
-            raise ValueError("Multi-modal encoder-decoder models are "
-                             "not supported yet")
-
-        decoder_prompt_ids = (
-            self._prepare_decoder_input_ids_for_generation(decoder_prompt_ids))
-
-        return EncoderDecoderLLMInputs(
-            prompt_token_ids=decoder_prompt_ids,
-            prompt=decoder_prompt,
-            encoder_prompt_token_ids=encoder_prompt_ids,
-            encoder_prompt=encoder_prompt,
-        )
-
-    def _process_encoder_decoder_prompt(
-        self,
-        inputs: PromptInputs,
-        request_id: str,
-    ) -> EncoderDecoderLLMInputs:
-        '''
-        For encoder/decoder models only:
-        Process an input prompt into an
-        :class:`EncoderDecoderLLMInputs` instance.
-        There are two types of input prompts:
-        singleton prompts which carry only the
-        encoder prompt, and explicit encoder/decoder
-        prompts which carry both the encoder and the
-        decoder prompts as member variables.
-        This function handles the following scenarios:
-        * Singleton encoder prompt: extract encoder prompt
-          token ids & infer default decoder prompt token ids
-        * Explicit encoder/decoder prompt: extract encoder
-          and decoder prompt token ids
-        Note that for Explicit encoder/decoder prompts,
-        each sub-prompt (encoder or decoder prompt) can
-        have any possible singleton type; thus this
-        method relies on helper functions to obtain
-        token ids for the sub-prompts.
-        
-        Arguments:
-        * inputs: an input prompt
-        * request_id
-        Returns:
-        * :class:`EncoderDecoderLLMInputs` instance
-        '''
-
-        encoder_comps: PromptComponents
-        decoder_comps: DecoderPromptComponents
-
-        if is_explicit_encoder_decoder_prompt(inputs):
-            encoder_comps = self._extract_prompt_components(
-                inputs["encoder_prompt"],
-                request_id=request_id,
-            )
-
-            if (decoder_input := inputs["decoder_prompt"]) is None:
-                decoder_comps = None, None, None
-            else:
-                decoder_comps = self._extract_prompt_components(
-                    decoder_input,
-                    request_id=request_id,
-                )
-        else:
-            encoder_comps = self._extract_prompt_components(
-                inputs,
-                request_id=request_id,
-            )
-
-            decoder_comps = None, None, None
-
-        return self._build_enc_dec_llm_inputs(encoder_comps, decoder_comps)
-
-    def _build_decoder_only_llm_inputs(
-        self,
-        prompt_comps: PromptComponents,
-        prompt_adapter_request: Optional[PromptAdapterRequest],
-    ) -> LLMInputs:
-        prompt, prompt_token_ids, multi_modal_data = prompt_comps
-
-        prompt_token_ids = self._apply_prompt_adapter(
-            prompt_token_ids, prompt_adapter_request=prompt_adapter_request)
-
-        return LLMInputs(prompt_token_ids=prompt_token_ids,
-                         prompt=prompt,
-                         multi_modal_data=multi_modal_data)
-
-    def _process_decoder_only_prompt(
-        self,
-        inputs: SingletonPromptInputs,
-        request_id: str,
-        lora_request: Optional[LoRARequest] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-    ) -> LLMInputs:
-        '''
-        For decoder-only models:
-        Process an input prompt into an :class:`LLMInputs` instance.
-        Arguments:
-        * inputs: input prompt
-        * request_id
-        * lora_request
-        * prompt_adapter_request
-        Returns:
-        * :class:`LLMInputs` instance
-        '''
-
-        prompt_comps = self._extract_prompt_components(
-            inputs,
-            request_id=request_id,
-            lora_request=lora_request,
-        )
-
-        return self._build_decoder_only_llm_inputs(
-            prompt_comps,
-            prompt_adapter_request=prompt_adapter_request,
-        )
-
-    def process_model_inputs(
-        self,
-        inputs: PromptInputs,
-        request_id: str,
-        lora_request: Optional[LoRARequest] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-    ) -> Union[LLMInputs, EncoderDecoderLLMInputs]:
-
-        if self.is_encoder_decoder_model():
-            # Encoder-decoder model requires special mapping of
-            # input prompts to encoder & decoder
-            model_inputs = self._process_encoder_decoder_prompt(
-                inputs,
-                request_id=request_id,
-            )
-        else:
-            if is_explicit_encoder_decoder_prompt(inputs):
-                raise ValueError("Cannot pass encoder-decoder prompt "
-                                 "to decoder-only models")
-            # Decoder-only operation
-            model_inputs = self._process_decoder_only_prompt(
-                inputs,
-                request_id=request_id,
-                lora_request=lora_request,
-                prompt_adapter_request=prompt_adapter_request,
-            )
-
-        return self.input_processor(model_inputs)
-
     def add_request(
         self,
         request_id: str,
-        inputs: PromptInputs,
+        prompt: PromptType,
         params: Union[SamplingParams, PoolingParams],
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
     ) -> None:
         """Add a request to the engine's request pool.
 
@@ -892,20 +661,22 @@ class AphroditeEngine:
 
         Args:
             request_id: The unique ID of the request.
-            prompt: The prompt string. Can be None if prompt_token_ids is
-                provided.
+            prompt: The prompt to the LLM. See
+                :class:`~aphrodite.common.inputs.PromptType`
+                for more details about the format of each input.
             params: Parameters for sampling or pooling. SamplingParams
                 for text generation. PoolingParams for pooling.
             prompt_token_ids: The token IDs of the prompt. If None, we
                 use the tokenizer to convert the prompts to token IDs.
             arrival_time: The arrival time of the request. If None, we use
                 the current monotonic time.
-            multi_modal_data: Multi modal data per request.
+            priority: The priority of the request.
+                Only applicable with priority scheduling.
 
         Details:
             - Set arrival_time to the current time if it is None.
             - Set prompt_token_ids to the encoded prompt if it is None.
-            - Create `best_of` number of :class:`~aphrodite.common.sequence`
+            - Create `n` number of :class:`~aphrodite.common.sequence`
                 objects.
             - Create a :class:`~aphrodite.common.sequenceGroup` object
               from the list of :class:`~aphrodite.common.sequence`.
@@ -931,15 +702,26 @@ class AphroditeEngine:
         if lora_request is not None and not self.lora_config:
             raise ValueError(f"Got lora_request {lora_request} but LoRA is "
                              "not enabled!")
+        if priority != 0 and not self.scheduler_config.policy == "priority":
+            raise ValueError(f"Got priority {priority} but "
+                             "Priority scheduling is not enabled.")
         if arrival_time is None:
             arrival_time = time.time()
 
-        processed_inputs = self.process_model_inputs(
-            inputs,
+        preprocessed_inputs = self.input_preprocessor.preprocess(
+            prompt,
             request_id=request_id,
             lora_request=lora_request,
             prompt_adapter_request=prompt_adapter_request,
         )
+        processed_inputs = self.input_processor(preprocessed_inputs)
+
+        # This is a bit of a hack - copy the mm_processor_kwargs that were
+        # used in the input processor to the processed output, since these
+        # kwargs are presumed to be immutable and the values should be aligned
+        # between the input processor (here) and the input mapper.
+        processed_inputs["mm_processor_kwargs"] = preprocessed_inputs.get(
+            "mm_processor_kwargs")
 
         self._add_processed_request(
             request_id=request_id,
@@ -948,6 +730,7 @@ class AphroditeEngine:
             arrival_time=arrival_time,
             lora_request=lora_request,
             prompt_adapter_request=prompt_adapter_request,
+            priority=priority,
         )
 
     def _create_sequence_group_with_sampling(
@@ -959,6 +742,7 @@ class AphroditeEngine:
         lora_request: Optional[LoRARequest],
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         encoder_seq: Optional[Sequence] = None,
+        priority: int = 0,
     ) -> SequenceGroup:
         """Creates a SequenceGroup with SamplingParams."""
         max_logprobs = self.get_model_config().max_logprobs
@@ -969,11 +753,16 @@ class AphroditeEngine:
             raise ValueError(f"Cannot request more than "
                              f"{max_logprobs} logprobs.")
 
+        sampling_params = self._build_logits_processors(
+            sampling_params, lora_request)
+
         # Defensive copy of SamplingParams, which are used by the sampler,
         # this doesn't deep-copy LogitsProcessor objects
         sampling_params = sampling_params.clone()
+
         sampling_params.update_from_generation_config(
             self.generation_config_fields, seq.eos_token_id)
+        sampling_params._verify_with_scheduler_config(self.scheduler_config)
 
         # Create the sequence group.
         seq_group = SequenceGroup(
@@ -983,7 +772,8 @@ class AphroditeEngine:
             sampling_params=sampling_params,
             lora_request=lora_request,
             prompt_adapter_request=prompt_adapter_request,
-            encoder_seq=encoder_seq)
+            encoder_seq=encoder_seq,
+            priority=priority)
 
         return seq_group
 
@@ -994,8 +784,9 @@ class AphroditeEngine:
         pooling_params: PoolingParams,
         arrival_time: float,
         lora_request: Optional[LoRARequest],
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest],
         encoder_seq: Optional[Sequence] = None,
+        priority: int = 0,
     ) -> SequenceGroup:
         """Creates a SequenceGroup with PoolingParams."""
         # Defensive copy of PoolingParams, which are used by the pooler
@@ -1008,8 +799,8 @@ class AphroditeEngine:
             lora_request=lora_request,
             pooling_params=pooling_params,
             prompt_adapter_request=prompt_adapter_request,
-            encoder_seq=encoder_seq)
-
+            encoder_seq=encoder_seq,
+            priority=priority)
         return seq_group
 
     def abort_request(self, request_id: Union[str, Iterable[str]]) -> None:
@@ -1069,8 +860,8 @@ class AphroditeEngine:
         """
         return self.scheduler[virtual_engine].has_unfinished_seqs()
 
+    @staticmethod
     def _process_sequence_group_outputs(
-        self,
         seq_group: SequenceGroup,
         outputs: List[EmbeddingSequenceGroupOutput],
     ) -> None:
@@ -1081,56 +872,271 @@ class AphroditeEngine:
 
         return
 
-    def _process_model_outputs(
-        self,
-        output: GenericSequence[Union[SamplerOutput, PoolerOutput]],
-        scheduled_seq_groups: List[ScheduledSequenceGroup],
-        ignored_seq_groups: List[SequenceGroup],
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-    ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
-        """Apply the model output to the sequences in the scheduled seq groups.
-
-        Returns RequestOutputs that can be returned to the client.
+    def _update_num_computed_tokens_for_multi_step_prefill(
+            self, seq_group: SequenceGroup,
+            seq_group_meta: SequenceGroupMetadata,
+            is_first_step_output: Optional[bool]):
+        """
+        This function updates num_computed_tokens for prompt sequences
+        when Multi-Step is enabled.
+        seq_group: SequenceGroup to update the num_computed_tokens for. 
+        seq_group_meta: Metadata of the given SequenceGroup.
+        is_first_step_output: Optional[bool] - 
+            When available, is_first_step_output indicates if the appended
+            output token is the output of the first-step in multi-step.
+            A value of None indicates that outputs from all steps in
+            in multi-step are submitted in a single burst.
         """
 
+        assert self.scheduler_config.is_multi_step
+
+        if not seq_group_meta.is_prompt:
+            # num_computed_token updates for multi-step decodes happen after
+            # the tokens are appended to the sequence.
+            return
+
+        do_update: bool = False
+        if self.scheduler_config.chunked_prefill_enabled:
+            # In multi-step + chunked-prefill case, the prompt sequences
+            # that are scheduled are fully processed in the first step.
+            do_update = is_first_step_output is None or is_first_step_output
+        else:
+            # Normal multi-step decoding case. In this case prompt-sequences
+            # are actually single-stepped. Always update in this case.
+            assert seq_group.state.num_steps == 1
+            do_update = True
+
+        if do_update:
+            seq_group.update_num_computed_tokens(
+                seq_group_meta.token_chunk_size)
+
+    def _process_model_outputs(self,
+                               ctx: SchedulerContext,
+                               request_id: Optional[str] = None) -> None:
+        """Apply the model output to the sequences in the scheduled seq groups
+        and return responses.
+        ctx: The virtual engine context to work on
+        request_id: If provided, then only this request is going to be processed
+
+        """
         now = time.time()
 
-        # Organize outputs by [sequence group][step] instead of
-        # [step][sequence group].
-        output_by_sequence_group = create_output_by_sequence_group(
-            output, num_seq_groups=len(scheduled_seq_groups))
+        if len(ctx.output_queue) == 0:
+            return None
 
-        # Update the scheduled sequence groups with the model outputs.
-        for scheduled_seq_group, outputs, seq_group_meta in zip(
-                scheduled_seq_groups, output_by_sequence_group,
-                seq_group_metadata_list):
-            seq_group = scheduled_seq_group.seq_group
-            seq_group.update_num_computed_tokens(
-                scheduled_seq_group.token_chunk_size)
-            if self.model_config.embedding_mode:
-                self._process_sequence_group_outputs(seq_group, outputs)
+        # Get pending async postprocessor
+        if request_id:
+            # When we process only one request, no pop is required
+            # (since later we will process all of the rest)
+            (outputs, seq_group_metadata_list, scheduler_outputs, is_async,
+             is_last_step, is_first_step_output, skip) = ctx.output_queue[0]
+        else:
+            (outputs, seq_group_metadata_list, scheduler_outputs, is_async,
+             is_last_step, is_first_step_output,
+             skip) = ctx.output_queue.popleft()
+
+        # Sanity check
+        assert len(seq_group_metadata_list) == len(
+            scheduler_outputs.scheduled_seq_groups)
+
+        has_multiple_outputs: bool = len(outputs) > 1
+        if has_multiple_outputs:
+            assert self.scheduler_config.is_multi_step or \
+                     self.speculative_config
+            # Organize outputs by [step][sequence group] instead of
+            # [sequence group][step].
+            outputs_by_sequence_group = create_output_by_sequence_group(
+                outputs, num_seq_groups=len(seq_group_metadata_list))
+            # We have outputs for multiple steps submitted in a single burst,
+            # so invalidate is_first_step_output.
+            is_first_step_output = None
+        else:
+            outputs_by_sequence_group = outputs
+
+        # Determine the requests we need to operate on
+        if request_id:
+            indices = []
+            for i, seq_group_meta in enumerate(seq_group_metadata_list):
+                if seq_group_meta.request_id == request_id:
+                    assert i not in skip  # Cannot be called twice
+                    indices.append(i)
+                    break
+
+            # If the request_id was not found, then it means that
+            # this is a new request that has no pending async
+            # postprocessor
+            if not indices:
+                return
+        else:
+            indices = range(len(seq_group_metadata_list))  # type: ignore
+
+        finished_before: List[int] = []
+        finished_now: List[int] = []
+        for i in indices:
+            if i in skip:
                 continue
 
-            self.output_processor.process_prompt_logprob(seq_group, outputs)
-            if seq_group_meta.do_sample:
-                self.output_processor.process_outputs(seq_group, outputs)
+            seq_group_meta = seq_group_metadata_list[i]
+            scheduled_seq_group = scheduler_outputs.scheduled_seq_groups[i]
 
-        # Free the finished sequence groups.
-        for scheduler in self.scheduler:
-            scheduler.free_finished_seq_groups()
+            seq_group: SequenceGroup = scheduled_seq_group.seq_group
 
-        # Create the outputs.
-        request_outputs: List[Union[RequestOutput,
-                                    EmbeddingRequestOutput]] = []
-        for scheduled_seq_group in scheduled_seq_groups:
+            if seq_group.is_finished():
+                finished_before.append(i)
+                continue
+
+            if has_multiple_outputs:
+                output = outputs_by_sequence_group[i]
+            else:
+                output = [outputs_by_sequence_group[0][i]]
+
+            if not is_async:
+                if self.scheduler_config.is_multi_step:
+                    # Updates happen only if the sequence is prefill
+                    self._update_num_computed_tokens_for_multi_step_prefill(
+                        seq_group, seq_group_meta, is_first_step_output)
+                else:
+                    seq_group.update_num_computed_tokens(
+                        seq_group_meta.token_chunk_size)
+
+
+            if self.model_config.embedding_mode:
+                self._process_sequence_group_outputs(seq_group, output)
+            else:
+                self.output_processor.process_prompt_logprob(seq_group, output)
+                if seq_group_meta.do_sample:
+                    self.output_processor.process_outputs(
+                        seq_group, output, is_async)
+
+            if seq_group.is_finished():
+                finished_now.append(i)
+
+        # Generate outputs for the requests that finished this iteration
+        for i in finished_now:
+            scheduled_seq_group = scheduler_outputs.scheduled_seq_groups[i]
+
             seq_group = scheduled_seq_group.seq_group
             seq_group.maybe_set_first_token_time(now)
-            request_output = RequestOutputFactory.create(seq_group)
-            request_outputs.append(request_output)
-        for seq_group in ignored_seq_groups:
-            request_output = RequestOutputFactory.create(seq_group)
-            request_outputs.append(request_output)
-        return request_outputs
+            request_output = RequestOutputFactory.create(
+                seq_group, use_cache=self.use_cached_outputs)
+            if request_output:
+                ctx.request_outputs.append(request_output)
+
+        # When we process a single request, we skip it for the next time,
+        # and invoke the request output callback (if there was final output)
+        if request_id:
+            assert len(indices) == 1
+            skip.append(indices[0])
+
+            if (finished_now
+                    and self.process_request_outputs_callback is not None):
+                self.process_request_outputs_callback(ctx.request_outputs)
+                ctx.request_outputs.clear()
+            return
+
+        # Free currently finished requests
+        if finished_now:
+            for scheduler in self.scheduler:
+                scheduler.free_finished_seq_groups()
+
+        # For multi-step without streaming, don't create outputs each iteration
+        if not is_last_step and not ctx.multi_step_stream_outputs:
+            # Immediately process request outputs here (if callback is given)
+            if (finished_now
+                    and self.process_request_outputs_callback is not None):
+                self.process_request_outputs_callback(ctx.request_outputs)
+                ctx.request_outputs.clear()
+            return
+
+        # Create the outputs
+        for i in indices:
+            if i in skip or i in finished_before or i in finished_now:
+                continue  # Avoids double processing
+
+            scheduled_seq_group = scheduler_outputs.scheduled_seq_groups[i]
+
+            seq_group = scheduled_seq_group.seq_group
+            seq_group.maybe_set_first_token_time(now)
+            request_output = RequestOutputFactory.create(
+                seq_group, use_cache=self.use_cached_outputs)
+            if request_output:
+                ctx.request_outputs.append(request_output)
+
+        # For multi-step with streaming, create outputs each iteration
+        if not is_last_step and ctx.multi_step_stream_outputs:
+            # Immediately process request outputs here (if callback is given)
+            if self.process_request_outputs_callback is not None:
+                self.process_request_outputs_callback(ctx.request_outputs)
+                ctx.request_outputs.clear()
+            return
+
+        for seq_group in scheduler_outputs.ignored_seq_groups:
+            params = seq_group.sampling_params
+            if params is not None and params.output_kind == (
+                    RequestOutputKind.DELTA) and not seq_group.is_finished():
+                continue
+
+            request_output = RequestOutputFactory.create(
+                seq_group, use_cache=self.use_cached_outputs)
+            if request_output:
+                ctx.request_outputs.append(request_output)
+
+        # Immediately process request outputs here (if callback is given)
+        if (ctx.request_outputs
+                and self.process_request_outputs_callback is not None):
+            self.process_request_outputs_callback(ctx.request_outputs)
+            ctx.request_outputs.clear()
+
+        # For async case, we need to record the stats here.
+        # For non-async case, the stats are done in the
+        # LLMEngine/AsyncLLMEngine directly
+        if is_async:
+            # Log stats.
+            self.do_log_stats(scheduler_outputs, outputs, finished_before,
+                              skip)
+
+        return None
+
+    def _advance_to_next_step(
+            self, output: List[SamplerOutput],
+            seq_group_metadata_list: List[SequenceGroupMetadata],
+            scheduled_seq_groups: List[ScheduledSequenceGroup]) -> None:
+        """Given model output from a single run, append the tokens to the
+        sequences. This is normally done inside output processor, but it is
+        required if the worker is to perform async forward pass to next step.
+        """
+        for seq_group_metadata, sequence_group_outputs, scheduled_seq_group in \
+            zip(seq_group_metadata_list, output, scheduled_seq_groups):
+            seq_group = scheduled_seq_group.seq_group
+
+            if seq_group.is_finished():
+                continue
+
+            if self.scheduler_config.is_multi_step:
+                # Updates happen only if the sequence is prefill
+                self._update_num_computed_tokens_for_multi_step_prefill(
+                    seq_group, seq_group_metadata,
+                    seq_group.state.num_steps == 1)
+            else:
+                seq_group.update_num_computed_tokens(
+                    seq_group_metadata.token_chunk_size)
+            if seq_group_metadata.do_sample:
+                assert len(sequence_group_outputs.samples) == 1, (
+                    "Async output processor expects a single sample"
+                    " (i.e sampling_params.n == 1)")
+                sample = sequence_group_outputs.samples[0]
+
+                assert len(seq_group.seqs) == 1
+                seq = seq_group.seqs[0]
+
+                if self.scheduler_config.is_multi_step:
+                    is_prefill_append = seq.data.get_num_uncomputed_tokens(
+                    ) == 0
+                    seq.append_token_id(sample.output_token, sample.logprobs)
+                    if not is_prefill_append:
+                        seq_group.update_num_computed_tokens(1)
+                else:
+                    seq.append_token_id(sample.output_token, sample.logprobs)
 
     def step(self) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
         """Performs one decoding iteration and returns newly generated results.
@@ -1172,7 +1178,7 @@ class AphroditeEngine:
             >>> while True:
             >>>     if example_inputs:
             >>>         req_id, prompt, sampling_params = example_inputs.pop(0)
-            >>>         engine.add_request(str(req_id), prompt, sampling_params)
+            >>>         engine.add_request(str(req_id),prompt,sampling_params)
             >>>
             >>>     # continue the request processing
             >>>     request_outputs = engine.step()
@@ -1187,16 +1193,58 @@ class AphroditeEngine:
             raise NotImplementedError(
                 "Pipeline parallelism is only supported through AsyncAphrodite "
                 "as performance will be severely degraded otherwise.")
-        if self.scheduler_config.num_scheduler_steps > 1:
-            raise NotImplementedError(
-                "Multiple scheduler steps (multi-step) are only supported "
-                "through AsyncAphrodite.")
-        seq_group_metadata_list, scheduler_outputs = self.scheduler[
-            0].schedule()
+
+        # For llm_engine, there is no pipeline parallel support, so the engine
+        # used is always 0
+        virtual_engine = 0
+        # These are cached outputs from previous iterations. None if on first
+        # iteration
+        cached_outputs = self.cached_scheduler_outputs[virtual_engine]
+        seq_group_metadata_list = cached_outputs.seq_group_metadata_list
+        scheduler_outputs = cached_outputs.scheduler_outputs
+        allow_async_output_proc = cached_outputs.allow_async_output_proc
+
+        ctx = self.scheduler_contexts[virtual_engine]
+
+        # Clear outputs for each new scheduler iteration
+        ctx.request_outputs.clear()
+
+        # Skip the scheduler if there are any remaining steps in the seq groups.
+        # This ensures that the scheduler is only called again when the current
+        # batch has completed.
+        if not self._has_remaining_steps(seq_group_metadata_list):
+            # Schedule iteration
+            (seq_group_metadata_list, scheduler_outputs,
+             allow_async_output_proc
+             ) = self.scheduler[virtual_engine].schedule()
+
+            ctx.seq_group_metadata_list = seq_group_metadata_list
+            ctx.scheduler_outputs = scheduler_outputs
+            # Maybe switch from async mode to sync mode
+            if not allow_async_output_proc and len(ctx.output_queue) > 0:
+                self._process_model_outputs(ctx=ctx)
+            if (self.scheduler_config.is_multi_step
+                    and scheduler_outputs.num_lookahead_slots > 0):
+                # cache the scheduler outputs for the next iteration if we have
+                # lookahead slots
+                self._cache_scheduler_outputs_for_multi_step(
+                    virtual_engine, seq_group_metadata_list, scheduler_outputs,
+                    allow_async_output_proc)
+
+        assert seq_group_metadata_list is not None
+        assert scheduler_outputs is not None
 
         if not scheduler_outputs.is_empty():
             finished_requests_ids = self.scheduler[
-                0].get_and_reset_finished_requests_ids()
+                virtual_engine].get_and_reset_finished_requests_ids()
+
+            # Check if we have a cached last_output from the previous iteration.
+            # For supporting PP this is probably the best way to pass the
+            # sampled_token_ids, as a separate broadcast over all the PP stages
+            # will cause one virtual engine's microbatch to block the pipeline.
+            last_sampled_token_ids = \
+                self._get_last_sampled_token_ids(virtual_engine)
+
             execute_model_req = ExecuteModelRequest(
                 seq_group_metadata_list=seq_group_metadata_list,
                 blocks_to_swap_in=scheduler_outputs.blocks_to_swap_in,
@@ -1205,53 +1253,178 @@ class AphroditeEngine:
                 num_lookahead_slots=scheduler_outputs.num_lookahead_slots,
                 running_queue_size=scheduler_outputs.running_queue_size,
                 finished_requests_ids=finished_requests_ids,
-            )
-            output = self.model_executor.execute_model(
+                # We use ExecuteModelRequest to pass the last sampled_token_ids
+                # to each of the non-last PP stages for in-place prepare_input.
+                last_sampled_token_ids=last_sampled_token_ids)
+
+            if allow_async_output_proc:
+                execute_model_req.async_callback = self.async_callbacks[
+                    virtual_engine]
+
+            outputs = self.model_executor.execute_model(
                 execute_model_req=execute_model_req)
+
+            # We need to do this here so that last step's sampled_token_ids can
+            # be passed to the next iteration for PP.
+            if self.scheduler_config.is_multi_step:
+                self._update_cached_scheduler_output(virtual_engine, outputs)
         else:
-            output = []
+            # Nothing scheduled => If there is pending async postprocessor,
+            # then finish it here.
+            if len(ctx.output_queue) > 0:
+                self._process_model_outputs(ctx=ctx)
+            # No outputs in this case
+            outputs = []
 
-        request_outputs = self._process_model_outputs(
-            output, scheduler_outputs.scheduled_seq_groups,
-            scheduler_outputs.ignored_seq_groups, seq_group_metadata_list)
+        # Finish the current step for all the sequence groups.
+        if self.scheduler_config.is_multi_step:
+            for seq_group in seq_group_metadata_list:
+                seq_group.finish_step()
 
-        # Log stats.
-        self.do_log_stats(scheduler_outputs, output)
+        if not self._has_remaining_steps(seq_group_metadata_list):
+            # clear the cache if we have finished all the steps.
+            if self.scheduler_config.is_multi_step:
+                self.cached_scheduler_outputs[0] = SchedulerOutputState()
+
+            # is_first_step_output is True only when the num_steps of all
+            # the sequences are 1. When the num_steps > 1,
+            # multi_step_model_runner does the first-step output append.
+            is_first_step_output: bool = False if not seq_group_metadata_list \
+                else seq_group_metadata_list[0].state.num_steps == 1
+            # Add results to the output_queue
+            ctx.append_output(outputs=outputs,
+                              seq_group_metadata_list=seq_group_metadata_list,
+                              scheduler_outputs=scheduler_outputs,
+                              is_async=allow_async_output_proc,
+                              is_last_step=True,
+                              is_first_step_output=is_first_step_output)
+
+            if outputs and allow_async_output_proc:
+                assert len(outputs) == 1, (
+                    "Async postprocessor expects only a single output set")
+
+                self._advance_to_next_step(
+                    outputs[0], seq_group_metadata_list,
+                    scheduler_outputs.scheduled_seq_groups)
+
+            # Check if need to run the usual non-async path
+            if not allow_async_output_proc:
+                self._process_model_outputs(ctx=ctx)
+
+                # Log stats.
+                self.do_log_stats(scheduler_outputs, outputs)
+        else:
+            # Multi-step case
+            self.do_log_stats(scheduler_outputs, outputs)
+            return ctx.request_outputs
 
         if not self.has_unfinished_requests():
+            # Drain async postprocessor (if exists)
+            if len(ctx.output_queue) > 0:
+                self._process_model_outputs(ctx=ctx)
+            assert len(ctx.output_queue) == 0
+
             # Stop the execute model loop in parallel workers until there are
             # more requests to process. This avoids waiting indefinitely in
             # torch.distributed ops which may otherwise timeout, and unblocks
             # the RPC thread in the workers so that they can process any other
             # queued control plane messages, such as add/remove lora adapters.
+            logger.debug("Stopping remote worker execution loop.")
             self.model_executor.stop_remote_worker_execution_loop()
 
-        return request_outputs
+        return ctx.request_outputs
+
+    def _has_remaining_steps(
+        self, seq_group_metadata_list: Optional[List[SequenceGroupMetadata]]
+    ) -> bool:
+        if (not self.scheduler_config.is_multi_step
+                or not seq_group_metadata_list):
+            return False
+
+        # TODO: this is a sanity check for nowto make sure that all the
+        # seqs are on the same steps. Eventually we will want to do some sort of
+        # dynamic scheduling when doing multi-step decoding.
+        ref_remaining_steps = seq_group_metadata_list[0].state.remaining_steps
+        if any([
+                seq_group.state.remaining_steps != ref_remaining_steps
+                for seq_group in seq_group_metadata_list[1:]
+        ]):
+            raise AssertionError(("All running sequence groups should "
+                                  "have the same remaining steps."))
+
+        return ref_remaining_steps > 0
+
+    def _cache_scheduler_outputs_for_multi_step(
+            self, virtual_engine: int,
+            seq_group_metadata_list: Optional[List[SequenceGroupMetadata]],
+            scheduler_outputs: SchedulerOutputs,
+            allow_async_output_proc: bool) -> None:
+        co = self.cached_scheduler_outputs[virtual_engine]
+
+        co.seq_group_metadata_list = seq_group_metadata_list
+        co.scheduler_outputs = scheduler_outputs
+        co.allow_async_output_proc = allow_async_output_proc
+        co.last_output = None
+
+    def _update_cached_scheduler_output(
+            self, virtual_engine: int,
+            output: List[Optional[SamplerOutput]]) -> None:
+        if (self.parallel_config.pipeline_parallel_size > 1 and len(output) > 0
+                and output[0] is not None):
+            last_output = output[-1]
+            assert last_output is not None
+            assert last_output.sampled_token_ids_cpu is not None
+            assert last_output.sampled_token_ids is None
+            assert last_output.sampled_token_probs is None
+            self.cached_scheduler_outputs[
+                virtual_engine].last_output = last_output
+
+    def _get_last_sampled_token_ids(
+            self, virtual_engine: int) -> Optional[torch.Tensor]:
+        cached_last_output = self.cached_scheduler_outputs[
+            virtual_engine].last_output
+        if (self.scheduler_config.is_multi_step
+                and self.parallel_config.pipeline_parallel_size > 1
+                and cached_last_output is not None
+                and cached_last_output.sampled_token_ids_cpu is not None):
+            return cached_last_output.sampled_token_ids_cpu
+        return None
 
     def add_logger(self, logger_name: str, logger: StatLoggerBase) -> None:
+        if not self.log_stats:
+            raise RuntimeError(
+                "Stat logging is disabled. Set `disable_log_stats=False` "
+                "argument to enable.")
         if logger_name in self.stat_loggers:
             raise KeyError(f"Logger with name {logger_name} already exists.")
         self.stat_loggers[logger_name] = logger
 
     def remove_logger(self, logger_name: str) -> None:
+        if not self.log_stats:
+            raise RuntimeError(
+                "Stat logging is disabled. Set `disable_log_stats=False` "
+                "argument to enable.")
         if logger_name not in self.stat_loggers:
             raise KeyError(f"Logger with name {logger_name} does not exist.")
         del self.stat_loggers[logger_name]
 
-    def do_log_stats(
-            self,
-            scheduler_outputs: Optional[SchedulerOutputs] = None,
-            model_output: Optional[List[SamplerOutput]] = None) -> None:
+    def do_log_stats(self,
+                     scheduler_outputs: Optional[SchedulerOutputs] = None,
+                     model_output: Optional[List[SamplerOutput]] = None,
+                     finished_before: Optional[List[int]] = None,
+                     skip: Optional[List[int]] = None) -> None:
         """Forced log when no requests active."""
         if self.log_stats:
-            stats = self._get_stats(scheduler_outputs, model_output)
+            stats = self._get_stats(scheduler_outputs, model_output,
+                                    finished_before, skip)
             for loggers in self.stat_loggers.values():
                 loggers.log(stats)
 
-    def _get_stats(
-            self,
-            scheduler_outputs: Optional[SchedulerOutputs],
-            model_output: Optional[List[SamplerOutput]] = None) -> Stats:
+    def _get_stats(self,
+                   scheduler_outputs: Optional[SchedulerOutputs],
+                   model_output: Optional[List[SamplerOutput]] = None,
+                   finished_before: Optional[List[int]] = None,
+                   skip: Optional[List[int]] = None) -> Stats:
         """Get Stats to be Logged to Prometheus.
 
         Args:
@@ -1259,6 +1432,10 @@ class AphroditeEngine:
                 the scheduled batch,
             model_output: Optional, used to emit speculative decoding metrics
                 which are created by the workers.
+            finished_before: Optional, indices of sequences that were finished
+                before. These sequences will be ignored.
+            skip: Optional, indices of sequences that were preempted. These
+                sequences will be ignored.
         """
         now = time.time()
 
@@ -1274,25 +1451,19 @@ class AphroditeEngine:
         # KV Cache Usage in %
         num_total_gpu = self.cache_config.num_gpu_blocks
         gpu_cache_usage_sys = 0.
-        if num_total_gpu is not None:
+        if num_total_gpu:  # Guard against both None and 0
             num_free_gpu = sum(
                 scheduler.block_manager.get_num_free_gpu_blocks()
                 for scheduler in self.scheduler)
-            if not self.model_config.is_attention_free():
-                gpu_cache_usage_sys = 1.0 - (num_free_gpu / num_total_gpu)
-            else:
-                gpu_cache_usage_sys = 0.0
+            gpu_cache_usage_sys = 1.0 - (num_free_gpu / num_total_gpu)
 
         num_total_cpu = self.cache_config.num_cpu_blocks
         cpu_cache_usage_sys = 0.
-        if num_total_cpu is not None and num_total_cpu > 0:
+        if num_total_cpu:  # Guard against both None and 0
             num_free_cpu = sum(
                 scheduler.block_manager.get_num_free_cpu_blocks()
                 for scheduler in self.scheduler)
-            if not self.model_config.is_attention_free():
-                cpu_cache_usage_sys = 1.0 - (num_free_cpu / num_total_cpu)
-            else:
-                cpu_cache_usage_sys = 0.0
+            cpu_cache_usage_sys = 1.0 - (num_free_cpu / num_total_cpu)
 
         # Prefix Cache Hit Rate. Note that we always use
         # the cache hit rate of the first virtual engine.
@@ -1312,16 +1483,20 @@ class AphroditeEngine:
         # Request stats
         #   Latency
         time_e2e_requests: List[float] = []
-        #   Metadata
+        time_to_first_tokens_iter: List[float] = []
         num_prompt_tokens_requests: List[int] = []
         num_generation_tokens_requests: List[int] = []
-        best_of_requests: List[int] = []
         n_requests: List[int] = []
         finished_reason_requests: List[str] = []
+        request_ids: List[str] = []
 
         # NOTE: This loop assumes prefill seq_groups are before
         # decode seq_groups in scheduled_seq_groups.
         if scheduler_outputs is not None:
+            # For async postprocessor, already finished sequences need to be
+            # not counted (to avoid double counting)
+            actual_num_batched_tokens = scheduler_outputs.num_batched_tokens  # type: ignore
+
             num_generation_tokens_from_prefill_groups = 0.
             # NOTE: if scheduler_outputs.num_prefill_groups > 0 and
             # the len of scheduler_outputs.scheduled_seq_groups is !=
@@ -1330,6 +1505,16 @@ class AphroditeEngine:
 
             for idx, scheduled_seq_group in enumerate(
                     scheduler_outputs.scheduled_seq_groups):
+                # Skip double logging when using async output proc
+                if finished_before and idx in finished_before:
+                    actual_num_batched_tokens -= 1
+                    continue
+
+                # Currently, skip == preempted sequences, so we need to skip
+                # their log stats
+                if skip and idx in skip:
+                    continue
+
                 group_was_prefill = idx < scheduler_outputs.num_prefill_groups
                 seq_group = scheduled_seq_group.seq_group
 
@@ -1362,10 +1547,16 @@ class AphroditeEngine:
                 # which can only happen once.
                 if seq_group.is_finished():
                     # Latency timings
-                    time_e2e_requests.append(now -
-                                             seq_group.metrics.arrival_time)
+                    time_e2e_requests.append(
+                        now - seq_group.metrics.arrival_time)
+                    # Get time to first token for finished requests
+                    if seq_group.metrics.first_token_time is not None:
+                        ttft = (seq_group.metrics.first_token_time -
+                               seq_group.metrics.arrival_time)
+                        time_to_first_tokens_iter.append(ttft)
 
                     # Metadata
+                    request_ids.append(seq_group.request_id)
                     num_prompt_tokens_requests.append(
                         len(seq_group.prompt_token_ids))
                     num_generation_tokens_requests.extend([
@@ -1373,8 +1564,6 @@ class AphroditeEngine:
                         for seq in seq_group.get_finished_seqs()
                     ])
                     if seq_group.sampling_params is not None:
-                        best_of_requests.append(
-                            seq_group.sampling_params.best_of)
                         n_requests.append(seq_group.sampling_params.n)
                     finished_reason_requests.extend([
                         SequenceStatus.get_finished_reason(seq.status)
@@ -1388,7 +1577,7 @@ class AphroditeEngine:
             #   + num_generation_tokens_from_prefill_groups (since we generate
             #   one token on prefills on iters where the prefill finishes).
             num_generation_tokens_iter = (
-                scheduler_outputs.num_batched_tokens - num_prompt_tokens_iter +
+                actual_num_batched_tokens - num_prompt_tokens_iter +
                 num_generation_tokens_from_prefill_groups)
 
         # Spec decode, if enabled, emits specialized metrics from the worker in
@@ -1401,7 +1590,6 @@ class AphroditeEngine:
 
         return Stats(
             now=now,
-
             # System stats
             #   Scheduler State
             num_running_sys=num_running_sys,
@@ -1410,7 +1598,6 @@ class AphroditeEngine:
             #   KV Cache Usage in %
             gpu_cache_usage_sys=gpu_cache_usage_sys,
             cpu_cache_usage_sys=cpu_cache_usage_sys,
-
             #   Prefix Cache Hit Rate
             cpu_prefix_cache_hit_rate=cpu_prefix_cache_hit_rate,
             gpu_prefix_cache_hit_rate=gpu_prefix_cache_hit_rate,
@@ -1429,9 +1616,9 @@ class AphroditeEngine:
             #   Metadata
             num_prompt_tokens_requests=num_prompt_tokens_requests,
             num_generation_tokens_requests=num_generation_tokens_requests,
-            best_of_requests=best_of_requests,
             n_requests=n_requests,
             finished_reason_requests=finished_reason_requests,
+            request_ids=request_ids,
         )
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
@@ -1440,7 +1627,7 @@ class AphroditeEngine:
     def remove_lora(self, lora_id: int) -> bool:
         return self.model_executor.remove_lora(lora_id)
 
-    def list_loras(self) -> List[int]:
+    def list_loras(self) -> Set[int]:
         return self.model_executor.list_loras()
 
     def pin_lora(self, lora_id: int) -> bool:
@@ -1461,11 +1648,103 @@ class AphroditeEngine:
             self.tokenizer.check_health()
         self.model_executor.check_health()
 
+    def shutdown(self) -> None:
+        self.model_executor.stop_remote_worker_execution_loop()
+        if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+            self.tokenizer = None
+        if hasattr(self, 'scheduler'):
+            self.scheduler.clear()
+        if hasattr(self, 'cached_scheduler_outputs'):
+            self.cached_scheduler_outputs.clear()
+        if hasattr(self, 'scheduler_contexts'):
+            self.scheduler_contexts.clear()
+        if hasattr(self, 'stat_loggers'):
+            self.stat_loggers.clear()
+        if hasattr(self, 'model_executor'):
+            self.model_executor.shutdown()
+
+
     def is_encoder_decoder_model(self):
-        return self.model_config.is_encoder_decoder_model
+        return self.input_preprocessor.is_encoder_decoder_model()
 
     def is_embedding_model(self):
         return self.model_config.is_embedding_model
+
+    def _validate_model_inputs(self, inputs: Union[LLMInputs,
+                                                   EncoderDecoderLLMInputs]):
+        if self.model_config.is_multimodal_model:
+            # For encoder-decoder multimodal models, the max_prompt_len
+            # restricts the decoder prompt length
+            prompt_ids = inputs.get("prompt_token_ids")
+        elif self.is_encoder_decoder_model():
+            prompt_ids = inputs.get("encoder_prompt_token_ids")
+        else:
+            prompt_ids = inputs.get("prompt_token_ids")
+        if prompt_ids is None or len(prompt_ids) == 0:
+            raise ValueError("Prompt cannot be empty")
+        if self.model_config.is_multimodal_model:
+            max_prompt_len = self.model_config.max_model_len
+            if len(prompt_ids) > max_prompt_len:
+                raise ValueError(
+                    f"The prompt (total length {len(prompt_ids)}) is too long "
+                    f"to fit into the model (context length {max_prompt_len}). "
+                    "Make sure that `max_model_len` is no smaller than the "
+                    "number of text tokens plus multimodal tokens. For image "
+                    "inputs, the number of image tokens depends on the number "
+                    "of images, and possibly their aspect ratios as well.")
+            # TODO: Find out how many placeholder tokens are there so we can
+            # check that chunked prefill does not truncate them
+            # max_batch_len = self.scheduler_config.max_num_batched_tokens
+
+    def _build_logits_processors(
+        self,
+        sampling_params: SamplingParams,
+        lora_request: Optional[LoRARequest],
+    ) -> SamplingParams:
+        """Constructs logits processors based on the guided_decoding,
+        logits_bias, and allowed_token_ids fields in sampling_params. Deletes
+        those fields and adds the constructed logits processors to the
+        logits_processors field. Returns the modified sampling params."""
+        logits_processors = []
+        if sampling_params.guided_decoding is not None:
+            # Defensively copy sampling params since guided decoding logits
+            # processors can have different state for each request
+            sampling_params = copy.copy(sampling_params)
+            guided_decoding = sampling_params.guided_decoding
+            logger.debug(
+                "Building guided decoding logits processor in "
+                f"AphroditeEngine. Params: {guided_decoding}"
+            )
+            tokenizer = self.get_tokenizer(lora_request=lora_request)
+            guided_decoding.backend = (
+                guided_decoding.backend
+                or self.decoding_config.guided_decoding_backend
+            )
+            processor = get_local_guided_decoding_logits_processor(
+                guided_params=guided_decoding, tokenizer=tokenizer,
+                model_config=self.model_config
+            )
+            if processor:
+                logits_processors.append(processor)
+            # Unset so this doesn't get passed down to the model
+            sampling_params.guided_decoding = None
+        if sampling_params.logit_bias or sampling_params.allowed_token_ids:
+            tokenizer = self.get_tokenizer(lora_request=lora_request)
+            processors = get_logits_processors(
+                logit_bias=sampling_params.logit_bias,
+                allowed_token_ids=sampling_params.allowed_token_ids,
+                tokenizer=tokenizer,
+            )
+            logits_processors.extend(processors)
+            # Unset so these don't get passed down to the model
+            sampling_params.logit_bias = None
+            sampling_params.allowed_token_ids = None
+        if logits_processors:
+            if sampling_params.logits_processors is None:
+                sampling_params.logits_processors = logits_processors
+            else:
+                sampling_params.logits_processors.extend(logits_processors)
+        return sampling_params
 
 
 setup_logger()

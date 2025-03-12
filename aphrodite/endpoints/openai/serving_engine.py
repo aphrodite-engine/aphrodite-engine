@@ -11,8 +11,7 @@ from typing_extensions import Annotated
 
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import (LogitsProcessorFunc,
-                                              SamplingParams)
+from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import Logprob
 from aphrodite.endpoints.logger import RequestLogger
 # yapf conflicts with isort here
@@ -27,12 +26,16 @@ from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  TokenizeCompletionRequest,
                                                  TokenizeRequest)
 # yapf: enable
-from aphrodite.engine.protocol import AsyncEngineClient
+from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.parse import parse_and_batch_prompt
 from aphrodite.lora.request import LoRARequest
-from aphrodite.modeling.guided_decoding import (
-    get_guided_decoding_logits_processor)
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
+
+
+@dataclass
+class BaseModelPath:
+    name: str
+    model_path: str
 
 
 @dataclass
@@ -45,6 +48,7 @@ class PromptAdapterPath:
 class LoRAModulePath:
     name: str
     path: str
+    base_model_name: Optional[str] = None
 
 
 AnyRequest = Union[ChatCompletionRequest, CompletionRequest, DetokenizeRequest,
@@ -62,9 +66,9 @@ class OpenAIServing:
 
     def __init__(
         self,
-        async_engine_client: AsyncEngineClient,
+        engine_client: EngineClient,
         model_config: ModelConfig,
-        served_model_names: List[str],
+        base_model_paths: List[BaseModelPath],
         *,
         lora_modules: Optional[List[LoRAModulePath]],
         prompt_adapters: Optional[List[PromptAdapterPath]],
@@ -73,20 +77,23 @@ class OpenAIServing:
     ):
         super().__init__()
 
-        self.async_engine_client = async_engine_client
+        self.engine_client = engine_client
         self.model_config = model_config
         self.max_model_len = model_config.max_model_len
 
-        self.served_model_names = served_model_names
+        self.base_model_paths = base_model_paths
 
         self.lora_requests = []
         if lora_modules is not None:
             self.lora_requests = [
-                LoRARequest(
-                    lora_name=lora.name,
-                    lora_int_id=i,
-                    lora_path=lora.path,
-                ) for i, lora in enumerate(lora_modules, start=1)
+                LoRARequest(lora_name=lora.name,
+                            lora_int_id=i,
+                            lora_path=lora.path,
+                            base_model_name=lora.base_model_name
+                            if lora.base_model_name
+                            and self._is_model_supported(lora.base_model_name)
+                            else self.base_model_paths[0].name)
+                for i, lora in enumerate(lora_modules, start=1)
             ]
 
         self.prompt_adapter_requests = []
@@ -109,21 +116,23 @@ class OpenAIServing:
     async def show_available_models(self) -> ModelList:
         """Show available models. Right now we only have one model."""
         model_cards = [
-            ModelCard(id=served_model_name,
+            ModelCard(id=base_model.name,
                       max_model_len=self.max_model_len,
-                      root=self.served_model_names[0],
+                      root=base_model.model_path,
                       permission=[ModelPermission()])
-            for served_model_name in self.served_model_names
+            for base_model in self.base_model_paths
         ]
         lora_cards = [
             ModelCard(id=lora.lora_name,
-                      root=self.served_model_names[0],
+                      root=lora.local_path,
+                      parent=lora.base_model_name if lora.base_model_name else
+                      self.base_model_paths[0].name,
                       permission=[ModelPermission()])
             for lora in self.lora_requests
         ]
         prompt_adapter_cards = [
             ModelCard(id=prompt_adapter.prompt_adapter_name,
-                      root=self.served_model_names[0],
+                      root=self.base_model_paths[0].name,
                       permission=[ModelPermission()])
             for prompt_adapter in self.prompt_adapter_requests
         ]
@@ -153,22 +162,13 @@ class OpenAIServing:
         })
         return json_str
 
-    async def _guided_decode_logits_processor(
-            self, request: Union[ChatCompletionRequest, CompletionRequest],
-            tokenizer: AnyTokenizer) -> Optional[LogitsProcessorFunc]:
-        decoding_config = await self.async_engine_client.get_decoding_config()
-        guided_decoding_backend = request.guided_decoding_backend \
-            or decoding_config.guided_decoding_backend
-        return await get_guided_decoding_logits_processor(
-            guided_decoding_backend, request, tokenizer)
-
     async def _check_model(
         self,
         request: AnyRequest,
     ) -> Optional[ErrorResponse]:
         # only check these if it's not a Tokenizer/Detokenize Request
         if not isinstance(request, (TokenizeRequest, DetokenizeRequest)):
-            if request.model in self.served_model_names:
+            if self._is_model_supported(request.model):
                 return None
             if request.model in [
                     lora.lora_name for lora in self.lora_requests
@@ -188,7 +188,7 @@ class OpenAIServing:
         self, request: AnyRequest
     ) -> Union[Tuple[None, None], Tuple[LoRARequest, None], Tuple[
             None, PromptAdapterRequest]]:
-        if request.model in self.served_model_names:
+        if self._is_model_supported(request.model):
             return None, None
         for lora in self.lora_requests:
             if request.model == lora.lora_name:
@@ -198,7 +198,7 @@ class OpenAIServing:
                 return None, prompt_adapter
         # if _check_model has been called earlier, this will be unreachable
         raise ValueError(f"The model `{request.model}` does not exist.")
-    
+
     def add_lora(self, lora: LoRAModulePath):
         if lora.name in [
                 lora.lora_name for lora in self.lora_requests
@@ -211,7 +211,7 @@ class OpenAIServing:
                 lora_int_id=len(self.lora_requests) + 1,
                 lora_path=lora.path,
             ))
-        
+
     def remove_lora(self, lora_name: str):
         self.lora_requests = [
             lora for lora in self.lora_requests if lora.lora_name != lora_name
@@ -235,7 +235,7 @@ class OpenAIServing:
                 prompt_adapter_id=len(self.prompt_adapter_requests) + 1,
                 prompt_adapter_local_path=prompt_adapter.local_path,
                 prompt_adapter_num_virtual_tokens=num_virtual_tokens))
-        
+
     def remove_prompt_adapter(self, prompt_adapter_name: str):
         self.prompt_adapter_requests = [
             prompt_adapter for prompt_adapter in self.prompt_adapter_requests
@@ -253,15 +253,23 @@ class OpenAIServing:
         if truncate_prompt_tokens is None:
             encoded = tokenizer(prompt, add_special_tokens=add_special_tokens)
         else:
+            original_tokens = tokenizer(prompt,
+                                        add_special_tokens=add_special_tokens)
             encoded = tokenizer(prompt,
-                                add_special_tokens=add_special_tokens,
-                                truncation=True,
-                                max_length=truncate_prompt_tokens)
+                              add_special_tokens=add_special_tokens,
+                              truncation=True,
+                              max_length=truncate_prompt_tokens)
+
+            if len(original_tokens.input_ids) > truncate_prompt_tokens:
+                tokens_removed = len(
+                    original_tokens.input_ids) - truncate_prompt_tokens
+                logger.warning(
+                    f"Prompt truncated: Removed {tokens_removed} tokens "
+                    f"({len(original_tokens.input_ids)} -> "
+                    f"{truncate_prompt_tokens})")
 
         input_ids = encoded.input_ids
-
         input_text = prompt
-
         return self._validate_input(request, input_ids, input_text)
 
     def _normalize_prompt_tokens_to_input(
@@ -274,10 +282,14 @@ class OpenAIServing:
         if truncate_prompt_tokens is None:
             input_ids = prompt_ids
         else:
+            if len(prompt_ids) > truncate_prompt_tokens:
+                tokens_removed = len(prompt_ids) - truncate_prompt_tokens
+                logger.warning(
+                    f"Prompt truncated: Removed {tokens_removed} tokens "
+                    f"({len(prompt_ids)} -> {truncate_prompt_tokens})")
             input_ids = prompt_ids[-truncate_prompt_tokens:]
 
         input_text = tokenizer.decode(input_ids)
-
         return self._validate_input(request, input_ids, input_text)
 
     def _validate_input(
@@ -450,3 +462,6 @@ class OpenAIServing:
         if logprob.decoded_token is not None:
             return logprob.decoded_token
         return tokenizer.decode(token_id)
+
+    def _is_model_supported(self, model_name):
+        return any(model.name == model_name for model in self.base_model_paths)

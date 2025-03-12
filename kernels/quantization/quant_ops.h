@@ -57,40 +57,30 @@ torch::Tensor dequant_gptq(torch::Tensor b_q_weight,
                            torch::Tensor b_gptq_scales, torch::Tensor b_g_idx,
                            int64_t bits, bool use_exllama);
 
+torch::Tensor vptq_gemm(const torch::Tensor& input,
+                        const torch::Tensor& q_indice,
+                        const torch::Tensor& centroids,
+                        const torch::Tensor& weight_scale,
+                        const torch::Tensor& weight_bias,
+                        const std::vector<int64_t>& g_i_o,
+                        const c10::optional<torch::Tensor>& q_indice_residual,
+                        const c10::optional<torch::Tensor>& residual_centroids,
+                        const c10::optional<torch::Tensor>& q_indice_outliers,
+                        const c10::optional<torch::Tensor>& outliers_centroids,
+                        const c10::optional<torch::Tensor>& invperm,
+                        const c10::optional<torch::Tensor>& bias);
+
+torch::Tensor vptq_dequant(
+    const torch::Tensor& q_indice, const torch::Tensor& centroids,
+    const torch::Tensor& weight_scale, const torch::Tensor& weight_bias,
+    const std::vector<int64_t>& g_i_o,
+    const c10::optional<torch::Tensor>& q_indice_residual,
+    const c10::optional<torch::Tensor>& residual_centroids,
+    const c10::optional<torch::Tensor>& q_indice_outliers,
+    const c10::optional<torch::Tensor>& outliers_centroids,
+    const c10::optional<torch::Tensor>& invperm);
+
 #ifndef USE_ROCM
-// Marlin
-torch::Tensor marlin_gemm(torch::Tensor& a, torch::Tensor& b_q_weight,
-                          torch::Tensor& b_scales, torch::Tensor& workspace,
-                          int64_t size_m, int64_t size_n, int64_t size_k);
-
-torch::Tensor gptq_marlin_24_gemm(torch::Tensor& a, torch::Tensor& b_q_weight,
-                                  torch::Tensor& b_meta,
-                                  torch::Tensor& b_scales,
-                                  torch::Tensor& workspace,
-                                  aphrodite::ScalarTypeTorchPtr const& b_q_type,
-                                  int64_t size_m, int64_t size_n,
-                                  int64_t size_k);
-
-torch::Tensor gptq_marlin_gemm(torch::Tensor& a, torch::Tensor& b_q_weight,
-                               torch::Tensor& b_scales, torch::Tensor& b_zeros,
-                               torch::Tensor& g_idx, torch::Tensor& perm,
-                               torch::Tensor& workspace,
-                               aphrodite::ScalarTypeTorchPtr const& b_q_type,
-                               int64_t size_m, int64_t size_n, int64_t size_k,
-                               bool is_k_full, bool has_zp,
-                               bool use_fp32_reduce, bool is_zp_float);
-
-torch::Tensor gptq_marlin_repack(torch::Tensor& b_q_weight, torch::Tensor& perm,
-                                 int64_t size_k, int64_t size_n,
-                                 int64_t num_bits);
-
-torch::Tensor awq_marlin_repack(torch::Tensor& b_q_weight, int64_t size_k,
-                                int64_t size_n, int64_t num_bits);
-
-torch::Tensor fp8_marlin_gemm(torch::Tensor& a, torch::Tensor& b_q_weight,
-                              torch::Tensor& b_scales, torch::Tensor& workspace,
-                              int64_t num_bits, int64_t size_m, int64_t size_n,
-                              int64_t size_k);
 
 // GGUF
 torch::Tensor ggml_dequantize(torch::Tensor W, int64_t type, int64_t m,
@@ -126,47 +116,16 @@ void cutlass_scaled_mm_azp(torch::Tensor& out, torch::Tensor const& a,
                            c10::optional<torch::Tensor> const& azp,
                            c10::optional<torch::Tensor> const& bias);
 
-// Machete Kernels
-namespace machete {
-
-std::vector<std::string> supported_schedules(
-    aphrodite::ScalarTypeTorchPtr const& btype);
-
-torch::Tensor gemm(torch::Tensor const& A, torch::Tensor const& B,
-                   aphrodite::ScalarTypeTorchPtr const& btype,
-                   c10::optional<torch::Tensor> const& scales,
-                   c10::optional<torch::Tensor> const& zeros,
-                   c10::optional<int64_t> group_size,
-                   c10::optional<torch::Tensor> const& C,
-                   c10::optional<double> alpha, c10::optional<double> beta,
-                   c10::optional<std::string> schedule);
-
-torch::Tensor prepack_B(torch::Tensor const& B,
-                        aphrodite::ScalarTypeTorchPtr const& btype);
-
-};  // namespace machete
-
-torch::Tensor marlin_qqq_gemm(torch::Tensor const& a,
-                              torch::Tensor const& b_q_weight,
-                              torch::Tensor const& s_tok,
-                              torch::Tensor const& s_ch,
-                              torch::Tensor const& s_group,
-                              torch::Tensor& workspace, int64_t size_m,
-                              int64_t size_n, int64_t size_k);
   #endif
-
-torch::Tensor fp_eXmY_linear_forward_cuda(int64_t EXPONENT, int64_t MANTISSA,
-                                          torch::Tensor _in_feats,
-                                          torch::Tensor _weights,
-                                          torch::Tensor _scales,
-                                          int64_t splitK = 1);
 #endif
 
 void static_scaled_int8_quant(torch::Tensor& out, torch::Tensor const& input,
-                              torch::Tensor const& scale);
+                              torch::Tensor const& scale,
+                              c10::optional<torch::Tensor> const& azp);
 
 void dynamic_scaled_int8_quant(torch::Tensor& out, torch::Tensor const& input,
-                               torch::Tensor& scales);
+                               torch::Tensor& scales,
+                               c10::optional<torch::Tensor> const& azp);
 
 // SqueezeLLM
 void squeezellm_gemm(torch::Tensor vec, torch::Tensor mat, torch::Tensor mul,

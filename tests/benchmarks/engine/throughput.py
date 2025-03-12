@@ -6,12 +6,17 @@ import time
 from typing import List, Optional, Tuple
 
 import torch
+import uvloop
 from tqdm import tqdm
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           PreTrainedTokenizerBase)
 
-from aphrodite.common.utils import FlexibleArgumentParser
-from aphrodite.engine.args_tools import EngineArgs
+from aphrodite.common.utils import (FlexibleArgumentParser,
+                                    merge_async_iterators)
+from aphrodite.endpoints.openai.api_server import (
+    build_engine_client_from_engine_args)
+from aphrodite.engine.args_tools import (DEVICE_OPTIONS, AsyncEngineArgs,
+                                         EngineArgs)
 from aphrodite.quantization import QUANTIZATION_METHODS
 
 
@@ -66,7 +71,6 @@ def run_aphrodite(
     model: str,
     tokenizer: str,
     quantization: Optional[str],
-    quant_llm_fp_bits: Optional[int],
     tensor_parallel_size: int,
     seed: int,
     n: int,
@@ -75,7 +79,6 @@ def run_aphrodite(
     dtype: str,
     max_model_len: Optional[int],
     enforce_eager: bool,
-    max_seq_len_to_capture: int,
     kv_cache_dtype: str,
     quantization_param_path: Optional[str],
     device: str,
@@ -84,20 +87,17 @@ def run_aphrodite(
     max_num_batched_tokens: int,
     distributed_executor_backend: Optional[str],
     gpu_memory_utilization: float = 0.9,
+    num_scheduler_steps: int = 1,
+    use_v2_block_manager: bool = False,
     download_dir: Optional[str] = None,
     load_format: str = EngineArgs.load_format,
-    max_num_seqs: Optional[int] = None,
-    num_scheduler_steps: Optional[int] = None,
-    speculative_model: Optional[str] = None,
-    num_speculative_tokens: Optional[int] = None,
-    use_v2_block_manager: bool = False,
+    disable_async_output_proc: bool = False,
 ) -> float:
     from aphrodite import LLM, SamplingParams
     llm = LLM(
         model=model,
         tokenizer=tokenizer,
         quantization=quantization,
-        quant_llm_fp_bits=quant_llm_fp_bits,
         tensor_parallel_size=tensor_parallel_size,
         seed=seed,
         trust_remote_code=trust_remote_code,
@@ -105,7 +105,6 @@ def run_aphrodite(
         max_model_len=max_model_len,
         gpu_memory_utilization=gpu_memory_utilization,
         enforce_eager=enforce_eager,
-        max_seq_len_to_capture=max_seq_len_to_capture,
         kv_cache_dtype=kv_cache_dtype,
         quantization_param_path=quantization_param_path,
         device=device,
@@ -115,11 +114,9 @@ def run_aphrodite(
         max_num_batched_tokens=max_num_batched_tokens,
         distributed_executor_backend=distributed_executor_backend,
         load_format=load_format,
-        max_num_seqs=max_num_seqs,
         num_scheduler_steps=num_scheduler_steps,
-        speculative_model=speculative_model,
-        num_speculative_tokens=num_speculative_tokens,
         use_v2_block_manager=use_v2_block_manager,
+        disable_async_output_proc=disable_async_output_proc,
     )
 
     # Add the requests to the engine.
@@ -141,6 +138,91 @@ def run_aphrodite(
     llm.generate(prompts, sampling_params, use_tqdm=True)
     end = time.perf_counter()
     return end - start
+
+
+async def run_aphrodite_async(
+    requests: List[Tuple[str, int, int]],
+    model: str,
+    tokenizer: str,
+    quantization: Optional[str],
+    tensor_parallel_size: int,
+    seed: int,
+    n: int,
+    use_beam_search: bool,
+    trust_remote_code: bool,
+    dtype: str,
+    max_model_len: Optional[int],
+    enforce_eager: bool,
+    kv_cache_dtype: str,
+    quantization_param_path: Optional[str],
+    device: str,
+    enable_prefix_caching: bool,
+    enable_chunked_prefill: bool,
+    max_num_batched_tokens: int,
+    distributed_executor_backend: Optional[str],
+    gpu_memory_utilization: float = 0.9,
+    num_scheduler_steps: int = 1,
+    use_v2_block_manager: bool = False,
+    download_dir: Optional[str] = None,
+    load_format: str = EngineArgs.load_format,
+    disable_async_output_proc: bool = False,
+    disable_frontend_multiprocessing: bool = False,
+) -> float:
+    from aphrodite import SamplingParams
+    engine_args = AsyncEngineArgs(
+        model=model,
+        tokenizer=tokenizer,
+        quantization=quantization,
+        tensor_parallel_size=tensor_parallel_size,
+        seed=seed,
+        trust_remote_code=trust_remote_code,
+        dtype=dtype,
+        max_model_len=max_model_len,
+        gpu_memory_utilization=gpu_memory_utilization,
+        enforce_eager=enforce_eager,
+        kv_cache_dtype=kv_cache_dtype,
+        quantization_param_path=quantization_param_path,
+        device=device,
+        enable_prefix_caching=enable_prefix_caching,
+        download_dir=download_dir,
+        enable_chunked_prefill=enable_chunked_prefill,
+        max_num_batched_tokens=max_num_batched_tokens,
+        distributed_executor_backend=distributed_executor_backend,
+        load_format=load_format,
+        num_scheduler_steps=num_scheduler_steps,
+        use_v2_block_manager=use_v2_block_manager,
+        disable_async_output_proc=disable_async_output_proc,
+        disable_log_requests=True,
+    )
+
+    async with build_engine_client_from_engine_args(
+            engine_args, disable_frontend_multiprocessing) as llm:
+
+        # Add the requests to the engine.
+        prompts: List[str] = []
+        sampling_params: List[SamplingParams] = []
+        for prompt, _, output_len in requests:
+            prompts.append(prompt)
+            sampling_params.append(
+                SamplingParams(
+                    n=n,
+                    temperature=0.0 if use_beam_search else 1.0,
+                    top_p=1.0,
+                    use_beam_search=use_beam_search,
+                    ignore_eos=True,
+                    max_tokens=output_len,
+                ))
+
+        generators = []
+        start = time.perf_counter()
+        for i, (prompt, sp) in enumerate(zip(prompts, sampling_params)):
+            generator = llm.generate(prompt, sp, request_id=f"test{i}")
+            generators.append(generator)
+        all_gens = merge_async_iterators(*generators)
+        async for i, res in all_gens:
+            pass
+        end = time.perf_counter()
+        return end - start
 
 
 def run_hf(
@@ -238,18 +320,24 @@ def main(args: argparse.Namespace):
                                    args.output_len)
 
     if args.backend == "aphrodite":
-        elapsed_time = run_aphrodite(
+        run_args = [
             requests, args.model, args.tokenizer, args.quantization,
-            args.quant_llm_fp_bits,
             args.tensor_parallel_size, args.seed, args.n, args.use_beam_search,
             args.trust_remote_code, args.dtype, args.max_model_len,
-            args.enforce_eager, args.max_seq_len_to_capture,
-            args.kv_cache_dtype, args.quantization_param_path, args.device,
+            args.enforce_eager, args.kv_cache_dtype,
+            args.quantization_param_path, args.device,
             args.enable_prefix_caching, args.enable_chunked_prefill,
             args.max_num_batched_tokens, args.distributed_executor_backend,
-            args.gpu_memory_utilization, args.download_dir, args.load_format,
-            args.max_num_seqs, args.num_scheduler_steps, args.speculative_model,
-            args.num_speculative_tokens, args.use_v2_block_manager)
+            args.gpu_memory_utilization, args.num_scheduler_steps,
+            args.use_v2_block_manager, args.download_dir, args.load_format,
+            args.disable_async_output_proc
+        ]
+
+        if args.async_engine:
+            run_args.append(args.disable_frontend_multiprocessing)
+            elapsed_time = uvloop.run(run_aphrodite_async(*run_args))
+        else:
+            elapsed_time = run_aphrodite(*run_args)
     elif args.backend == "hf":
         assert args.tensor_parallel_size == 1
         elapsed_time = run_hf(requests, args.model, tokenizer, args.n,
@@ -303,26 +391,12 @@ if __name__ == "__main__":
                         '-q',
                         choices=[*QUANTIZATION_METHODS, None],
                         default=None)
-    parser.add_argument('--quant-llm-fp-bits',
-                        type=int,
-                        default=None,
-                        choices=[4, 5, 6, 7],
-                        help="Number of bits for the FP quantization in "
-                        "QuantLLM")
     parser.add_argument("--tensor-parallel-size", "-tp", type=int, default=1)
     parser.add_argument("--n",
                         type=int,
                         default=1,
                         help="Number of generated sequences per prompt.")
     parser.add_argument("--use-beam-search", action="store_true")
-    parser.add_argument('--max-num-seqs',
-                        type=int,
-                        default=256,
-                        help='maximum number of batched requests per iteration')
-    parser.add_argument('--num-scheduler-steps',
-                        type=int,
-                        default=1,
-                        help='number of scheduler steps for multi-step.')
     parser.add_argument("--num-prompts",
                         type=int,
                         default=1000,
@@ -359,11 +433,6 @@ if __name__ == "__main__":
     parser.add_argument("--enforce-eager",
                         action="store_true",
                         help="enforce eager execution")
-    parser.add_argument("--max-seq-len-to-capture",
-                        type=int,
-                        default=None,
-                        help="The maximum sequence length to capture for "
-                        "CUDA graphs.")
     parser.add_argument(
         '--kv-cache-dtype',
         type=str,
@@ -386,14 +455,21 @@ if __name__ == "__main__":
         "--device",
         type=str,
         default="auto",
-        choices=["auto", "cuda", "cpu", "openvino", "tpu", "xpu"],
-        help=
-        'device type for Aphrodite execution, supporting CUDA, OpenVINO and '
-        'CPU.')
+        choices=DEVICE_OPTIONS,
+        help='device type for Aphrodite execution, supporting CUDA, OpenVINO '
+        'and CPU.')
+    parser.add_argument(
+        "--num-scheduler-steps",
+        type=int,
+        default=1,
+        help="Maximum number of forward steps per scheduler call.")
+    parser.add_argument("--use-v2-block-manager",
+                        action='store_true',
+                        help="Enable block manager v2.")
     parser.add_argument(
         "--enable-prefix-caching",
         action='store_true',
-        help="enable automatic prefix caching for Aphrodite backend.")
+        help="Enable automatic prefix caching for Aphrodite backend.")
     parser.add_argument("--enable-chunked-prefill",
                         action='store_true',
                         help="enable chunked prefill for Aphrodite backend.")
@@ -443,19 +519,19 @@ if __name__ == "__main__":
         '* "bitsandbytes" will load the weights using bitsandbytes '
         'quantization.\n')
     parser.add_argument(
-        '--speculative-model',
-        type=str,
-        default=None,
-        help='speculative model for spec decode.')
-    parser.add_argument(
-        '--num-speculative-tokens',
-        type=int,
-        default=None,
-        help='number of speculative tokens for spec decode.')
-    parser.add_argument(
-        '--use-v2-block-manager',
+        "--disable-async-output-proc",
         action='store_true',
-        help='use v2 block manager for spec decode.')
+        default=False,
+        help="Disable async output processor for Aphrodite backend.")
+    parser.add_argument("--async-engine",
+                        action='store_true',
+                        default=False,
+                        help="Use Aphrodite async engine rather than LLM class."
+    )
+    parser.add_argument("--disable-frontend-multiprocessing",
+                        action='store_true',
+                        default=False,
+                        help="Disable decoupled async engine frontend.")
     args = parser.parse_args()
     if args.tokenizer is None:
         args.tokenizer = args.model

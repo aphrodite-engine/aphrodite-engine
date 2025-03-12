@@ -26,11 +26,6 @@ RESET = '\033[0;0m'
 
 JOIN_TIMEOUT_S = 2
 
-# Use dedicated multiprocess context for workers.
-# Both spawn and fork work
-mp_method = envs.APHRODITE_WORKER_MULTIPROC_METHOD
-mp = multiprocessing.get_context(mp_method)
-
 
 @dataclass
 class Result(Generic[T]):
@@ -78,7 +73,7 @@ class ResultHandler(threading.Thread):
 
     def __init__(self) -> None:
         super().__init__(daemon=True)
-        self.result_queue = mp.Queue()
+        self.result_queue = get_mp_context().Queue()
         self.tasks: Dict[uuid.UUID, Union[ResultFuture, asyncio.Future]] = {}
 
     def run(self):
@@ -121,7 +116,8 @@ class WorkerMonitor(threading.Thread):
                     logger.error(f"Worker {process.name} pid {process.pid} "
                                  f"died, exit code: {process.exitcode}")
             # Cleanup any remaining workers
-            logger.info("Killing local Aphrodite worker processes")
+            if logger:
+                logger.info("Killing local Aphrodite worker processes")
             for worker in self.workers:
                 worker.kill_worker()
             # Must be done after worker task queues are all closed
@@ -142,15 +138,16 @@ class WorkerMonitor(threading.Thread):
 
 
 class ProcessWorkerWrapper:
-    """Local process wrapper for aphrodite.task_handler.Worker,
+    """Local process wrapper for aphrodite.worker.Worker,
     for handling single-node multi-GPU tensor parallel."""
 
     def __init__(self, result_handler: ResultHandler,
                  worker_factory: Callable[[], Any]) -> None:
-        self._task_queue = mp.Queue()
+        self.mp = get_mp_context()
+        self._task_queue = self.mp.Queue()
         self.result_queue = result_handler.result_queue
         self.tasks = result_handler.tasks
-        self.process: BaseProcess = mp.Process(  # type: ignore[attr-defined]
+        self.process: BaseProcess = self.mp.Process(  # type: ignore[attr-defined]
             target=_run_worker_process,
             name="AphroditeWorkerProcess",
             kwargs=dict(
@@ -168,6 +165,8 @@ class ProcessWorkerWrapper:
         self.tasks[task_id] = future
         try:
             self._task_queue.put((task_id, method, args, kwargs))
+        except SystemExit:
+            raise
         except BaseException as e:
             del self.tasks[task_id]
             raise ChildProcessError("worker died") from e
@@ -202,7 +201,7 @@ def _run_worker_process(
     """Worker process event loop"""
 
     # Add process-specific prefix to stdout and stderr
-    process_name = mp.current_process().name
+    process_name = get_mp_context().current_process().name
     pid = os.getpid()
     _add_prefix(sys.stdout, process_name, pid)
     _add_prefix(sys.stderr, process_name, pid)
@@ -222,6 +221,10 @@ def _run_worker_process(
             try:
                 executor = getattr(worker, method)
                 output = executor(*args, **kwargs)
+            except SystemExit:
+                raise
+            except KeyboardInterrupt:
+                break
             except BaseException as e:
                 tb = traceback.format_exc()
                 logger.error(f"Exception in worker {process_name} while "
@@ -262,3 +265,8 @@ def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
 
     file.start_new_line = True  # type: ignore[attr-defined]
     file.write = write_with_prefix  # type: ignore[method-assign]
+
+
+def get_mp_context():
+    mp_method = envs.APHRODITE_WORKER_MULTIPROC_METHOD
+    return multiprocessing.get_context(mp_method)

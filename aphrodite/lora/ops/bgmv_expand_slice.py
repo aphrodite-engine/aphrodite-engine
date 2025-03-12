@@ -1,12 +1,14 @@
 """
 Based on:
-Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023). 
-Punica: Multi-Tenant LoRA Serving. 
+Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023).
+Punica: Multi-Tenant LoRA Serving.
 https://arxiv.org/abs/2310.18547
 """
 import torch
 import triton
 import triton.language as tl
+
+from aphrodite.common.utils import direct_register_custom_op
 
 from .utils import get_lora_op_configs
 
@@ -77,7 +79,13 @@ def _bgmv_expand_slice_kernel(
         )  # [BLOCK_N,BLOCK_K]
 
         if ADD_INPUTS:
-            tiled_out = tl.load(c_ptr + current_n * cn_stride, mask=c_mask)
+            # explicitly pass in other=None to tell triton that masked values
+            # can be uninitialized. This is OK because the later tl.store
+            # operation uses the same mask, eliminating the risk of garbage
+            # values propagating
+            tiled_out = tl.load(c_ptr + current_n * cn_stride,
+                                mask=c_mask,
+                                other=None)
             accumulator = tl.sum(tiled_a * tiled_b, 1) + tiled_out
         else:
             accumulator = tl.sum(tiled_a * tiled_b, 1)
@@ -173,6 +181,26 @@ def _bgmv_expand_slice(
     return
 
 
-bgmv_expand_slice = torch.library.custom_op("lora::bgmv_expand_slice",
-                                            _bgmv_expand_slice,
-                                            mutates_args=["output_tensor"])
+def bgmv_expand_slice_fake(
+    inputs: torch.Tensor,
+    lora_b_weights: torch.Tensor,
+    output_tensor: torch.Tensor,
+    lora_indices_tensor: torch.Tensor,
+    slice_offset: int,
+    slice_size: int,
+    add_inputs: bool = True,
+) -> None:
+    return
+
+
+try:
+    direct_register_custom_op(
+        op_name="bgmv_expand_slice",
+        op_func=_bgmv_expand_slice,
+        mutates_args=["output_tensor"],
+        fake_impl=bgmv_expand_slice_fake,
+    )
+    bgmv_expand_slice = torch.ops.aphrodite.bgmv_expand_slice
+
+except AttributeError:
+    bgmv_expand_slice = _bgmv_expand_slice

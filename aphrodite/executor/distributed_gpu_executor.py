@@ -4,10 +4,11 @@ from typing import Any, Awaitable, Dict, List, Optional, Set, Tuple, Union
 
 from loguru import logger
 
-from aphrodite.common.sequence import ExecuteModelRequest, SamplerOutput
+from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.executor.executor_base import ExecutorAsyncBase
 from aphrodite.executor.gpu_executor import GPUExecutor
 from aphrodite.lora.request import LoRARequest
+from aphrodite.modeling.layers.sampler import SamplerOutput
 
 
 class DistributedGPUExecutor(GPUExecutor):

@@ -19,7 +19,6 @@ responses = client.embeddings.create(
         "The weather is nice today",
     ],
     model=model,
-    encoding_format="float",
 )
 
 for data in responses.data:

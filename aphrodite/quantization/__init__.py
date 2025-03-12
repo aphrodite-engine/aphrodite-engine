@@ -18,11 +18,15 @@ from aphrodite.quantization.gptq import GPTQConfig
 from aphrodite.quantization.gptq_marlin import GPTQMarlinConfig
 from aphrodite.quantization.gptq_marlin_24 import GPTQMarlin24Config
 from aphrodite.quantization.hqq_marlin import HQQMarlinConfig
+from aphrodite.quantization.ipex_quant import IPEXConfig
 from aphrodite.quantization.marlin import MarlinConfig
+from aphrodite.quantization.modelopt import ModelOptFp8Config
+from aphrodite.quantization.neuron_quant import NeuronQuantConfig
 from aphrodite.quantization.qqq import QQQConfig
 from aphrodite.quantization.quip import QuipConfig
 from aphrodite.quantization.squeezellm import SqueezeLLMConfig
 from aphrodite.quantization.tpu_int8 import Int8TpuConfig
+from aphrodite.quantization.vptq import VPTQConfig
 
 QUANTIZATION_METHODS = {
     "aqlm": AQLMConfig,
@@ -33,6 +37,7 @@ QUANTIZATION_METHODS = {
     "fp8": Fp8Config,
     "quant_llm": QuantLLMFPConfig,
     "fbgemm_fp8": FBGEMMFp8Config,
+    "modelopt": ModelOptFp8Config,
     "gguf": GGUFConfig,
     # The order of gptq methods is important for config.py iteration over
     # override_quantization_method(..)
@@ -44,6 +49,7 @@ QUANTIZATION_METHODS = {
     "quip": QuipConfig,
     "squeezellm": SqueezeLLMConfig,
     "compressed-tensors": CompressedTensorsConfig,
+    "compressed_tensors": CompressedTensorsConfig,
     "bitsandbytes": BitsAndBytesConfig,
     "qqq": QQQConfig,
     "hqq": HQQMarlinConfig,
@@ -55,6 +61,9 @@ QUANTIZATION_METHODS = {
     "fp5": QuantLLMFPConfig,
     "fp6": QuantLLMFPConfig,
     "fp7": QuantLLMFPConfig,
+    "neuron_quant": NeuronQuantConfig,
+    "vptq": VPTQConfig,
+    "ipex": IPEXConfig,
 }
 
 

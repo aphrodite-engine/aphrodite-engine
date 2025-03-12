@@ -8,11 +8,11 @@ from aphrodite.quantization.base_config import (QuantizationConfig,
 class BaseKVCacheMethod(QuantizeMethodBase):
     """
     Quant method that adds `_k_scale` and `_v_scale` attributes to the
-    Attention layer to support loading those scaling factors from checkpoints. 
+    Attention layer to support loading those scaling factors from checkpoints.
     The k/v_scale will be used to:
         - quantize k/v_cache entries before saving them to the cache
         - dequantize k/v_cache entries before fetching them from the cache
-    :param quant_config: the appropriate QuantizationConfig 
+    :param quant_config: the appropriate QuantizationConfig
     """
 
     def __init__(self, quant_config: QuantizationConfig):

@@ -96,6 +96,12 @@ class TensorizerConfig:
                 "aphrodite is unstable and may lead to errors.")
 
 
+    def open_stream(self, tensorizer_args: Optional["TensorizerArgs"] = None):
+        if tensorizer_args is None:
+            tensorizer_args = self._construct_tensorizer_args()
+        return open_stream(self.tensorizer_uri,
+                           **tensorizer_args.stream_params)
+
 def load_with_tensorizer(tensorizer_config: TensorizerConfig,
                          **extra_kwargs) -> nn.Module:
     tensorizer = TensorizerAgent(tensorizer_config, **extra_kwargs)
@@ -114,30 +120,30 @@ class TensorizerArgs:
     s3_secret_access_key: Optional[str] = None
     s3_endpoint: Optional[str] = None
     """
-  Args for the TensorizerAgent class. These are used to configure the behavior 
+  Args for the TensorizerAgent class. These are used to configure the behavior
   of the TensorDeserializer when loading tensors from a serialized model.
-  
+
   Args:
-      tensorizer_uri: Path to serialized model tensors. Can be a local file 
+      tensorizer_uri: Path to serialized model tensors. Can be a local file
           path or a S3 URI.
-      aphrodite_tensorized: If True, indicates that the serialized model is a 
-          aphrodite model. This is used to determine the behavior of the 
+      aphrodite_tensorized: If True, indicates that the serialized model is a
+          aphrodite model. This is used to determine the behavior of the
           TensorDeserializer when loading tensors from a serialized model.
           It is far faster to deserialize a aphrodite model as it utilizes
           ttensorizer's optimized GPU loading. Note that this is now
           deprecated, as serialized Aphrodite models are now automatically
           inferred as Aphrodite models.
-      verify_hash: If True, the hashes of each tensor will be verified against 
-          the hashes stored in the metadata. A `HashMismatchError` will be 
+      verify_hash: If True, the hashes of each tensor will be verified against
+          the hashes stored in the metadata. A `HashMismatchError` will be
           raised if any of the hashes do not match.
       num_readers: Controls how many threads are allowed to read concurrently
           from the source file. Default is `None`, which will dynamically set
-          the number of readers based on the number of available 
+          the number of readers based on the number of available
           resources and model size. This greatly increases performance.
-      encryption_keyfile: File path to a binary file containing a  
-          binary key to use for decryption. `None` (the default) means 
-          no decryption. See the example script in 
-          examples/tensorize_aphrodite_model.py. 
+      encryption_keyfile: File path to a binary file containing a
+          binary key to use for decryption. `None` (the default) means
+          no decryption. See the example script in
+          examples/tensorize_aphrodite_model.py.
       s3_access_key_id: The access key for the S3 bucket. Can also be set via
           the S3_ACCESS_KEY_ID environment variable.
       s3_secret_access_key: The secret access key for the S3 bucket. Can also

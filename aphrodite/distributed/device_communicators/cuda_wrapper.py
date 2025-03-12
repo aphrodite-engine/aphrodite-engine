@@ -95,10 +95,10 @@ class CudaRTLibrary:
     path_to_dict_mapping: Dict[str, Dict[str, Any]] = {}
 
     def __init__(self, so_file: Optional[str] = None):
-        if so_file is None: 
-            assert torch.version.cuda is not None 
-            major_version = torch.version.cuda.split(".")[0] 
-            so_file = f"libcudart.so.{major_version}" 
+        if so_file is None:
+            assert torch.version.cuda is not None
+            major_version = torch.version.cuda.split(".")[0]
+            so_file = f"libcudart.so.{major_version}"
         if so_file not in CudaRTLibrary.path_to_library_cache:
             lib = ctypes.CDLL(so_file)
             CudaRTLibrary.path_to_library_cache[so_file] = lib

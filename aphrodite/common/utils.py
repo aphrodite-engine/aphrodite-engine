@@ -4,8 +4,11 @@ import contextlib
 import datetime
 import enum
 import gc
+import inspect
+import ipaddress
 import math
 import os
+import random
 import socket
 import subprocess
 import sys
@@ -13,6 +16,7 @@ import tempfile
 import threading
 import uuid
 import warnings
+import weakref
 from asyncio import FIRST_COMPLETED, ensure_future
 from functools import lru_cache, partial, wraps
 from platform import uname
@@ -27,13 +31,16 @@ import psutil
 import torch
 import torch.types
 from loguru import logger
+from packaging.version import Version
 from rich.progress import (BarColumn, MofNCompleteColumn, Progress,
                            SpinnerColumn, TextColumn, TimeElapsedColumn)
+from torch.library import Library
 from typing_extensions import ParamSpec, TypeIs, assert_never
 
 import aphrodite.common.envs as envs
 from aphrodite.common.logger import enable_trace_function_call
 from aphrodite.distributed import get_tensor_model_parallel_rank
+from aphrodite.platforms import current_platform
 
 # Exception strings for non-implemented encoder/decoder scenarios
 
@@ -71,10 +78,6 @@ STR_NOT_IMPL_ENC_DEC_SPEC_DEC = ("Speculative decoding is not "
                                  "currently supported with encoder/"
                                  "decoder models.")
 
-STR_NOT_IMPL_ENC_DEC_CUDAGRAPH = ("CUDAGraph is not "
-                                  "currently supported with encoder/"
-                                  "decoder models.")
-
 STR_NOT_IMPL_ENC_DEC_BACKEND = ("XFormers is the only backend "
                                 "currently supported with encoder/"
                                 "decoder models.")
@@ -82,6 +85,9 @@ STR_NOT_IMPL_ENC_DEC_BACKEND = ("XFormers is the only backend "
 STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER = ("Prompt adapters are not "
                                        "currently supported with encoder/"
                                        "decoder models.")
+
+STR_NOT_IMPL_ENC_DEC_CPU = ("CPU is not currently supported with "
+                            "encoder/decoder models.")
 
 # Efficiently import all enc/dec error strings
 # rather than having to import all of the above
@@ -95,9 +101,9 @@ STR_NOT_IMPL_ENC_DEC_ERR_STRS = {
     "STR_NOT_IMPL_ENC_DEC_PP": STR_NOT_IMPL_ENC_DEC_PP,
     "STR_NOT_IMPL_ENC_DEC_MM": STR_NOT_IMPL_ENC_DEC_MM,
     "STR_NOT_IMPL_ENC_DEC_SPEC_DEC": STR_NOT_IMPL_ENC_DEC_SPEC_DEC,
-    "STR_NOT_IMPL_ENC_DEC_CUDA_GRAPH": STR_NOT_IMPL_ENC_DEC_CUDAGRAPH,
     "STR_NOT_IMPL_ENC_DEC_BACKEND": STR_NOT_IMPL_ENC_DEC_BACKEND,
     "STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER": STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER,
+    "STR_NOT_IMPL_ENC_DEC_CPU": STR_NOT_IMPL_ENC_DEC_CPU
 }
 
 # Constants related to forcing the attention backend selection
@@ -266,7 +272,7 @@ class LRUCache(Generic[T]):
 
 
 class PyObjectCache:
-    """Used to cache python objects to avoid object allocations 
+    """Used to cache python objects to avoid object allocations
     across scheduler iterations.
     """
 
@@ -285,7 +291,7 @@ class PyObjectCache:
             self._obj_cache.append(self._obj_builder())
 
     def get_object(self):
-        """Returns a pre-allocated cached object. If there is not enough 
+        """Returns a pre-allocated cached object. If there is not enough
         objects, then the cache size will double.
         """
         if self._index >= len(self._obj_cache):
@@ -355,6 +361,17 @@ def is_xpu() -> bool:
 
 
 @lru_cache(maxsize=None)
+def is_triton() -> bool:
+    if envs.APHRODITE_USE_TRITON_BACKEND:
+        try:
+            import triton  # noqa: F401
+        except ImportError:
+            return False
+        return True
+    return False
+
+
+@lru_cache(maxsize=None)
 def get_max_shared_memory_bytes(gpu: int = 0) -> int:
     """Returns the maximum shared memory per thread block in bytes."""
     from aphrodite import _custom_ops as ops
@@ -369,6 +386,21 @@ def get_max_shared_memory_bytes(gpu: int = 0) -> int:
 def get_cpu_memory() -> int:
     """Returns the total CPU memory of the node in bytes."""
     return psutil.virtual_memory().total
+
+def seed_everything(seed: int) -> None:
+    """
+    Set the seed of each random module.
+
+    Loosely based on: https://github.com/Lightning-AI/pytorch-lightning/blob/2.4.0/src/lightning/fabric/utilities/seed.py#L20
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+
+    if current_platform.is_cuda():
+        torch.cuda.manual_seed_all(seed)
+
+    if is_xpu():
+        torch.xpu.manual_seed_all(seed)
 
 
 def random_uuid() -> str:
@@ -512,6 +544,12 @@ def get_ip() -> str:
         stacklevel=2)
     return "0.0.0.0"
 
+def is_valid_ipv6_address(address: str) -> bool:
+    try:
+        ipaddress.IPv6Address(address)
+        return True
+    except ValueError:
+        return False
 
 def get_distributed_init_method(ip: str, port: int) -> str:
     # Brackets are not permitted in ipv4 addresses,
@@ -526,7 +564,7 @@ def get_open_zmq_ipc_path() -> str:
         # windows doesn't support ipc://
         # use tcp:// instead
         return f"tcp://127.0.0.1:{get_open_port()}"
-     
+
 def get_open_port(port: Optional[int] = None) -> int:
     port = envs.APHRODITE_PORT
     if port is not None:
@@ -747,7 +785,7 @@ def is_pin_memory_available() -> bool:
     return True
 
 
-class CudaMemoryProfiler:
+class DeviceMemoryProfiler:
 
     def __init__(self, device: Optional[torch.types.Device] = None):
         self.device = device
@@ -834,15 +872,6 @@ def async_tensor_h2d(
     """Asynchronously create a tensor and copy it from host to device."""
     t = torch.tensor(data, dtype=dtype, pin_memory=pin_memory, device="cpu")
     return t.to(device=target_device, non_blocking=True)
-
-
-def maybe_expand_dim(tensor: torch.Tensor,
-                     target_dims: int,
-                     size: int = 1) -> torch.Tensor:
-    """Expand the tensor to the target_dims."""
-    if tensor.ndim < target_dims:
-        tensor = tensor.view(-1, *([size] * (target_dims - tensor.ndim)))
-    return tensor
 
 
 def get_dtype_size(dtype: torch.dtype) -> int:
@@ -1063,7 +1092,7 @@ def _cuda_device_count_stateless(
 def cuda_device_count_stateless() -> int:
     """Get number of CUDA devices, caching based on the value of
     CUDA_VISIBLE_DEVICES at the time of call.
-    
+
     This should be used instead of torch.cuda.device_count()
     unless CUDA_VISIBLE_DEVICES has already been set to the desired
     value."""
@@ -1072,6 +1101,25 @@ def cuda_device_count_stateless() -> int:
     # after https://github.com/pytorch/pytorch/pull/122815 is released.
 
     return _cuda_device_count_stateless(envs.CUDA_VISIBLE_DEVICES)
+
+
+def cuda_is_initialized() -> bool:
+    """Check if CUDA is initialized."""
+    if not torch.cuda._is_compiled():
+        return False
+    return torch.cuda.is_initialized()
+
+
+def weak_bind(bound_method: Callable[..., Any], ) -> Callable[..., None]:
+    """Make an instance method that weakly references
+    its associated instance and no-ops once that
+    instance is collected."""
+    ref = weakref.ref(bound_method.__self__)  # type: ignore[attr-defined]
+    unbound = bound_method.__func__  # type: ignore[attr-defined]
+    def weak_bound(*args, **kwargs) -> None:
+        if inst := ref():
+            unbound(inst, *args, **kwargs)
+    return weak_bound
 
 
 #From: https://stackoverflow.com/a/4104188/2749989
@@ -1157,3 +1205,171 @@ def tensor_progress_bar(iterable:Iterable[Tuple[str, torch.Tensor]],
                 progress.update(task, advance=steps)
     else:
         yield from iterable
+
+def supports_kw(
+    callable: Callable[..., object],
+    kw_name: str,
+    requires_kw_only: bool = False,
+    allow_var_kwargs: bool = True,
+) -> bool:
+    """Check if a keyword is a valid kwarg for a callable; if requires_kw_only
+    disallows kwargs names that can also be positional arguments.
+    """
+    params = inspect.signature(callable).parameters
+    if not params:
+        return False
+
+    param_val = params.get(kw_name)
+
+    # Types where the it may be valid, i.e., explicitly defined & nonvariadic
+    passable_kw_types = set((inspect.Parameter.POSITIONAL_ONLY,
+                             inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                             inspect.Parameter.KEYWORD_ONLY))
+
+    if param_val:
+        is_sig_param = param_val.kind in passable_kw_types
+        # We want kwargs only, but this is passable as a positional arg
+        if (requires_kw_only and is_sig_param
+                and param_val.kind != inspect.Parameter.KEYWORD_ONLY):
+            return False
+        if ((requires_kw_only
+             and param_val.kind == inspect.Parameter.KEYWORD_ONLY)
+                or (not requires_kw_only and is_sig_param)):
+            return True
+
+    # If we're okay with var-kwargs, it's supported as long as
+    # the kw_name isn't something like *args, **kwargs
+    if allow_var_kwargs:
+        # Get the last param; type is ignored here because params is a proxy
+        # mapping, but it wraps an ordered dict, and they appear in order.
+        # Ref: https://docs.python.org/3/library/inspect.html#inspect.Signature.parameters
+        last_param = params[next(reversed(params))]  # type: ignore
+        return (last_param.kind == inspect.Parameter.VAR_KEYWORD
+                and last_param.name != kw_name)
+    return False
+
+
+def resolve_mm_processor_kwargs(
+    init_kwargs: Optional[Dict[str, Any]],
+    inference_kwargs: Optional[Dict[str, Any]],
+    callable: Callable[..., object],
+    allow_var_kwargs: bool = False,
+) -> Dict[str, Any]:
+    """Applies filtering to eliminate invalid mm_processor_kwargs, i.e.,
+    those who are not explicit keywords to the given callable (of one is
+    given; otherwise no filtering is done), then merges the kwarg dicts,
+    giving priority to inference_kwargs if there are any collisions.
+    In the case that no kwarg overrides are provided, returns an empty
+    dict so that it can still be kwarg expanded into the callable later on.
+    If allow_var_kwargs=True, allows for things that can be expanded into
+    kwargs as long as they aren't naming collision for var_kwargs or potential
+    positional arguments.
+    """
+    # Filter inference time multimodal processor kwargs provided
+    runtime_mm_kwargs = get_allowed_kwarg_only_overrides(
+        callable,
+        overrides=inference_kwargs,
+        allow_var_kwargs=allow_var_kwargs)
+
+    # Filter init time multimodal processor kwargs provided
+    init_mm_kwargs = get_allowed_kwarg_only_overrides(
+        callable, overrides=init_kwargs, allow_var_kwargs=allow_var_kwargs)
+
+    # Merge the final processor kwargs, prioritizing inference
+    # time values over the initialization time values.
+    mm_processor_kwargs = {**init_mm_kwargs, **runtime_mm_kwargs}
+    return mm_processor_kwargs
+
+
+def get_allowed_kwarg_only_overrides(
+    callable: Callable[..., object],
+    overrides: Optional[Dict[str, Any]],
+    allow_var_kwargs: bool = False,
+) -> Dict[str, Any]:
+    """
+    Given a callable which has one or more keyword only params and a dict
+    mapping param names to values, drop values that can be not be kwarg
+    expanded to overwrite one or more keyword-only args. This is used in a
+    few places to handle custom processor overrides for multimodal models,
+    e.g., for profiling when processor options provided by the user
+    may affect the number of mm tokens per instance.
+
+    Args:
+        callable: Callable which takes 0 or more keyword only arguments.
+                  If None is provided, all overrides names are allowed.
+        overrides: Potential overrides to be used when invoking the callable.
+        allow_var_kwargs: Allows overrides that are expandable for var kwargs.
+
+    Returns:
+        Dictionary containing the kwargs to be leveraged which may be used
+        to overwrite one or more keyword only arguments when invoking the
+        callable.
+    """
+    if not overrides:
+        return {}
+
+    # Drop any mm_processor_kwargs provided by the user that
+    # are not kwargs, unless it can fit it var_kwargs param
+    filtered_overrides = {
+        kwarg_name: val
+        for kwarg_name, val in overrides.items()
+        if supports_kw(callable,
+                       kwarg_name,
+                       requires_kw_only=True,
+                       allow_var_kwargs=allow_var_kwargs)
+    }
+    # If anything is dropped, log a warning
+    dropped_keys = overrides.keys() - filtered_overrides.keys()
+    if dropped_keys:
+        logger.warning(
+            "The following intended overrides are not keyword-only args "
+            f"and and will be dropped: {dropped_keys}")
+    return filtered_overrides
+
+# Using dynamo with Aphrodite doesn't really work well with PyTorch
+# versions < 2.4.0.
+# In particular, the FakeScalarType is not supported for earlier versions of
+# PyTorch which breaks dynamo for any ops registered using ScalarType.
+def supports_dynamo() -> bool:
+    base_torch_version = Version(Version(torch.__version__).base_version)
+    return base_torch_version >= Version("2.4.0")
+
+
+# create a library to hold the custom op
+aphrodite_lib = Library("aphrodite", "FRAGMENT")  # noqa
+
+def direct_register_custom_op(
+    op_name: str,
+    op_func: Callable,
+    mutates_args: List[str],
+    fake_impl: Optional[Callable] = None,
+    target_lib: Optional[Library] = None,
+):
+    """
+    `torch.library.custom_op` can have significant overhead because it
+    needs to consider complicated dispatching logic. This function
+    directly registers a custom op and dispatches it to the CUDA backend.
+    See https://gist.github.com/youkaichao/ecbea9ec9fc79a45d2adce1784d7a9a5
+    for more details.
+
+    By default, the custom op is registered to the Aphrodite library. If you
+    want to register it to a different library, you can pass the library
+    object to the `target_lib` argument.
+
+    IMPORTANT: the lifetime of the operator is tied to the lifetime of the
+    library object. If you want to bind the operator to a different library,
+    make sure the library object is alive when the operator is used.
+    """
+    import torch.library
+    if hasattr(torch.library, "infer_schema"):
+        schema_str = torch.library.infer_schema(op_func,
+                                                mutates_args=mutates_args)
+    else:
+        # for pytorch 2.4
+        import torch._custom_op.impl
+        schema_str = torch._custom_op.impl.infer_schema(op_func, mutates_args)
+    my_lib = target_lib or aphrodite_lib
+    my_lib.define(op_name + schema_str)
+    my_lib.impl(op_name, op_func, "CUDA")
+    if fake_impl is not None:
+        my_lib._register_fake(op_name, fake_impl)

@@ -34,10 +34,10 @@ def _get_default_config(op_type: str, batch: int, hidden_size: int):
 def get_lora_op_configs(op_type: str, batch: int,
                         hidden_size: int) -> Dict[str, int]:
     """Inspired by `fused_moe_kernel`
-    The return value will be a dictionary mapping an irregular grid of batch 
-    sizes and hidden_size to configurations of the bgmv-related kernel. 
-    NOTE: It currently only supports the default configuration. We plan to 
-    generate optimal configurations for different hardware in the future using 
+    The return value will be a dictionary mapping an irregular grid of batch
+    sizes and hidden_size to configurations of the bgmv-related kernel.
+    NOTE: It currently only supports the default configuration. We plan to
+    generate optimal configurations for different hardware in the future using
     scripts similar to `benchmark_moe.py`.
     """
     config = _get_op_configs(op_type, batch, hidden_size)

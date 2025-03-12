@@ -36,14 +36,14 @@ def dequantize_weight(codes: torch.Tensor,
                       scales: Optional[torch.Tensor] = None) -> torch.Tensor:
     """
     Decode float weights from quantization codes. Differentiable.
-    :param codes: tensor of integer quantization codes, shape 
+    :param codes: tensor of integer quantization codes, shape
         [*dims, num_out_groups, num_in_groups, num_codebooks]
-    :param codebooks: tensor of vectors for each quantization code, 
+    :param codebooks: tensor of vectors for each quantization code,
         [num_codebooks, codebook_size, out_group_size, in_group_size]
-    :param scales: weight will be multiplied by this factor, must be 
-        broadcastble with 
+    :param scales: weight will be multiplied by this factor, must be
+        broadcastble with
         [*dims, out_groups, num_in_groups, out_group_size, in_group_size]
-    :return: reconstructed weight tensor of shape 
+    :return: reconstructed weight tensor of shape
         [*dims, num_in_groups*group_size]
     """
     num_out_groups, num_in_groups, num_codebooks = codes.shape[-3:]

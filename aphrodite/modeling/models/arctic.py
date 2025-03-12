@@ -1,5 +1,5 @@
 """Inference-only Snowflake Arctic model."""
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Union
 
 import torch
 from loguru import logger
@@ -7,8 +7,9 @@ from torch import nn
 
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
-from aphrodite.common.sequence import IntermediateTensors, SamplerOutput
-from aphrodite.distributed import (get_tensor_model_parallel_rank,
+from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.distributed import (get_pp_group,
+                                   get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size,
                                    tensor_model_parallel_all_reduce)
 from aphrodite.modeling.layers.activation import SiluAndMul
@@ -20,16 +21,20 @@ from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.sampler import Sampler
+from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_weight_attrs
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.deepspeedfp import (DeepSpeedFPConfig,
                                                 DeepSpeedFPParameter)
 from aphrodite.transformers_utils.configs.arctic import ArcticConfig
+
+from .interfaces import SupportsPP
+from .utils import (is_pp_missing_parameter,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 
 class ArcticMLP(nn.Module):
@@ -361,6 +366,7 @@ class ArcticModel(nn.Module):
         config: ArcticConfig,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.padding_idx = config.pad_token_id
@@ -369,15 +375,16 @@ class ArcticModel(nn.Module):
             self.vocab_size,
             config.hidden_size,
             org_num_embeddings=self.vocab_size)
-        self.layers = nn.ModuleList([
-            ArcticDecoderLayer(config,
-                               layer_idx,
-                               cache_config,
-                               quant_config=quant_config)
-            for layer_idx in range(config.num_hidden_layers)
-        ])
+        self.start_layer, self.end_layer, self.layers = make_layers(
+            config.num_hidden_layers,
+            lambda prefix: ArcticDecoderLayer(config, int(
+                prefix.split(".")[-1]), cache_config, quant_config),
+            prefix=f"{prefix}.layers")
         self._attn_implementation = config._attn_implementation
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(["hidden_states"],
+                                                    config.hidden_size))
 
     def forward(
         self,
@@ -385,17 +392,25 @@ class ArcticModel(nn.Module):
         positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
-    ) -> torch.Tensor:
-        hidden_states = self.embed_tokens(input_ids)
-        for i in range(len(self.layers)):
+        intermediate_tensors: Optional[IntermediateTensors],
+    ) -> Union[torch.Tensor, IntermediateTensors]:
+        if get_pp_group().is_first_rank:
+            hidden_states = self.embed_tokens(input_ids)
+        else:
+            assert intermediate_tensors is not None
+            hidden_states = intermediate_tensors["hidden_states"]
+        for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
-            hidden_states = layer(positions, hidden_states, kv_caches[i],
+            hidden_states = layer(positions, hidden_states,
+                                  kv_caches[i - self.start_layer],
                                   attn_metadata)
+        if not get_pp_group().is_last_rank:
+            return IntermediateTensors({"hidden_states": hidden_states})
         hidden_states = self.norm(hidden_states)
         return hidden_states
 
 
-class ArcticForCausalLM(nn.Module):
+class ArcticForCausalLM(nn.Module, SupportsPP):
 
     def __init__(self,
                  config: ArcticConfig,
@@ -411,12 +426,16 @@ class ArcticForCausalLM(nn.Module):
             config.hidden_size,
             quant_config=quant_config,
         )
+        if self.config.tie_word_embeddings:
+            self.lm_head.weight = self.model.embed_tokens.weight
         self.num_experts = config.num_local_experts
         self.num_experts_per_tok = config.num_experts_per_tok
         self.unpadded_vocab_size = config.vocab_size
         self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
                                                 config.vocab_size)
         self.sampler = Sampler()
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors)
 
     def forward(
         self,
@@ -425,9 +444,9 @@ class ArcticForCausalLM(nn.Module):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, IntermediateTensors]:
         hidden_states = self.model(input_ids, positions, kv_caches,
-                                   attn_metadata)
+                                   attn_metadata, intermediate_tensors)
         return hidden_states
 
     def compute_logits(
@@ -455,8 +474,8 @@ class ArcticForCausalLM(nn.Module):
             ("qkv_proj", "v_proj", "v"),
         ]
 
-        mlp_params_mapping = []
-        expert_params_mapping = []
+        mlp_params_mapping: List[Tuple[str, str, int]] = []
+        expert_params_mapping: List[Tuple[str, str, int]] = []
         num_layers = self.config.num_hidden_layers
 
         for layer in range(num_layers):
@@ -498,6 +517,8 @@ class ArcticForCausalLM(nn.Module):
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
+                if is_pp_missing_parameter(name, self):
+                    continue
                 param = params_dict[name]
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)
@@ -507,6 +528,8 @@ class ArcticForCausalLM(nn.Module):
                     if weight_name not in name:
                         continue
                     name = name.replace(weight_name, param_name)
+                    if is_pp_missing_parameter(name, self):
+                        continue
                     param = params_dict[name]
                     weight_loader = param.weight_loader
                     weight_loader(param, loaded_weight, shard_id)
@@ -517,6 +540,8 @@ class ArcticForCausalLM(nn.Module):
                         if weight_name not in name:
                             continue
                         name = name.replace(weight_name, param_name)
+                        if is_pp_missing_parameter(name, self):
+                            continue
                         param = params_dict[name]
                         weight_loader = param.weight_loader
                         weight_loader(param,
@@ -526,6 +551,8 @@ class ArcticForCausalLM(nn.Module):
                         break
                     else:
                         if name.endswith(".bias") and name not in params_dict:
+                            continue
+                        if is_pp_missing_parameter(name, self):
                             continue
                         param = params_dict[name]
 

@@ -62,7 +62,6 @@ class BlockAllocatorBase(ABC):
     def update_hash(self, block_hash: int, block: PhysicalTokenBlock):
         pass
 
-
     @abstractmethod
     def get_prefix_cache_hit_rate(self) -> float:
         """Prefix cache hit rate. -1 means not supported or disabled."""
@@ -115,11 +114,13 @@ class CachedBlockAllocator(BlockAllocatorBase):
                  num_hashed_tokens: int = 0) -> PhysicalTokenBlock:
         if block_hash is None:
             block_hash = next(self.default_hash_ctr)
+
         if block_hash in self.evictor:
             assert block_hash not in self.cached_blocks
             block = self.evictor.remove(block_hash)
             assert block.ref_count == 0
             self.cached_blocks[block_hash] = block
+
         if block_hash in self.cached_blocks:
             self.cache_metric_data.query(hit=True)
         else:
@@ -281,10 +282,14 @@ class BlockSpaceManagerV1(BlockSpaceManager):
     def _get_seq_num_required_blocks(self, seq: Sequence) -> int:
         return 0 if seq is None else seq.n_blocks
 
-    def can_allocate(self, seq_group: SequenceGroup) -> AllocStatus:
+    def can_allocate(self,
+                     seq_group: SequenceGroup,
+                     num_lookahead_slots: int = 0) -> AllocStatus:
         # FIXME: Here we assume that all sequences in the group share
         # the same prompt. This may not be true for preempted sequences.
 
+        assert (num_lookahead_slots == 0
+                ), "lookahead allocation not supported in BlockSpaceManagerV1"
         check_no_caching_or_swa_for_blockmgr_encdec(self, seq_group)
 
         self_num_required_blocks = self._get_seq_num_required_blocks(
@@ -683,13 +688,11 @@ class BlockSpaceManagerV1(BlockSpaceManager):
     def compute_full_blocks_in_seq(self, seq: Sequence, token_chunk_size: int):
         if seq.seq_id not in self.block_tables:
             return
-
         # When chunked prefill is enabled, the computed full blocks
         # should be calculated based on the number of computed tokens.
         max_computed_tokens = (seq.data.get_num_computed_tokens() +
                                token_chunk_size)
         computed_full_blocks = max_computed_tokens // self.block_size
-
         block_table = self.block_tables[seq.seq_id]
         if computed_full_blocks == 0:
             return

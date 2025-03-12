@@ -4,9 +4,11 @@ import torch
 from torch.nn import Module
 from torch.nn.parameter import Parameter
 
+from aphrodite.common.utils import is_hip
 from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
                                               UnquantizedLinearMethod)
-from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
+                                          ModelWeightParameter)
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
@@ -15,7 +17,7 @@ from aphrodite.quantization.utils.marlin_utils_fp8 import (
     apply_fp8_marlin_linear, prepare_fp8_layer_for_marlin)
 from aphrodite.quantization.utils.quant_utils import is_layer_skipped
 from aphrodite.quantization.utils.w8a8_utils import (
-    apply_fp8_linear, create_per_channel_scale_param)
+    apply_fp8_linear, normalize_e4m3fn_to_e4m3fnuz)
 
 
 class FBGEMMFp8Config(QuantizationConfig):
@@ -81,6 +83,7 @@ class FBGEMMFp8LinearMethod(LinearMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        weight_loader = extra_weight_attrs.get("weight_loader")
         del input_size, output_size
         output_size_per_partition = sum(output_partition_sizes)
 
@@ -91,20 +94,21 @@ class FBGEMMFp8LinearMethod(LinearMethodBase):
         layer.orig_dtype = params_dtype
 
         # WEIGHT
-        weight = Parameter(torch.empty(output_size_per_partition,
-                                       input_size_per_partition,
-                                       dtype=torch.float8_e4m3fn),
-                           requires_grad=False)
+        weight = ModelWeightParameter(data=torch.empty(
+            output_size_per_partition,
+            input_size_per_partition,
+            dtype=torch.float8_e4m3fn),
+                                      input_dim=1,
+                                      output_dim=0,
+                                      weight_loader=weight_loader)
         layer.register_parameter("weight", weight)
-        set_weight_attrs(weight, {
-            "input_dim": 1,
-            "output_dim": 0,
-            **extra_weight_attrs,
-        })
 
         # WEIGHT SCALE
-        weight_scale = create_per_channel_scale_param(output_partition_sizes,
-                                                      **extra_weight_attrs)
+        weight_scale = ChannelQuantScaleParameter(data=torch.empty(
+            (sum(output_partition_sizes), 1), dtype=torch.float32),
+                                                  output_dim=0,
+                                                  weight_loader=weight_loader)
+        weight_scale[:] = torch.finfo(torch.float32).min
         layer.register_parameter("weight_scale", weight_scale)
 
         # INPUT SCALE UPPER BOUND
@@ -114,7 +118,21 @@ class FBGEMMFp8LinearMethod(LinearMethodBase):
         layer.input_scale_ub = input_scale_ub
 
     def process_weights_after_loading(self, layer: Module) -> None:
+        # required by torch.compile
+        layer.weight_scale = Parameter(layer.weight_scale.data,
+                                       requires_grad=False)
+        layer.weight = Parameter(layer.weight.data, requires_grad=False)
         weight = layer.weight
+
+        if is_hip():
+            weight, weight_scale, input_scale = \
+                normalize_e4m3fn_to_e4m3fnuz(
+                    weight=weight,
+                    weight_scale=layer.weight_scale,
+                    input_scale=None)
+            if input_scale is not None:
+                layer.input_scale = Parameter(input_scale, requires_grad=False)
+            layer.weight_scale = Parameter(weight_scale, requires_grad=False)
         layer.weight = Parameter(weight.t(), requires_grad=False)
 
         if self.quant_config.use_marlin:

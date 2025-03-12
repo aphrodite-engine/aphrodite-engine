@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     CUDA_VISIBLE_DEVICES: Optional[str] = None
     APHRODITE_ENGINE_ITERATION_TIMEOUT_S: int = 60
     APHRODITE_API_KEY: Optional[str] = None
+    APHRODITE_ADMIN_KEY: Optional[str] = None
     S3_ACCESS_KEY_ID: Optional[str] = None
     S3_SECRET_ACCESS_KEY: Optional[str] = None
     S3_ENDPOINT_URL: Optional[str] = None
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     APHRODITE_PP_LAYER_PARTITION: Optional[str] = None
     APHRODITE_CPU_KVCACHE_SPACE: int = 0
     APHRODITE_CPU_OMP_THREADS_BIND: str = ""
+    APHRODITE_OPENVINO_DEVICE: str = "CPU"
     APHRODITE_OPENVINO_KVCACHE_SPACE: int = 0
     APHRODITE_OPENVINO_CPU_KV_CACHE_PRECISION: Optional[str] = None
     APHRODITE_OPENVINO_ENABLE_QUANTIZED_WEIGHTS: bool = False
@@ -52,9 +54,18 @@ if TYPE_CHECKING:
     VERBOSE: bool = False
     APHRODITE_DYNAMIC_ROPE_SCALING: bool = False
     APHRODITE_TEST_FORCE_FP8_MARLIN: bool = False
-    APHRODITE_ALLOW_ENGINE_USE_RAY: bool = False
     APHRODITE_PLUGINS: Optional[List[str]] = None
-    APHRODITE_RPC_GET_DATA_TIMEOUT_MS: int = 5000
+    APHRODITE_RPC_TIMEOUT: int = 20000
+    APHRODITE_FORCE_SINGLE_USER_PREFIX_CACHE: bool = False
+    APHRODITE_TEST_DYNAMO_GRAPH_CAPTURE: int = 0
+    APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE: int = 0
+    APHRODITE_USE_TRITON_AWQ: bool = False
+    APHRODITE_DYNAMO_USE_CUSTOM_DISPATCHER: bool = False
+    APHRODITE_USE_TRITON_BACKEND: bool = False
+    APHRODITE_FORCE_P2P: bool = False
+    APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT: bool = False
+    APHRODITE_REQUEST_LEVEL_METRICS: bool = False
+    APHRODITE_TORCH_COMPILE_LEVEL: int = 0
 
 
 def get_default_cache_root():
@@ -189,9 +200,12 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: (os.environ.get(
         "APHRODITE_USE_TRITON_FLASH_ATTN", "True").lower() in ("true", "1")),
 
-    # Internal flag to enable Dynamo graph capture
-    "APHRODITE_TEST_DYNAMO_GRAPH_CAPTURE":
-    lambda: int(os.environ.get("APHRODITE_TEST_DYNAMO_GRAPH_CAPTURE", "0")),
+    # Internal flag to enable Dynamo fullgraph capture
+    "APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE":
+    lambda: bool(
+        os.environ.get("APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE", "1") != "0"),
+    "APHRODITE_TORCH_COMPILE_LEVEL":
+    lambda: int(os.environ.get("APHRODITE_TORCH_COMPILE_LEVEL", "0")),
 
     # local rank of the process in the distributed setting, used to determine
     # the GPU device id
@@ -209,6 +223,10 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # API key for APHRODITE API server
     "APHRODITE_API_KEY":
     lambda: os.environ.get("APHRODITE_API_KEY", None),
+
+    # Admin API key for APHRODITE API server
+    "APHRODITE_ADMIN_KEY":
+    lambda: os.environ.get("APHRODITE_ADMIN_KEY", None),
 
     # S3 access information, used for tensorizer to load model from S3
     "S3_ACCESS_KEY_ID":
@@ -248,7 +266,7 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     "APHRODITE_ATTENTION_BACKEND":
     lambda: os.getenv("APHRODITE_ATTENTION_BACKEND", None),
 
-    # If set, aphrodite will use flashinfer sampler
+    # If set, aphrodite will use custom sampling kernels
     "APHRODITE_USE_SAMPLING_KERNELS":
     lambda: bool(int(os.getenv("APHRODITE_USE_SAMPLING_KERNELS", "0"))),
 
@@ -265,6 +283,11 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # "0,1,2", "0-31,33". CPU cores of different ranks are separated by '|'.
     "APHRODITE_CPU_OMP_THREADS_BIND":
     lambda: os.getenv("APHRODITE_CPU_OMP_THREADS_BIND", "all"),
+
+    # OpenVINO device selection
+    # default is CPU
+    "APHRODITE_OPENVINO_DEVICE":
+    lambda: os.getenv("APHRODITE_OPENVINO_DEVICE", "CPU").upper(),
 
     # OpenVINO key-value cache space
     # default is 4GB
@@ -365,15 +388,8 @@ environment_variables: Dict[str, Callable[[], Any]] = {
 
     # Time in ms for the zmq client to wait for a response from the backend
     # server for simple data operations
-    "APHRODITE_RPC_GET_DATA_TIMEOUT_MS":
-    lambda: int(os.getenv("APHRODITE_RPC_GET_DATA_TIMEOUT_MS", "5000")),
-
-    # If set, allow running the engine as a separate ray actor,
-    # which is a deprecated feature soon to be removed.
-    "APHRODITE_ALLOW_ENGINE_USE_RAY":
-    lambda:
-    (os.environ.get("APHRODITE_ALLOW_ENGINE_USE_RAY", "0").strip().lower() in
-     ("1", "true")),
+    "APHRODITE_RPC_TIMEOUT":
+    lambda: int(os.getenv("APHRODITE_RPC_TIMEOUT", "20000")),
 
     # a list of plugin names to load, separated by commas.
     # if this is not set, it means all plugins will be loaded
@@ -381,6 +397,34 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     "APHRODITE_PLUGINS":
     lambda: None if "APHRODITE_PLUGINS" not in os.environ else os.environ[
         "APHRODITE_PLUGINS"].split(","),
+
+    # If set, forces prefix cache in single user mode
+    "APHRODITE_FORCE_SINGLE_USER_PREFIX_CACHE":
+    lambda: bool(int(os.getenv("APHRODITE_FORCE_SINGLE_USER_PREFIX_CACHE",
+                               "0"))),
+
+    # If set, Aphrodite will use Triton implementations of AWQ.
+    "APHRODITE_USE_TRITON_AWQ":
+    lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_AWQ", "0"))),
+
+    # If set, Aphrodite will use Triton implementations of layernorm.
+    "APHRODITE_USE_TRITON_BACKEND":
+    lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_BACKEND", "0"))),
+
+    # If set, Aphrodite will skip the P2P check and assume that P2P is
+    # available. Used for custom all-reduce kernels.
+    "APHRODITE_FORCE_P2P":
+    lambda: bool(int(os.getenv("APHRODITE_FORCE_P2P", "0"))),
+
+    # If set, Aphrodite will use artificial preemption.
+    "APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT":
+    lambda: bool(int(
+        os.getenv("APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT", "0"))),
+
+    # If set, Aphrodite will use request-level metrics instead of
+    # interval-based metrics.
+    "APHRODITE_REQUEST_LEVEL_METRICS":
+    lambda: bool(int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "0"))),
 }
 
 # end-env-vars-definition

@@ -11,8 +11,8 @@ from aphrodite.quantization.base_config import QuantizationConfig
 
 class DeepSpeedFPConfig(QuantizationConfig):
     """Config for DeepSpeed FP quantizer. It supports fp6 and fp8.
-    
-    Args: 
+
+    Args:
         weight_bits: the target quantization bits, 6 or 8.
         group_size: group size for quantizaiton, default to 128.
     """

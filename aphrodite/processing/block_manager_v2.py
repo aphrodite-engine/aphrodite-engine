@@ -1,5 +1,4 @@
 """A block manager that manages token blocks."""
-from itertools import chain
 from typing import Dict, List, Optional
 from typing import Sequence as GenericSequence
 from typing import Tuple
@@ -105,7 +104,9 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         self._last_access_blocks_tracker = LastAccessBlocksTracker(
             self.block_allocator)
 
-    def can_allocate(self, seq_group: SequenceGroup) -> AllocStatus:
+    def can_allocate(self,
+                     seq_group: SequenceGroup,
+                     num_lookahead_slots: int = 0) -> AllocStatus:
         # FIXME: Here we assume that all sequences in the group share
         # the same prompt. This may not be true for preempted sequences.
 
@@ -115,6 +116,7 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         num_required_blocks = BlockTable.get_num_required_blocks(
             seq.get_token_ids(),
             block_size=self.block_size,
+            num_lookahead_slots=num_lookahead_slots,
         )
 
         if seq_group.is_encoder_decoder():
@@ -145,7 +147,9 @@ class BlockSpaceManagerV2(BlockSpaceManager):
             block_allocator=self.block_allocator,
             max_block_sliding_window=self.max_block_sliding_window,
         )
-        block_table.allocate(seq.get_token_ids())
+        if seq.get_token_ids():
+            # Add blocks to the block table only if the sequence is non empty.
+            block_table.allocate(seq.get_token_ids())
 
         return block_table
 
@@ -286,11 +290,11 @@ class BlockSpaceManagerV2(BlockSpaceManager):
 
     def mark_blocks_as_computed(self, seq_group: SequenceGroup,
                                 token_chunk_size: int):
-        # The only need for mark block as computed is for prefix caching,
-        # while currently we could determine whether one block is computed
-        # or not by check whether it has content hash.
-        # So this function is useless for block_v2.
-        pass
+        # If prefix caching is enabled, mark immutable blocks as computed
+        # right after they have been scheduled (for prefill). This assumes
+        # the scheduler is synchronous so blocks are actually computed when
+        # scheduling the next batch.
+        self.block_allocator.mark_blocks_as_computed([])
 
     def get_common_computed_block_ids(
             self, seqs: List[Sequence]) -> GenericSequence[int]:
@@ -328,12 +332,12 @@ class BlockSpaceManagerV2(BlockSpaceManager):
 
     def can_swap_in(self, seq_group: SequenceGroup,
                     num_lookahead_slots: int) -> AllocStatus:
-        """Returns the AllocStatus for the given sequence_group 
+        """Returns the AllocStatus for the given sequence_group
         with num_lookahead_slots.
 
         Args:
             sequence_group (SequenceGroup): The sequence group to swap in.
-            num_lookahead_slots (int): Number of lookahead slots used in 
+            num_lookahead_slots (int): Number of lookahead slots used in
                 speculative decoding, default to 0.
 
         Returns:
@@ -350,7 +354,7 @@ class BlockSpaceManagerV2(BlockSpaceManager):
             seq_group (SequenceGroup): The sequence group to swap in.
 
         Returns:
-            List[Tuple[int, int]]: The mapping of swapping block from CPU 
+            List[Tuple[int, int]]: The mapping of swapping block from CPU
                 to GPU.
         """
         physical_block_id_mapping = []
@@ -380,12 +384,12 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         return physical_block_id_mapping
 
     def can_swap_out(self, seq_group: SequenceGroup) -> bool:
-        """Returns whether we can swap out the given sequence_group 
+        """Returns whether we can swap out the given sequence_group
         with num_lookahead_slots.
 
         Args:
             seq_group (SequenceGroup): The sequence group to swap in.
-            num_lookahead_slots (int): Number of lookahead slots used in 
+            num_lookahead_slots (int): Number of lookahead slots used in
                 speculative decoding, default to 0.
 
         Returns:
@@ -405,7 +409,7 @@ class BlockSpaceManagerV2(BlockSpaceManager):
             sequence_group (SequenceGroup): The sequence group to swap in.
 
         Returns:
-            List[Tuple[int, int]]: The mapping of swapping block from 
+            List[Tuple[int, int]]: The mapping of swapping block from
                 GPU to CPU.
         """
         physical_block_id_mapping = []
@@ -448,7 +452,7 @@ class BlockSpaceManagerV2(BlockSpaceManager):
                   device: Device,
                   status: SequenceStatus,
                   num_lookahead_slots: int = 0) -> AllocStatus:
-        """Returns the AllocStatus for swapping in/out the given sequence_group 
+        """Returns the AllocStatus for swapping in/out the given sequence_group
         on to the 'device'.
 
         Args:
@@ -456,16 +460,33 @@ class BlockSpaceManagerV2(BlockSpaceManager):
             device (Device): device to swap the 'seq_group' on.
             status (SequenceStatus): The status of sequence which is needed
                 for action. RUNNING for swap out and SWAPPED for swap in
-            num_lookahead_slots (int): Number of lookahead slots used in 
+            num_lookahead_slots (int): Number of lookahead slots used in
                 speculative decoding, default to 0.
 
         Returns:
-            AllocStatus: The AllocStatus for swapping in/out the given 
+            AllocStatus: The AllocStatus for swapping in/out the given
                 sequence_group on to the 'device'.
         """
-        blocks = self._get_blocks_for_swap(seq_group, status)
-        num_blocks_touched = self.block_allocator.get_num_blocks_touched(
-            blocks, device, num_lookahead_slots)
+        # First determine the number of blocks that will be touched by this
+        # swap. Then verify if there are available blocks in the device
+        # to perform the swap.
+        num_blocks_touched = 0
+        blocks: List[Block] = []
+        for seq in seq_group.get_seqs(status=status):
+            block_table = self.block_tables[seq.seq_id]
+            if block_table.blocks is not None:
+                # Compute the number blocks to touch for the tokens to be
+                # appended. This does NOT include the full blocks that need
+                # to be touched for the swap.
+                num_blocks_touched += \
+                    block_table.get_num_blocks_touched_by_append_slots(
+                        block_table.get_unseen_token_ids(seq.get_token_ids()),
+                        num_lookahead_slots=num_lookahead_slots)
+                blocks.extend(block_table.blocks)
+        # Compute the number of full blocks to touch and add it to the
+        # existing count of blocks to touch.
+        num_blocks_touched += self.block_allocator.get_num_full_blocks_touched(
+            blocks, device=device)
         watermark_blocks = 0
         if device == Device.GPU:
             watermark_blocks = self.watermark_blocks
@@ -477,23 +498,3 @@ class BlockSpaceManagerV2(BlockSpaceManager):
             return AllocStatus.OK
         else:
             return AllocStatus.LATER
-
-    def _get_blocks_for_swap(self, seq_group: SequenceGroup,
-                             status: SequenceStatus) -> List[Block]:
-        """Returns the list of blocks those are touched by the seq_group
-        
-        Args:
-            sequence_group (SequenceGroup): The sequence group to swap in.
-            status (SequenceStatus): The status of sequence which is needed
-                for action. RUNNING for swap out and SWAPPED for swap in
-        
-        Returns:
-            The list of blocks those are touched by the seq_group.
-        """
-        blocks: Dict[int, List[Block]] = {}
-        for seq in seq_group.get_seqs(status=status):
-            block_table = self.block_tables[seq.seq_id]
-            if block_table.blocks is not None:
-                blocks[seq.seq_id] = block_table.blocks
-        combined_blocks = list(chain(*blocks.values()))
-        return combined_blocks

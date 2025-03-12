@@ -50,9 +50,9 @@ def warn_if_different_devices():
         if len(set(device_names)) > 1 and os.environ.get(
                 "CUDA_DEVICE_ORDER") != "PCI_BUS_ID":
             logger.warning(
-                "Detected different devices in the system: \n%s\nPlease"
-                " make sure to set `CUDA_DEVICE_ORDER=PCI_BUS_ID` to "
-                "avoid unexpected behavior.", "\n".join(device_names))
+                f"Detected different devices in the system: \n{device_names}\n"
+                "Please make sure to set `CUDA_DEVICE_ORDER=PCI_BUS_ID` to "
+                "avoid unexpected behavior.")
 
 
 def device_id_to_physical_device_id(device_id: int) -> int:

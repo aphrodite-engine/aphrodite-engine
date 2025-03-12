@@ -1,7 +1,6 @@
 # coding=utf-8
 
 # adapted from https://github.com/huggingface/transformers/blob/v4.43.2/src/transformers/models/idefics2/modeling_idefics2.py
-# Copyright 2024 The PygmalionAI team.
 # Copyright 2024 The vLLM team.
 # Copyright 2024 the HuggingFace Inc. team. All rights reserved.
 #
@@ -39,6 +38,7 @@ class Idefics2VisionEmbeddings(nn.Module):
     This is a modified version of `siglip.modelign_siglip.SiglipVisionEmbeddings
     ` to enable images of variable
     resolution.
+
     The modifications are adapted from [Patch n' Pack: NaViT, a Vision
     Transformer for any Aspect Ratio and Resolution](https://arxiv.org/abs/2307.06304)
     which allows treating images in their native aspect ratio and without the
@@ -65,11 +65,10 @@ class Idefics2VisionEmbeddings(nn.Module):
         self.position_embedding = nn.Embedding(self.num_positions,
                                                self.embed_dim)
 
-    def forward(
-        self,
-        pixel_values: torch.FloatTensor,
-        patch_attention_mask: torch.BoolTensor,
-    ) -> torch.Tensor:
+    def forward(self,
+                pixel_values: torch.FloatTensor,
+                patch_attention_mask: torch.BoolTensor,
+                tgt_sizes: Optional[torch.IntTensor] = None) -> torch.Tensor:
         batch_size, _, max_im_h, max_im_w = pixel_values.shape
         patch_embeds = self.patch_embedding(pixel_values)
         embeddings = patch_embeds.flatten(2).transpose(1, 2)
@@ -84,8 +83,13 @@ class Idefics2VisionEmbeddings(nn.Module):
                                   fill_value=0)
 
         for batch_idx, p_attn_mask in enumerate(patch_attention_mask):
-            nb_patches_h = p_attn_mask[:, 0].sum()
-            nb_patches_w = p_attn_mask[0].sum()
+
+            if tgt_sizes is not None:
+                nb_patches_h = tgt_sizes[batch_idx][0]
+                nb_patches_w = tgt_sizes[batch_idx][1]
+            else:
+                nb_patches_h = p_attn_mask[:, 0].sum()
+                nb_patches_w = p_attn_mask[0].sum()
             fractional_coords_h = torch.arange(0, 1 - 1e-6, 1 / nb_patches_h)
             fractional_coords_w = torch.arange(0, 1 - 1e-6, 1 / nb_patches_w)
             bucket_coords_h = torch.bucketize(fractional_coords_h,
@@ -218,6 +222,7 @@ class Idefics2EncoderLayer(nn.Module):
         Args:
             hidden_states (`torch.FloatTensor`):
                 Input to the layer of shape `(batch, seq_len, embed_dim)`.
+
         """
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
@@ -235,6 +240,7 @@ class Idefics2Encoder(nn.Module):
     Transformer encoder consisting of `config.num_hidden_layers` self attention
     layers. Each layer is a
     [`Idefics2EncoderLayer`].
+
     Args:
         config: Idefics2Config
     """
@@ -285,10 +291,12 @@ class Idefics2VisionTransformer(nn.Module):
         self,
         pixel_values,
         patch_attention_mask: Optional[torch.BoolTensor] = None,
-    ) -> torch.tensor:
+        tgt_sizes: Optional[torch.IntTensor] = None,
+    ) -> torch.Tensor:
         hidden_states = self.embeddings(
             pixel_values=pixel_values,
-            patch_attention_mask=patch_attention_mask)
+            patch_attention_mask=patch_attention_mask,
+            tgt_sizes=tgt_sizes)
         encoder_outputs = self.encoder(hidden_states)
         last_hidden_state = self.post_layernorm(encoder_outputs)
         return last_hidden_state

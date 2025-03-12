@@ -3,7 +3,7 @@ from typing import List, Optional
 import torch
 from loguru import logger
 
-from aphrodite import _custom_ops as ops
+from aphrodite.forward_context import set_forward_context
 
 try:
     from aphrodite.attention.backends.flash_attn import FlashAttentionMetadata
@@ -15,10 +15,10 @@ except ModuleNotFoundError:
 from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
                                      LoRAConfig, ModelConfig, ParallelConfig,
                                      PromptAdapterConfig, SchedulerConfig)
-from aphrodite.common.sequence import (ExecuteModelRequest,
-                                       IntermediateTensors, SamplerOutput)
+from aphrodite.common.sequence import ExecuteModelRequest, IntermediateTensors
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.multimodal import MultiModalInputs
-from aphrodite.task_handler.model_runner import (
+from aphrodite.worker.model_runner import (
     ModelInputForGPUWithSamplingMetadata, ModelRunner)
 
 # A flag to enable debug prints for the updated input tensors
@@ -93,8 +93,6 @@ class TP1DraftModelRunner(ModelRunner):
             assert seq_group.is_prompt is False  # No prompt
             assert seq_group.prompt_logprob_indices == []  # No prompt
             assert seq_group.sample_indices == [i]  # Simple
-            assert seq_group.seq_len is None  # Decode
-            assert seq_group.query_len is None  # Decode
 
     def _gpu_advance_step(
             self, model_input: ModelInputForGPUWithSamplingMetadata,
@@ -114,18 +112,8 @@ class TP1DraftModelRunner(ModelRunner):
         # Update attn_metadata
         attn_metadata = model_input.attn_metadata
         assert isinstance(attn_metadata, FlashAttentionMetadata)
-        attn_metadata.advance_step(num_seqs, num_queries)
-
-        # Update GPU tensors
-        ops.advance_step(num_seqs=num_seqs,
-                         num_queries=num_queries,
-                         block_size=self.block_size,
-                         input_tokens=model_input.input_tokens,
-                         sampled_token_ids=sampled_token_ids,
-                         input_positions=model_input.input_positions,
-                         seq_lens=attn_metadata.seq_lens_tensor,
-                         slot_mapping=attn_metadata.slot_mapping,
-                         block_tables=attn_metadata.block_tables)
+        attn_metadata.advance_step(model_input, sampled_token_ids,
+                                   self.block_size, num_seqs, num_queries)
 
         # Update sampling_metadata
         sampling_metadata = model_input.sampling_metadata
@@ -169,7 +157,7 @@ class TP1DraftModelRunner(ModelRunner):
     def supports_gpu_multi_step(self, execute_model_req: ExecuteModelRequest):
         """Determines if draft_model_runner GPU multi-step can be used.
         Currently required conditions are:
-            1. Only decodes 
+            1. Only decodes
             2. Only flash-attn
             3. No LORA
             4. No prompt_adapter_config
@@ -205,12 +193,12 @@ class TP1DraftModelRunner(ModelRunner):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
     ) -> Optional[List[SamplerOutput]]:
-        """Executes num_steps forward passes with advacement of input tensors 
+        """Executes num_steps forward passes with advacement of input tensors
         on the GPU. Look at supports_gpu_multi_step(..) for pre-conditions.
 
         Optimizations used:
             1. Input tensors are updated on the GPU directly
-            2. Skips GPU=>CPU serialization of sampler outputs (we don't need 
+            2. Skips GPU=>CPU serialization of sampler outputs (we don't need
                 them since we do batch expansion later that uses GPU outputs)
             3. Reuses sampling tensors (since we run only decodes and they have
                 a repeating sampling logic)
@@ -303,16 +291,17 @@ class TP1DraftModelRunner(ModelRunner):
                 if previous_hidden_states is not None else {}
 
             # Run model
-            hidden_states = model_executable(
-                input_ids=model_input.input_tokens,
-                positions=model_input.input_positions,
-                kv_caches=kv_caches,
-                attn_metadata=model_input.attn_metadata,
-                intermediate_tensors=intermediate_tensors,
-                **MultiModalInputs.as_kwargs(multi_modal_kwargs,
-                                             device=self.device),
-                **kwargs,
-            )
+            with set_forward_context(model_input.attn_metadata):
+                hidden_states = model_executable(
+                    input_ids=model_input.input_tokens,
+                    positions=model_input.input_positions,
+                    kv_caches=kv_caches,
+                    attn_metadata=model_input.attn_metadata,
+                    intermediate_tensors=intermediate_tensors,
+                    **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                                                 device=self.device),
+                    **kwargs,
+                )
 
             # Compute the logits.
             logits = self.model.compute_logits(hidden_states,

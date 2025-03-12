@@ -11,7 +11,7 @@ class BlockTable:
     """A class to manage blocks for a specific sequence.
 
     The BlockTable maps a sequence of tokens to a list of blocks, where each
-    block represents a contiguous memory allocation for a portion of the 
+    block represents a contiguous memory allocation for a portion of the
     sequence. The blocks are managed by a DeviceAwareBlockAllocator, which is
     responsible for allocating and freeing memory for the blocks.
 
@@ -56,9 +56,12 @@ class BlockTable:
         self._num_full_slots = self._get_num_token_ids()
 
     @staticmethod
-    def get_num_required_blocks(token_ids: List[int], block_size: int) -> int:
+    def get_num_required_blocks(token_ids: List[int],
+                                block_size: int,
+                                num_lookahead_slots: int = 0) -> int:
         """Calculates the minimum number of blocks required to store a given
-        sequence of token IDs.
+        sequence of token IDs along with any look-ahead slots that may be
+        required (like in multi-step + chunked-prefill).
 
         This assumes worst-case scenario, where every block requires a new
         allocation (e.g. ignoring prefix caching).
@@ -67,12 +70,14 @@ class BlockTable:
             token_ids (List[int]): The sequence of token IDs to be stored.
             block_size (int): The maximum number of tokens that can be stored in
                 a single block.
+            num_lookahead_slots (int): look-ahead slots that the sequence may
+                require.
 
         Returns:
             int: The minimum number of blocks required to store the given
-                sequence of token IDs.
+                sequence of token IDs along with any required look-ahead slots.
         """
-        return cdiv(len(token_ids), block_size)
+        return cdiv(len(token_ids) + num_lookahead_slots, block_size)
 
     def allocate(self,
                  token_ids: List[int],
@@ -96,7 +101,7 @@ class BlockTable:
         self._num_full_slots = len(token_ids)
 
     def update(self, blocks: List[Block]) -> None:
-        """Resets the table to the newly provided blocks 
+        """Resets the table to the newly provided blocks
         (with their corresponding block ids)
         """
         self._blocks.update(blocks)
@@ -216,7 +221,6 @@ class BlockTable:
         occupied by each block. After freeing all the blocks, the `_blocks` list
         is set to `None`.
         """
-        assert self._is_allocated
         for block in self.blocks:
             self._allocator.free(block)
         self._blocks.reset()
@@ -235,7 +239,6 @@ class BlockTable:
             List[int]: A list of physical block indices for the blocks in the
                 BlockTable.
         """
-        assert self._is_allocated
         return self._blocks.ids()
 
     def get_unseen_token_ids(self, sequence_token_ids: List[int]) -> List[int]:

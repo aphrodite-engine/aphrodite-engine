@@ -1,6 +1,7 @@
 import os
 import warnings
 from pathlib import Path
+from types import MethodType
 from typing import Optional, Union
 
 import huggingface_hub
@@ -8,7 +9,7 @@ from loguru import logger
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
 
-from aphrodite.common.config import APHRODITE_USE_MODELSCOPE
+from aphrodite.common.envs import APHRODITE_USE_MODELSCOPE
 from aphrodite.common.utils import make_async
 from aphrodite.lora.request import LoRARequest
 from aphrodite.transformers_utils.tokenizers import (BaichuanTokenizer,
@@ -17,6 +18,7 @@ from aphrodite.transformers_utils.utils import check_gguf_file
 
 AnyTokenizer = Union[PreTrainedTokenizer, PreTrainedTokenizerFast,
                      MistralTokenizer]
+
 
 def get_cached_tokenizer(tokenizer: AnyTokenizer) -> AnyTokenizer:
     """Get tokenizer with cached properties.
@@ -56,6 +58,26 @@ def get_cached_tokenizer(tokenizer: AnyTokenizer) -> AnyTokenizer:
     return tokenizer
 
 
+def patch_padding_side(tokenizer: PreTrainedTokenizer) -> None:
+    """Patch _pad method to accept `padding_side` for older tokenizers."""
+    orig_pad = tokenizer._pad
+
+    def _pad(
+        self: PreTrainedTokenizer,
+        *args,
+        padding_side: Optional[str] = None,
+        **kwargs,
+    ):
+        if padding_side is not None and padding_side != self.padding_side:
+            msg = ("`padding_side` argument is not supported by "
+                   f"{type(tokenizer).__name__} and will be ignored.")
+            warnings.warn(msg, stacklevel=2)
+
+        return orig_pad(*args, **kwargs)
+
+    tokenizer._pad = MethodType(_pad, tokenizer)
+
+
 def get_tokenizer(
     tokenizer_name: Union[str, Path],
     *args,
@@ -65,7 +87,8 @@ def get_tokenizer(
     download_dir: Optional[str] = None,
     **kwargs,
 ) -> AnyTokenizer:
-    """Gets a tokenizer for the given model name via Huggingface/modelscope."""
+    """Gets a tokenizer for the given model name via HuggingFace or ModelScope.
+    """
     if APHRODITE_USE_MODELSCOPE:
         # download model from ModelScope hub,
         # lazy import so that modelscope is not required for normal use.
@@ -159,7 +182,7 @@ def get_tokenizer(
 
 
 def get_lora_tokenizer(lora_request: LoRARequest, *args,
-                       **kwargs) -> Optional[PreTrainedTokenizer]:
+                       **kwargs) -> Optional[AnyTokenizer]:
     if lora_request is None:
         return None
     try:

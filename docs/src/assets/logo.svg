@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg viewBox="75 75 350 350" xmlns="http://www.w3.org/2000/svg">
+  <g transform="matrix(1, 0, 0, 1, 214.747409, 252.937733)" id="b08450db-4034-4e8d-9232-9d086fc10fd0"/>
+  <g transform="matrix(1, 0, 0, 1, 214.747409, 252.937733)" id="54daa6c1-4b17-4e19-b0bb-42d1bcbfe659"/>
+  <g transform="matrix(1, 0, 0, 1, 214.747409, 252.857716)">
+    <path style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: none; fill-rule: nonzero; opacity: 1;" vector-effect="non-scaling-stroke" transform=" translate(-165, -165)" d="M 0 0 L 330 0 L 330 330 L 0 330 L 0 0 Z" stroke-linecap="round"/>
+  </g>
+  <g transform="matrix(1, 0, 0, 1, 140.71744, 352.287694)"/>
+  <g transform="matrix(1, 0, 0, 1, 215.707431, 262.067722)"/>
+  <g transform="matrix(1, 0, 0, 1, 310.607396, 157.307726)">
+    <g>
+      <path style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(26,120,214); fill-rule: evenodd; opacity: 1;" vector-effect="non-scaling-stroke" d="M -189.927 161.041 L -157.118 129.019 L -109.75 167.895 L -142.369 211.633 L -230.034 260.937 L -189.927 161.041 L -189.927 161.041 Z" stroke-linecap="round"/>
+      <path style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(208,33,161); fill-rule: evenodd; opacity: 1;" vector-effect="non-scaling-stroke" d="M -64.913 42.392 L -32.262 70.46 L -109.752 167.898 L -157.119 129.02 L -65.773 41.661 L -64.913 42.392 Z" stroke-linecap="round"/>
+      <path style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(33,58,149); fill-rule: evenodd; opacity: 1;" vector-effect="non-scaling-stroke" d="M 46.895 -67.722 L 44.693 -65.718 L -65.774 41.661 L -32.262 70.46 L 63.507 -51.484 L 63.53 -51.509 C 65.541 -53.837 66.482 -56.539 66.349 -59.614 C 66.218 -62.688 65.049 -65.3 62.847 -67.448 C 60.642 -69.596 58.001 -70.696 54.925 -70.748 C 51.848 -70.802 49.171 -69.793 46.895 -67.722 Z" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

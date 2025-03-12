@@ -27,8 +27,9 @@ def test_disable_sliding_window(model_len_len, ):
     aphrodite_disabled_model.generate("Hi my name is")
     model_config = aphrodite_disabled_model.llm_engine.model_config
     assert model_config.max_model_len == sliding_len, (
-        "Max len expected to equal sliding_len of %s, but got %s", sliding_len,
-        model_config.max_model_len)
+        f"Max len expected to equal sliding_len of {sliding_len}, "
+        f"but got {model_config.max_model_len}"
+    )
 
     del aphrodite_disabled_model
     cleanup()
@@ -37,8 +38,9 @@ def test_disable_sliding_window(model_len_len, ):
     aphrodite_enabled_model.generate("Hi my name is")
     model_config = aphrodite_enabled_model.llm_engine.model_config
     assert model_config.max_model_len == full_len, (
-        "Max len expected to equal full_len of %s, but got %s", full_len,
-        model_config.max_model_len)
+        f"Max len expected to equal full_len of {full_len}, "
+        f"but got {model_config.max_model_len}"
+    )
 
     del aphrodite_enabled_model
     cleanup()

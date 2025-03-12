@@ -16,10 +16,10 @@ from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 
 class WorkerPromptAdapterManager(AbstractWorkerManager):
-    """WorkerPromptAdapterManager that manages 
+    """WorkerPromptAdapterManager that manages
     prompt_adapter models on the worker side.
-    Every request, the requested prompt_adapters will be 
-    loaded (unless they are already loaded), 
+    Every request, the requested prompt_adapters will be
+    loaded (unless they are already loaded),
     and every other prompt_adapter will be unloaded."""
 
     _manager_cls: Type[PromptAdapterModelManager] = PromptAdapterModelManager
@@ -111,10 +111,10 @@ class WorkerPromptAdapterManager(AbstractWorkerManager):
 
 
 class LRUCacheWorkerPromptAdapterManager(WorkerPromptAdapterManager):
-    """WorkerPromptAdapterManager that manages 
+    """WorkerPromptAdapterManager that manages
     prompt_adapter models on the worker side.
-    Uses an LRU Cache. Every request, the requested 
-    prompt_adapters will be loaded (unless they are already loaded) 
+    Uses an LRU Cache. Every request, the requested
+    prompt_adapters will be loaded (unless they are already loaded)
     and least recently used prompt_adapters will
     be unloaded if the cache is above capacity."""
 

@@ -8,7 +8,7 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
                                      SchedulerConfig)
 from aphrodite.lora.models import LoRAMapping
 from aphrodite.lora.request import LoRARequest
-from aphrodite.task_handler.worker import Worker
+from aphrodite.worker.worker import Worker
 
 
 @patch.dict(os.environ, {"RANK": "0"})

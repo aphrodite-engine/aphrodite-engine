@@ -29,6 +29,7 @@ from aphrodite.quantization.utils.quant_utils import (awq_pack, gptq_pack,
                                                       gptq_quantize_weights,
                                                       quantize_weights,
                                                       sort_weights)
+from tests.kernels.utils import DEFAULT_OPCHECK_TEST_UTILS, opcheck
 from tests.quantization.utils import is_quant_method_supported
 
 ACT_ORDER_OPTS = [False, True]
@@ -75,11 +76,8 @@ def test_gptq_marlin_repack(k_chunk, n_chunk, quant_type, group_size,
                             act_order, mnk_factors):
     m_factor, n_factor, k_factor = mnk_factors
 
-    size_m = m_factor
     size_k = k_chunk * k_factor
     size_n = n_chunk * n_factor
-
-    print(f"MNK = {size_m} {size_n} {size_k}")
 
     # Filter act_order
     if act_order:
@@ -114,6 +112,8 @@ def test_gptq_marlin_repack(k_chunk, n_chunk, quant_type, group_size,
     marlin_q_w_1 = marlin_weights(q_w, size_k, size_n, quant_type.size_bits,
                                   weight_perm)
 
+    opcheck(torch.ops._C.gptq_marlin_repack,
+            (q_w_gptq, sort_indices, size_k, size_n, quant_type.size_bits))
     # Run Marlin repack GPU kernel
     marlin_q_w_2 = ops.gptq_marlin_repack(
         q_w_gptq,
@@ -139,11 +139,8 @@ def test_awq_marlin_repack(k_chunk, n_chunk, quant_type, group_size,
                            mnk_factors):
     m_factor, n_factor, k_factor = mnk_factors
 
-    size_m = m_factor
     size_k = k_chunk * k_factor
     size_n = n_chunk * n_factor
-
-    print(f"MNK = {size_m} {size_n} {size_k}")
 
     # Normalize group_size
     if group_size == -1:
@@ -167,6 +164,8 @@ def test_awq_marlin_repack(k_chunk, n_chunk, quant_type, group_size,
     marlin_q_w_1 = marlin_weights(q_w, size_k, size_n, quant_type.size_bits,
                                   weight_perm)
 
+    opcheck(torch.ops._C.awq_marlin_repack,
+            (q_w_awq, size_k, size_n, quant_type.size_bits))
     # Run Marlin repack GPU kernel
     marlin_q_w_2 = ops.awq_marlin_repack(
         q_w_awq,
@@ -206,9 +205,6 @@ def test_gptq_marlin_gemm(
     size_k = k_chunk * k_factor
     size_n = n_chunk * n_factor
 
-    print(f"MNK = {size_m} {size_n} {size_k}")
-    print(f"groupsize = {group_size}")
-
     if act_order:
         if group_size == -1:
             return
@@ -225,6 +221,13 @@ def test_gptq_marlin_gemm(
 
     workspace = MarlinWorkspace(size_n, GPTQ_MARLIN_MIN_THREAD_N,
                                 GPTQ_MARLIN_MAX_PARALLEL)
+
+    opcheck(
+        torch.ops._C.gptq_marlin_gemm,
+        (a_input, marlin_q_w, marlin_s, marlin_zp, g_idx, sort_indices,
+         workspace.scratch, quant_type, a_input.shape[0], b_weight.shape[1],
+         a_input.shape[1], is_k_full, False, use_fp32_reduce),
+        test_utils=DEFAULT_OPCHECK_TEST_UTILS)
 
     output = ops.gptq_marlin_gemm(
         a_input,
@@ -247,7 +250,6 @@ def test_gptq_marlin_gemm(
     torch.cuda.synchronize()
 
     max_diff = compute_max_diff(output, output_ref)
-    print("max_diff = {}".format(max_diff))
 
     assert max_diff < 0.04
 
@@ -267,9 +269,6 @@ def test_gptq_marlin_24_gemm(k_chunk, n_chunk, quant_type, group_size,
     size_k = k_chunk * k_factor
     size_n = n_chunk * n_factor
 
-    print(f"MNK = {size_m} {size_n} {size_k}")
-    print(f"groupsize = {group_size}")
-
     a_input = rand_data((size_m, size_k))
     b_weight = rand_data((size_k, size_n))
 
@@ -280,6 +279,12 @@ def test_gptq_marlin_24_gemm(k_chunk, n_chunk, quant_type, group_size,
                                    GPTQ_MARLIN_24_MAX_PARALLEL)
 
     output_ref = torch.matmul(a_input, w_24_ref)
+
+    opcheck(torch.ops._C.gptq_marlin_24_gemm,
+            (a_input, marlin_24_q_w_comp, marlin_24_meta, marlin_24_s,
+             workspace_24.scratch, quant_type, a_input.shape[0],
+             b_weight.shape[1], a_input.shape[1]),
+            test_utils=DEFAULT_OPCHECK_TEST_UTILS)
 
     output = ops.gptq_marlin_24_gemm(
         a_input,
@@ -296,7 +301,6 @@ def test_gptq_marlin_24_gemm(k_chunk, n_chunk, quant_type, group_size,
     torch.cuda.synchronize()
 
     max_diff = compute_max_diff(output, output_ref)
-    print("max_diff = {}".format(max_diff))
 
     assert max_diff < 0.04
 
@@ -322,9 +326,6 @@ def test_fp8_marlin_gemm(
     size_m = m_factor
     size_k = k_chunk * k_factor
     size_n = n_chunk * n_factor
-
-    print(f"MNK = {size_m} {size_n} {size_k}")
-    print(f"groupsize = {group_size}")
 
     a_input = rand_data((size_m, size_k), dtype=dtype)
     b_weight = rand_data((size_k, size_n), dtype=dtype)
@@ -355,6 +356,10 @@ def test_fp8_marlin_gemm(
     workspace = MarlinWorkspace(size_n, GPTQ_MARLIN_MIN_THREAD_N,
                                 GPTQ_MARLIN_MAX_PARALLEL)
 
+    opcheck(torch.ops._C.fp8_marlin_gemm,
+            (a_input, marlin_qweight, marlin_scales, workspace.scratch,
+             num_bits, a_input.shape[0], b_weight.shape[1], a_input.shape[1]))
+
     output = ops.fp8_marlin_gemm(
         a=a_input,
         b_q_weight=marlin_qweight,
@@ -370,7 +375,6 @@ def test_fp8_marlin_gemm(
     torch.cuda.synchronize()
 
     max_diff = compute_max_diff(output, output_ref)
-    print("max_diff = {}".format(max_diff))
 
     assert max_diff < 0.04
 
@@ -397,9 +401,6 @@ def test_awq_marlin_gemm(
     size_m = m_factor
     size_k = k_chunk * k_factor
     size_n = n_chunk * n_factor
-
-    print(f"MNK = {size_m} {size_n} {size_k}")
-    print(f"groupsize = {group_size}")
 
     a_input = rand_data((size_m, size_k))
     b_weight = rand_data((size_k, size_n))
@@ -436,7 +437,6 @@ def test_awq_marlin_gemm(
     torch.cuda.synchronize()
 
     max_diff = compute_max_diff(output, output_ref)
-    print("max_diff = {}".format(max_diff))
 
     assert max_diff < 0.04
 
@@ -462,9 +462,6 @@ def test_marlin_qqq_gemm(
     size_k = k_chunk * k_factor
     size_n = n_chunk * n_factor
 
-    print(f"MNK = {size_m} {size_n} {size_k}")
-    print(f"groupsize = {group_size}")
-
     a_input = rand_data((size_m, size_k))
     b_weight = rand_data((size_k, size_n))
 
@@ -480,6 +477,11 @@ def test_marlin_qqq_gemm(
 
     workspace = MarlinWorkspace(size_n, MARLIN_QQQ_MIN_THREAD_N,
                                 MARLIN_QQQ_MAX_PARALLEL)
+
+    opcheck(torch.ops._C.marlin_qqq_gemm,
+            (q_a, marlin_qqq_q_w, s_a, marlin_qqq_s_channel,
+             marlin_qqq_s_group, workspace.scratch, a_input.shape[0],
+             b_weight.shape[1], a_input.shape[1]))
 
     output = ops.marlin_qqq_gemm(
         q_a,
@@ -497,6 +499,5 @@ def test_marlin_qqq_gemm(
     torch.cuda.synchronize()
 
     max_diff = compute_max_diff(output, output_ref)
-    print("max_diff = {}".format(max_diff))
 
     assert max_diff < 0.04

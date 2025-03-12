@@ -1,11 +1,16 @@
-from typing import (ClassVar, Dict, List, Literal, Optional, Protocol, Type,
-                    Union, overload, runtime_checkable)
+from typing import (TYPE_CHECKING, ClassVar, Dict, List, Literal, Optional,
+                    Protocol, Type, Union, overload, runtime_checkable)
 
+import torch
 from loguru import logger
 from typing_extensions import TypeIs
 
-from aphrodite.common.config import (LoRAConfig, MultiModalConfig,
-                                     SchedulerConfig)
+from aphrodite.common.utils import supports_kw
+
+if TYPE_CHECKING:
+    from aphrodite.common.config import (LoRAConfig, MultiModalConfig,
+                                         SchedulerConfig)
+    from aphrodite.common.sequence import IntermediateTensors
 
 
 @runtime_checkable
@@ -21,7 +26,7 @@ class SupportsMultiModal(Protocol):
         MRO of your model class.
     """
 
-    def __init__(self, *, multimodal_config: MultiModalConfig) -> None:
+    def __init__(self, *, multimodal_config: "MultiModalConfig") -> None:
         ...
 
 
@@ -31,7 +36,7 @@ class SupportsMultiModal(Protocol):
 class _SupportsMultiModalType(Protocol):
     supports_multimodal: Literal[True]
 
-    def __call__(self, *, multimodal_config: MultiModalConfig) -> None:
+    def __call__(self, *, multimodal_config: "MultiModalConfig") -> None:
         ...
 
 
@@ -74,7 +79,7 @@ class SupportsLoRA(Protocol):
     embedding_padding_modules: ClassVar[List[str]]
 
     # lora_config is None when LoRA is not enabled
-    def __init__(self, *, lora_config: Optional[LoRAConfig] = None) -> None:
+    def __init__(self, *, lora_config: Optional["LoRAConfig"] = None) -> None:
         ...
 
 
@@ -89,7 +94,7 @@ class _SupportsLoRAType(Protocol):
     embedding_modules: Dict[str, str]
     embedding_padding_modules: List[str]
 
-    def __call__(self, *, lora_config: Optional[LoRAConfig] = None) -> None:
+    def __call__(self, *, lora_config: Optional["LoRAConfig"] = None) -> None:
         ...
 
 
@@ -122,8 +127,8 @@ def supports_lora(
             if missing_attrs:
                 logger.warning(
                     f"The model ({model}) sets `supports_lora=True`, "
-                    "but is missing LoRA-specific attributes: "
-                    f"{missing_attrs}", )
+                    f"but is missing LoRA-specific attributes: {missing_attrs}"
+                )
         else:
             if not missing_attrs:
                 logger.warning(
@@ -133,13 +138,123 @@ def supports_lora(
     return result
 
 
-def _supports_lora(
-    model: Union[Type[object], object],
-) -> Union[TypeIs[Type[SupportsLoRA]], TypeIs[SupportsLoRA]]:
+def _supports_lora(model: Union[Type[object], object]) -> bool:
     if isinstance(model, type):
         return isinstance(model, _SupportsLoRAType)
 
     return isinstance(model, SupportsLoRA)
+
+
+@runtime_checkable
+class SupportsPP(Protocol):
+    """The interface required for all models that support pipeline parallel."""
+
+    supports_pp: ClassVar[Literal[True]] = True
+    """
+    A flag that indicates this model supports pipeline parallel.
+
+    Note:
+        There is no need to redefine this flag if this class is in the
+        MRO of your model class.
+    """
+
+    def make_empty_intermediate_tensors(
+        self,
+        batch_size: int,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> "IntermediateTensors":
+        """Called when PP rank > 0 for profiling purposes."""
+        ...
+
+    def forward(
+        self,
+        *,
+        intermediate_tensors: Optional["IntermediateTensors"],
+    ) -> Union[torch.Tensor, "IntermediateTensors"]:
+        """
+        Accept :class:`IntermediateTensors` when PP rank > 0.
+
+        Return :class:`IntermediateTensors` only for the last PP rank.
+        """
+        ...
+
+
+# We can't use runtime_checkable with ClassVar for issubclass checks
+# so we need to treat the class as an instance and use isinstance instead
+@runtime_checkable
+class _SupportsPPType(Protocol):
+    supports_pp: Literal[True]
+
+    def make_empty_intermediate_tensors(
+        self,
+        batch_size: int,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> "IntermediateTensors":
+        ...
+
+    def forward(
+        self,
+        *,
+        intermediate_tensors: Optional["IntermediateTensors"],
+    ) -> Union[torch.Tensor, "IntermediateTensors"]:
+        ...
+
+
+@overload
+def supports_pp(model: Type[object]) -> TypeIs[Type[SupportsPP]]:
+    ...
+
+
+@overload
+def supports_pp(model: object) -> TypeIs[SupportsPP]:
+    ...
+
+
+def supports_pp(
+    model: Union[Type[object], object],
+) -> Union[bool, TypeIs[Type[SupportsPP]], TypeIs[SupportsPP]]:
+    supports_attributes = _supports_pp_attributes(model)
+    supports_inspect = _supports_pp_inspect(model)
+
+    if supports_attributes and not supports_inspect:
+        logger.warning(
+            f"The model ({model}) sets `supports_pp=True`, but does not "
+            "accept `intermediate_tensors` in its `forward` method")
+
+    if not supports_attributes:
+        pp_attrs = ("make_empty_intermediate_tensors", )
+        missing_attrs = tuple(attr for attr in pp_attrs
+                              if not hasattr(model, attr))
+
+        if getattr(model, "supports_pp", False):
+            if missing_attrs:
+                logger.warning(
+                    f"The model ({model}) sets `supports_pp=True`, "
+                    f"but is missing PP-specific attributes: {missing_attrs}")
+        else:
+            if not missing_attrs:
+                logger.warning(
+                    f"The model ({model}) contains all PP-specific "
+                    "attributes, but does not set `supports_pp=True`.")
+
+    return supports_attributes and supports_inspect
+
+
+def _supports_pp_attributes(model: Union[Type[object], object]) -> bool:
+    if isinstance(model, type):
+        return isinstance(model, _SupportsPPType)
+
+    return isinstance(model, SupportsPP)
+
+
+def _supports_pp_inspect(model: Union[Type[object], object]) -> bool:
+    model_forward = getattr(model, "forward", None)
+    if not callable(model_forward):
+        return False
+
+    return supports_kw(model_forward, "intermediate_tensors")
 
 
 @runtime_checkable
@@ -150,12 +265,12 @@ class HasInnerState(Protocol):
     """
         A flag that indicates this model has inner state.
         Models that has inner state usually need access to the scheduler_config
-        for max_num_seqs ,etc... (Currently only used by Jamba and Mamba)
+        for max_num_seqs, etc. True for e.g. both Mamba and Jamba.
     """
 
     def __init__(self,
                  *,
-                 scheduler_config: Optional[SchedulerConfig] = None) -> None:
+                 scheduler_config: Optional["SchedulerConfig"] = None) -> None:
         ...
 
 
@@ -165,7 +280,7 @@ class _HasInnerStateType(Protocol):
 
     def __init__(self,
                  *,
-                 scheduler_config: Optional[SchedulerConfig] = None) -> None:
+                 scheduler_config: Optional["SchedulerConfig"] = None) -> None:
         ...
 
 
@@ -186,3 +301,46 @@ def has_inner_state(
         return isinstance(model, _HasInnerStateType)
 
     return isinstance(model, HasInnerState)
+
+
+@runtime_checkable
+class IsAttentionFree(Protocol):
+    """The interface required for all models like Mamba that lack attention,
+    but do have state whose size is constant wrt the number of tokens."""
+
+    is_attention_free: ClassVar[Literal[True]] = True
+    """
+        A flag that indicates this model has no attention.
+        Used for block manager and attention backend selection.
+        True for Mamba but not Jamba.
+    """
+
+    def __init__(self) -> None:
+        ...
+
+
+@runtime_checkable
+class _IsAttentionFreeType(Protocol):
+    is_attention_free: ClassVar[Literal[True]]
+
+    def __init__(self) -> None:
+        ...
+
+
+@overload
+def is_attention_free(model: object) -> TypeIs[IsAttentionFree]:
+    ...
+
+
+@overload
+def is_attention_free(model: Type[object]) -> TypeIs[Type[IsAttentionFree]]:
+    ...
+
+
+def is_attention_free(
+    model: Union[Type[object], object]
+) -> Union[TypeIs[Type[IsAttentionFree]], TypeIs[IsAttentionFree]]:
+    if isinstance(model, type):
+        return isinstance(model, _IsAttentionFreeType)
+
+    return isinstance(model, IsAttentionFree)

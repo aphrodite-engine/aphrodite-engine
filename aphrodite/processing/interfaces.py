@@ -4,6 +4,8 @@ from typing import List
 from typing import Sequence as GenericSequence
 from typing import Tuple
 
+from loguru import logger
+
 from aphrodite.common.sequence import Sequence, SequenceGroup
 from aphrodite.common.utils import Device
 
@@ -31,11 +33,13 @@ class BlockSpaceManager(ABC):
         if version == "v1":
             from aphrodite.processing.block_manager_v1 import (
                 BlockSpaceManagerV1)
+            logger.info("Using v1 BlockSpaceManager")
             return BlockSpaceManagerV1
 
         if version == "v2":
             from aphrodite.processing.block_manager_v2 import (
                 BlockSpaceManagerV2)
+            logger.info("Using v2 BlockSpaceManager")
             return BlockSpaceManagerV2
 
         if version == "placeholder":
@@ -46,7 +50,9 @@ class BlockSpaceManager(ABC):
         raise ValueError(f"Unknown version {version=}")
 
     @abstractmethod
-    def can_allocate(self, seq_group: SequenceGroup) -> AllocStatus:
+    def can_allocate(self,
+                     seq_group: SequenceGroup,
+                     num_lookahead_slots: int = 0) -> AllocStatus:
         pass
 
     @abstractmethod
@@ -117,7 +123,8 @@ class BlockSpaceManager(ABC):
         pass
 
     @abstractmethod
-    def mark_blocks_as_computed(self, seq_group: SequenceGroup):
+    def mark_blocks_as_computed(self, seq_group: SequenceGroup,
+                                token_chunk_size: int):
         pass
 
     @abstractmethod

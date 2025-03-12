@@ -72,7 +72,7 @@ class MPLinearKernel(ABC):
             self, layer: torch.nn.Module
     ) -> Tuple[torch.Tensor,  # w_q
                torch.Tensor,  # w_s
-               Optional[torch.Tensor],  # w_zp, 
+               Optional[torch.Tensor],  # w_zp,
                Optional[torch.Tensor]  # w_gidx
                ]:
         return (

@@ -5,14 +5,14 @@ from typing import Dict, List, Set, Tuple
 import torch
 
 from aphrodite.common.sequence import (ExecuteModelRequest, HiddenStates,
-                                       SamplerOutput, SequenceData,
-                                       SequenceGroupMetadata)
+                                       SequenceData, SequenceGroupMetadata)
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.spec_decode.draft_model_runner import TP1DraftModelRunner
 from aphrodite.spec_decode.interfaces import (SpeculativeProposals,
                                               SpeculativeProposer)
 from aphrodite.spec_decode.proposer_worker_base import ProposerWorkerBase
 from aphrodite.spec_decode.top1_proposer import Top1Proposer
-from aphrodite.task_handler.worker import Worker
+from aphrodite.worker.worker import Worker
 
 
 class MultiStepWorker(Worker, ProposerWorkerBase):
@@ -121,7 +121,7 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
         Args:
             execute_model_req (ExecuteModelRequest): The original execute
             model request.
-            seq_with_bonus_token_in_last_step (set): Set of sequence IDs that 
+            seq_with_bonus_token_in_last_step (set): Set of sequence IDs that
             contain bonus tokens.
 
         Returns:
@@ -183,7 +183,7 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
                 to retain.
 
         Returns:
-            List[SamplerOutput]: A list containing the filtered model 
+            List[SamplerOutput]: A list containing the filtered model
             outputs for the specified indices.
         """
         return [
@@ -276,13 +276,13 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
         only the sequence IDs specified in seq_ids_to_copy. For each of these
         sequence IDs, all output_token_ids except the last one are copied.
         Sequence IDs not in seq_ids_to_copy are excluded from the copy.
-        
+
         Parameters:
         seq_group_metadata (SequenceGroupMetadata): The original sequence
             group metadata.
         seq_ids_to_copy (Set[int]): The set of sequence IDs to include in the
             copy.
-        
+
         Returns:
         SequenceGroupMetadata: A shallow copy of the sequence group metadata
             with the specified modifications.

@@ -1,9 +1,8 @@
 """Token blocks."""
 
 from os.path import commonprefix
-from typing import Dict, FrozenSet, Iterable, List, Optional, Tuple
+from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
-from aphrodite.common.utils import cdiv
 from aphrodite.processing.block.common import (CacheMetricData,
                                                CopyOnWriteTracker,
                                                get_all_blocks_recursively)
@@ -76,6 +75,11 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         # A mapping of prefix hash to block index. All blocks which have a
         # prefix hash will be in this dict, even if they have refcount 0.
         self._cached_blocks: Dict[PrefixHash, BlockId] = {}
+
+        # A list of immutable block IDs that have been touched by scheduler
+        # and should be marked as computed after an entire batch of sequences
+        # are scheduled.
+        self._touched_blocks: Set[BlockId] = set()
 
         # Used to track status of each physical block id
         self._block_tracker: Dict[BlockId, BlockTracker] = {}
@@ -319,10 +323,10 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         return block_id
 
     def _free_block_id(self, block: Block) -> None:
-        """Decrements the refcount of the block. The block may be in two 
-        possible states: (1) immutable/cached or (2) mutable/hashless. 
+        """Decrements the refcount of the block. The block may be in two
+        possible states: (1) immutable/cached or (2) mutable/hashless.
         In the first case, the refcount is decremented directly and the block
-        may be possibly added to the evictor. In other case, hashless 
+        may be possibly added to the evictor. In other case, hashless
         allocator free(..) with keep_block_object=True is called to only free
         the block id (since the block object may be reused by the caller)
         """
@@ -399,7 +403,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         given the absolute block id.
 
         Args:
-            absolute_id (int): The absolute block id for the block 
+            absolute_id (int): The absolute block id for the block
                 in whole allocator.
 
         Returns:
@@ -442,10 +446,14 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         assert self._refcounter.get(block.block_id) > 0
 
         if block.content_hash not in self._cached_blocks:
-            # No cached content hash => Set this block as cached
-            # (Note that this block is not computed yet =>
-            #  Will be computed after free())
+            # No cached content hash => Set this block as cached.
+            # Note that this block cannot be marked as computed yet
+            # because other sequences in the same batch cannot reuse
+            # this block.
             self._cached_blocks[block.content_hash] = block.block_id
+            # Mark this block as touched so that it can be marked as
+            # computed after the entire batch of sequences are scheduled.
+            self._touched_blocks.add(block.block_id)
             return block.block_id
 
         # Reuse the cached content hash
@@ -467,7 +475,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             block (Block): The block to check for copy-on-write.
 
         Returns:
-            BlockId: The block index of the new block if a copy-on-write 
+            BlockId: The block index of the new block if a copy-on-write
                 operation was performed, or the original block index if
                 no copy-on-write was necessary.
         """
@@ -511,7 +519,10 @@ class PrefixCachingBlockAllocator(BlockAllocator):
                     "Mark block as accessed which is not belonged to GPU")
 
     def mark_blocks_as_computed(self, block_ids: List[int]) -> None:
-        raise NotImplementedError("Marking as computed is incremental")
+        # Mark all touched blocks as computed.
+        for block_id in self._touched_blocks:
+            self._block_tracker[block_id].computed = True
+        self._touched_blocks.clear()
 
     def _track_block_id(self, block_id: Optional[BlockId],
                         computed: bool) -> None:
@@ -570,41 +581,30 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             if ids
         ])
 
-    def get_num_blocks_touched(self,
-                               blocks: List[Block],
-                               num_lookahead_slots: int = 0) -> int:
-        """Determine the number of blocks that will be touched by
-        swapping in/out the given blocks from certain sequence
-        group with the provided num_lookahead_slots.
-
+    def get_num_full_blocks_touched(self, blocks: List[Block]) -> int:
+        """Returns the number of full blocks that will be touched by
+        swapping in/out.
         Args:
-            blocks (List[Block]): The potential blocks to swap.
-            num_lookahead_slots (int): number of lookahead slots (0 for 
-                swap out).
-        
+            blocks: List of blocks to be swapped.
         Returns:
-            int: the number of blocks that will be touched by
-                swapping in/out the given blocks and num_lookahead_slots.
+            int: the number of full blocks that will be touched by
+                swapping in/out the given blocks. Non full blocks are ignored
+                when deciding the number of blocks to touch.
         """
-        num_touched_blocks = 0
+        num_touched_blocks: int = 0
         for block in blocks:
-            if not block.is_full:
+            # If the block has a match in the cache and the cached
+            # block is not referenced, then we still count it as a
+            # touched block
+            if block.is_full and (not self.is_block_cached(block) or \
+                (block.content_hash is not None and \
+                self._cached_blocks[block.content_hash] in \
+                        self.evictor)):
                 num_touched_blocks += 1
-                if num_lookahead_slots > block.num_empty_slots:
-                    num_touched_blocks += cdiv(
-                        num_lookahead_slots - block.num_empty_slots,
-                        self._block_size)
-            else:
-                # If the block has a match in the cache and the cached block
-                # is not referenced, then we still count it as a touched block
-                if not self.is_block_cached(block) or \
-                    (block.content_hash is not None and \
-                     self._cached_blocks[block.content_hash] in self.evictor):
-                    num_touched_blocks += 1
         return num_touched_blocks
 
     def swap_out(self, blocks: List[Block]) -> None:
-        """Execute the swap out actions. Basically just free the 
+        """Execute the swap out actions. Basically just free the
         given blocks.
 
         Args:
@@ -614,9 +614,9 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             self._free_block_id(block)
 
     def swap_in(self, blocks: List[Block]) -> None:
-        """Execute the swap in actions. Change the block id from 
-        old allocator to current allocator for each block to finish 
-        the block table update. 
+        """Execute the swap in actions. Change the block id from
+        old allocator to current allocator for each block to finish
+        the block table update.
 
         Args:
             blocks: List of blocks to be swapped in.
@@ -848,11 +848,11 @@ class PrefixCachingBlock(Block):
 
 
 class ComputedBlocksTracker:
-    """Handles caching of per-sequence computed block ids. 
-        When a sequence appears for the first time, it traverses all of the 
+    """Handles caching of per-sequence computed block ids.
+        When a sequence appears for the first time, it traverses all of the
         blocks and detects the prefix of blocks that is computed. On the
-        subsequent times, it only traverses the new blocks that were added 
-        and updates the already recorded prefix of blocks with the newly 
+        subsequent times, it only traverses the new blocks that were added
+        and updates the already recorded prefix of blocks with the newly
         computed blocks.
 
         To avoid redundant traversals, the algorithm also detects when there
@@ -862,7 +862,7 @@ class ComputedBlocksTracker:
         iteration, and will add more computed blocks only after the sequence is
         freed and reused again.
 
-        Note that currently, for a given sequence, we also skip the last 
+        Note that currently, for a given sequence, we also skip the last
         block id for caching purposes, to avoid caching of a full sequence
     """
 

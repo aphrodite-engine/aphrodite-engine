@@ -123,7 +123,7 @@ def lora_llm(long_context_infos):
 def test_rotary_emb_replaced(dist_init):
     """Verify rotary emb in all the layers are replaced"""
     from aphrodite.engine.args_tools import EngineArgs
-    from aphrodite.task_handler.model_runner import ModelRunner
+    from aphrodite.worker.model_runner import ModelRunner
     engine_args = EngineArgs("meta-llama/Llama-2-7b-hf",
                              long_lora_scaling_factors=(4.0, ),
                              enable_lora=True)

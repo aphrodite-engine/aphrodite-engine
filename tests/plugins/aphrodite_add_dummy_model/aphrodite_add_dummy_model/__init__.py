@@ -24,4 +24,4 @@ def register():
     # register our dummy model
     if "MyOPTForCausalLM" not in ModelRegistry.get_supported_archs():
         ModelRegistry.register_model("MyOPTForCausalLM", MyOPTForCausalLM)
-    
+

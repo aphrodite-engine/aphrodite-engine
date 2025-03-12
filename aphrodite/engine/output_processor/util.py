@@ -2,8 +2,8 @@ from typing import List
 from typing import Sequence as GenericSequence
 from typing import Union
 
-from aphrodite.common.sequence import (PoolerOutput, SamplerOutput,
-                                       SequenceGroupOutput)
+from aphrodite.common.sequence import PoolerOutput, SequenceGroupOutput
+from aphrodite.modeling.layers.sampler import SamplerOutput
 
 
 def create_output_by_sequence_group(

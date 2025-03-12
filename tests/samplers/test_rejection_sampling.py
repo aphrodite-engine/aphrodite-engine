@@ -42,11 +42,9 @@ def mock_causal_accepted_tensor(
 @pytest.mark.parametrize(
     "which_tokens_accepted",
     ["all_tokens_accepted", "no_tokens_accepted", "some_tokens_accepted"])
-@pytest.mark.parametrize("disable_bonus_tokens", [True, False])
 @pytest.mark.parametrize("device", CUDA_DEVICES)
 @torch.inference_mode()
-def test_correct_output_format(which_tokens_accepted: str,
-                               disable_bonus_tokens: bool, seed: int,
+def test_correct_output_format(which_tokens_accepted: str, seed: int,
                                device: str):
     """Verify the output has correct format given predetermined accepted matrix.
     """
@@ -84,8 +82,7 @@ def test_correct_output_format(which_tokens_accepted: str,
                                     size=(batch_size, 1),
                                     dtype=torch.int64)
 
-    rejection_sampler = RejectionSampler(
-        disable_bonus_tokens=disable_bonus_tokens)
+    rejection_sampler = RejectionSampler()
     rejection_sampler.init_gpu_tensors(device=device)
     output_token_ids = rejection_sampler._create_output(  # pylint: disable=protected-access
         accepted,
@@ -95,9 +92,6 @@ def test_correct_output_format(which_tokens_accepted: str,
     )
 
     expected_bonus_token_ids = bonus_token_ids.clone()
-    # If bonus tokens disabled. Verify they are set to -1.
-    if disable_bonus_tokens:
-        expected_bonus_token_ids = expected_bonus_token_ids * 0 - 1
 
     if which_tokens_accepted == "all_tokens_accepted":
         # Expect all tokens to be equal to draft tokens.

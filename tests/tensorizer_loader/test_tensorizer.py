@@ -155,7 +155,7 @@ def test_deserialized_hf_model_has_same_outputs(hf_runner, aphrodite_runner,
 def test_aphrodite_model_can_load_with_lora(aphrodite_runner, tmp_path):
     from huggingface_hub import snapshot_download
 
-    from examples.offline_inference.slora_inference import (
+    from examples.offline_inference.lora_aphrodite_engine import (
         create_test_prompts, process_requests)
 
     model_ref = "meta-llama/Llama-2-7b-hf"

@@ -17,7 +17,7 @@ from .test_completion import zephyr_lora_files  # noqa: F401
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 # technically this needs Mistral-7B-v0.1 as base, but we're not testing
 # generation quality here
-LORA_NAME = "typeof/zephyr-7b-beta-lora"
+LORA_NAME = "alpindale/zephyr-7b-beta-lora"
 
 
 @pytest.fixture(scope="module")
@@ -756,22 +756,6 @@ async def test_response_format_json_object(client: openai.AsyncOpenAI):
 
 
 @pytest.mark.asyncio
-async def test_extra_fields(client: openai.AsyncOpenAI):
-    with pytest.raises(BadRequestError) as exc_info:
-        await client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{
-                "role": "system",
-                "content": "You are a helpful assistant.",
-                "extra_field": "0",
-            }],  # type: ignore
-            temperature=0,
-            seed=0)
-
-    assert "extra_forbidden" in exc_info.value.message
-
-
-@pytest.mark.asyncio
 async def test_complex_message_content(client: openai.AsyncOpenAI):
     resp = await client.chat.completions.create(
         model=MODEL_NAME,
@@ -840,3 +824,34 @@ async def test_long_seed(client: openai.AsyncOpenAI):
 
         assert ("greater_than_equal" in exc_info.value.message
                 or "less_than_equal" in exc_info.value.message)
+
+
+@pytest.mark.asyncio
+async def test_response_format_json_schema(client: openai.AsyncOpenAI):
+    for _ in range(2):
+        resp = await client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{
+                "role":
+                "user",
+                "content": ('what is 1+1? please respond with a JSON object, '
+                            'the format is {"result": 2}')
+            }],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "foo_test",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "result": {
+                                "type": "integer"
+                            },
+                        },
+                    },
+                }
+            })
+        content = resp.choices[0].message.content
+        assert content is not None
+        loaded = json.loads(content)
+        assert loaded == {"result": 2}, loaded

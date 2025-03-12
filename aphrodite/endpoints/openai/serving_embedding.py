@@ -16,8 +16,9 @@ from aphrodite.endpoints.openai.protocol import (EmbeddingRequest,
                                                  EmbeddingResponse,
                                                  EmbeddingResponseData,
                                                  ErrorResponse, UsageInfo)
-from aphrodite.endpoints.openai.serving_engine import OpenAIServing
-from aphrodite.engine.protocol import AsyncEngineClient
+from aphrodite.endpoints.openai.serving_engine import (BaseModelPath,
+                                                       OpenAIServing)
+from aphrodite.engine.protocol import EngineClient
 
 TypeTokenIDs = List[int]
 
@@ -32,7 +33,9 @@ def request_output_to_embedding_response(
         prompt_token_ids = final_res.prompt_token_ids
         embedding = final_res.outputs.embedding
         if encoding_format == "base64":
-            embedding_bytes = np.array(embedding).tobytes()
+            # Force to use float32 for base64 encoding
+            # to match the OpenAI python client behavior
+            embedding_bytes = np.array(embedding, dtype="float32").tobytes()
             embedding = base64.b64encode(embedding_bytes).decode("utf-8")
         embedding_data = EmbeddingResponseData(index=idx, embedding=embedding)
         data.append(embedding_data)
@@ -57,15 +60,15 @@ class OpenAIServingEmbedding(OpenAIServing):
 
     def __init__(
         self,
-        async_engine_client: AsyncEngineClient,
+        engine_client: EngineClient,
         model_config: ModelConfig,
-        served_model_names: List[str],
+        base_model_paths: List[BaseModelPath],
         *,
         request_logger: Optional[RequestLogger],
     ):
-        super().__init__(async_engine_client=async_engine_client,
+        super().__init__(engine_client=engine_client,
                          model_config=model_config,
-                         served_model_names=served_model_names,
+                         base_model_paths=base_model_paths,
                          lora_modules=None,
                          prompt_adapters=None,
                          request_logger=request_logger)
@@ -97,6 +100,15 @@ class OpenAIServingEmbedding(OpenAIServing):
         request_id = f"embd-{random_uuid()}"
         created_time = int(time.monotonic())
 
+        truncate_prompt_tokens = None
+        if request.truncate_prompt_tokens is not None:
+            if request.truncate_prompt_tokens <= self.max_model_len:
+                truncate_prompt_tokens = request.truncate_prompt_tokens
+            else:
+                return self.create_error_response(
+                    "truncate_prompt_tokens must be less than or equal to the "
+                    f"model's max length: {self.max_model_len}")
+
         # Schedule the request and get the result generator.
         generators: List[AsyncGenerator[EmbeddingRequestOutput, None]] = []
         try:
@@ -104,9 +116,7 @@ class OpenAIServingEmbedding(OpenAIServing):
                 lora_request,
                 prompt_adapter_request,
             ) = self._maybe_get_adapters(request)
-
-            tokenizer = await self.async_engine_client.get_tokenizer(
-                lora_request)
+            tokenizer = await self.engine_client.get_tokenizer(lora_request)
             pooling_params = request.to_pooling_params()
 
             prompts = list(
@@ -114,6 +124,7 @@ class OpenAIServingEmbedding(OpenAIServing):
                     request,
                     tokenizer,
                     request.input,
+                    truncate_prompt_tokens,
                 ))
 
             for i, prompt_inputs in enumerate(prompts):
@@ -130,11 +141,12 @@ class OpenAIServingEmbedding(OpenAIServing):
                         "Prompt adapter is not supported "
                         "for embedding models")
 
-                generator = self.async_engine_client.encode(
+                generator = self.engine_client.encode(
                     {"prompt_token_ids": prompt_inputs["prompt_token_ids"]},
                     pooling_params,
                     request_id_item,
                     lora_request=lora_request,
+                    priority=request.priority,
                 )
 
                 generators.append(generator)

@@ -6,16 +6,16 @@ from aphrodite.common.config import DecodingConfig, ModelConfig
 from aphrodite.common.outputs import EmbeddingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.sequence import SamplerOutput
-from aphrodite.inputs.data import PromptInputs
+from aphrodite.inputs.data import PromptType
 from aphrodite.lora.request import LoRARequest
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.processing.scheduler import SchedulerOutputs
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 
 @runtime_checkable
-class AsyncEngineClient(Protocol):
-    """Protocol class for Clients to AsyncAphrodite"""
+class EngineClient(Protocol):
+    """Protocol class for Clients to Engine"""
 
     @property
     def is_running(self) -> bool:
@@ -30,27 +30,28 @@ class AsyncEngineClient(Protocol):
         ...
 
     @property
-    def limit_concurrency(self) -> Optional[int]:
-        """Maximum number of concurrently running requests."""
+    def dead_error(self) -> BaseException:
         ...
 
     def generate(
         self,
-        inputs: PromptInputs,
+        prompt: PromptType,
         sampling_params: SamplingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
     ) -> AsyncGenerator[RequestOutput, None]:
         """Generates outputs for a request"""
         ...
 
     def encode(
         self,
-        inputs: PromptInputs,
+        prompt: PromptType,
         pooling_params: PoolingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        priority: int = 0,
     ) -> AsyncGenerator[EmbeddingRequestOutput, None]:
         """Generate outputs for a request from an embedding model."""
         ...

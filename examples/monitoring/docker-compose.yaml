@@ -9,7 +9,7 @@ services:
     ports:
       - "9090:9090"  # the default port used by Prometheus
     volumes:
-      - ${PWD}/prometheus.yaml:/etc/prometheus/prometheus.yml # mount Prometheus config file
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml # mount Prometheus config file
 
   grafana:
     image: grafana/grafana:latest

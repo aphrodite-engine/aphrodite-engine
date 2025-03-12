@@ -11,8 +11,8 @@ from tqdm import tqdm
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.common.utils import FlexibleArgumentParser
-from aphrodite.engine.args_tools import EngineArgs
-from aphrodite.inputs import PromptInputs
+from aphrodite.engine.args_tools import DEVICE_OPTIONS, EngineArgs
+from aphrodite.inputs import PromptType
 from aphrodite.quantization import QUANTIZATION_METHODS
 
 
@@ -27,8 +27,6 @@ def main(args: argparse.Namespace):
         num_speculative_tokens=args.num_speculative_tokens,
         speculative_draft_tensor_parallel_size=\
             args.speculative_draft_tensor_parallel_size,
-        ngram_prompt_lookup_max=args.ngram_prompt_lookup_max,
-        ngram_prompt_lookup_min=args.ngram_prompt_lookup_min,
         tokenizer=args.tokenizer,
         quantization=args.quantization,
         tensor_parallel_size=args.tensor_parallel_size,
@@ -62,7 +60,7 @@ def main(args: argparse.Namespace):
     dummy_prompt_token_ids = np.random.randint(10000,
                                                size=(args.batch_size,
                                                      args.input_len))
-    dummy_inputs: List[PromptInputs] = [{
+    dummy_prompts: List[PromptType] = [{
         "prompt_token_ids": batch
     } for batch in dummy_prompt_token_ids.tolist()]
 
@@ -75,13 +73,13 @@ def main(args: argparse.Namespace):
                     ],
                     on_trace_ready=torch.profiler.tensorboard_trace_handler(
                         str(profile_dir))) as p:
-                llm.generate(dummy_inputs,
+                llm.generate(dummy_prompts,
                              sampling_params=sampling_params,
                              use_tqdm=False)
             print(p.key_averages())
         else:
             start_time = time.perf_counter()
-            llm.generate(dummy_inputs,
+            llm.generate(dummy_prompts,
                          sampling_params=sampling_params,
                          use_tqdm=False)
             end_time = time.perf_counter()
@@ -135,8 +133,6 @@ if __name__ == '__main__':
                         '-spec-draft-tp',
                         type=int,
                         default=None)
-    parser.add_argument('--ngram-prompt-lookup-max', type=int, default=None)
-    parser.add_argument('--ngram-prompt-lookup-min', type=int, default=None)
     parser.add_argument('--tokenizer', type=str, default=None)
     parser.add_argument('--quantization',
                         '-q',
@@ -208,13 +204,11 @@ if __name__ == '__main__':
         default=None,
         help=('path to save the pytorch profiler output. Can be visualized '
               'with ui.perfetto.dev or Tensorboard.'))
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="auto",
-        choices=["auto", "cuda", "cpu", "openvino", "tpu", "xpu"],
-        help='device type for Aphrodite execution, supporting CUDA, OpenVINO '
-        'and CPU.')
+    parser.add_argument("--device",
+                        type=str,
+                        default="auto",
+                        choices=DEVICE_OPTIONS,
+                        help='device type for vLLM execution')
     parser.add_argument('--block-size',
                         type=int,
                         default=16,

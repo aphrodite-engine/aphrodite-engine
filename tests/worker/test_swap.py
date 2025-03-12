@@ -4,7 +4,7 @@ from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.common.utils import (get_distributed_init_method, get_ip,
                                     get_open_port)
 from aphrodite.engine.args_tools import EngineArgs
-from aphrodite.task_handler.worker import Worker
+from aphrodite.worker.worker import Worker
 
 
 def test_swap() -> None:

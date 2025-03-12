@@ -110,7 +110,7 @@ class AsyncMetricsCollector:
         return True
 
     def _copy_rejsample_metrics_async(self) -> torch.cuda.Event:
-        """Copy rejection/typical-acceptance sampling metrics 
+        """Copy rejection/typical-acceptance sampling metrics
         (number of accepted tokens, etc) to CPU asynchronously.
 
         Returns a CUDA event recording when the copy is complete.

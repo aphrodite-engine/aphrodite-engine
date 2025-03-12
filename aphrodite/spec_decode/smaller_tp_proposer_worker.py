@@ -3,10 +3,11 @@ from typing import List, Optional, Set, Tuple
 import torch
 from loguru import logger
 
-from aphrodite.common.sequence import ExecuteModelRequest, SamplerOutput
+from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.distributed.parallel_state import (get_tp_group,
                                                   init_model_parallel_group,
                                                   patch_tensor_parallel_group)
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.spec_decode.interfaces import SpeculativeProposals
 from aphrodite.spec_decode.multi_step_worker import MultiStepWorker
 from aphrodite.spec_decode.proposer_worker_base import ProposerWorkerBase

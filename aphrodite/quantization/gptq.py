@@ -9,7 +9,11 @@ from torch.nn.parameter import Parameter
 from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
-from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
+                                          GroupQuantScaleParameter,
+                                          PackedAphroditeParameter,
+                                          PackedColumnParameter,
+                                          RowAphroditeParameter)
 from aphrodite.quantization.base_config import QuantizationConfig
 
 
@@ -107,6 +111,7 @@ class GPTQLinearMethod(LinearMethodBase):
         **extra_weight_attrs,
     ):
         del output_size  # Unused.
+        weight_loader = extra_weight_attrs.get("weight_loader")
         if input_size_per_partition % self.quant_config.group_size != 0:
             raise ValueError(
                 "The input size is not aligned with the quantized "
@@ -137,73 +142,78 @@ class GPTQLinearMethod(LinearMethodBase):
                 scale_and_zero_size = input_size_per_partition // group_size
                 scale_and_zero_input_dim = 0
 
-        qweight = Parameter(
-            torch.empty(
+        qweight = PackedAphroditeParameter(
+            data=torch.empty(
                 input_size_per_partition // self.quant_config.pack_factor,
                 output_size_per_partition,
                 dtype=torch.int32,
             ),
-            requires_grad=False,
-        )
-        set_weight_attrs(
-            qweight, {
-                "input_dim": 0,
-                "output_dim": 1,
-                "packed_dim": 0,
-                "pack_factor": self.quant_config.pack_factor,
-            })
-        g_idx = Parameter(
-            torch.tensor(
-                [
-                    i // self.quant_config.group_size
-                    for i in range(input_size_per_partition)
-                ],
-                dtype=torch.int32,
-            ),
-            requires_grad=False,
-        )
-        # Ignore warning from fused linear layers such as QKVParallelLinear.
-        set_weight_attrs(g_idx, {"input_dim": 0, "ignore_warning": True})
-        qzeros = Parameter(
+            input_dim=0,
+            output_dim=1,
+            packed_dim=0,
+            packed_factor=self.quant_config.pack_factor,
+            weight_loader=weight_loader)
+        g_idx = RowAphroditeParameter(data=torch.tensor(
+            [
+                i // self.quant_config.group_size
+                for i in range(input_size_per_partition)
+            ],
+            dtype=torch.int32,
+        ),
+                                 input_dim=0,
+                                 weight_loader=weight_loader)
+        qzeros_args = {
+            "data":
             torch.empty(
                 scale_and_zero_size,
                 output_size_per_partition // self.quant_config.pack_factor,
                 dtype=torch.int32,
             ),
-            requires_grad=False,
-        )
-        set_weight_attrs(
-            qzeros, {
-                "input_dim": scale_and_zero_input_dim,
-                "output_dim": 1,
-                "packed_dim": 1,
-                "pack_factor": self.quant_config.pack_factor,
-            })
-        scales = Parameter(
+            "weight_loader":
+            weight_loader
+        }
+        weight_scale_args = {
+            "data":
             torch.empty(
                 scale_and_zero_size,
                 output_size_per_partition,
                 dtype=params_dtype,
             ),
-            requires_grad=False,
-        )
-        set_weight_attrs(scales, {
-            "input_dim": scale_and_zero_input_dim,
-            "output_dim": 1,
-        })
+            "weight_loader":
+            weight_loader
+        }
+        if scale_and_zero_input_dim is None:
+            scales = ChannelQuantScaleParameter(output_dim=1,
+                                                **weight_scale_args)
+            qzeros = PackedColumnParameter(
+                output_dim=1,
+                packed_dim=1,
+                packed_factor=self.quant_config.pack_factor,
+                **qzeros_args)
+        else:
+            scales = GroupQuantScaleParameter(output_dim=1,
+                                              input_dim=0,
+                                              **weight_scale_args)
+            qzeros = PackedColumnParameter(
+                input_dim=0,
+                output_dim=1,
+                packed_dim=1,
+                packed_factor=self.quant_config.pack_factor,
+                **qzeros_args)
 
         layer.register_parameter("qweight", qweight)
-        set_weight_attrs(qweight, extra_weight_attrs)
         layer.register_parameter("g_idx", g_idx)
-        set_weight_attrs(g_idx, extra_weight_attrs)
         layer.register_parameter("qzeros", qzeros)
-        set_weight_attrs(qzeros, extra_weight_attrs)
         layer.register_parameter("scales", scales)
-        set_weight_attrs(scales, extra_weight_attrs)
 
         layer.exllama_state = exllama_state
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        # for torch.compile
+        layer.qweight = Parameter(layer.qweight.data, requires_grad=False)
+        layer.qzeros = Parameter(layer.qzeros.data, requires_grad=False)
+        layer.qweight = Parameter(layer.qweight.data, requires_grad=False)
+        layer.g_idx = Parameter(layer.g_idx.data, requires_grad=False)
         # exllama needs to shuffle the weight after the weight is loaded
         # here we do the shuffle on first forward pass
         if layer.exllama_state == ExllamaState.UNINITIALIZED:

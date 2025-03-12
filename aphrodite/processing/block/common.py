@@ -123,7 +123,7 @@ class CopyOnWriteTracker:
                    trg_block_id: Optional[BlockId]) -> None:
         """Records a copy-on-write operation from source to target block id
         Args:
-            src_block_id (BlockId): The source block id from which to copy 
+            src_block_id (BlockId): The source block id from which to copy
                 the data
             trg_block_id (BlockId): The target block id to which the data
                 is copied
@@ -209,7 +209,7 @@ class BlockPool:
             prev_block=prev_block,
             token_ids=token_ids,
             block_size=block_size,
-            allocator=block._allocator,  # type: ignore[attr-defined] 
+            allocator=block._allocator,  # type: ignore[attr-defined]
             block_id=physical_block_id)
         block.pool_id = pool_id  # type: ignore[attr-defined]
         return block
@@ -219,9 +219,9 @@ class BlockPool:
 
 
 class BlockList:
-    """This class is an optimization to allow fast-access to physical 
-    block ids. It maintains a block id list that is updated with the 
-    block list and this avoids the need to reconstruct the block id 
+    """This class is an optimization to allow fast-access to physical
+    block ids. It maintains a block id list that is updated with the
+    block list and this avoids the need to reconstruct the block id
     list on every iteration of the block manager
     """
 

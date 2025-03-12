@@ -8,6 +8,7 @@ from torch.nn.parameter import Parameter, UninitializedParameter
 from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size,
                                    tensor_model_parallel_all_reduce)
+from aphrodite.modeling.parameter import BaseAphroditeParameter
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization.base_config import (
     QuantizationConfig, QuantizeMethodBase, method_has_implemented_embedding)
@@ -294,7 +295,7 @@ class VocabParallelEmbedding(torch.nn.Module):
     def get_sharded_to_full_mapping(self) -> Optional[List[int]]:
         """Get a mapping that can be used to reindex the gathered
         logits for sampling.
-        
+
         During sampling, we gather logits from all ranks. The relationship
         of index->token_id will follow the same format as outlined in the class
         docstring. However, after the gather, we want to reindex the final
@@ -349,7 +350,10 @@ class VocabParallelEmbedding(torch.nn.Module):
             param.weight_type = loaded_weight.item()
             return
         elif isinstance(param, UninitializedParameter):
-            param.materialize(loaded_weight.shape, dtype=loaded_weight.dtype)
+            shape = list(loaded_weight.shape)
+            if output_dim is not None:
+                shape[output_dim] = shape[output_dim] // self.tp_size
+            param.materialize(tuple(shape), dtype=loaded_weight.dtype)
 
         # If parameter does not have output dim, then it should
         # be copied onto all gpus (e.g. g_idx for act_order gptq).
@@ -365,10 +369,12 @@ class VocabParallelEmbedding(torch.nn.Module):
         # If param packed on the same dim we are sharding on, then
         # need to adjust offsets of loaded weight by pack_factor.
         if packed_dim is not None and packed_dim == output_dim:
+            packed_factor = param.packed_factor if isinstance(
+                param, BaseAphroditeParameter) else param.pack_factor
             assert loaded_weight.shape[output_dim] == (self.org_vocab_size //
-                                                       param.pack_factor)
-            start_idx = start_idx // param.pack_factor
-            shard_size = shard_size // param.pack_factor
+                                                       param.packed_factor)
+            start_idx = start_idx // packed_factor
+            shard_size = shard_size // packed_factor
         else:
             assert loaded_weight.shape[output_dim] == self.org_vocab_size
 
@@ -435,6 +441,7 @@ class ParallelLMHead(VocabParallelEmbedding):
         super().__init__(num_embeddings, embedding_dim, params_dtype,
                          org_num_embeddings, padding_size, quant_config,
                          prefix)
+        self.quant_config = quant_config
         if bias:
             self.bias = Parameter(
                 torch.empty(self.num_embeddings_per_partition,
@@ -445,6 +452,15 @@ class ParallelLMHead(VocabParallelEmbedding):
             })
         else:
             self.register_parameter("bias", None)
+
+    def tie_weights(self, embed_tokens: VocabParallelEmbedding):
+        """Tie the weights with word embeddings."""
+        # GGUF quantized embed_tokens.
+        if self.quant_config and self.quant_config.get_name() == "gguf":
+            return embed_tokens
+        else:
+            self.weight = embed_tokens.weight
+            return self
 
     def forward(self, input_):
         logits = self.linear_method.apply_weights(self.linear_weights, input_)

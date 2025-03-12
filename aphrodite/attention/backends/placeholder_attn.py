@@ -10,7 +10,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.backends.utils import CommonAttentionState
 
 if TYPE_CHECKING:
-    from aphrodite.task_handler.model_runner import ModelInputForGPUBuilder
+    from aphrodite.worker.model_runner import ModelInputForGPUBuilder
 
 # Placeholder attention backend for models like Mamba and embedding models that
 # lack attention.
@@ -21,7 +21,7 @@ class PlaceholderAttentionBackend(AttentionBackend):
 
     @staticmethod
     def get_name() -> str:
-        return "No attention"
+        return "placeholder-attn"
 
     @staticmethod
     def get_impl_cls() -> Type["PlaceholderAttentionImpl"]:
@@ -73,8 +73,12 @@ class PlaceholderAttentionMetadata(AttentionMetadata):
     # seq_lens stored as a tensor.
     seq_lens_tensor: Optional[torch.Tensor]
 
-    # Maximum query length in the batch. None for decoding.
+    # Maximum query length in the batch.
     max_query_len: Optional[int]
+
+    # Max number of query tokens among request in the batch.
+    max_decode_query_len: Optional[int]
+
     # Maximum sequence length among prefill batch. 0 if there are decoding
     # requests only.
     max_prefill_seq_len: int
@@ -134,6 +138,7 @@ class PlaceholderAttentionMetadata(AttentionMetadata):
             slot_mapping=slot_mapping,
             seq_lens=self.seq_lens[:self.num_prefills],
             seq_lens_tensor=self.seq_lens_tensor[:self.num_prefills],
+            max_decode_query_len=0,
             max_query_len=self.max_query_len,
             max_prefill_seq_len=self.max_prefill_seq_len,
             max_decode_seq_len=0,
@@ -165,6 +170,7 @@ class PlaceholderAttentionMetadata(AttentionMetadata):
             slot_mapping=slot_mapping,
             seq_lens=None,
             seq_lens_tensor=self.seq_lens_tensor[self.num_prefills:],
+            max_decode_query_len=self.max_decode_query_len,
             max_query_len=None,
             max_prefill_seq_len=0,
             max_decode_seq_len=self.max_decode_seq_len,
@@ -242,9 +248,14 @@ class PlaceholderAttentionMetadataBuilder(
                 "Please use Flashinfer backend for models with logits_soft_cap"
                 " (i.e., Gemma-2). Otherwise, the output might be wrong."
                 " Set Flashinfer backend by "
-                "export VLLM_ATTENTION_BACKEND=FLASHINFER.")
+                "export APHRODITE_ATTENTION_BACKEND=FLASHINFER.")
 
         max_query_len = max(query_lens)
+        decode_query_lens = query_lens[self.num_prefills:]
+        if len(decode_query_lens) > 0:
+            max_decode_query_len = max(decode_query_lens)
+        else:
+            max_decode_query_len = 1
         max_prefill_seq_len = max(self.prefill_seq_lens, default=0)
         max_decode_seq_len = max(self.curr_seq_lens, default=0)
         num_decode_tokens = self.num_decode_tokens
@@ -290,6 +301,7 @@ class PlaceholderAttentionMetadataBuilder(
             seq_lens=seq_lens,
             seq_lens_tensor=seq_lens_tensor,
             max_query_len=max_query_len,
+            max_decode_query_len=max_decode_query_len,
             max_prefill_seq_len=max_prefill_seq_len,
             max_decode_seq_len=max_decode_seq_len,
             query_start_loc=query_start_loc,

@@ -1,6 +1,7 @@
 from typing import Callable, List, Optional, Set
 
 import torch
+from compressed_tensors.quantization import ActivationOrdering
 from loguru import logger
 
 from aphrodite.modeling.parameter import (BaseAphroditeParameter,
@@ -10,7 +11,6 @@ from aphrodite.modeling.parameter import (BaseAphroditeParameter,
                                           RowAphroditeParameter)
 from aphrodite.quantization.compressed_tensors.schemes import (
     CompressedTensorsScheme)
-from aphrodite.quantization.compressed_tensors.utils import ActivationOrdering
 from aphrodite.quantization.kernels import (MPLinearLayerConfig,
                                             choose_mp_linear_kernel)
 from aphrodite.quantization.utils.marlin_utils import (
@@ -78,8 +78,8 @@ class CompressedTensorsWNA16(CompressedTensorsScheme):
         kernel_type = choose_mp_linear_kernel(mp_linear_kernel_config)
 
         if kernel_type.__name__ not in self._kernel_backends_being_used:
-            logger.info("Using %s for CompressedTensorsWNA16",
-                        kernel_type.__name__)
+            logger.info(
+                f"Using {kernel_type.__name__} for CompressedTensorsWNA16")
             self._kernel_backends_being_used.add(kernel_type.__name__)
 
         # If group_size is -1, we are in channelwise case.

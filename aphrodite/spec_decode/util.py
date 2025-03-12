@@ -1,12 +1,13 @@
 import time
 from contextlib import contextmanager
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import torch
 
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput, Logprob,
-                                       SamplerOutput, SequenceGroupMetadata,
+                                       PromptLogprobs, SequenceGroupMetadata,
                                        SequenceOutput)
+from aphrodite.modeling.layers.sampler import SamplerOutput
 
 SeqId = int
 
@@ -43,27 +44,25 @@ def get_sampled_token_logprobs(
                                        sampled_token_ids, ]
     expanded_selected_logprobs = selected_logprobs.unsqueeze(-1).expand(
         -1, -1, vocab_size)
-    sampled_token_ids_ranks = (logprob_tensor >=
-                               expanded_selected_logprobs).sum(-1)
+    sampled_token_ids_ranks = (logprob_tensor >
+                               expanded_selected_logprobs).sum(-1).add_(1)
 
     return sampled_token_ids_ranks, selected_logprobs
 
 
-def create_sequence_group_output(
+def create_logprobs_output(
     token_id: int,
     token_id_logprob_rank: int,
     token_id_logprob: float,
-    seq_id: SeqId,
     topk_token_ids: List[Optional[int]],
     topk_logprobs: List[Optional[float]],
-) -> CompletionSequenceGroupOutput:
-    """Create a SequenceGroupOutput given the sampling results.
+) -> Dict[int, Logprob]:
+    """Create a Logprob Dict for a token given the sampling results.
 
     Args:
         token_id (int): The sampled token for the sequence.
         token_id_logprob_rank (int): The logprob rank of the sampled token.
         token_id_logprob (float): The logprob value of the sampled token.
-        seq_id (int): The sequence id.
         topk_token_ids (List[Optional[int]]): The list of top-k token ids.
         topk_logprobs (List[Optional[float]]): The list of top-k logprobs.
     """
@@ -86,46 +85,66 @@ def create_sequence_group_output(
         if topk_token_id is not None
     })
 
+    return logprobs
+
+def create_sequence_group_output(
+    token_id: int,
+    token_id_logprob_rank: int,
+    token_id_logprob: float,
+    seq_id: SeqId,
+    topk_token_ids: List[Optional[int]],
+    topk_logprobs: List[Optional[float]],
+    prompt_logprobs: Optional[PromptLogprobs] = None,
+) -> CompletionSequenceGroupOutput:
+    """Create a SequenceGroupOutput given the sampling results.
+    Args:
+        token_id (int): The sampled token for the sequence.
+        token_id_logprob_rank (int): The logprob rank of the sampled token.
+        token_id_logprob (float): The logprob value of the sampled token.
+        seq_id (int): The sequence id.
+        topk_token_ids (List[Optional[int]]): The list of top-k token ids.
+        topk_logprobs (List[Optional[float]]): The list of top-k logprobs.
+    """
+    logprobs = create_logprobs_output(
+        token_id,
+        token_id_logprob_rank,
+        token_id_logprob,
+        topk_token_ids,
+        topk_logprobs,
+    )
+
     return CompletionSequenceGroupOutput(
         samples=[
             SequenceOutput(parent_seq_id=seq_id,
                            output_token=token_id,
                            logprobs=logprobs)
         ],
-        # TODO add prompt logprobs support.
-        prompt_logprobs=None,
+        prompt_logprobs=prompt_logprobs,
     )
 
 
 def split_batch_by_proposal_len(
     seq_group_metadata_list: List[SequenceGroupMetadata],
-    proposal_lens: List[int], select_proposal_len_zero: bool
-) -> Tuple[List[SequenceGroupMetadata], List[int]]:
+    proposal_lens: List[int],
+) -> Tuple[Tuple[List[SequenceGroupMetadata], List[int]], Tuple[
+        List[SequenceGroupMetadata], List[int]]]:
     """Utility function that splits a batch based on whether the proposal len is
     zero or not. We should remove this once Aphrodite supports per-sequence
     proposal lens in a batch.
     """
 
-    if select_proposal_len_zero:
-        predicate = lambda proposal_len: proposal_len == 0
-    else:
-        predicate = lambda proposal_len: proposal_len != 0
-
-    indices = [
-        i for i, (_, proposal_len
-                  ) in enumerate(zip(seq_group_metadata_list, proposal_lens))
-        if predicate(proposal_len)
-    ]
-    seq_groups = [
-        seq_group for seq_group, proposal_len in zip(
-            seq_group_metadata_list, proposal_lens) if predicate(proposal_len)
-    ]
-
-    return seq_groups, indices
+    nonzero_lists: Tuple[List[SequenceGroupMetadata], List[int]] = ([], [])
+    zero_lists: Tuple[List[SequenceGroupMetadata], List[int]] = ([], [])
+    for i, (seq_group, proposal_len) in enumerate(
+            zip(seq_group_metadata_list, proposal_lens)):
+        seq_groups, indices = nonzero_lists if proposal_len else zero_lists
+        seq_groups.append(seq_group)
+        indices.append(i)
+    return nonzero_lists, zero_lists
 
 
 def sampler_output_to_torch(
-    sampler_output_list: List[SamplerOutput], sampler_transposed: bool
+    sampler_output_list: Sequence[SamplerOutput], sampler_transposed: bool
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
     """Utility function which converts a list of SamplerOutput to tensors.
 
@@ -149,17 +168,11 @@ def sampler_output_to_torch(
         dim=0,
     )
 
-    if sampler_transposed:
-        sampled_token_probs = sampled_token_probs.transpose(0, 1)
-
     # shape: [batch_size, num_sampler_output, vocab_size]
     sampled_token_logprobs = torch.stack(
         [sampler_output.logprobs for sampler_output in sampler_output_list],
         dim=0,
     )
-
-    if sampler_transposed:
-        sampled_token_logprobs = sampled_token_logprobs.transpose(0, 1)
 
     # shape: [batch_size, num_sampler_output]
     sampled_token_ids = torch.stack(
@@ -169,7 +182,10 @@ def sampler_output_to_torch(
         ],
         dim=0,
     )
+
     if sampler_transposed:
+        sampled_token_probs = sampled_token_probs.transpose(0, 1)
+        sampled_token_logprobs = sampled_token_logprobs.transpose(0, 1)
         sampled_token_ids = sampled_token_ids.transpose(0, 1)
 
     if sampler_output_list[0].hidden_states is not None:
@@ -216,7 +232,7 @@ def maybe_mock_device_tensors(sampler_output: SamplerOutput, batch_size: int,
 
 @contextmanager
 def nvtx_range(msg, *args, **kwargs):
-    """ 
+    """
     Context manager / decorator that pushes an NVTX range at the beginning
     of its scope, and pops it at the end. If extra arguments are given,
     they are passed as arguments to msg.format().

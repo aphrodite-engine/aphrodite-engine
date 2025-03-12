@@ -2,8 +2,9 @@ from typing import List, Optional, Set, Tuple
 
 import torch
 
-from aphrodite.common.sequence import (ExecuteModelRequest, SamplerOutput,
+from aphrodite.common.sequence import (ExecuteModelRequest,
                                        SequenceGroupMetadata)
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.spec_decode.multi_step_worker import MultiStepWorker
 from aphrodite.spec_decode.proposer_worker_base import NonLLMProposerWorkerBase

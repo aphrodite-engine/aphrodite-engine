@@ -1,15 +1,18 @@
 """Sampling parameters for text generation."""
 import copy
-from enum import IntEnum
+from dataclasses import dataclass
+from enum import Enum, IntEnum
 from functools import cached_property
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import msgspec
 import torch
 from loguru import logger
+from pydantic import BaseModel
 from typing_extensions import Annotated
 
 import aphrodite.common.envs as envs
+from aphrodite.common.config import SchedulerConfig
 
 _SAMPLING_EPS = 1e-5
 _MAX_TEMP = 1e-2
@@ -22,6 +25,73 @@ class SamplingType(IntEnum):
     RANDOM = 1
     RANDOM_SEED = 2
     BEAM = 3
+
+
+# maybe make msgspec?
+@dataclass
+class GuidedDecodingParams:
+    """One of these fields will be used to build a logit processor."""
+    json: Optional[Union[str, Dict]] = None
+    regex: Optional[str] = None
+    choice: Optional[List[str]] = None
+    grammar: Optional[str] = None
+    json_object: Optional[bool] = None
+    """These are other options that can be set"""
+    backend: Optional[str] = None
+    whitespace_pattern: Optional[str] = None
+
+    @staticmethod
+    def from_optional(
+        json: Optional[Union[Dict, BaseModel, str]],
+        regex: Optional[str] = None,
+        choice: Optional[List[str]] = None,
+        grammar: Optional[str] = None,
+        json_object: Optional[bool] = None,
+        backend: Optional[str] = None,
+        whitespace_pattern: Optional[str] = None,
+    ) -> "GuidedDecodingParams":
+        # Extract json schemas from pydantic models
+        if isinstance(json, (BaseModel, type(BaseModel))):
+            json = json.model_json_schema()
+
+        if isinstance(json, dict) and not json:
+            json = None
+        if isinstance(grammar, str) and not grammar:
+            grammar = None
+        if isinstance(regex, str) and not regex:
+            regex = None
+        if isinstance(choice, list) and not choice:
+            choice = None
+
+        return GuidedDecodingParams(
+            json=json,
+            regex=regex,
+            choice=choice,
+            grammar=grammar,
+            json_object=json_object,
+            backend=backend,
+            whitespace_pattern=whitespace_pattern,
+        )
+
+    def __post_init__(self):
+        """Validate that some fields are mutually exclusive."""
+        guide_count = sum([
+            self.json is not None, self.regex is not None, self.choice
+            is not None, self.grammar is not None, self.json_object is not None
+        ])
+        if guide_count > 1:
+            raise ValueError(
+                "You can only use one kind of guided decoding but multiple are "
+                f"specified: {self.__dict__}")
+
+
+class RequestOutputKind(Enum):
+    # Return entire output so far in every RequestOutput
+    CUMULATIVE = 0
+    # Return only deltas in each RequestOutput
+    DELTA = 1
+    # Do not return intermediate RequestOuputs
+    FINAL_ONLY = 2
 
 class SamplerID(IntEnum):
     # Mirror these in aphrodite/modeling/layers/sampler.py
@@ -92,9 +162,8 @@ class SamplingParams(
         n: Number of output sequences to return for the given prompt.
         best_of: Number of output sequences that are generated from the prompt.
             From these `best_of` sequences, the top `n` sequences are returned.
-            `best_of` must be greater than or equal to `n`. This is treated as
-            the beam width when `use_beam_search` is True. By default, `best_of`
-            is set to `n`.
+            `best_of` must be greater than or equal to `n`. By default,
+            `best_of` is set to `n`.
         presence_penalty: Float that penalizes new tokens based on whether they
             appear in the generated text so far. Values > 0 encourage the model
             to use new tokens, while values < 0 encourage the model to repeat
@@ -180,6 +249,8 @@ class SamplingParams(
         prompt_logprobs: Number of log probabilities to return per prompt token.
         detokenize: Whether to detokenize the output. Defaults to True.
         custom_token_bans: List of token IDs to ban from generating
+        token_ban_ranges: List of tuples (tokens, start, length) to ban from
+            generating. start=0 means start from first output token.
         skip_special_tokens: Whether to skip special tokens in the output.
             defaults to true.
         spaces_between_special_tokens: Whether to add spaces between special
@@ -218,14 +289,26 @@ class SamplingParams(
             Defaults to None.
         dry_range: The range of tokens (input + output) to apply the DRY
             sampler.
+        dry_max_ngram: Maximum length of match to check.
+        dry_max_occurrences: How many occurrences of last_token we analyze.
+        dry_early_exit_match_len: If we find this large a match, we stop
+            searching.
         skew: Bias the token selection towards higher or lower probability
             tokens. Defaults to 0 (disabled).
         sampler_priority: A list of integers to control the order in which
             samplers are applied.
+        guided_decoding: If provided, the engine will construct a guided
+            decoding logits processor from these parameters. Defaults to None.
+        logit_bias: If provided, the engine will construct a logits processor
+            that applies these logit biases. Defaults to None.
+        allowed_token_ids: If provided, the engine will construct a logits
+            processor which only retains scores for the given token ids.
+            Defaults to None.
     """
 
     n: int = 1
     best_of: Optional[int] = None
+    _real_n: Optional[int] = None
     presence_penalty: float = 0.0
     frequency_penalty: float = 0.0
     repetition_penalty: float = 1.0
@@ -259,6 +342,7 @@ class SamplingParams(
     prompt_logprobs: Optional[int] = None
     detokenize: bool = True
     custom_token_bans: Optional[List[int]] = None
+    token_ban_ranges: Optional[List[Tuple[List[int], int, int]]] = None
     skip_special_tokens: bool = True
     spaces_between_special_tokens: bool = True
     # Optional[List[LogitsProcessorFunc]] type.
@@ -274,16 +358,26 @@ class SamplingParams(
     dry_allowed_length: int = 2
     dry_sequence_breaker_ids: List[int] = []
     dry_range: int = 0
+    dry_max_ngram: int = 12
+    dry_max_occurrences: int = 8
+    dry_early_exit_match_len: int = 8
     skew: float = 0.0
     sampler_priority: Optional[List[int]] = []
+    output_kind: RequestOutputKind = RequestOutputKind.CUMULATIVE
     # The below fields are not supposed to be used as an input.
     # They are set in post_init.
     output_text_buffer_length: int = 0
     _all_stop_token_ids: Set[int] = msgspec.field(default_factory=set)
 
+    # Fields used to construct logits processors
+    guided_decoding: Optional[GuidedDecodingParams] = None
+    logit_bias: Optional[Dict[int, float]] = None
+    allowed_token_ids: Optional[List[int]] = None
+
     default_values = {
         "n": 1,
-        "best_of": 1,
+        "best_of": None,
+        "_real_n": None,
         "presence_penalty": 0.0,
         "frequency_penalty": 0.0,
         "repetition_penalty": 1.0,
@@ -316,6 +410,7 @@ class SamplingParams(
         "prompt_logprobs": None,
         "detokenize": True,
         "custom_token_bans": None,
+        "token_ban_ranges": None,
         "skip_special_tokens": True,
         "spaces_between_special_tokens": True,
         "include_stop_str_in_output": False,
@@ -328,12 +423,31 @@ class SamplingParams(
         "dry_allowed_length": 2,
         "dry_sequence_breaker_ids": [],
         "dry_range": 0,
+        "dry_max_ngram": 12,
+        "dry_max_occurrences": 8,
+        "dry_early_exit_match_len": 8,
         "skew": 0.0,
         "sampler_priority": [],
+        "output_kind": RequestOutputKind.CUMULATIVE,
+        "guided_decoding": None,
+        "logit_bias": None,
+        "allowed_token_ids": None,
     }
 
     def __post_init__(self) -> None:
-        self.best_of = self.best_of or self.n
+        # how we deal with `best_of``:
+        # if `best_of`` is not set, we default to `n`;
+        # if `best_of`` is set, we set `n`` to `best_of`,
+        # and set `_real_n`` to the original `n`.
+        # when we return the result, we will check
+        # if we need to return `n` or `_real_n` results
+        if self.best_of:
+            if self.best_of < self.n:
+                raise ValueError(
+                    f"best_of must be greater than or equal to n, "
+                    f"got n={self.n} and best_of={self.best_of}.")
+            self._real_n = self.n
+            self.n = self.best_of
         if 0 < self.temperature < _MAX_TEMP:
             logger.warning(
                 f"temperature {self.temperature} is less than {_MAX_TEMP}, "
@@ -363,6 +477,13 @@ class SamplingParams(
         if self.stop and not self.include_stop_str_in_output:
             self.output_text_buffer_length = max(len(s) for s in self.stop) - 1
 
+        if self.logit_bias is not None:
+            logit_bias = {
+                int(token): bias
+                for token, bias in self.logit_bias.items()
+            }
+            self.logit_bias = logit_bias
+
         self._verify_args()
         if self.use_beam_search:
             if not APHRODITE_NO_DEPRECATION_WARNING:
@@ -385,12 +506,11 @@ class SamplingParams(
         self._all_stop_token_ids = set(self.stop_token_ids)
 
     def _verify_args(self) -> None:
+        if not isinstance(self.n, int):
+            raise ValueError(f"n must be an int, but is of "
+                             f"type {type(self.n)}")
         if self.n < 1:
             raise ValueError(f"n must be at least 1, got {self.n}.")
-        assert isinstance(self.best_of, int)
-        if self.best_of < self.n:
-            raise ValueError(f"best_of must be greater than or equal to n, "
-                             f"got n={self.n} and best_of={self.best_of}.")
         if not -2.0 <= self.presence_penalty <= 2.0:
             raise ValueError("presence_penalty must be in [-2, 2], got "
                              f"{self.presence_penalty}.")
@@ -479,11 +599,31 @@ class SamplingParams(
             raise ValueError(
                 "dry_range must be non-negative, got "
                 f"{self.dry_range}.")
+        if self.dry_max_ngram < 0:
+            raise ValueError(
+                "dry_max_ngram must be non-negative, got "
+                f"{self.dry_max_ngram}.")
+        if self.dry_max_occurrences < 0:
+            raise ValueError(
+                "dry_max_occurrences must be non-negative, got "
+                f"{self.dry_max_occurrences}.")
+        if self.dry_early_exit_match_len < 0:
+            raise ValueError(
+                "dry_early_exit_match_len must be non-negative, got "
+                f"{self.dry_early_exit_match_len}.")
         if self.skew < 0.0:
             raise ValueError(
                 "skew must be non-negative, got "
                 f"{self.skew}.")
-        
+        if self.custom_token_bans is not None and not isinstance(
+            self.custom_token_bans, list):
+            raise ValueError(
+                "custom_token_bans must be a list of integers")
+        if self.token_ban_ranges is not None and not isinstance(
+            self.token_ban_ranges, list):
+            raise ValueError(
+                "token_ban_ranges must be a list of tuples")
+
         if self.sampler_priority is not None:
             if not self.sampler_priority:
                 self.sampler_priority = None
@@ -512,6 +652,10 @@ class SamplingParams(
                     f"{missing_names}"
                 )
 
+        if self.best_of != self._real_n and self.output_kind == (
+                RequestOutputKind.DELTA):
+            raise ValueError("best_of must equal n to use output_kind=DELTA")
+
     def _verify_beam_search(self) -> None:
         if self.best_of == 1:
             raise ValueError("best_of must be greater than 1 when using beam "
@@ -538,14 +682,19 @@ class SamplingParams(
                 "default value of 1.0 when not using beam search.")
 
     def _verify_greedy_sampling(self) -> None:
-        assert isinstance(self.best_of, int)
-        if self.best_of > 1:
-            raise ValueError("best_of must be 1 when using greedy sampling."
-                             f"Got {self.best_of}.")
         if self.top_p < 1.0 - _SAMPLING_EPS:
             raise ValueError("top_p must be 1 when using greedy sampling.")
         if self.top_k != -1:
             raise ValueError("top_k must be -1 when using greedy sampling.")
+
+    def _verify_with_scheduler_config(
+            self, scheduler_config: "SchedulerConfig") -> None:
+        if scheduler_config.single_user_mode:
+            if self.n > 1:
+                raise ValueError("n must be 1 in single user mode.")
+            if self.use_beam_search:
+                raise ValueError(
+                    "beam search is not supported in single user mode.")
 
     def update_from_generation_config(
             self,
@@ -589,13 +738,14 @@ class SamplingParams(
         return self._all_stop_token_ids
 
     def clone(self) -> "SamplingParams":
-        """Deep copy excluding LogitsProcessor objects.
-        LogitsProcessor objects are excluded because they may contain an
-        arbitrary, nontrivial amount of data.
+        """Deep copy, but maybe not the LogitsProcessor objects.
+        LogitsProcessor objects may contain an arbitrary, nontrivial amount of
+        data that is expensive to copy. However, if not copied, the processor
+        needs to support parallel decoding for multiple sequences
         """
 
         logit_processor_refs = None if self.logits_processors is None else {
-            id(lp): lp
+            id(lp): lp.clone() if hasattr(lp, 'clone') else lp
             for lp in self.logits_processors
         }
         return copy.deepcopy(self, memo=logit_processor_refs)
@@ -604,7 +754,12 @@ class SamplingParams(
         repr_str = "SamplingParams("
         for param, default_value in self.default_values.items():
             current_value = getattr(self, param)
-            if current_value != default_value:
+            if ((param != "guided_decoding" or current_value is None or 
+                 not all(getattr(current_value, field) is None 
+                        for field in ["json", "regex", "choice", "grammar", 
+                                    "json_object", "backend",
+                                    "whitespace_pattern"]))
+                and current_value != default_value):
                 repr_str += f"{param}={current_value}, "
         repr_str = repr_str.rstrip(', ') + ")"
         return repr_str

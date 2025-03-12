@@ -1,5 +1,6 @@
 import openai  # use the official client for correctness check
 import pytest
+import pytest_asyncio
 import requests
 
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
@@ -42,9 +43,10 @@ def tokenizer_name(model_name: str,
         model_name == "zephyr-lora2") else model_name
 
 
-@pytest.fixture(scope="module")
-def client(server):
-    return server.get_async_client()
+@pytest_asyncio.fixture
+async def client(server):
+    async with server.get_async_client() as async_client:
+        yield async_client
 
 
 @pytest.mark.asyncio
@@ -63,7 +65,7 @@ async def test_tokenize_completions(client: openai.AsyncOpenAI,
         prompt = "aphrodite1 This is a test prompt."
         tokens = tokenizer.encode(prompt, add_special_tokens=add_special)
 
-        response = requests.post(base_url + "/v1/tokenize",
+        response = requests.post(base_url + "/tokenize",
                                  json={
                                      "add_special_tokens": add_special,
                                      "model": model_name,
@@ -102,28 +104,40 @@ async def test_tokenize_chat(client: openai.AsyncOpenAI, model_name: str,
                 "role": "user",
                 "content": "Can I ask a question? aphrodite1"
             }]
+            for continue_final in [False, True]:
+                if add_generation and continue_final:
+                    continue
+                if continue_final:
+                    conversation.append({
+                        "role": "assistant",
+                        "content": "Sure,"
+                    })
 
-            prompt = tokenizer.apply_chat_template(
-                add_generation_prompt=add_generation,
-                conversation=conversation,
-                tokenize=False)
-            tokens = tokenizer.encode(prompt, add_special_tokens=add_special)
+                prompt = tokenizer.apply_chat_template(
+                    add_generation_prompt=add_generation,
+                    continue_final_message=continue_final,
+                    conversation=conversation,
+                    tokenize=False)
+                tokens = tokenizer.encode(prompt,
+                                          add_special_tokens=add_special)
 
-            response = requests.post(base_url + "/v1/tokenize",
-                                     json={
-                                         "add_generation_prompt":
-                                         add_generation,
-                                         "add_special_tokens": add_special,
-                                         "messages": conversation,
-                                         "model": model_name
-                                     })
-            response.raise_for_status()
+                response = requests.post(base_url + "/tokenize",
+                                         json={
+                                             "add_generation_prompt":
+                                             add_generation,
+                                             "continue_final_message":
+                                             continue_final,
+                                             "add_special_tokens": add_special,
+                                             "messages": conversation,
+                                             "model": model_name
+                                         })
+                response.raise_for_status()
 
-            assert response.json() == {
-                "tokens": tokens,
-                "count": len(tokens),
-                "max_model_len": 8192
-            }
+                assert response.json() == {
+                    "tokens": tokens,
+                    "count": len(tokens),
+                    "max_model_len": 8192
+                }
 
 
 @pytest.mark.asyncio
@@ -142,7 +156,7 @@ async def test_detokenize(client: openai.AsyncOpenAI, model_name: str,
     tokens = tokenizer.encode(prompt, add_special_tokens=False)
 
     print(f"CALLING {base_url} FOR {model_name}")
-    response = requests.post(base_url + "/v1/detokenize",
+    response = requests.post(base_url + "/detokenize",
                              json={
                                  "model": model_name,
                                  "tokens": tokens

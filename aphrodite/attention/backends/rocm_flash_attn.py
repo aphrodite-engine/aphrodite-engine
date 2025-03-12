@@ -1,11 +1,12 @@
 """Attention layer ROCm GPUs."""
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type
 
 import torch
 from loguru import logger
 
 import aphrodite.common.envs as envs
+from aphrodite import _custom_ops as ops
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionImpl,
                                                    AttentionMetadata,
@@ -15,6 +16,12 @@ from aphrodite.attention.backends.utils import (CommonAttentionState,
 from aphrodite.attention.ops.paged_attn import (PagedAttention,
                                                 PagedAttentionMetadata)
 
+if TYPE_CHECKING:
+    from aphrodite.worker.model_runner import (
+        ModelInputForGPUWithSamplingMetadata)
+
+_PARTITION_SIZE_ROCM = 512
+_ON_NAVI = "gfx1" in torch.cuda.get_device_properties("cuda").gcnArchName
 
 class ROCmFlashAttentionBackend(AttentionBackend):
 
@@ -111,6 +118,10 @@ class ROCmFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
     # (batch_size,) A tensor of context lengths (tokens that are computed
     # so far).
     context_lens_tensor: Optional[torch.Tensor]
+
+    # Max number of query tokens among request in the batch.
+    max_decode_query_len: Optional[int] = None
+
     _cached_prefill_metadata: Optional["ROCmFlashAttentionMetadata"] = None
     _cached_decode_metadata: Optional["ROCmFlashAttentionMetadata"] = None
 
@@ -175,6 +186,60 @@ class ROCmFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
         )
         return self._cached_decode_metadata
 
+    def advance_step(self,
+                     model_input: "ModelInputForGPUWithSamplingMetadata",
+                     sampled_token_ids: Optional[torch.Tensor],
+                     block_size: int,
+                     num_seqs: int,
+                     num_queries: int,
+                     turn_prefills_into_decodes: bool = False):
+        """
+        Update metadata in-place to advance one decode step.
+        """
+        assert not turn_prefills_into_decodes, \
+            ("Chunked prefill is not supported with rocm_flash_attn yet."
+             "turn_prefills_into_decodes is a Multi-Step + Chunked-Prefill "
+             "specific parameter.")
+        # When using cudagraph, the num_seqs is padded to the next captured
+        # batch sized, but num_queries tracks the actual number of requests in
+        # the batch. For --enforce-eager mode, num_seqs == num_queries
+        if num_seqs != num_queries:
+            assert num_seqs > num_queries
+            assert self.use_cuda_graph
+        assert self.num_prefills == 0
+        assert self.num_prefill_tokens == 0
+        assert self.num_decode_tokens == num_seqs
+        assert self.slot_mapping.shape == (num_seqs, )
+        assert self.seq_lens is not None
+        assert len(self.seq_lens) == num_seqs
+        assert self.seq_lens_tensor is not None
+        assert self.seq_lens_tensor.shape == (num_seqs, )
+        assert self.max_query_len == 1
+        assert self.max_prefill_seq_len == 0
+        assert self.max_decode_seq_len == max(self.seq_lens)
+        assert self.query_start_loc is not None
+        assert self.query_start_loc.shape == (num_queries + 1, )
+        assert self.seq_start_loc is not None
+        assert self.seq_start_loc.shape == (num_seqs + 1, )
+        assert self.context_lens_tensor is not None
+        assert self.context_lens_tensor.shape == (num_queries, )
+        assert self.block_tables is not None
+        assert self.block_tables.shape[0] == num_seqs
+        # Update query lengths. Note that we update only queries and not seqs,
+        # since tensors may be padded due to captured cuda graph batch size
+        for i in range(num_queries):
+            self.seq_lens[i] += 1
+        self.max_decode_seq_len = max(self.seq_lens)
+        ops.advance_step_flashattn(num_seqs=num_seqs,
+                                   num_queries=num_queries,
+                                   block_size=block_size,
+                                   input_tokens=model_input.input_tokens,
+                                   sampled_token_ids=sampled_token_ids,
+                                   input_positions=model_input.input_positions,
+                                   seq_lens=self.seq_lens_tensor,
+                                   slot_mapping=self.slot_mapping,
+                                   block_tables=self.block_tables)
+
 
 class ROCmFlashAttentionMetadataBuilder(
         CommonMetadataBuilder[ROCmFlashAttentionMetadata]):
@@ -232,7 +297,7 @@ class ROCmFlashAttentionImpl(AttentionImpl):
     If chunked prefill is enabled, prefill tokens and decode tokens can be
     batched together in a flattened 1D query.
 
-    |<----- num_prefill_tokens ---->|<------- num_decode_tokens ----------->|	
+    |<----- num_prefill_tokens ---->|<------- num_decode_tokens ----------->|
     |<-prompt_0->|...|<-prompt_N-1->|<-generation_0->|...|<-generation_M-1->|
 
     Currently, cuda graph is disabled for chunked prefill, meaning there's no
@@ -335,6 +400,8 @@ class ROCmFlashAttentionImpl(AttentionImpl):
             key: shape = [num_tokens, num_kv_heads * head_size]
             value: shape = [num_tokens, num_kv_heads * head_size]
             kv_cache = [2, num_blocks, block_size * num_kv_heads * head_size]
+                NOTE: kv_cache will be an empty tensor with shape [0]
+                for profiling run.
             attn_metadata: Metadata for attention.
         Returns:
             shape = [num_tokens, num_heads * head_size]
@@ -350,7 +417,7 @@ class ROCmFlashAttentionImpl(AttentionImpl):
         key = key.view(-1, self.num_kv_heads, self.head_size)
         value = value.view(-1, self.num_kv_heads, self.head_size)
 
-        if kv_cache is not None:
+        if kv_cache.numel() > 0:
             key_cache, value_cache = PagedAttention.split_kv_cache(
                 kv_cache, self.num_kv_heads, self.head_size)
 
@@ -387,7 +454,7 @@ class ROCmFlashAttentionImpl(AttentionImpl):
         if prefill_meta := attn_metadata.prefill_metadata:
             # Prompt run.
             assert prefill_meta.seq_lens is not None
-            if kv_cache is None or prefill_meta.block_tables.numel() == 0:
+            if kv_cache.numel() == 0 or prefill_meta.block_tables.numel() == 0:
                 # triton attention
                 # When block_tables are not filled, it means q and k are the
                 # prompt, and they have the same length.
@@ -479,20 +546,64 @@ class ROCmFlashAttentionImpl(AttentionImpl):
 
         if decode_meta := attn_metadata.decode_metadata:
             # Decoding run.
-            output[num_prefill_tokens:] = PagedAttention.forward_decode(
-                decode_query,
-                key_cache,
-                value_cache,
-                decode_meta.block_tables,
-                decode_meta.seq_lens_tensor,
-                decode_meta.max_decode_seq_len,
-                self.kv_cache_dtype,
-                self.num_kv_heads,
-                self.scale,
-                self.alibi_slopes,
-                k_scale,
-                v_scale,
-            )
+            # Whether to use rocm custom paged attention or not
+            num_seqs, num_heads, head_size = decode_query.shape
+            block_size = value_cache.shape[3]
+            gqa_ratio = num_heads // self.num_kv_heads
+            use_custom = _use_rocm_custom_paged_attention(
+                decode_query.dtype, head_size, block_size, gqa_ratio,
+                decode_meta.max_decode_seq_len)
+            if use_custom:
+                max_seq_len = decode_meta.max_decode_seq_len
+                max_num_partitions = (
+                    (max_seq_len + _PARTITION_SIZE_ROCM - 1) //
+                    _PARTITION_SIZE_ROCM)
+                assert _PARTITION_SIZE_ROCM % block_size == 0
+                tmp_output = torch.empty(
+                    size=(num_seqs, num_heads, max_num_partitions, head_size),
+                    dtype=output.dtype,
+                    device=output.device,
+                )
+                exp_sums = torch.empty(
+                    size=(num_seqs, num_heads, max_num_partitions),
+                    dtype=torch.float32,
+                    device=output.device,
+                )
+                max_logits = torch.empty_like(exp_sums)
+                ops.paged_attention_rocm(
+                    output[num_prefill_tokens:],
+                    exp_sums,
+                    max_logits,
+                    tmp_output,
+                    decode_query,
+                    key_cache,
+                    value_cache,
+                    self.num_kv_heads,
+                    self.scale,
+                    decode_meta.block_tables,
+                    decode_meta.seq_lens_tensor,
+                    block_size,
+                    max_seq_len,
+                    self.alibi_slopes,
+                    self.kv_cache_dtype,
+                    k_scale,
+                    v_scale,
+                )
+            else:
+                output[num_prefill_tokens:] = PagedAttention.forward_decode(
+                    decode_query,
+                    key_cache,
+                    value_cache,
+                    decode_meta.block_tables,
+                    decode_meta.seq_lens_tensor,
+                    decode_meta.max_decode_seq_len,
+                    self.kv_cache_dtype,
+                    self.num_kv_heads,
+                    self.scale,
+                    self.alibi_slopes,
+                    k_scale,
+                    v_scale,
+                )
 
         # Reshape the output tensor.
         return output.view(num_tokens, hidden_size)
@@ -531,3 +642,13 @@ def _sdpa_attention(
             start = end
 
     return output
+
+
+def _use_rocm_custom_paged_attention(qtype: torch.dtype, head_size: int,
+                                     block_size: int, gqa_ratio: int,
+                                     max_seq_len: int) -> bool:
+    # rocm custom page attention not support on navi (gfx1*)
+    return (not _ON_NAVI and (qtype == torch.half or qtype == torch.bfloat16)
+            and (head_size == 64 or head_size == 128)
+            and (block_size == 16 or block_size == 32)
+            and (gqa_ratio >= 1 and gqa_ratio <= 16) and max_seq_len <= 32768)

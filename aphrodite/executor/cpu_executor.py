@@ -6,8 +6,9 @@ import torch
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import CacheConfig, ModelConfig, SchedulerConfig
-from aphrodite.common.sequence import ExecuteModelRequest, SamplerOutput
+from aphrodite.common.config import (CacheConfig, ModelConfig, ParallelConfig,
+                                     SchedulerConfig)
+from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.common.utils import (GiB_bytes, get_aphrodite_instance_id,
                                     get_distributed_init_method, get_open_port,
                                     make_async)
@@ -16,8 +17,9 @@ from aphrodite.executor.multiproc_worker_utils import (ProcessWorkerWrapper,
                                                        ResultHandler,
                                                        WorkerMonitor)
 from aphrodite.lora.request import LoRARequest
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
-from aphrodite.task_handler.worker_base import WorkerWrapperBase
+from aphrodite.worker.worker_base import WorkerWrapperBase
 
 
 class CPUExecutor(ExecutorBase):
@@ -59,6 +61,8 @@ class CPUExecutor(ExecutorBase):
         self.cache_config = _verify_and_get_cache_config(self.cache_config)
         self.scheduler_config = _verify_and_get_scheduler_config(
             self.scheduler_config)
+        self.parallel_config = _verify_and_get_parallel_config(
+            self.parallel_config)
 
         # Multiprocessing-based executor does not support multi-node setting.
         # Since it only works for single node, we can use the loopback address
@@ -102,6 +106,7 @@ class CPUExecutor(ExecutorBase):
                         )) for rank in range(1, world_size)
                 ]
 
+        self.worker_monitor = None
         if world_size != 1 or is_async:
             if is_async:
                 async_worker_list = self.workers + [self.driver_worker]
@@ -120,7 +125,7 @@ class CPUExecutor(ExecutorBase):
         local_rank: int = 0,
         rank: int = 0,
     ):
-        worker_module_name = "aphrodite.task_handler.cpu_worker"
+        worker_module_name = "aphrodite.worker.cpu_worker"
         worker_class_name = "CPUWorker"
 
         wrapper = WorkerWrapperBase(
@@ -203,7 +208,7 @@ class CPUExecutor(ExecutorBase):
         # NOTE: `cpu block` for CPU backend is located on CPU memory but is
         # referred as `gpu block`. Because we want to reuse the existing block
         # management procedure.
-        logger.info("# CPU blocks: %d", num_gpu_blocks)
+        logger.info(f"# CPU blocks: {num_gpu_blocks}")
 
         self._run_workers("initialize_cache",
                           num_gpu_blocks=num_gpu_blocks,
@@ -350,6 +355,16 @@ def _verify_and_get_cache_config(config: CacheConfig) -> CacheConfig:
             "Invalid environment variable APHRODITE_CPU_KVCACHE_SPACE"
             f" {kv_cache_space}, expect a positive integer value.")
 
+    return config
+
+
+def _verify_and_get_parallel_config(config: ParallelConfig) -> ParallelConfig:
+    if (config.distributed_executor_backend is not None
+            and config.distributed_executor_backend != "mp"):
+        logger.warning(
+            f"{config.distributed_executor_backend} is not supported on CPU, "
+            "fallback to mp distributed executor backend.")
+        config.distributed_executor_backend = "mp"
     return config
 
 

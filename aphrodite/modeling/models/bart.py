@@ -22,22 +22,25 @@ from typing import Iterable, List, Optional, Tuple
 import torch
 from torch import nn
 from transformers import BartConfig
+from transformers.utils import logging
 
 from aphrodite.attention import Attention, AttentionMetadata, AttentionType
 from aphrodite.common.config import CacheConfig, LoRAConfig
-from aphrodite.common.sequence import IntermediateTensors, SamplerOutput
+from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               QKVParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.sampler import Sampler
+from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization.base_config import QuantizationConfig
+
+logger = logging.get_logger(__name__)
 
 
 def get_bsz_seq_len(input_ids):
@@ -817,6 +820,8 @@ class BartForConditionalGeneration(nn.Module):
                  lora_config: Optional[LoRAConfig] = None):
 
         super().__init__()
+        # currently all existing BART models have `tie_word_embeddings` enabled
+        assert config.tie_word_embeddings
         self.config = config
         self.model = BartModel(config,
                                cache_config,
@@ -842,11 +847,13 @@ class BartForConditionalGeneration(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        encoder_input_ids: torch.Tensor,
-        encoder_positions: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
+        *,
+        encoder_input_ids: torch.Tensor,
+        encoder_positions: torch.Tensor,
+        **kwargs,
     ) -> torch.Tensor:
         r"""
         Args:
@@ -930,10 +937,12 @@ class BartForConditionalGeneration(nn.Module):
         model_params_dict = dict(self.model.named_parameters())
         top_params_dict = dict(self.named_parameters())
 
+        weights_tuple_list = list(weights)
+
         shared_embedding_weight = None
         shared_embedding_shard_id = None
 
-        for name, loaded_weight in weights:
+        for name, loaded_weight in weights_tuple_list:
 
             name = self._rename_key(name)
             name, shard_id = self._rename_stacked_param(name)

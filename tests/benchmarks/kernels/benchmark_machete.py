@@ -307,13 +307,13 @@ if __name__ == "__main__":
 Benchmark Machete GEMM.
     To run square GEMMs:
         python3 ./benchmarks/kernels/benchmark_machete.py --dtype float16 square_bench --dim-start 128 --dim-end 512 --dim-increment 64
-    
+
     To run constant N and K and sweep M:
         python3 ./benchmarks/kernels/benchmark_machete.py --dtype float16 range_bench --dim-start 128 --dim-end 512 --dim-increment 64 --n-constant 16384 --k-constant 16384
-    
+
     To run dimensions from a model:
         python3 ./benchmarks/kernels/benchmark_machete.py --dtype float16 model_bench --models meta-llama/Llama-2-7b-hf --batch-sizes 16 --tp-sizes 1
-    
+
     Output:
         - a .pkl file, that is a list of raw torch.benchmark.utils.Measurements for the pytorch and cutlass implementations for the various GEMMs.
             """,  # noqa: E501

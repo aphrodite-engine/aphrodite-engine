@@ -143,20 +143,20 @@ def libentry():
     """
     Decorator for triton library entries.
     Motivation:
-        The runtime overhead of Triton kernels is the reason for the lower 
-        performance of small kernels, particularly evident with smaller models. 
+        The runtime overhead of Triton kernels is the reason for the lower
+        performance of small kernels, particularly evident with smaller models.
         Using this decorator can reduce Triton runtime overhead.
     How:
         The `run` function of JITFunction needs to accomplish:
             - Parameter binding using inspect
             - KernelArg type wrapping
             - Cache key calculation
-        When dealing with small size, these steps can become bottlenecks in 
-        Triton runtime. Libentry simplifies these steps to reduce runtime 
+        When dealing with small size, these steps can become bottlenecks in
+        Triton runtime. Libentry simplifies these steps to reduce runtime
         overhead, thereby improving the runtime expenses of small kernels.
     NOTE:
         When Triton is upgraded to version 3.0.0, libentry can be removed.
-        
+
     """
 
     def decorator(fn):

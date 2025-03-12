@@ -1,12 +1,14 @@
 """
 Based on:
-Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023). 
-Punica: Multi-Tenant LoRA Serving. 
+Chen, L., Ye, Z., Wu, Y., Zhuo, D., Ceze, L., & Krishnamurthy, A. (2023).
+Punica: Multi-Tenant LoRA Serving.
 https://arxiv.org/abs/2310.18547
 """
 import torch
 import triton
 import triton.language as tl
+
+from aphrodite.common.utils import direct_register_custom_op
 
 from .utils import get_lora_op_configs
 
@@ -141,6 +143,24 @@ def _bgmv_shrink(
     return
 
 
-bgmv_shrink = torch.library.custom_op("lora::bgmv_shrink",
-                                      _bgmv_shrink,
-                                      mutates_args=["output_tensor"])
+def bgmv_shrink_fake(
+    inputs: torch.Tensor,
+    lora_a_weights: torch.Tensor,
+    output_tensor: torch.Tensor,
+    lora_indices_tensor: torch.Tensor,
+    scaling: float = 1.0,
+) -> None:
+    return
+
+
+try:
+    direct_register_custom_op(
+        op_name="bgmv_shrink",
+        op_func=_bgmv_shrink,
+        mutates_args=["output_tensor"],
+        fake_impl=bgmv_shrink_fake,
+    )
+    bgmv_shrink = torch.ops.aphrodite.bgmv_shrink
+
+except AttributeError:
+    bgmv_shrink = _bgmv_shrink

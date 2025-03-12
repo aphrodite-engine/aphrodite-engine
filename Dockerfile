@@ -15,6 +15,7 @@ RUN echo 'tzdata tzdata/Areas select America' | debconf-set-selections \
     && echo 'tzdata tzdata/Zones/America select Los_Angeles' | debconf-set-selections \
     && apt-get update -y \
     && apt-get install -y ccache software-properties-common \
+    && apt-get install -y ffmpeg libsm6 libxext6 libgl1 \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update -y \
     && apt-get install -y python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv python3-pip \
@@ -35,7 +36,6 @@ WORKDIR /workspace
 
 # install build and runtime dependencies
 COPY requirements-common.txt requirements-common.txt
-COPY requirements-adag.txt requirements-adag.txt
 COPY requirements-cuda.txt requirements-cuda.txt
 RUN pip install packaging wheel
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -69,7 +69,6 @@ COPY setup.py setup.py
 COPY cmake cmake
 COPY CMakeLists.txt CMakeLists.txt
 COPY requirements-common.txt requirements-common.txt
-COPY requirements-adag.txt requirements-adag.txt
 COPY requirements-cuda.txt requirements-cuda.txt
 COPY pyproject.toml pyproject.toml
 COPY aphrodite aphrodite
@@ -118,7 +117,7 @@ RUN --mount=type=bind,from=build,src=/workspace/dist,target=/aphrodite-workspace
     python3 -m pip install dist/*.whl --verbose
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.4/flashinfer-0.1.4+cu121torch2.4-cp310-cp310-linux_x86_64.whl
+    python3 -m pip install https://github.com/flashinfer-ai/flashinfer/releases/download/v0.1.6/flashinfer-0.1.6+cu121torch2.4-cp310-cp310-linux_x86_64.whl
 #################### Aphrodite installation IMAGE ####################
 
 
@@ -128,7 +127,7 @@ FROM aphrodite-base AS aphrodite-openai
 
 # install additional dependencies for openai api server
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install accelerate hf_transfer 'modelscope!=1.15.0'
+    pip install accelerate hf_transfer 'modelscope!=1.15.0' bitsandbytes>=0.44.0 timm==0.9.10
 
 ENV NUMBA_CACHE_DIR=$HOME/.numba_cache
 

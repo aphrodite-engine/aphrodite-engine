@@ -24,12 +24,23 @@ except Exception:
 
 
 def _can_p2p(rank: int, world_size: int) -> bool:
+    if envs.APHRODITE_FORCE_P2P:
+        logger.warning(
+            "Forcing Custom All-Reduce. This may fail if P2P is not supported."
+        )
+        return True
     for i in range(world_size):
         if i == rank:
             continue
         if not gpu_p2p_access_check(rank, i):
             return False
     return True
+
+
+def is_weak_contiguous(inp: torch.Tensor):
+    return inp.is_contiguous() or (inp.storage().nbytes() -
+                                   inp.storage_offset() * inp.element_size()
+                                   == inp.numel() * inp.element_size())
 
 
 class CustomAllreduce:
@@ -118,7 +129,8 @@ class CustomAllreduce:
         assert current_platform.is_cuda()
         from aphrodite.platforms.cuda import CudaPlatform
         cuda_platform: CudaPlatform = current_platform
-        full_nvlink = cuda_platform.is_full_nvlink(physical_device_ids)
+        full_nvlink = (cuda_platform.is_full_nvlink(physical_device_ids)
+                        or envs.APHRODITE_FORCE_P2P)
         if world_size > 2 and not full_nvlink:
             if rank == 0:
                 logger.warning(
@@ -172,7 +184,7 @@ class CustomAllreduce:
     @contextmanager
     def capture(self):
         """
-        The main responsibility of this context manager is the 
+        The main responsibility of this context manager is the
         `register_graph_buffers` call at the end of the context.
         It records all the buffer addresses used in the CUDA graph.
         """
@@ -230,8 +242,19 @@ class CustomAllreduce:
         ops.register_graph_buffers(self._ptr, handles, offsets)
 
     def should_custom_ar(self, inp: torch.Tensor):
-        return ops.should_custom_ar(inp, self.max_size, self.world_size,
-                                    self.full_nvlink)
+        if self.disabled:
+            return False
+        inp_size = inp.numel() * inp.element_size()
+        # custom allreduce requires input byte size to be multiples of 16
+        if inp_size % 16 != 0:
+            return False
+        if not is_weak_contiguous(inp):
+            return False
+        # for 4 or more non NVLink-capable GPUs, custom allreduce provides
+        # little performance improvement over NCCL.
+        if self.world_size == 2 or self.full_nvlink:
+            return inp_size < self.max_size
+        return False
 
     # all reduce, assuming inp tensor is IPC registered with register_buffer,
     # or, in the context of cuda graphs, register_graph_buffers
@@ -250,24 +273,21 @@ class CustomAllreduce:
 
     def custom_all_reduce(self, input: torch.Tensor) -> Optional[torch.Tensor]:
         # when custom allreduce is disabled, this will be None
-        if self.disabled:
+        if self.disabled or not self.should_custom_ar(input):
             return None
         if self._IS_CAPTURING:
             if torch.cuda.is_current_stream_capturing():
-                if self.should_custom_ar(input):
-                    return self.all_reduce_reg(input)
+                return self.all_reduce_reg(input)
             else:
-                if self.should_custom_ar(input):
-                    # if warm up, mimic the allocation pattern
-                    # since custom allreduce is out-of-place
-                    return torch.empty_like(input)
+                # if warm up, mimic the allocation pattern
+                # since custom allreduce is out-of-place
+                return torch.empty_like(input)
         else:
             # note: outside of cuda graph context,
             # custom allreduce incurs a cost of cudaMemcpy, which should
             # be small(<=1% of overall latency) compared to the performance
             # gains of using custom kernels
-            if self.should_custom_ar(input):
-                return self.all_reduce_unreg(input)
+            return self.all_reduce_unreg(input)
 
         return None
 

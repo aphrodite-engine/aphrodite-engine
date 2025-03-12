@@ -286,8 +286,8 @@ def sparse_semi_structured_to_dense_cutlass(sparse, meta_reordered):
 def mask_creator(tensor):
     """
     Class for creating N:M sparsity masks.
-    Masks will be created using the N:M ratio, where for every block of 
-    M weights, N will be pruned based on ranked weight value. Each mask 
+    Masks will be created using the N:M ratio, where for every block of
+    M weights, N will be pruned based on ranked weight value. Each mask
     will correspond to the given tensor.
 
     :param N: The number of weights in a group to keep

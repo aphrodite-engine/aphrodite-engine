@@ -4,7 +4,7 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
                                      LoRAConfig, ModelConfig, ParallelConfig,
                                      PromptAdapterConfig, SchedulerConfig)
 from aphrodite.common.sequence import SequenceGroupMetadata
-from aphrodite.task_handler.model_runner import (
+from aphrodite.worker.model_runner import (
     ModelInputForGPUWithSamplingMetadata, ModelRunner)
 
 
@@ -17,7 +17,7 @@ class TargetModelRunner(ModelRunner):
     tokens are accepted. For this reason disabling log probabilities in the
     target model will make decode faster. The model runner sets the
     SamplingMetadata parameters according to whether log probabilities are
-    requested or not. 
+    requested or not.
     """
 
     def __init__(self,

@@ -45,6 +45,11 @@ class SiluAndMul(CustomOp):
         ops.silu_and_mul(out, x)
         return out
 
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        from aphrodite.modeling.layers.ops.activation import swiglu_fg_kernel
+        d = x.shape[-1] // 2
+        return swiglu_fg_kernel(x[..., :d], x[..., d:])
+
 
 class GeluAndMul(CustomOp):
     """An activation function for GeGLU.
@@ -90,6 +95,17 @@ class GeluAndMul(CustomOp):
             ops.gelu_tanh_and_mul(out, x)
         return out
 
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        from aphrodite.modeling.layers.ops.activation import (
+            geglu_approx_forward_kernel, geglu_exact_forward_kernel)
+        d = x.shape[-1] // 2
+        gate = x[..., :d]
+        up = x[..., d:]
+        if self.approximate == "none":
+            return geglu_exact_forward_kernel(gate, up)
+        elif self.approximate == "tanh":
+            return geglu_approx_forward_kernel(gate, up)
+
     def extra_repr(self) -> str:
         return f'approximate={repr(self.approximate)}'
 
@@ -111,9 +127,11 @@ class NewGELU(CustomOp):
     def forward_xpu(self, x: torch.Tensor) -> torch.Tensor:
         from aphrodite._ipex_ops import ipex_ops as ops
 
-        out = torch.empty_like(x)
-        ops.gelu_new(out, x)
-        return out
+        return ops.gelu_new(x)
+
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        from aphrodite.modeling.layers.ops.activation import gelu_new_kernel
+        return gelu_new_kernel(x)
 
 
 class FastGELU(CustomOp):
@@ -132,9 +150,11 @@ class FastGELU(CustomOp):
     def forward_xpu(self, x: torch.Tensor) -> torch.Tensor:
         from aphrodite._ipex_ops import ipex_ops as ops
 
-        out = torch.empty_like(x)
-        ops.gelu_fast(out, x)
-        return out
+        return ops.gelu_fast(x)
+
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        from aphrodite.modeling.layers.ops.activation import fast_gelu_kernel
+        return fast_gelu_kernel(x)
 
 
 class QuickGELU(CustomOp):
@@ -151,6 +171,16 @@ class QuickGELU(CustomOp):
         ops.gelu_quick(out, x)
         return out
 
+    def forward_xpu(self, x: torch.Tensor) -> torch.Tensor:
+        from aphrodite._ipex_ops import ipex_ops as ops
+        out = torch.empty_like(x)
+        ops.gelu_quick(out, x)
+        return out
+
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        from aphrodite.modeling.layers.ops.activation import quick_gelu_kernel
+        return quick_gelu_kernel(x)
+
 
 class ReLUSquaredActivation(CustomOp):
     """
@@ -163,6 +193,10 @@ class ReLUSquaredActivation(CustomOp):
 
     def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
         return self.forward_native(x)
+
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        from aphrodite.modeling.layers.ops.activation import relu_squared_kernel
+        return relu_squared_kernel(x)
 
 
 class ScaledActivation(nn.Module):

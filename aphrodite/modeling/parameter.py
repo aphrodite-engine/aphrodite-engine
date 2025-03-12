@@ -1,3 +1,4 @@
+from fractions import Fraction
 from typing import Callable, List, Optional, Tuple, Union
 
 import torch
@@ -60,11 +61,11 @@ class BaseAphroditeParameter(Parameter):
 
 class _ColumnAphroditeParameter(BaseAphroditeParameter):
     """
-    Private class defining weight loading functionality 
+    Private class defining weight loading functionality
     (load_merged_column_weight, load_qkv_weight)
     for parameters being loaded into linear layers with column
     parallelism. This includes QKV and MLP layers which are
-    not already fused on disk. Requires an output dimension 
+    not already fused on disk. Requires an output dimension
     to be defined. Called within the weight loader of
     each of the column parallel linear layers.
     """
@@ -193,11 +194,11 @@ class PerTensorScaleParameter(BaseAphroditeParameter):
     layers (e.g. for QKV, there are 3 scales loaded from disk).
     This is relevant to weights with per-tensor quantization.
     Adds functionality to map the scalers to a shard during
-    weight loading. 
+    weight loading.
 
-    Note: additional parameter manipulation may be handled 
-    for each quantization config specifically, within 
-    process_weights_after_loading 
+    Note: additional parameter manipulation may be handled
+    for each quantization config specifically, within
+    process_weights_after_loading
     """
 
     def __init__(self, **kwargs):
@@ -231,7 +232,7 @@ class PerTensorScaleParameter(BaseAphroditeParameter):
     def _load_into_shard_id(self, loaded_weight: torch.Tensor,
                             shard_id: Union[str, int], **kwargs):
         """
-        Slice the parameter data based on the shard id for 
+        Slice the parameter data based on the shard id for
         loading.
         """
 
@@ -257,7 +258,7 @@ class PackedColumnParameter(_ColumnAphroditeParameter):
     """
 
     def __init__(self,
-                 packed_factor: int,
+                 packed_factor: Union[int, Fraction],
                  packed_dim: int,
                  marlin_tile_size: Optional[int] = None,
                  **kwargs):
@@ -292,13 +293,13 @@ class PackedAphroditeParameter(ModelWeightParameter):
     Example: GPTQ Marlin weights are int4 or int8, packed into int32.
     Extends the ModelWeightParameter to take in the
     packed factor, the packed dimension, and optionally, marlin
-    tile size for marlin kernels. Adjusts the shard_size and 
+    tile size for marlin kernels. Adjusts the shard_size and
     shard_offset for fused linear layers model weight loading
     by accounting for packing and optionally, marlin tile size.
     """
 
     def __init__(self,
-                 packed_factor: int,
+                 packed_factor: Union[int, Fraction],
                  packed_dim: int,
                  marlin_tile_size: Optional[int] = None,
                  **kwargs):
@@ -330,13 +331,13 @@ class PackedAphroditeParameter(ModelWeightParameter):
 def permute_param_layout_(param: BaseAphroditeParameter, input_dim: int,
                           output_dim: int, **kwargs) -> BaseAphroditeParameter:
     """
-    Permute a parameter's layout to the specified input and output dimensions, 
+    Permute a parameter's layout to the specified input and output dimensions,
     useful for forcing the parameter into a known layout, for example, if I need
-    a packed (quantized) weight matrix to be in the layout 
+    a packed (quantized) weight matrix to be in the layout
         {input_dim = 0, output_dim = 1, packed_dim = 0}
     then I can call:
         permute_param_layout_(x, input_dim=0, output_dim=1, packed_dim=0)
-    to ensure x is in the correct layout (permuting it to the correct layout if 
+    to ensure x is in the correct layout (permuting it to the correct layout if
     required, asserting if it cannot get it to the correct layout)
     """
 
@@ -405,7 +406,7 @@ def _adjust_shard_indexes_for_packing(shard_size, shard_offset, packed_factor,
 # repack to Marlin. We also store shard size and offsets in order to be able to
 # correctly unpack (shard by shard) from 4-bit to 8-bit.
 class HQQQweightParameter(PackedAphroditeParameter):
-    
+
     def __init__(self, packed_factor: int, packed_dim: int, **kwargs):
         super().__init__(packed_factor, packed_dim, None, **kwargs)
         self.shard_offsets: List[Tuple[int, int]] = []

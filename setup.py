@@ -72,7 +72,7 @@ if not sys.platform.startswith("linux"):
         APHRODITE_TARGET_DEVICE = "cuda"
     else:
         APHRODITE_TARGET_DEVICE = "empty"
-       
+
 
 MAIN_CUDA_VERSION = "12.4"
 
@@ -175,6 +175,11 @@ class cmake_build_ext(build_ext):
             '-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY={}'.format(self.build_temp),
             '-DAPHRODITE_TARGET_DEVICE={}'.format(APHRODITE_TARGET_DEVICE),
         ]
+
+        if _install_xqa_kernels():
+            cmake_args += [
+                '-DAPHRODITE_BUILD_XQA_KERNELS=ON'
+            ]
 
         verbose = envs.VERBOSE
         if verbose:
@@ -300,6 +305,9 @@ def _build_custom_ops() -> bool:
 
 def _build_core_ext() -> bool:
     return not (_is_neuron() or _is_tpu() or _is_openvino() or _is_xpu())
+
+def _install_xqa_kernels() -> bool:
+    return bool(int(os.getenv("APHRODITE_BUILD_XQA_KERNELS", "0")))
 
 
 def get_hipcc_rocm_version():
@@ -429,6 +437,8 @@ def get_requirements() -> List[str]:
         for line in requirements:
             if line.startswith("-r "):
                 resolved_requirements += _read_requirements(line.split()[1])
+            elif line.startswith("--"):
+                continue
             else:
                 resolved_requirements.append(line)
         return resolved_requirements
@@ -477,6 +487,12 @@ if _is_cuda() or _is_hip():
 
 if _build_custom_ops():
     ext_modules.append(CMakeExtension(name="aphrodite._C"))
+
+if _is_hip():
+    ext_modules.append(CMakeExtension(name="aphrodite._rocm_C"))
+
+if _is_cuda() and _install_xqa_kernels():
+    ext_modules.append(CMakeExtension(name="aphrodite._xqa_C"))
 
 package_data = {
     "aphrodite": [

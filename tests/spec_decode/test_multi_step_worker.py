@@ -6,12 +6,13 @@ import pytest
 import torch
 
 from aphrodite.common.sequence import (ExecuteModelRequest, HiddenStates,
-                                       Logprob, SamplerOutput, get_all_seq_ids)
+                                       Logprob, get_all_seq_ids)
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.utils import set_random_seed
 from aphrodite.spec_decode.draft_model_runner import TP1DraftModelRunner
 from aphrodite.spec_decode.multi_step_worker import MultiStepWorker
 from aphrodite.spec_decode.top1_proposer import Top1Proposer
-from aphrodite.task_handler.worker import Worker
+from aphrodite.worker.worker import Worker
 
 from .utils import (assert_logprobs_dict_allclose, create_batch,
                     create_seq_group_metadata_from_prompts, create_worker,
@@ -174,7 +175,6 @@ def test_same_output_for_multi_step():
         block_size,
         num_gpu_blocks,
         seed,
-        model_runner_cls=TP1DraftModelRunner,
     )
 
     worker = create_worker(

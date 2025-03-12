@@ -12,7 +12,7 @@ from aphrodite.executor.multiproc_worker_utils import (ProcessWorkerWrapper,
 
 
 class DummyWorker:
-    """Dummy version of aphrodite.task_handler.worker.Worker"""
+    """Dummy version of aphrodite.worker.worker.Worker"""
 
     def __init__(self, rank: int):
         self.rank = rank

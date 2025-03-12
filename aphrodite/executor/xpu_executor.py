@@ -7,12 +7,12 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
                                      LoRAConfig, ModelConfig, ParallelConfig,
                                      PromptAdapterConfig, SchedulerConfig,
                                      SpeculativeConfig)
-from aphrodite.common.sequence import (ExecuteModelRequest, PoolerOutput,
-                                       SamplerOutput)
+from aphrodite.common.sequence import ExecuteModelRequest, PoolerOutput
 from aphrodite.common.utils import make_async
 from aphrodite.executor.executor_base import ExecutorAsyncBase
 from aphrodite.executor.gpu_executor import GPUExecutor
-from aphrodite.task_handler.worker_base import WorkerBase
+from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.worker.worker_base import WorkerBase
 
 
 class XPUExecutor(GPUExecutor):
@@ -56,7 +56,7 @@ class XPUExecutor(GPUExecutor):
             raise NotImplementedError(
                 "XPU does not support speculative decoding")
         else:
-            worker_module_name = "aphrodite.task_handler.xpu_worker"
+            worker_module_name = "aphrodite.worker.xpu_worker"
             worker_class_name = "XPUWorker"
         return (worker_module_name, worker_class_name, worker_class_fn)
 

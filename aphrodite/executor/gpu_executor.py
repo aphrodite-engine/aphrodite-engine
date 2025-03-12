@@ -2,14 +2,14 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 from loguru import logger
 
-from aphrodite.common.sequence import (ExecuteModelRequest, PoolerOutput,
-                                       SamplerOutput)
+from aphrodite.common.sequence import ExecuteModelRequest, PoolerOutput
 from aphrodite.common.utils import (get_distributed_init_method, get_ip,
                                     get_open_port, make_async)
 from aphrodite.executor.executor_base import ExecutorAsyncBase, ExecutorBase
 from aphrodite.lora.request import LoRARequest
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
-from aphrodite.task_handler.worker_base import WorkerBase, WorkerWrapperBase
+from aphrodite.worker.worker_base import WorkerBase, WorkerWrapperBase
 
 
 def create_worker(worker_module_name: str, worker_class_name: str,
@@ -68,13 +68,13 @@ class GPUExecutor(ExecutorBase):
             self) -> Tuple[str, str, Optional[Callable[[], Type[WorkerBase]]]]:
         worker_class_fn = None
         if self.scheduler_config.is_multi_step:
-            worker_module_name = "aphrodite.task_handler.multi_step_worker"
+            worker_module_name = "aphrodite.worker.multi_step_worker"
             worker_class_name = "MultiStepWorker"
         elif self.speculative_config:
             worker_module_name = "aphrodite.spec_decode.spec_decode_worker"
             worker_class_name = "create_spec_worker"
         else:
-            worker_module_name = "aphrodite.task_handler.worker"
+            worker_module_name = "aphrodite.worker.worker"
             worker_class_name = "Worker"
         return (worker_module_name, worker_class_name, worker_class_fn)
 

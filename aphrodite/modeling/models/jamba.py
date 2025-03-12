@@ -5,17 +5,13 @@ from typing import Iterable, List, Optional, Tuple
 
 import torch
 from torch import nn
-from torch.nn.parameter import Parameter
 from transformers import JambaConfig
 
 from aphrodite.attention.backends.abstract import AttentionMetadata
 from aphrodite.attention.layer import Attention
 from aphrodite.common.config import CacheConfig, LoRAConfig, SchedulerConfig
-from aphrodite.common.sequence import IntermediateTensors, SamplerOutput
-# yapf: disable
-from aphrodite.distributed import (get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size)
-# yapf: enable
+from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
@@ -24,21 +20,23 @@ from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               ReplicatedLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.mamba import (causal_conv1d_fn,
-                                             causal_conv1d_update,
-                                             selective_scan_fn,
-                                             selective_state_update)
-from aphrodite.modeling.layers.sampler import Sampler
+from aphrodite.modeling.layers.mamba.ops.causal_conv1d import (
+    causal_conv1d_fn, causal_conv1d_update)
+from aphrodite.modeling.layers.mamba.ops.mamba_ssm import (
+    selective_scan_fn, selective_state_update)
+from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import HasInnerState
+from aphrodite.modeling.model_loader.weight_utils import (
+    composed_weight_loader, default_weight_loader, sharded_weight_loader)
 from aphrodite.modeling.models.mamba_cache import MambaCacheManager
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_weight_attrs
-from aphrodite.quantization.base_config import QuantizationConfig
-from aphrodite.task_handler.model_runner import (_BATCH_SIZES_TO_CAPTURE,
-                                                 _get_graph_batch_size)
+from aphrodite.quantization import QuantizationConfig
+from aphrodite.worker.model_runner import (_BATCH_SIZES_TO_CAPTURE,
+                                           _get_graph_batch_size)
+
+from .interfaces import HasInnerState, SupportsLoRA
 
 KVCache = Tuple[torch.Tensor, torch.Tensor]
 
@@ -101,16 +99,6 @@ class JambaMambaMixer(nn.Module):
                                             bias=True,
                                             skip_bias_add=True)
 
-        def weight_loader(param: Parameter, loaded_weight: torch.Tensor):
-            tp_rank = get_tensor_model_parallel_rank()
-            tp_size = get_tensor_model_parallel_world_size()
-            param.data.copy_(
-                loaded_weight.data.split(loaded_weight.shape[0] // tp_size,
-                                         dim=0)[tp_rank])
-
-        def A_weight_loader(param: Parameter, loaded_weight: torch.Tensor):
-            weight_loader(param, -torch.exp(loaded_weight.float()))
-
         tp_size = get_tensor_model_parallel_world_size()
         self.A = nn.Parameter(
             torch.empty(
@@ -120,8 +108,10 @@ class JambaMambaMixer(nn.Module):
             ))
         self.D = nn.Parameter(torch.ones(self.intermediate_size // tp_size))
 
-        set_weight_attrs(self.D, {"weight_loader": weight_loader})
-        set_weight_attrs(self.A, {"weight_loader": A_weight_loader})
+        set_weight_attrs(self.D, {"weight_loader": sharded_weight_loader(0)})
+        a_weight_loader = composed_weight_loader(
+            sharded_weight_loader(0), lambda x: -torch.exp(x.float()))
+        set_weight_attrs(self.A, {"weight_loader": a_weight_loader})
 
         self.out_proj = RowParallelLinear(
             self.intermediate_size,
@@ -138,42 +128,47 @@ class JambaMambaMixer(nn.Module):
         self.c_layernorm = RMSNorm(self.ssm_state_size,
                                    eps=config.rms_norm_eps)
 
-    def mamba_forward(self,
-                      hidden_states: torch.Tensor,
-                      cache_params: MambaCacheParams = None):
+    def forward(self, hidden_states: torch.Tensor,
+                attn_metadata: AttentionMetadata, conv_state: torch.Tensor,
+                ssm_state: torch.Tensor):
+
         # 1. Gated MLP's linear projection
-        projected_states = self.in_proj(hidden_states)[0].transpose(1, 2)
-        hidden_states, gate = projected_states.chunk(2, dim=1)
+        projected_states = self.in_proj(hidden_states)[0].transpose(-2, -1)
+        hidden_states, gate = projected_states.chunk(2, dim=-2)
 
         # 2. Convolution sequence transformation
         conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0),
                                                self.conv1d.weight.size(2))
-        if cache_params is not None and not cache_params.is_prompt:
-            hidden_states = causal_conv1d_update(
-                hidden_states.squeeze(-1),
-                cache_params.conv_state,
-                conv_weights,
-                self.conv1d.bias,
-                self.activation,
-            )
-            hidden_states = hidden_states.unsqueeze(-1)
-        else:
-            if cache_params is not None:
-                conv_states = nn.functional.pad(
-                    hidden_states,
-                    (self.conv_kernel_size - hidden_states.shape[-1], 0))
-                cache_params.conv_state.copy_(conv_states)
 
-            hidden_states, _ = causal_conv1d_fn(
+        if attn_metadata.query_start_loc is not None \
+            and attn_metadata.context_lens_tensor is not None:
+            # |---------- N-1 iteration --------|
+            # |---------------- N iteration ---------------------|
+            # |- tokenA -|......................|-- newTokens ---|
+            # |---------- context_len ----------|
+            # |-------------------- seq_len ---------------------|
+            #                                   |-- query_len ---|
+            hidden_states = causal_conv1d_fn(
                 hidden_states,
                 conv_weights,
                 self.conv1d.bias,
                 activation=self.activation,
+                conv_states=conv_state,
+                has_initial_state=attn_metadata.context_lens_tensor > 0,
+                query_start_loc=attn_metadata.query_start_loc)
+        else:
+            hidden_states = causal_conv1d_update(
+                hidden_states.transpose(0, 1),
+                conv_state,
+                conv_weights,
+                self.conv1d.bias,
+                self.activation,
             )
+            hidden_states = hidden_states.transpose(0, 1)
 
         # 3. State Space Model sequence transformation
         # 3.a. input varying initialization of time_step, B and C
-        ssm_parameters = self.x_proj(hidden_states.transpose(1, 2))[0]
+        ssm_parameters = self.x_proj(hidden_states.transpose(-2, -1))[0]
 
         time_step, B, C = torch.split(
             ssm_parameters,
@@ -184,71 +179,45 @@ class JambaMambaMixer(nn.Module):
         B = self.b_layernorm(B.contiguous())
         C = self.c_layernorm(C.contiguous())
 
-        discrete_time_step = self.dt_proj(time_step)[0].transpose(1, 2)
+        discrete_time_step = self.dt_proj(time_step)[0].transpose(-2, -1)
         # 3.c perform the recurrence y ← SSM(A, B, C)(x)
         time_proj_bias = (self.dt_proj.bias.float() if hasattr(
             self.dt_proj, "bias") else None)
-        if cache_params is not None and not cache_params.is_prompt:
-            scan_outputs = selective_state_update(
-                cache_params.ssm_state,
-                hidden_states[..., 0],
-                discrete_time_step[..., 0],
-                self.A,
-                B[:, 0],
-                C[:, 0],
-                self.D,
-                gate[..., 0],
-                time_proj_bias,
-                dt_softplus=True,
-            ).unsqueeze(-1)
-        else:
-            scan_outputs, ssm_state = selective_scan_fn(
+
+        if attn_metadata.query_start_loc is not None \
+            and attn_metadata.context_lens_tensor is not None:
+            scan_outputs = selective_scan_fn(
                 hidden_states,
+                ssm_state,
                 discrete_time_step,
                 self.A,
-                B.transpose(1, 2),
-                C.transpose(1, 2),
+                B.transpose(-2, -1),
+                C.transpose(-2, -1),
                 self.D.float(),
                 gate,
                 time_proj_bias,
                 delta_softplus=True,
-                return_last_state=True,
+                has_initial_state=attn_metadata.context_lens_tensor > 0,
+                query_start_loc=attn_metadata.query_start_loc)
+        else:
+            scan_outputs = selective_state_update(
+                ssm_state,
+                hidden_states.transpose(0, 1),
+                discrete_time_step.transpose(0, 1),
+                self.A,
+                B,
+                C,
+                self.D,
+                gate.transpose(0, 1),
+                time_proj_bias,
+                dt_softplus=True,
             )
-            if ssm_state is not None and cache_params is not None:
-                cache_params.ssm_state.copy_(ssm_state)
+            scan_outputs = scan_outputs.transpose(0, 1)
 
         # 4. Final linear projection
-        contextualized_states = self.out_proj(scan_outputs.transpose(1, 2))[0]
+        contextualized_states = self.out_proj(scan_outputs.transpose(-2,
+                                                                     -1))[0]
         return contextualized_states
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attn_metadata: AttentionMetadata,
-        conv_state: torch.Tensor,
-        ssm_state: torch.Tensor,
-    ):
-        if attn_metadata.prefill_metadata is not None:
-            offset = 0
-            for i, prompt_len in enumerate(
-                    attn_metadata.prefill_metadata.seq_lens):
-                cache = MambaCacheParams(True,
-                                         conv_state=conv_state[i].unsqueeze(0),
-                                         ssm_state=ssm_state[i].unsqueeze(0))
-                hidden_states[offset:offset + prompt_len].copy_(
-                    self.mamba_forward(hidden_states[offset:offset +
-                                                     prompt_len].unsqueeze(0),
-                                       cache_params=cache)[0])
-                offset += prompt_len
-        else:
-            cache = MambaCacheParams(False,
-                                     conv_state=conv_state,
-                                     ssm_state=ssm_state)
-            hidden_states = self.mamba_forward(hidden_states.unsqueeze(1),
-                                               cache_params=cache)
-            hidden_states = hidden_states.squeeze(1)
-
-        return hidden_states
 
 
 class JambaMoE(nn.Module):
@@ -541,7 +510,7 @@ class JambaModel(nn.Module):
         return hidden_states
 
 
-class JambaForCausalLM(nn.Module, HasInnerState):
+class JambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -571,8 +540,6 @@ class JambaForCausalLM(nn.Module, HasInnerState):
         lora_config: Optional[LoRAConfig] = None,
         scheduler_config: Optional[SchedulerConfig] = None,
     ) -> None:
-        assert not scheduler_config.chunked_prefill_enabled, \
-            "Jamba currently does not support chunked prefill"
         assert not cache_config.enable_prefix_caching, \
             "Jamba currently does not support prefix caching"
 
@@ -597,6 +564,7 @@ class JambaForCausalLM(nn.Module, HasInnerState):
         )
         # Used to track and store by the Mamba cache between steps.
         self.mamba_cache: Optional[MambaCacheManager] = None
+
         self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
                                                 config.vocab_size)
         self.sampler = Sampler()
@@ -621,29 +589,13 @@ class JambaForCausalLM(nn.Module, HasInnerState):
                 self.lm_head.weight.dtype, num_mamba_layers, max_batch_size,
                 *self._get_mamba_cache_shape())
 
-        if "seqlen_agnostic_capture_inputs" not in kwargs:
-            # We get here only on Prefill/Eager mode runs
-            assert all(
-                key in kwargs
-                for key in ["request_ids_to_seq_ids", "finished_requests_ids"])
-
-            request_ids_to_seq_ids = kwargs["request_ids_to_seq_ids"]
-            finished_requests_ids = kwargs["finished_requests_ids"]
-            self.mamba_cache.release_finished_requests(finished_requests_ids)
-            batch_size = input_ids.shape[0]
-            if attn_metadata.prefill_metadata:
-                batch_size = len(request_ids_to_seq_ids)
-            mamba_cache_tensors = self.mamba_cache.prepare_current_run_state(
-                request_ids_to_seq_ids, batch_size, finished_requests_ids)
-        else:
-            # CUDA graph capturing runs
-            mamba_cache_tensors = kwargs["seqlen_agnostic_capture_inputs"]
+        mamba_cache_tensors = self.mamba_cache.current_run_tensors(
+            input_ids, attn_metadata, **kwargs)
 
         hidden_states = self.model(input_ids, positions, kv_caches,
                                    attn_metadata, mamba_cache_tensors[0],
                                    mamba_cache_tensors[1])
         return hidden_states
-
 
     def copy_inputs_before_cuda_graphs(self, input_buffers, **kwargs):
         return self.mamba_cache.copy_inputs_before_cuda_graphs(
@@ -658,7 +610,7 @@ class JambaForCausalLM(nn.Module, HasInnerState):
         hidden_size = self.config.hidden_size
         conv_state_shape = (
             self.config.mamba_expand * hidden_size // world_size,
-            self.config.mamba_d_conv,
+            self.config.mamba_d_conv - 1,
         )
         temporal_state_shape = (
             self.config.mamba_expand * hidden_size // world_size,
@@ -736,12 +688,13 @@ class JambaForCausalLM(nn.Module, HasInnerState):
                 ) in expert_params_mapping:
                     if weight_name not in name:
                         continue
+
                     name = name.replace(weight_name, param_name)
                     param = params_dict[name]
                     weight_loader = param.weight_loader
                     weight_loader(param,
                                   loaded_weight,
-                                  weight_name,
+                                  name,
                                   shard_id=shard_id,
                                   expert_id=expert_id)
                     break

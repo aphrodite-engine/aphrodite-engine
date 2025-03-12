@@ -15,6 +15,7 @@ from aphrodite.common.config import PromptAdapterConfig
 from aphrodite.prompt_adapter.layers import (
     VocabParallelEmbeddingWithPromptAdapter)  # yapf: disable
 from aphrodite.prompt_adapter.layers import PromptAdapterMapping
+from aphrodite.prompt_adapter.utils import load_peft_weights
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +48,11 @@ def convert_mapping(
 ) -> torch.Tensor:
     """Converts PromptAdapterMapping to index tensors.
     Args:
-        mapping: PromptAdapterMapping mapping rows in a 
+        mapping: PromptAdapterMapping mapping rows in a
                 batch to PromptAdapter ids.
-        prompt_adapter_index_to_id: List mapping PromptAdapter 
+        prompt_adapter_index_to_id: List mapping PromptAdapter
                 ids to PromptAdapter indices.
-        
+
     Returns:
         pa_indices: Tensor of shape [batch_size] mapping batch rows to
             PromptAdapter indices.
@@ -90,7 +91,6 @@ class PromptAdapterModel(AdapterModel):
         config: PromptAdapterConfig,
         device: str = "cuda",
     ) -> "PromptAdapterModel":
-        from peft.utils import load_peft_weights
 
         if num_virtual_tokens > config.max_prompt_adapter_token:
             raise ValueError(
@@ -156,7 +156,7 @@ class PromptAdapterModelManager(AdapterModelManager):
         self,
         prompt_adapter_id: int,
     ) -> bool:
-        """Move PromptAdapter into a GPU buffer 
+        """Move PromptAdapter into a GPU buffer
             to be used in the forward pass."""
         if prompt_adapter_id in self._active_adapters:
             return False

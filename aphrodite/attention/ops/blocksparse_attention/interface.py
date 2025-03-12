@@ -110,13 +110,13 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
         q, k, v: shape = (num_tokens, num_heads_q/kv, head_size).
         Support grouped attention, with `q[:, i*r:(i*r + r)]`
         is correspondent to `k[:, i]`, where `r` is the q/k ratio.
-        cu_seqlens_k: shape=(batch_size + 1,), 
-        indicating segment of samples, 
+        cu_seqlens_k: shape=(batch_size + 1,),
+        indicating segment of samples,
         e.g., `k[cu_seqlen[i]:cu_seqlne[i+1]]` is q of sample i
         cu_seqlens_q: shape=(batch_size + 1, ).
         Default None: same as cu_seqlens_k for prefilling or
         [0, 1, .., batch_size] for decoding.
-        The only case you need to specify is when q is a mix of 
+        The only case you need to specify is when q is a mix of
         prefilling and decoding.
         sm_scale: softmax scale, default to 1/sqrt(head_size).
         return: tensor of shape as q.
@@ -171,7 +171,7 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
 
     def spda(self, q, k, v, cu_seqlens_k, cu_seqlens_q=None, sm_scale=None):
         """For CPU, V100 or other older GPUs.
-        NOTE: torch SPDA supports nested tensor, 
+        NOTE: torch SPDA supports nested tensor,
         but seems extremely slow. Choose to pad instead.
         """
         assert (cu_seqlens_q is None or
@@ -201,8 +201,8 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
         return self.transpose_and_unpad(spda_output, cu_seqlens)
 
     def forward(self, q, k, v, cu_seqlens_k, cu_seqlens_q=None, sm_scale=None):
-        """Dispatch to `varlen_attn` (Ampere or newer) or 
-        `self.spda`(cpu, Volta, Turing or older)based on 
+        """Dispatch to `varlen_attn` (Ampere or newer) or
+        `self.spda`(cpu, Volta, Turing or older)based on
         the type of device used and cuda compute capability.
         q, k, v: shape = (num_tokens, num_heads_q/kv, head_size).
                 Support grouped attention, with `q[:, i*r:(i*r + r)]`
@@ -212,8 +212,8 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
         cu_seqlens_q: shape=(batch_size + 1, ).
                     Default None: same as cu_seqlens_k for prefilling or
                     [0, 1, .., batch_size] for decoding.
-                    The only case you need to specify 
-                    is when q is a mix of prefilling 
+                    The only case you need to specify
+                    is when q is a mix of prefilling
                     and decoding.
         sm_scale: softmax scale, default to 1/sqrt(head_size).
         return: tensor of shape as q.

@@ -1,0 +1,7 @@
+For later.
+
+mkdir build
+cd build
+cmake ..
+make
+cp c_utils* ../

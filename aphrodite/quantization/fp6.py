@@ -17,10 +17,10 @@ from aphrodite.quantization.utils.fp6_utils import (_SPLIT_K_MAP,
 class QuantLLMFPConfig(QuantizationConfig):
     """Config for QuantLLM FP quantizer. It supports fp2, fp3, fp4,
     fp5, fp6, fp7.
-    
+
     Reference: https://arxiv.org/abs/2401.14112
-    
-    Args: 
+
+    Args:
         weight_bits: the target quantization bits, should be one of
             2, 3, 4, 5, 6, 7.
     """
@@ -43,7 +43,7 @@ class QuantLLMFPConfig(QuantizationConfig):
                 "quantization are "
                 f"supported for QuantLLM FP quantizaiton, but got "
                 f"{self.weight_bits} bits.")
-        
+
         if get_tensor_model_parallel_rank() == 0:
             logger.info(f"Loading model in FP{self.weight_bits}_E"
                         f"{self.exponent_bits}M{self.mantissa_bits} format.")
@@ -193,6 +193,6 @@ class QuantLLMFPParameter(nn.Parameter):
 
     def quant_llmdequantize(self, output_dtype=None):
         output_dtype = output_dtype or torch.get_default_dtype()
-        return from_scaled_tc_fpx(self.data, self.quant_config.exponent_bits, 
+        return from_scaled_tc_fpx(self.data, self.quant_config.exponent_bits,
                         self.quant_config.mantissa_bits, self.scales
                         ).to(output_dtype)

@@ -112,7 +112,7 @@ def test_mixed_requests(
 ) -> None:
     """
     Test the case when some sequences have the prefix cache hit
-    and the others don't. The cached position determines where 
+    and the others don't. The cached position determines where
     the sequence is at among the batch of prefills.
     """
     override_backend_env_variable(monkeypatch, backend)

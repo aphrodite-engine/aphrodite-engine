@@ -37,7 +37,7 @@ class PhysicalTokenBlock:
 
 
 class BlockTable:
-    """Holds a list of blocks with caching of their associated block_ids 
+    """Holds a list of blocks with caching of their associated block_ids
     """
 
     def __init__(self, blocks: Optional[List[PhysicalTokenBlock]] = None):

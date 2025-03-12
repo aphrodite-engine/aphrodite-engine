@@ -6,7 +6,8 @@ import json
 import os
 import tempfile
 from collections import defaultdict
-from typing import Any, Dict, Generator, Iterable, List, Optional, Tuple, Union
+from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
+                    Tuple, Union)
 
 import filelock
 import gguf
@@ -15,6 +16,8 @@ import numpy as np
 import torch
 from huggingface_hub import HfFileSystem, hf_hub_download, snapshot_download
 from loguru import logger
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn)
 from safetensors.torch import load_file, safe_open, save_file
 from tqdm.auto import tqdm
 
@@ -184,9 +187,15 @@ def get_quant_config(model_config: ModelConfig,
     quant_config_file = quant_config_files[0]
     with open(quant_config_file, "r") as f:
         config = json.load(f)
-
         if model_config.quantization == "bitsandbytes":
             config["adapter_name_or_path"] = model_name_or_path
+        elif model_config.quantization == "modelopt":
+            if config["producer"]["name"] == "modelopt":
+                return quant_cls.from_config(config)
+            else:
+                raise ValueError(
+                    f"Unsupported quantization config"
+                    f" found for {model_config.quantization} in {f}.")
 
     return quant_cls.from_config(config)
 
@@ -199,7 +208,7 @@ def download_weights_from_hf(
     ignore_patterns: Optional[Union[str, List[str]]] = None,
 ) -> str:
     """Download model weights from Hugging Face Hub.
-    
+
     Args:
         model_name_or_path (str): The model name or path.
         cache_dir (Optional[str]): The cache directory to store the model
@@ -226,7 +235,8 @@ def download_weights_from_hf(
             if len(matching) > 0:
                 allow_patterns = [pattern]
                 break
-    rank = get_tensor_model_parallel_rank()
+    rank = (get_tensor_model_parallel_rank() if
+            torch.distributed.is_initialized() else 0)
     if rank == 0:
         logger.info(f"Using model weights format {allow_patterns}")
     # Use file lock to prevent multiple processes from
@@ -399,11 +409,58 @@ def pt_weights_iterator(
             desc="Loading pt checkpoint shards",
             disable=not enable_tqdm,
     ):
-        state = torch.load(bin_file, map_location="cpu")
+        state = torch.load(bin_file, map_location="cpu", weights_only=True)
         for name, param in state.items():
             yield name, param
         del state
         torch.cuda.empty_cache()
+
+
+def get_model_config_yaml(
+        model_name_or_path: str,
+        cache_dir: Optional[str] = None) -> Optional[dict]:
+    """Look for aphrodite_config.yaml in model directory or HF repo.
+
+    Args:
+        model_name_or_path: Local path or HF model name
+        cache_dir: Optional cache directory for HF downloads
+
+    Returns:
+        Dict containing the config if found, None otherwise
+    """
+    is_local = os.path.isdir(model_name_or_path)
+    config_path = None
+
+    if is_local:
+        config_path = os.path.join(model_name_or_path, "aphrodite_config.yaml")
+        if not os.path.exists(config_path):
+            return None
+    else:
+        try:
+            with get_lock(model_name_or_path, cache_dir):
+                valid_names = ["aphrodite_config.yaml",
+                               "aphrodite_config.yml"]
+                for name in valid_names:
+                    config_path = hf_hub_download(
+                        model_name_or_path,
+                        filename=name,
+                        cache_dir=cache_dir,
+                        local_files_only=huggingface_hub.constants.HF_HUB_OFFLINE,
+                    )
+                    if os.path.exists(config_path):
+                        break
+        except (huggingface_hub.utils.EntryNotFoundError,
+                huggingface_hub.utils.LocalEntryNotFoundError):
+            return None
+
+    try:
+        import yaml
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        return config
+    except Exception as e:
+        logger.warning(f"Failed to load aphrodite_config.yaml: {e}")
+        return None
 
 
 def get_gguf_extra_tensor_names(
@@ -422,29 +479,41 @@ def gguf_quant_weights_iterator(
     Iterate over the quant weights in the model gguf files and convert
     them to torch tensors
     """
-
     reader = gguf.GGUFReader(gguf_file)
+    total_tensors = len(reader.tensors)
 
-    for tensor in reader.tensors:
-        if tensor.name in gguf_to_hf_name_map:
-            weight_type = tensor.tensor_type
-            name = gguf_to_hf_name_map[tensor.name]
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+    ) as progress:
+        task1 = progress.add_task("Loading quantization types...",
+                                  total=total_tensors)
+        for tensor in reader.tensors:
+            if tensor.name in gguf_to_hf_name_map:
+                weight_type = tensor.tensor_type
+                name = gguf_to_hf_name_map[tensor.name]
 
-            if weight_type.name != "F32":
-                weight_type_name = name.replace("weight", "qweight_type")
-                weight_type = torch.tensor(weight_type)
-                yield weight_type_name, weight_type
+                if weight_type.name != "F32":
+                    weight_type_name = name.replace("weight", "qweight_type")
+                    weight_type = torch.tensor(weight_type)
+                    yield weight_type_name, weight_type
+            progress.update(task1, advance=1)
 
-    for tensor in reader.tensors:
-        if tensor.name in gguf_to_hf_name_map:
-            weight = tensor.data
-            weight_type = tensor.tensor_type
-            name = gguf_to_hf_name_map[tensor.name]
+        task2 = progress.add_task("Loading model weights...",
+                                  total=total_tensors)
+        for tensor in reader.tensors:
+            if tensor.name in gguf_to_hf_name_map:
+                weight = tensor.data
+                weight_type = tensor.tensor_type
+                name = gguf_to_hf_name_map[tensor.name]
 
-            if weight_type.name != "F32":
-                name = name.replace("weight", "qweight")
-            param = torch.tensor(weight)
-            yield name, param
+                if weight_type.name != "F32":
+                    name = name.replace("weight", "qweight")
+                param = torch.tensor(weight)
+                yield name, param
+            progress.update(task2, advance=1)
 
 
 def kv_cache_scales_loader(
@@ -536,6 +605,38 @@ def row_parallel_weight_loader(param: torch.Tensor,
         loaded_weight = loaded_weight.narrow(shard_dim, start_idx, shard_size)
 
     return default_weight_loader(param, loaded_weight)
+
+
+LoaderFunction = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
+
+def sharded_weight_loader(shard_axis: int) -> LoaderFunction:
+    """Create a weight loader that shards the weights along the given axis"""
+
+    def loader(param: torch.Tensor, loaded_weight: torch.Tensor) -> None:
+        tp_rank = get_tensor_model_parallel_rank()
+
+        shard_size = param.data.shape[shard_axis]
+        start_idx = tp_rank * shard_size
+        loaded_weight = loaded_weight.narrow(shard_axis, start_idx, shard_size)
+
+        return default_weight_loader(param, loaded_weight)
+
+    return loader
+
+
+def composed_weight_loader(
+        loader: LoaderFunction, fn: Callable[[torch.Tensor],
+                                             torch.Tensor]) -> LoaderFunction:
+    """Create a weight loader that post-processes the weights after loading"""
+
+    def composed_loader(param: torch.Tensor,
+                        loaded_weight: torch.Tensor) -> None:
+        loader(param, loaded_weight)
+        param.data.copy_(fn(param))
+        return
+
+    return composed_loader
 
 
 def initialize_dummy_weights(

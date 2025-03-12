@@ -1,4 +1,4 @@
-from .base import (BatchedTensorInputs, BatchedTensors, MultiModalDataBuiltins,
+from .base import (BatchedTensorInputs, MultiModalDataBuiltins,
                    MultiModalDataDict, MultiModalInputs, MultiModalPlugin,
                    NestedTensors)
 from .registry import MultiModalRegistry
@@ -13,7 +13,6 @@ See also:
 
 __all__ = [
     "BatchedTensorInputs",
-    "BatchedTensors",
     "MultiModalDataDict",
     "MultiModalInputs",
     "MultiModalPlugin",

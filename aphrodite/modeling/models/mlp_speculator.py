@@ -4,9 +4,8 @@ from typing import Iterable, List, Tuple
 import torch
 import torch.nn as nn
 
-from aphrodite.common.sequence import SamplerOutput
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.sampler import Sampler
+from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
@@ -56,6 +55,15 @@ class MLPSpeculatorLayerNorm(nn.Module):
 
 
 class MLPSpeculator(nn.Module):
+    """
+    An implementation of the speculative models introduced in
+    "Accelerating Production LLMs with Combined Token/Embedding
+    Speculators"
+    https://arxiv.org/pdf/2404.19124
+
+    Trained speculators of this type are available on HF hub at:
+    https://huggingface.co/ibm-fms and https://huggingface.co/ibm-granite
+    """
 
     def __init__(self, config: MLPSpeculatorConfig, **kwargs) -> None:
         super().__init__()

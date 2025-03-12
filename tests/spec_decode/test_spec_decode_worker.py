@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from aphrodite.common.sequence import (ExecuteModelRequest, SamplerOutput,
-                                       SequenceOutput)
+from aphrodite.common.sequence import ExecuteModelRequest, SequenceOutput
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.utils import set_random_seed
 from aphrodite.spec_decode.interfaces import SpeculativeProposals
 from aphrodite.spec_decode.metrics import (AsyncMetricsCollector,
@@ -63,10 +63,10 @@ def test_correctly_calls_draft_model(k: int, batch_size: int,
 @pytest.mark.parametrize("acceptance_sampler_method",
                          ["rejection_sampler", "typical_acceptance_sampler"])
 @torch.inference_mode()
-def test_correctly_calls_target_model(k: int, batch_size: int,
-                                      acceptance_sampler_method: str):
+def test_batch_expansion_correctly_calls_target_model(
+        k: int, batch_size: int, acceptance_sampler_method: str):
     """Verify SpecDecodeWorker calls the target model with correct
-    inputs. Everything else is mocked out.
+    inputs with batch expansion. Everything else is mocked out.
     """
     draft_worker = mock_worker(cls=MultiStepWorker, use_spec=False)
     target_worker = mock_worker(use_spec=False)
@@ -82,7 +82,8 @@ def test_correctly_calls_target_model(k: int, batch_size: int,
         target_worker,
         mock_spec_decode_sampler(acceptance_sampler_method),
         disable_logprobs=False,
-        metrics_collector=metrics_collector)
+        metrics_collector=metrics_collector,
+        disable_mqa_scorer=True)
     worker.init_device()
 
     vocab_size = 32_000
@@ -230,9 +231,8 @@ def test_correctly_calls_spec_decode_sampler(k: int, batch_size: int,
 
     assert torch.equal(actual.bonus_token_ids,
                        target_token_ids.reshape(batch_size, k + 1)[:, -1:])
-    assert torch.equal(
-        actual.target_probs,
-        target_token_probs.reshape(batch_size, k + 1, -1)[:, :-1])
+    assert torch.equal(actual.target_with_bonus_probs,
+                       target_token_probs.reshape(batch_size, k + 1, -1))
     assert torch.equal(actual.draft_token_ids, proposal_token_ids)
     assert torch.equal(actual.draft_probs, proposal_probs)
 

@@ -92,8 +92,8 @@ class QuantizationConfig(ABC):
                                      user_quant) -> Optional[str]:
         """
            Detects if this quantization method can support a given checkpoint
-           format by overriding the user specified quantization method -- 
-           this method should only be overwritten by subclasses in exceptional 
+           format by overriding the user specified quantization method --
+           this method should only be overwritten by subclasses in exceptional
            circumstances
         """
         return None

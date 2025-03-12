@@ -8,13 +8,14 @@ from typing import (TYPE_CHECKING, Any, Awaitable, Dict, List, Optional, Tuple,
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.sequence import ExecuteModelRequest, SamplerOutput
+from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.common.utils import (get_aphrodite_instance_id,
                                     get_distributed_init_method, get_ip,
                                     get_open_port, make_async)
 from aphrodite.executor.executor_base import ExecutorAsyncBase
 from aphrodite.executor.ray_utils import RayWorkerWrapper, ray
 from aphrodite.executor.tpu_executor import TPUExecutor
+from aphrodite.modeling.layers.sampler import SamplerOutput
 
 if ray is not None:
     from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
@@ -26,6 +27,8 @@ APHRODITE_TRACE_FUNCTION = envs.APHRODITE_TRACE_FUNCTION
 
 
 class RayTPUExecutor(TPUExecutor):
+
+    uses_ray: bool = True
 
     def __init__(self, *args, **kwargs):
         # This is non-None when the execute model loop is running
@@ -69,8 +72,25 @@ class RayTPUExecutor(TPUExecutor):
             )
 
             assert self.speculative_config is None
-            worker_module_name = "aphrodite.task_handler.tpu_worker"
-            worker_class_name = "TPUWorker"
+            if self.scheduler_config.is_multi_step:
+                worker_module_name = "aphrodite.worker.multi_step_tpu_worker"
+                worker_class_name = "MultiStepTPUWorker"
+            else:
+                worker_module_name = "aphrodite.worker.tpu_worker"
+                worker_class_name = "TPUWorker"
+
+            # GKE does not fetch environment information from metadata server
+            # and instead sets these from within the Ray process. Therefore we
+            # need to override the Ray environment variables manually.
+            override_env = {}
+            if "TPU_CHIPS_PER_HOST_BOUNDS" in os.environ:
+                override_env.update({
+                    "TPU_CHIPS_PER_HOST_BOUNDS":
+                    os.environ["TPU_CHIPS_PER_HOST_BOUNDS"]
+                })
+            if "TPU_HOST_BOUNDS" in os.environ:
+                override_env.update(
+                    {"TPU_HOST_BOUNDS": os.environ["TPU_HOST_BOUNDS"]})
 
             worker = ray.remote(
                 num_cpus=0,
@@ -82,6 +102,8 @@ class RayTPUExecutor(TPUExecutor):
                 worker_class_name=worker_class_name,
                 trust_remote_code=self.model_config.trust_remote_code,
             )
+            if override_env:
+                worker.override_env_vars.remote(override_env)
 
             worker_ip = ray.get(worker.get_node_ip.remote())
             if worker_ip == driver_ip and self.driver_dummy_worker is None:
@@ -97,11 +119,39 @@ class RayTPUExecutor(TPUExecutor):
                 # Else, added to the list of workers.
                 self.workers.append(worker)
 
+        logger.debug(f"workers: {self.workers}")
+        logger.debug(f"driver_dummy_worker: {self.driver_dummy_worker}")
+
         if self.driver_dummy_worker is None:
             raise ValueError(
                 "Ray does not allocate any TPUs on the driver node. Consider "
                 "adjusting the Ray placement group or running the driver on a "
                 "TPU node.")
+
+        worker_ips = [
+            ray.get(worker.get_node_ip.remote())  # type: ignore[attr-defined]
+            for worker in self.workers
+        ]
+        ip_counts: Dict[str, int] = {}
+        for ip in worker_ips:
+            ip_counts[ip] = ip_counts.get(ip, 0) + 1
+
+        def sort_by_driver_then_worker_ip(worker):
+            """
+            Sort the workers based on 3 properties:
+            1. If the worker is on the same node as the driver (vllm engine),
+                it should be placed first.
+            2. Then, if the worker is on a node with fewer workers, it should
+                be placed first.
+            3. Finally, if the work is on a node with smaller IP address, it
+                should be placed first.
+            """
+            ip = ray.get(worker.get_node_ip.remote())
+            return (ip != driver_ip, ip_counts[ip], ip)
+        # After sorting, the workers on the same node will be
+        # close to each other, and the workers on the driver
+        # node will be placed first.
+        self.workers = sorted(self.workers, key=sort_by_driver_then_worker_ip)
 
         # Get the set of TPU IDs used on each node.
         worker_node_and_gpu_ids = self._run_workers("get_node_and_gpu_ids",
@@ -237,8 +287,8 @@ class RayTPUExecutor(TPUExecutor):
 
     def initialize_cache(self, num_gpu_blocks: int,
                          num_cpu_blocks: int) -> None:
-        logger.info("# TPU blocks: %d, # CPU blocks: %d", num_gpu_blocks,
-                    num_cpu_blocks)
+        logger.info(f"# TPU blocks: {num_gpu_blocks}, "
+                    f"# CPU blocks: {num_cpu_blocks}")
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
         self._run_workers("initialize_cache",

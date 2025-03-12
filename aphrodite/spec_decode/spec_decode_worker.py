@@ -1,18 +1,19 @@
 from collections import defaultdict
 from functools import cached_property
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
 import torch
 from loguru import logger
 
 from aphrodite.common.config import ParallelConfig, SpeculativeConfig
-from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
+from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID,
+                                       CompletionSequenceGroupOutput,
                                        ExecuteModelRequest, HiddenStates,
-                                       SamplerOutput, SequenceGroupMetadata,
-                                       get_all_seq_ids,
+                                       SequenceGroupMetadata,
                                        get_all_seq_ids_and_request_ids)
 from aphrodite.distributed.communication_op import broadcast_tensor_dict
 from aphrodite.modeling.layers.rejection_sampler import RejectionSampler
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.layers.spec_decode_base_sampler import (
     SpecDecodeBaseSampler, SpecDecodeStochasticBaseSampler)
 from aphrodite.modeling.layers.typical_acceptance_sampler import (
@@ -25,19 +26,20 @@ from aphrodite.spec_decode.interfaces import (SpeculativeProposals,
 from aphrodite.spec_decode.medusa_worker import MedusaWorker
 from aphrodite.spec_decode.metrics import AsyncMetricsCollector
 from aphrodite.spec_decode.mlp_speculator_worker import MLPSpeculatorWorker
+from aphrodite.spec_decode.mqa_scorer import MQAScorer
 from aphrodite.spec_decode.multi_step_worker import MultiStepWorker
 from aphrodite.spec_decode.ngram_worker import NGramWorker
 from aphrodite.spec_decode.proposer_worker_base import ProposerWorkerBase
 from aphrodite.spec_decode.smaller_tp_proposer_worker import (
     SmallerTpProposerWorker)
 from aphrodite.spec_decode.target_model_runner import TargetModelRunner
-from aphrodite.spec_decode.util import (Timer, create_sequence_group_output,
+from aphrodite.spec_decode.util import (Timer, create_logprobs_output,
+                                        create_sequence_group_output,
                                         get_all_num_logprobs,
                                         get_sampled_token_logprobs, nvtx_range,
                                         split_batch_by_proposal_len)
-from aphrodite.task_handler.worker import Worker
-from aphrodite.task_handler.worker_base import (LoraNotSupportedWorkerBase,
-                                                WorkerBase)
+from aphrodite.worker.worker import Worker
+from aphrodite.worker.worker_base import LoraNotSupportedWorkerBase, WorkerBase
 
 
 def create_spec_worker(*args, **kwargs) -> "SpecDecodeWorker":
@@ -70,6 +72,7 @@ def create_spec_worker(*args, **kwargs) -> "SpecDecodeWorker":
     spec_decode_worker = SpecDecodeWorker.create_worker(
         scorer_worker=target_worker,
         draft_worker_kwargs=draft_worker_kwargs,
+        disable_mqa_scorer=speculative_config.speculative_disable_mqa_scorer,
         disable_by_batch_size=speculative_config.
         speculative_disable_by_batch_size,
         draft_token_acceptance_method=speculative_config.
@@ -112,6 +115,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         cls,
         scorer_worker: Worker,
         draft_worker_kwargs: Dict[str, Any],
+        disable_mqa_scorer: bool,
         disable_by_batch_size: Optional[int],
         draft_token_acceptance_method: str,
         typical_acceptance_sampler_posterior_threshold: float,
@@ -150,6 +154,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                             "model_config"].hf_config.model_type == "eagle":
                         raise NotImplementedError(
                             "EAGLE does not support TP > 1 yet")
+
                     allow_zero_draft_token_step = False
                 proposer_worker = MultiStepWorker(**draft_worker_kwargs)
 
@@ -161,21 +166,42 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         spec_decode_sampler: SpecDecodeBaseSampler = None
         if draft_token_acceptance_method == "rejection_sampler":
-            spec_decode_sampler = RejectionSampler(
-                disable_bonus_tokens=False, )
+            spec_decode_sampler = RejectionSampler()
         elif draft_token_acceptance_method == "typical_acceptance_sampler":
             spec_decode_sampler = TypicalAcceptanceSampler(
-                disable_bonus_tokens=False,
                 posterior_threshold=\
                     typical_acceptance_sampler_posterior_threshold,
                 posterior_alpha=typical_acceptance_sampler_posterior_alpha,
             )
-        logger.info("Configuring SpecDecodeWorker with "
-                    f"sampler={type(spec_decode_sampler)}")
+        logger.info(
+            "[Speculative Decoding] Configuring"
+            f" SpecDecodeWorker with sampler={type(spec_decode_sampler)}")
+
+        if not disable_mqa_scorer:
+            if scorer_worker.model_runner.attn_backend.get_name(
+            ) != "flash-attn":
+                disable_mqa_scorer = True
+                logger.info(
+                    "[Speculative Decoding] Disabling MQA scorer as the "
+                    "MQA is only available with flash attn backend.")
+            if "model_config" in draft_worker_kwargs and \
+                draft_worker_kwargs["model_config"].max_model_len < \
+                    scorer_worker.model_config.max_model_len:
+                disable_mqa_scorer = True
+                logger.info(
+                    "[Speculative Decoding] Disabling MQA scorer as the "
+                    "draft model max_model_len is smaller than the target "
+                    "model max_model_len.")
+            if not scorer_worker.model_runner.model_config.enforce_eager:
+                disable_mqa_scorer = True
+                logger.info(
+                    "[Speculative Decoding] Disabling MQA scorer as the "
+                    "target model is not running in eager mode.")
 
         return SpecDecodeWorker(
             proposer_worker,
             scorer_worker,
+            disable_mqa_scorer=disable_mqa_scorer,
             disable_logprobs=disable_logprobs,
             disable_log_stats=disable_log_stats,
             disable_by_batch_size=disable_by_batch_size,
@@ -187,6 +213,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         proposer_worker: ProposerWorkerBase,
         scorer_worker: WorkerBase,
         spec_decode_sampler: SpecDecodeBaseSampler,
+        disable_mqa_scorer: bool = False,
         disable_logprobs: bool = False,
         disable_log_stats: bool = False,
         metrics_collector: Optional[AsyncMetricsCollector] = None,
@@ -204,10 +231,12 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                 Aphrodite Worker.
             spec_decode_sampler: A Torch module used to perform acceptance
                 sampling of the draft tokens in the verification step of
-                speculative decoding. Currently we support two different 
+                speculative decoding. Currently we support two different
                 types of sampler namely RejectionSampler and
                 TypicalAcceptanceSampler. 'spec_decode_sampler' is either an
                 instance of RejectionSampler or TypicalAcceptanceSampler.
+            disable_mqa_scorer: If set to True, disable the MQA scorer and use
+                the BatchExpansionTop1Scorer instead.
             disable_logprobs: If set to True, token log probabilities will
                 not be output in both the draft worker and the target worker.
                 If set to False, log probabilities will be output by both.
@@ -245,6 +274,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self.token_id_dtype = self.spec_decode_sampler.token_id_dtype
         # Lazy initialization.
         self.scorer: SpeculativeScorer
+        self.disable_mqa_scorer = disable_mqa_scorer
 
         # Hidden states from target model to pass to proposer
         # in the subsequent step.
@@ -267,10 +297,18 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self._metrics.init_gpu_tensors(self.rank)
         self.spec_decode_sampler.init_gpu_tensors(self.rank)
 
-        self.scorer = BatchExpansionTop1Scorer(
-            scorer_worker=self.scorer_worker,
-            device=self.device,
-            vocab_size=self._vocab_size)
+        scorer_cls: Type[SpeculativeScorer]
+        if self.disable_mqa_scorer:
+            scorer_cls = BatchExpansionTop1Scorer
+            logger.info("[Speculative Decoding] Use batch "
+                        "expansion for scoring proposals.")
+        else:
+            scorer_cls = MQAScorer
+            logger.info(
+                "[Speculative Decoding] Use MQA scorer for scoring proposals.")
+        self.scorer = scorer_cls(scorer_worker=self.scorer_worker,
+                                 device=self.device,
+                                 vocab_size=self._vocab_size)
 
         self._configure_model_sampler_for_spec_decode()
 
@@ -363,12 +401,13 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         #    used during the prefill phase.
         # 2. Auto-disable enabled: The running queue size exceeds
         #    the specified threshold.
-        # 3. No request: There are no requests in the batch.
+        # 3. No request: There are no requests in the batch, or
+        #    none of the requests in the batch have spec decoding enabled.
         # In any of these cases, the proposer and scorer workers
         # are called normally.
-        no_spec = num_lookahead_slots == 0 or len(
-            execute_model_req.seq_group_metadata_list
-        ) == 0 or disable_all_speculation
+        no_spec = num_lookahead_slots == 0 or disable_all_speculation or all(
+            sgm.num_speculative_tokens == 0
+            for sgm in execute_model_req.seq_group_metadata_list)
 
         # Broadcast how many lookahead slots are scheduled for this step, and
         # whether all speculation is disabled, to all non-driver workers.
@@ -376,6 +415,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         # This is required as if the number of draft model runs changes
         # dynamically, the non-driver workers won't know unless we perform a
         # communication to inform them.
+
         # no_spec is used to signal non-driver worker about prefill vs decode
         # stage. This is needed to ensure that order of execution of proposer
         # and scorer is same in both driver and non-driver workers (i.e.,
@@ -412,10 +452,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             self, execute_model_req: ExecuteModelRequest) -> bool:
         # When the batch size is too large, disable speculative decoding
         # to stop trading off throughput for latency.
-        disable_all_speculation = (execute_model_req.running_queue_size >=
-                                   self.disable_by_batch_size)
-
-        return disable_all_speculation
+        return (execute_model_req.running_queue_size >=
+                self.disable_by_batch_size)
 
     def _maybe_disable_speculative_tokens(
             self, disable_all_speculation: bool,
@@ -435,8 +473,8 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             self, execute_model_req: ExecuteModelRequest,
             sampler_output: SamplerOutput) -> SamplerOutput:
         """
-        Creates and returns a `SamplerOutput` with only the sampled token IDs 
-        being serialized to CPU & populated in `CompletionSequenceGroupOutput`.
+        Creates and returns a `SamplerOutput` with only the token IDs being
+        serialized to CPU and populated in `CompletionSequenceGroupOutput`.
         All other parameters in `CompletionSequenceGroupOutput` related to log 
         probabilities are skipped.
 
@@ -448,14 +486,46 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
         Returns:
             SamplerOutput: A new `SamplerOutput` instance containing a list of 
-            `CompletionSequenceGroupOutput` objects with only sampled token
-            IDs populated.
+            `CompletionSequenceGroupOutput` objects with only token IDs
+            populated.
         """
-        seq_ids = get_all_seq_ids(execute_model_req.seq_group_metadata_list)
-        sampled_token_ids_list = sampler_output.sampled_token_ids.tolist()
+        seq_output_prompt_logprobs = [
+            seq.is_prompt and seq.sampling_params.prompt_logprobs is not None
+            and seq.sampling_params.prompt_logprobs > 0
+            for seq in execute_model_req.seq_group_metadata_list
+        ]
+        # ignore slots for prompt tokens that are filled with INVALID_TOKEN_ID
+        sampled_token_ids_list = (sampler_output.sampled_token_ids[torch.where(
+            # subtracting is faster than testing for equality
+            sampler_output.sampled_token_ids - APHRODITE_INVALID_TOKEN_ID)[0]] \
+            if any(seq_output_prompt_logprobs) else \
+                sampler_output.sampled_token_ids).tolist()
+
+        seq_data_entries = (
+            (seq_id, seq_data) for sg in \
+            execute_model_req.seq_group_metadata_list \
+            for seq_id, seq_data in sg.seq_data.items()
+        )
         completion_seq_group_output_list: List[
             CompletionSequenceGroupOutput] = []
-        for index, seq_id in enumerate(seq_ids):
+        for index, ((seq_id, seq_data), needs_prompt_logprobs) in \
+            enumerate(zip(seq_data_entries, seq_output_prompt_logprobs)):
+            if needs_prompt_logprobs:
+                prompt_token_ids = seq_data.get_prompt_token_ids()
+                prompt_logprobs = [
+                    create_logprobs_output(
+                        token_id=p_token_id,
+                        token_id_logprob_rank=-1,
+                        token_id_logprob=0.0,
+                        topk_token_ids=[],
+                        topk_logprobs=[],
+                    )
+                    # no prompt logprobs for the first token
+                    for p_token_id in prompt_token_ids[1:]
+                ]
+            else:
+                prompt_logprobs = None
+
             completion_seq_group_output_list.append(
                 create_sequence_group_output(
                     token_id=sampled_token_ids_list[index][0],
@@ -464,7 +534,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                     seq_id=seq_id,
                     topk_token_ids=[],
                     topk_logprobs=[],
-                ))
+                    prompt_logprobs=prompt_logprobs))
         return SamplerOutput(outputs=completion_seq_group_output_list)
 
     @nvtx_range("spec_decode_worker._run_no_spec")
@@ -484,12 +554,19 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         # Store hidden states from target model execution.
         hidden_states = sampler_output.hidden_states
         if hidden_states is not None:
+            # remove hidden_states for prompt tokens
+            if any(seq.is_prompt
+                   for seq in execute_model_req.seq_group_metadata_list):
+                hidden_states = hidden_states[
+                    torch.where(sampler_output.sampled_token_ids -
+                                APHRODITE_INVALID_TOKEN_ID)[0]]
             if self.previous_hidden_states is None:
                 self.previous_hidden_states = HiddenStates(
                     hidden_states, execute_model_req.seq_group_metadata_list)
             else:
                 self.previous_hidden_states.update(
                     hidden_states, execute_model_req.seq_group_metadata_list)
+
         if not skip_proposer:
             # We prepare the prefill hidden states here so that there no
             # additional complexity in worker for spec_decode vs non_spec_decode
@@ -497,6 +574,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             execute_model_req.previous_hidden_states = \
                 prepare_prefill_hidden_states(
                     sampler_output.prefill_hidden_states)
+
             self.proposer_worker.execute_model(execute_model_req)
 
         sampler_output_to_return = (self._serialize_sampler_output_no_logprobs(
@@ -529,6 +607,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         # that the hidden states can be propagated to proposer when needed.
         if data["no_spec"]:
             self.scorer_worker.execute_model()
+
         if not data["disable_all_speculation"]:
             # Even if num_lookahead_slots is zero, we want to run the
             # proposer model as it may have KV.
@@ -537,6 +616,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             # should delegate how many times it runs to the proposer.
             for _ in range(max(num_lookahead_slots, 1)):
                 self.proposer_worker.execute_model()
+
         if not data["no_spec"]:
             self.scorer_worker.execute_model()
 
@@ -614,18 +694,12 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         # batch proposal len. This adds some complexity (splitting the batch
         # into spec and non spec sequences) and should be removed in the
         # future. It can be done by supporting per-sequence proposal lens.
-        _, spec_indices = split_batch_by_proposal_len(
-            seq_group_metadata_list,
-            proposal_lens_list,
-            select_proposal_len_zero=False)
-        _, non_spec_indices = split_batch_by_proposal_len(
-            seq_group_metadata_list,
-            proposal_lens_list,
-            select_proposal_len_zero=True)
+        (_, spec_indices), (_, non_spec_indices) = split_batch_by_proposal_len(
+            seq_group_metadata_list, proposal_lens_list)
         original_indices = spec_indices + non_spec_indices
 
-        # Get probabilities of target model, excluding bonus token.
-        proposal_verifier_probs = proposal_scores.probs[spec_indices, :-1]
+        # Get probabilities of target model, including bonus tokens.
+        proposal_verifier_probs = proposal_scores.probs[spec_indices]
 
         # Get non-speculative sampled tokens from target model.
         non_spec_token_ids = proposal_scores.token_ids[non_spec_indices]
@@ -650,13 +724,12 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             }
 
         accepted_token_ids = self.spec_decode_sampler(
-            target_probs=proposal_verifier_probs,
+            target_with_bonus_probs=proposal_verifier_probs,
             bonus_token_ids=bonus_token_ids,
             draft_probs=proposal_probs,
             draft_token_ids=proposal_token_ids,
             **sampler_extra_kwargs,
         )
-
         # Append output tokens from non-speculative sequences to
         # the accepted token ids tensor.
         non_spec_token_ids = non_spec_token_ids.expand(-1, max_proposal_len +
@@ -673,6 +746,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         if hidden_states is not None:
             # Contract hidden states based on accepted tokens
             hs_size = hidden_states.shape[-1]
+
             accepted_index = accepted_token_ids + 1  # Convert -1 to 0
             accepted_index = accepted_index.count_nonzero(dim=1).add_(-1)
             index = accepted_index[:, None, None].expand(-1, 1, hs_size)
@@ -818,7 +892,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             num_steps (int): The number of steps in the sequence.
             num_top_k (int): The number of top-k token log probabilities to
             return.
-        
+
         Returns:
             A tuple containing four dummy lists as described above.
         """
@@ -862,10 +936,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             log probabilities of the target model,
             shaped (num_steps, batch_size, vocab_size)
             accepted_token_ids_by_step (torch.Tensor): Tensor representing
-            the accepted  token_ids, shaped (num_steps, batch_size) 
+            the accepted  token_ids, shaped (num_steps, batch_size)
             num_top_k (int): The number of top-k token log probabilities to
             return.
-        
+
         Returns:
             A tuple containing the lists as described above.
         """
@@ -947,7 +1021,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
 
     def get_cache_block_size_bytes(self):
         """Return the size of a cache block in bytes.
-        
+
         This function is only used to compose workers within a SpecDecodeWorker.
         We leave composing a SpecDecodeWorker within a SpecDecodeWorker
         undefined for now, although it could be implemented in the future.

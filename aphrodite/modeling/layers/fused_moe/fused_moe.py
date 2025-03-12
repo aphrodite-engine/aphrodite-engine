@@ -2,7 +2,7 @@
 import functools
 import json
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
 import triton
@@ -12,8 +12,6 @@ from loguru import logger
 import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
-
-APHRODITE_FUSED_MOE_CHUNK_SIZE = envs.APHRODITE_FUSED_MOE_CHUNK_SIZE
 
 
 @triton.jit
@@ -313,8 +311,8 @@ def get_moe_configs(E: int, N: int,
         os.path.dirname(os.path.realpath(__file__)), "configs", json_file_name)
     if os.path.exists(config_file_path):
         with open(config_file_path) as f:
-            logger.info(f"Using configuration from {config_file_path} "
-                        "for MoE layer.")
+            logger.info(
+                f"Using configuration from {config_file_path} for MoE layer.")
             # If a configuration has been found, return it
             return {int(key): val for key, val in json.load(f).items()}
 
@@ -330,6 +328,7 @@ def get_default_config(
     K: int,
     topk: int,
     dtype: Optional[str],
+    is_marlin: bool,
 ) -> Dict[str, int]:
     config = {
         'BLOCK_SIZE_M': 64,
@@ -337,7 +336,8 @@ def get_default_config(
         'BLOCK_SIZE_K': 32,
         'GROUP_SIZE_M': 8
     }
-    if M <= E:
+    # A heuristic: fused marlin works faster with this config for small M
+    if M <= E or (is_marlin and M <= 32):
         config = {
             'BLOCK_SIZE_M': 16,
             'BLOCK_SIZE_N': 32,
@@ -354,6 +354,7 @@ def try_get_optimal_moe_config(
     dtype: Optional[str],
     M: int,
     override_config: Optional[Dict[str, Any]] = None,
+    is_marlin: bool = False,
 ):
     if override_config:
         config = override_config
@@ -368,7 +369,8 @@ def try_get_optimal_moe_config(
             config = configs[min(configs.keys(), key=lambda x: abs(x - M))]
         else:
             # Else use the default config
-            config = get_default_config(M, E, N, w1_shape[2], top_k, dtype)
+            config = get_default_config(M, E, N, w1_shape[2], top_k, dtype,
+                                        is_marlin)
     return config
 
 
@@ -395,6 +397,7 @@ def fused_topk(
                                         topk,
                                         dtype=torch.int32,
                                         device=hidden_states.device)
+
     ops.topk_softmax(
         topk_weights,
         topk_ids,
@@ -405,6 +408,7 @@ def fused_topk(
 
     if renormalize:
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+
     return topk_weights, topk_ids
 
 
@@ -418,6 +422,7 @@ def grouped_topk(hidden_states: torch.Tensor,
 
     assert hidden_states.shape[0] == gating_output.shape[0], (
         "Number of tokens mismatch")
+
     scores = torch.softmax(gating_output, dim=-1)
     num_token = scores.shape[0]
     group_scores = scores.view(num_token, num_expert_group,
@@ -437,7 +442,8 @@ def grouped_topk(hidden_states: torch.Tensor,
 
     if renormalize:
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
-    return topk_weights, topk_ids
+
+    return topk_weights.to(torch.float32), topk_ids.to(torch.int32)
 
 
 def get_config_dtype_str(dtype: torch.dtype,
@@ -479,8 +485,9 @@ def fused_experts(hidden_states: torch.Tensor,
 
     num_tokens, _ = hidden_states.shape
     E, N, _ = w1.shape
-    # We execute the fused_moe kernel in chunks.
-    CHUNK_SIZE = APHRODITE_FUSED_MOE_CHUNK_SIZE
+    # We execute the fused_moe kernel in chunks to circumvent this issue:
+    # https://github.com/vllm-project/vllm/issues/5938
+    CHUNK_SIZE = envs.APHRODITE_FUSED_MOE_CHUNK_SIZE
     M = min(num_tokens, CHUNK_SIZE)
     config_dtype = get_config_dtype_str(use_fp8_w8a8=use_fp8_w8a8,
                                         use_int8_w8a16=use_int8_w8a16,
@@ -595,6 +602,7 @@ def fused_moe(
     use_grouped_topk: bool = False,
     num_expert_group: Optional[int] = None,
     topk_group: Optional[int] = None,
+    custom_routing_function: Optional[Callable] = None,
     use_fp8_w8a8: bool = False,
     use_int8_w8a16: bool = False,
     w1_scale: Optional[torch.Tensor] = None,
@@ -642,9 +650,13 @@ def fused_moe(
         topk_weights, topk_ids = grouped_topk(hidden_states, gating_output,
                                               topk, renormalize,
                                               num_expert_group, topk_group)
-    else:
+    elif custom_routing_function is None:
         topk_weights, topk_ids = fused_topk(hidden_states, gating_output, topk,
                                             renormalize)
+    else:
+        topk_weights, topk_ids = custom_routing_function(
+            hidden_states, gating_output, topk, renormalize)
+
     return fused_experts(hidden_states,
                          w1,
                          w2,

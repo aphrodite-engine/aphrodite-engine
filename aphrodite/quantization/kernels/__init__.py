@@ -19,13 +19,13 @@ def choose_mp_linear_kernel(
         compute_capability: Optional[int] = None) -> Type[MPLinearKernel]:
     """
     Choose an MPLinearKernel that can implement the given config for the given
-     compute capability. Attempts to choose the best kernel in terms of 
+     compute capability. Attempts to choose the best kernel in terms of
      performance.
     Args:
-        config (MPLinearLayerConfig): Description of the linear layer to be 
+        config (MPLinearLayerConfig): Description of the linear layer to be
           implemented.
         compute_capability (Optional[int], optional): The compute capability of
-          the target device, if None uses `current_platform` to get the compute 
+          the target device, if None uses `current_platform` to get the compute
           capability. Defaults to None.
     Raises:
         ValueError: If no kernel can implement the given config.
@@ -40,7 +40,7 @@ def choose_mp_linear_kernel(
 
     failure_reasons = []
     for kernel in _POSSIBLE_KERNELS:
-        if kernel.__name__ in os.environ.get("VLLM_DISABLED_KERNELS", "")\
+        if kernel.__name__ in os.environ.get("APHRODITE_DISABLED_KERNELS", "")\
             .split(","):
             failure_reasons.append(
                 f' {kernel.__name__} disabled by environment variable')
