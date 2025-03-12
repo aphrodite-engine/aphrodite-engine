@@ -610,14 +610,12 @@ class ModelConfig(ConfigMixin):
 
     def get_head_size(self) -> int:
         # TODO remove hard code
-        spec_model_types = ["medusa", "mlp_speculator"]
         if hasattr(self.hf_text_config, "model_type"
                    ) and self.hf_text_config.model_type == 'deepseek_v2':
             # FlashAttention supports only head_size 32, 64, 128, 256,
             # we need to pad head_size 192 to 256
             return 256
-        if self.is_attention_free or \
-            self.hf_text_config.model_type in spec_model_types:
+        if self.is_attention_free:
             return 0
         if hasattr(self.hf_text_config, "head_dim"):
             return self.hf_text_config.head_dim
