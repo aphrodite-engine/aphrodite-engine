@@ -54,6 +54,7 @@ from aphrodite.prompt_adapter.layers import PromptAdapterMapping
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.prompt_adapter.worker_manager import (
     LRUCacheWorkerPromptAdapterManager)
+from aphrodite.transformers_utils.config import uses_mrope
 from aphrodite.worker.model_runner_base import (
     ModelRunnerBase, ModelRunnerInputBase, ModelRunnerInputBuilderBase,
     _add_attn_metadata_broadcastable_dict,
@@ -1423,10 +1424,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
     def model_is_mrope(self) -> bool:
         """Detect if the model has "mrope" rope_scaling type.
         mrope requires keep "rope_deltas" between prompt and decoding phases."""
-        rope_scaling = getattr(self.model_config.hf_config, "rope_scaling", {})
-        if rope_scaling is None:
-            return False
-        return rope_scaling.get("type", None) == "mrope"
+        return uses_mrope(self.model_config.hf_config)
 
     @torch.inference_mode()
     def capture_model(self, kv_caches: List[List[torch.Tensor]]) -> None:

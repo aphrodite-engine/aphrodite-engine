@@ -19,6 +19,7 @@ from aphrodite.modeling.model_loader import get_model
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import (MULTIMODAL_REGISTRY, BatchedTensorInputs,
                                   MultiModalInputs)
+from aphrodite.transformers_utils.config import uses_mrope
 from aphrodite.worker.model_runner_base import (
     ModelRunnerBase, ModelRunnerInputBase, ModelRunnerInputBuilderBase,
     _add_attn_metadata_broadcastable_dict,
@@ -436,10 +437,7 @@ class CPUModelRunner(ModelRunnerBase[ModelInputForCPU]):
     def model_is_mrope(self) -> bool:
         """Detect if the model has "mrope" rope_scaling type.
         mrope requires keep "rope_deltas" between prompt and decoding phases."""
-        rope_scaling = getattr(self.model_config.hf_config, "rope_scaling", {})
-        if rope_scaling is None:
-            return False
-        return rope_scaling.get("type", None) == "mrope"
+        return uses_mrope(self.model_config.hf_config)
 
     def load_model(self) -> None:
         self.model = get_model(model_config=self.model_config,
