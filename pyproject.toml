@@ -46,7 +46,7 @@ ignore = [
 ]
 
 [tool.codespell]
-ignore-words-list = "dout, te, indicies, ist, subtile, wit, whit, beseige, devlop, serie, vor, holliday, discus, tennant, carin, parma, mor, slac, revered, chanel, sammon, nast, shepard, insead, bloc, clea, appy, ser, fter"
+ignore-words-list = "dout, te, indicies, ist, subtile, wit, whit, beseige, devlop, serie, vor, holliday, discus, tennant, carin, parma, mor, slac, revered, chanel, sammon, nast, shepard, insead, bloc, clea, appy, ser, fter, trough"
 skip = "./tests/,./aphrodite/endpoints/kobold/klite.embd,./kernels/,./tests/benchmarks/sonnet.txt,./docs/,./tests/lora/data/long_context_test_data.py,./tests/models/fixtures/"
 
 [tool.isort]
