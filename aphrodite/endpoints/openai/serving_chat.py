@@ -11,6 +11,7 @@ from loguru import logger
 
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import CompletionOutput, RequestOutput
+from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import Logprob
 from aphrodite.common.utils import iterate_with_cancellation, random_uuid
 from aphrodite.endpoints.chat_utils import (ConversationMessage,
@@ -150,13 +151,13 @@ class OpenAIServingChat(OpenAIServing):
                     **(request.chat_template_kwargs or {}),
                 )
         except Exception as e:
-            logger.error(f"Error in applying chat template from request: {e}")
+            logger.exception("Error in applying chat template from request")
             return self.create_error_response(str(e))
 
         try:
             mm_data = await mm_data_future
         except Exception as e:
-            logger.error(f"Error in loading multi-modal data: {e}")
+            logger.exception("Error in loading multi-modal data")
             return self.create_error_response(str(e))
 
         # validation for OpenAI tools
@@ -174,10 +175,15 @@ class OpenAIServingChat(OpenAIServing):
                 "--enable-auto-tool-choice and --tool-call-parser to be set")
 
         request_id = f"chat-{random_uuid()}"
+
         request_metadata = RequestResponseMetadata(request_id=request_id)
         if raw_request:
             raw_request.state.request_metadata = request_metadata
+
         try:
+            if self.enable_auto_tools and self.tool_parser:
+                request = self.tool_parser(tokenizer).adjust_request(
+                    request=request)
 
             if isinstance(prompt, str):
                 prompt_inputs = self._tokenize_prompt_input(
@@ -196,10 +202,11 @@ class OpenAIServingChat(OpenAIServing):
 
             assert prompt_inputs is not None
 
+            sampling_params: SamplingParams
+            default_max_tokens = self.max_model_len - len(
+                prompt_inputs["prompt_token_ids"])
             sampling_params = request.to_sampling_params(
-                tokenizer,
-                default_max_tokens=self.max_model_len -
-                len(prompt_inputs["prompt_token_ids"]))
+                tokenizer, default_max_tokens)
 
             self._log_inputs(request_id,
                              prompt_inputs,
@@ -265,11 +272,7 @@ class OpenAIServingChat(OpenAIServing):
         num_choices = 1 if request.n is None else request.n
         previous_num_tokens = [0] * num_choices
         finish_reason_sent = [False] * num_choices
-
         num_prompt_tokens = 0
-
-        tool_parser: Optional[ToolParser] = self.tool_parser(
-            tokenizer) if self.tool_parser else None
 
         if isinstance(request.tool_choice, ChatCompletionNamedToolChoiceParam):
             tool_choice_function_name = request.tool_choice.function.name
@@ -289,6 +292,29 @@ class OpenAIServingChat(OpenAIServing):
         else:
             previous_texts, all_previous_token_ids = None, None
 
+        # Prepare the tool parser if it's needed
+        try:
+            if tool_choice_auto and self.tool_parser:
+                tool_parsers: List[Optional[ToolParser]] = [
+                    self.tool_parser(tokenizer)
+                ] * num_choices
+            else:
+                tool_parsers = [None] * num_choices
+        except RuntimeError as e:
+            logger.error(f"Error in tool parser creation: {e}")
+            data = self.create_streaming_error_response(str(e))
+            yield f"data: {data}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        stream_options = request.stream_options
+        if stream_options:
+            include_usage = stream_options.include_usage
+            include_continuous_usage = include_usage and \
+                                       stream_options.continuous_usage_stats
+        else:
+            include_usage, include_continuous_usage = False, False
+
         try:
             async for res in result_generator:
                 if res.prompt_token_ids is not None:
@@ -307,7 +333,6 @@ class OpenAIServingChat(OpenAIServing):
                     # NOTE num_choices defaults to 1 so this usually executes
                     # once per request
                     for i in range(num_choices):
-
                         choice_data = ChatCompletionResponseStreamChoice(
                             index=i,
                             delta=DeltaMessage(
@@ -323,19 +348,12 @@ class OpenAIServingChat(OpenAIServing):
                             choices=[choice_data],
                             model=model_name)
 
-                        # if usage should be included
-                        if (request.stream_options
-                                and request.stream_options.include_usage):
-                            # if continuous usage stats are requested, add it
-                            if request.stream_options.continuous_usage_stats:
-                                usage = UsageInfo(
-                                    prompt_tokens=num_prompt_tokens,
-                                    completion_tokens=0,
-                                    total_tokens=num_prompt_tokens)
-                                chunk.usage = usage
-                            # otherwise don't
-                            else:
-                                chunk.usage = None
+                        # if continuous usage stats are requested, add it
+                        if include_continuous_usage:
+                            chunk.usage = UsageInfo(
+                                prompt_tokens=num_prompt_tokens,
+                                completion_tokens=0,
+                                total_tokens=num_prompt_tokens)
 
                         data = chunk.model_dump_json(exclude_unset=True)
                         yield f"data: {data}\n\n"
@@ -363,17 +381,11 @@ class OpenAIServingChat(OpenAIServing):
                                     created=created_time,
                                     choices=[choice_data],
                                     model=model_name)
-                                if (request.stream_options and
-                                        request.stream_options.include_usage):
-                                    if (request.stream_options.
-                                            continuous_usage_stats):
-                                        usage = UsageInfo(
-                                            prompt_tokens=num_prompt_tokens,
-                                            completion_tokens=0,
-                                            total_tokens=num_prompt_tokens)
-                                        chunk.usage = usage
-                                    else:
-                                        chunk.usage = None
+                                if include_continuous_usage:
+                                    chunk.usage = UsageInfo(
+                                        prompt_tokens=num_prompt_tokens,
+                                        completion_tokens=0,
+                                        total_tokens=num_prompt_tokens)
 
                                 data = chunk.model_dump_json(
                                     exclude_unset=True)
@@ -382,6 +394,7 @@ class OpenAIServingChat(OpenAIServing):
 
                 for output in res.outputs:
                     i = output.index
+                    tool_parser = tool_parsers[i]
 
                     if finish_reason_sent[i]:
                         continue
@@ -451,36 +464,11 @@ class OpenAIServingChat(OpenAIServing):
 
                     if output.finish_reason is None:
                         # Send token-by-token response for each request.n
-
                         choice_data = ChatCompletionResponseStreamChoice(
                             index=i,
                             delta=delta_message,
                             logprobs=logprobs,
                             finish_reason=None)
-                        chunk = ChatCompletionStreamResponse(
-                            id=request_id,
-                            object=chunk_object_type,
-                            created=created_time,
-                            choices=[choice_data],
-                            model=model_name)
-
-                        # handle usage stats if requested & if continuous
-                        if (request.stream_options
-                                and request.stream_options.include_usage):
-                            if request.stream_options.continuous_usage_stats:
-                                completion_tokens = len(output.token_ids)
-                                usage = UsageInfo(
-                                    prompt_tokens=num_prompt_tokens,
-                                    completion_tokens=completion_tokens,
-                                    total_tokens=num_prompt_tokens +
-                                    completion_tokens,
-                                )
-                                chunk.usage = usage
-                            else:
-                                chunk.usage = None
-
-                        data = chunk.model_dump_json(exclude_unset=True)
-                        yield f"data: {data}\n\n"
 
                     # if the model is finished generating
                     else:
@@ -496,7 +484,6 @@ class OpenAIServingChat(OpenAIServing):
                                         ) - 1 if auto_tools_called else 0
                         else:
                             index = 0
-
 
                         if self._should_check_for_unstreamed_tool_arg_tokens(
                                 delta_message, output) and tool_parser:
@@ -531,34 +518,32 @@ class OpenAIServingChat(OpenAIServing):
                             finish_reason=output.finish_reason
                             if not auto_tools_called else "tool_calls",
                             stop_reason=output.stop_reason)
-                        chunk = ChatCompletionStreamResponse(
-                            id=request_id,
-                            object=chunk_object_type,
-                            created=created_time,
-                            choices=[choice_data],
-                            model=model_name)
-                        if (request.stream_options
-                                and request.stream_options.include_usage):
-                            if request.stream_options.continuous_usage_stats:
-                                completion_tokens = len(output.token_ids)
-                                usage = UsageInfo(
-                                    prompt_tokens=num_prompt_tokens,
-                                    completion_tokens=completion_tokens,
-                                    total_tokens=num_prompt_tokens +
-                                    completion_tokens,
-                                )
-                                chunk.usage = usage
-                            else:
-                                chunk.usage = None
-                        data = chunk.model_dump_json(exclude_unset=True)
-                        yield f"data: {data}\n\n"
+
                         finish_reason_sent[i] = True
+
+                    chunk = ChatCompletionStreamResponse(
+                        id=request_id,
+                        object=chunk_object_type,
+                        created=created_time,
+                        choices=[choice_data],
+                        model=model_name)
+
+                    # handle usage stats if requested & if continuous
+                    if include_continuous_usage:
+                        completion_tokens = previous_num_tokens[i]
+                        chunk.usage = UsageInfo(
+                            prompt_tokens=num_prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=num_prompt_tokens + completion_tokens,
+                        )
+
+                    data = chunk.model_dump_json(exclude_unset=True)
+                    yield f"data: {data}\n\n"
 
             # once the final token is handled, if stream_options.include_usage
             # is sent, send the usage
-            if (request.stream_options
-                    and request.stream_options.include_usage):
-                completion_tokens = previous_num_tokens[i]
+            if include_usage:
+                completion_tokens = sum(previous_num_tokens)
                 final_usage = UsageInfo(
                     prompt_tokens=num_prompt_tokens,
                     completion_tokens=completion_tokens,
@@ -669,7 +654,12 @@ class OpenAIServingChat(OpenAIServing):
                     or request.tool_choice is None) and self.enable_auto_tools \
                     and self.tool_parser:
 
-                tool_parser = self.tool_parser(tokenizer)
+                try:
+                    tool_parser = self.tool_parser(tokenizer)
+                except RuntimeError as e:
+                    logger.error(f"Error in tool parser creation: {e}")
+                    return self.create_error_response(str(e))
+
                 tool_call_info = tool_parser.extract_tool_calls(
                     output.text, request=request)
                 # In the OpenAI API the finish_reason is "tools_called"
