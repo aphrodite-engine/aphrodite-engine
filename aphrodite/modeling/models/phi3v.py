@@ -28,12 +28,16 @@ from transformers import CLIPVisionConfig, PretrainedConfig
 
 from aphrodite.attention import AttentionMetadata
 from aphrodite.common.config import CacheConfig, ModelConfig, MultiModalConfig
-from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.common.sequence import IntermediateTensors, PoolerOutput
 from aphrodite.common.utils import is_list_of
 from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
+from aphrodite.modeling.layers.pooler import Pooler, PoolingType
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
+from aphrodite.modeling.layers.vocab_parallel_embedding import (
+    VocabParallelEmbedding)
 from aphrodite.modeling.models.clip import CLIPVisionModel
 from aphrodite.modeling.models.llama import LlamaForCausalLM
+from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.utils import (cached_get_tokenizer,
@@ -292,10 +296,6 @@ class Phi3HDImageEmbedding(Phi3ImageEmbeddingBase):
             dim=2).reshape(num_images, -1, hid_dim)
         return image_features_hd_newline
 
-    def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        loader = AutoWeightsLoader(self)
-        loader.load_weights(weights)
-
 
 # Based on https://huggingface.co/microsoft/Phi-3-vision-128k-instruct/blob/main/image_processing_phi3_v.py#L57
 def _calc_padded_size(*, width: int, height: int, padding_unit: int = 336):
@@ -388,23 +388,29 @@ def dummy_data_for_phi3v(ctx: InputContext,
     return seq_data, mm_data
 
 
-# Reserve this function to also handle placeholders for additional images
-# [ref: PR #5820]
 @lru_cache
-def _get_image_placeholder_token_ids(model_config: ModelConfig,
-                                     idx: int) -> List[int]:
+def _get_image_placeholder_token_id_candidates(
+    model_config: ModelConfig,
+    idx: int,
+) -> List[List[int]]:
     assert idx > 0
 
     tokenizer = cached_get_tokenizer(model_config.tokenizer)
 
+    # This is used when the image token is at the start of the string
+    start_candidate = tokenizer.encode(f"<|image_{idx}|>",
+                                       add_special_tokens=False)
+
+    # This is used when the image token is in the middle of the string
+
     # We need to get the token for "<", not "▁<"
     # https://huggingface.co/microsoft/Phi-3-vision-128k-instruct/raw/main/tokenizer.json
     a_token_id, = tokenizer.encode("a", add_special_tokens=False)
-    a_token_id_, *image_placeholder_token_ids = tokenizer.encode(
-        f"a<|image_{idx}|>", add_special_tokens=False)
+    a_token_id_, *middle_candidate = tokenizer.encode(f"a<|image_{idx}|>",
+                                                      add_special_tokens=False)
     assert a_token_id == a_token_id_
 
-    return image_placeholder_token_ids
+    return [start_candidate, middle_candidate]
 
 
 def input_processor_for_phi3v(ctx: InputContext,
@@ -464,16 +470,20 @@ def input_processor_for_phi3v(ctx: InputContext,
 
     prompt_token_ids = llm_inputs["prompt_token_ids"].copy()
 
-    # masked place_holder with image token id
+    print("prompt_token_ids (old)", prompt_token_ids)
+
+    # masked placeholder with image token id
     for idx in image_idx:
-        image_token_ids = _get_image_placeholder_token_ids(model_config,
-                                                           idx=idx)
-        for i in range(len(prompt_token_ids) - len(image_token_ids) + 1):
-            if prompt_token_ids[i:i + len(image_token_ids)] == image_token_ids:
-                prompt_token_ids[i:i + len(image_token_ids)] = [
-                    _IMAGE_TOKEN_ID
-                ] * len(image_token_ids)
-                break
+        candidates = _get_image_placeholder_token_id_candidates(model_config,
+                                                                idx=idx)
+
+        for candidate in candidates:
+            for i in range(len(prompt_token_ids) - len(candidate) + 1):
+                if prompt_token_ids[i:i + len(candidate)] == candidate:
+                    prompt_token_ids[i:i +
+                                     len(candidate)] = ([_IMAGE_TOKEN_ID] *
+                                                        len(candidate))
+                    break
 
     # merge consecutive tag ids
     merged_token_ids: List[int] = []
@@ -523,11 +533,22 @@ class Phi3VForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
         self.multimodal_config = multimodal_config
         self.image_token_id = _IMAGE_TOKEN_ID
 
-        # TODO: Optionally initializes this for supporting embeddings.
+        self.embed_tokens = VocabParallelEmbedding(
+            config.vocab_size,
+            config.hidden_size,
+            org_num_embeddings=config.vocab_size,
+            quant_config=quant_config,
+        )
+
+        # TODO: Optionally initializes this for supporting input embeddings.
         self.vision_embed_tokens = Phi3HDImageEmbedding(config)
 
         self.language_model = LlamaForCausalLM(config, cache_config,
                                                quant_config)
+
+        # The same model class supports both language generation and embedding
+        # because the architecture name is the same
+        self._pooler = Pooler(pooling_type=PoolingType.LAST, normalize=True)
 
         self.make_empty_intermediate_tensors = (
             self.language_model.make_empty_intermediate_tensors)
@@ -652,8 +673,7 @@ class Phi3VForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
 
             if image_input is not None:
                 vision_embeddings = self._process_image_input(image_input)
-                inputs_embeds = self.language_model.model.get_input_embeddings(
-                    input_ids)
+                inputs_embeds = self.embed_tokens(input_ids)
                 inputs_embeds = merge_multimodal_embeddings(
                     input_ids, inputs_embeds, vision_embeddings,
                     self.image_token_id)
@@ -685,13 +705,27 @@ class Phi3VForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
     ) -> Optional[SamplerOutput]:
         return self.language_model.sample(logits, sampling_metadata)
 
+    def pooler(
+        self,
+        hidden_states: torch.Tensor,
+        pooling_metadata: PoolingMetadata,
+    ) -> Optional[PoolerOutput]:
+        return self._pooler(hidden_states, pooling_metadata)
+
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         hf_to_aphrodite_mapper = WeightsMapper(
             orig_to_new_prefix={
+                "model.vision_embed_tokens.wte": "embed_tokens",
                 "model.vision_embed_tokens.": "vision_embed_tokens.",
                 "lm_head.": "language_model.lm_head.",
                 "model.": "language_model.model.",
             })
 
         loader = AutoWeightsLoader(self)
-        loader.load_weights(weights, mapper=hf_to_aphrodite_mapper)
+        autoloaded_weights = loader.load_weights(weights,
+                                                 mapper=hf_to_aphrodite_mapper)
+
+        # The HF config doesn't specify whether these are tied,
+        # so we detect it this way
+        if "embed_tokens" not in autoloaded_weights:
+            self.embed_tokens = self.language_model.model.embed_tokens
