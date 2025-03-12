@@ -556,7 +556,7 @@ To use a named function, you need to define the functions in the `tools` paramet
 To enable this feature, you should set the following flags:
 
 - `--enable-auto-tool-choice` (Required): This tells Aphrodite that you want to allow the model to generate its own tool calls when it deems appropriate.
-- `--tool-call-parser`: The tool parser to use. Currently, only `hermes`, `mistral`, `llama3_json`, and `internlm` are supported. More will be added soon, but you may also register your own. Please see [Tool Plugin](../developer/tool-plugin.md) for more info.
+- `--tool-call-parser`: The tool parser to use. Currently, only `hermes`, `mistral`, `llama3_json`, and `internlm` are supported. More will be added soon, but you may also register your own. Please see [Tool Plugin](/developer/tool-plugin) for more info.
 - `--tool-parser-plugin`: The tool parser plugin to use. See above.
 - `--chat-template`: The chat template to handle `tool`-role messages and `assistant`-role messages that contain previously generated tool calls. We provide these for `hermes`, `mistral`, `llama3_json`, and `internlm` in the examples/chat_templates directory.
 

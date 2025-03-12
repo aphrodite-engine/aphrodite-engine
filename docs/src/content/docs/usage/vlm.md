@@ -2,7 +2,7 @@
 title: Using Vision Language Models
 ---
 
-Aphrodite provides experimental support for Vision Language Models (VLMs). See the [list of supported VLMs here](/pages/usage/models#multimodal-language-models). This document shows you how to run and serve these models using Aphrodite.
+Aphrodite provides experimental support for Vision Language Models (VLMs). See the [list of supported VLMs here](/usage/models#multimodal-language-models). This document shows you how to run and serve these models using Aphrodite.
 
 :::warning
 We are actively working on improving the VLM support in Aphrodite. Expect breaking changes in the future without any deprecation warnings.

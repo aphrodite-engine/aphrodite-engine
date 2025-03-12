@@ -2,7 +2,7 @@
 title: Soft prompts
 ---
 
-Similar to [LoRA](/pages/adapters/lora), soft prompts are another way to adapt the behaviour of an LLM without fully training all its parameters. Soft prompts are learnable tensors concatenated with the input embeddings that can be optimized to a dataset; the downside is that they aren't human readable because you aren't matching these "virtual tokens" to the embeddings of a eal word.
+Similar to [LoRA](/adapters/lora), soft prompts are another way to adapt the behaviour of an LLM without fully training all its parameters. Soft prompts are learnable tensors concatenated with the input embeddings that can be optimized to a dataset; the downside is that they aren't human readable because you aren't matching these "virtual tokens" to the embeddings of a eal word.
 
 Please refer to this [PEFT documentation](https://huggingface.co/docs/peft/main/en/conceptual_guides/prompting) for more info.
 

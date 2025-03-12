@@ -5,11 +5,11 @@ title: Adding Multimodal Capabilities
 This guide will walk you through the steps needed to extend the capabilities of an Aphrodite model so that it accepts multimodal inputs.
 
 :::tip
-See also: [Adding a New Model](/pages/developer/adding-model).
+See also: [Adding a New Model](/developer/adding-model).
 :::
 
 ## Step 1: Update the base Aphrodite model
-We assume that you have already created a new model by following the steps in the [Adding a New Model](/pages/developer/adding-model) guide. If not, please do so before proceeding.
+We assume that you have already created a new model by following the steps in the [Adding a New Model](/developer/adding-model) guide. If not, please do so before proceeding.
 
 1. Implement the `aphrodite.modeling.models.interfaces.SupportsMultiModal` interface:
 
@@ -51,7 +51,7 @@ class YourModelForImage2Seq(nn.Module, SupportsMultiModal):
 A default mapper is available for each modality in the core Aphrodite library. This input mapper will be used if you do not provide your own function.
 
 :::tip
-See also: [Input Processing Pipeline](/pages/developer/input-processing).
+See also: [Input Processing Pipeline](/developer/input-processing).
 :::
 
 ## Step 3: Register maximum number of multi-modal tokens
@@ -75,7 +75,7 @@ Here are some examples:
 - Dynamic feature size: [LLaVA-NeXT Model](https://github.com/PygmalionAI/aphrodite-engine/tree/main/aphrodite/modeling/models/llava_next.py)
 
 :::tip
-See also: [Input Processing Pipeline](/pages/developer/input-processing).
+See also: [Input Processing Pipeline](/developer/input-processing).
 :::
 
 ## Step 4: (Optional) Register dummy data
@@ -101,7 +101,7 @@ Here are some examples:
 :::
 
 :::tip
-See also: [Input Processing Pipeline](/pages/developer/input-processing).
+See also: [Input Processing Pipeline](/developer/input-processing).
 :::
 
 ## Step 5: (Optional) Register input processor
@@ -125,5 +125,5 @@ A common use case of input processors is inserting placeholder tokens to leverag
 - Insert dynamic number of image tokens: [LLaVA-NeXT Model](https://github.com/PygmalionAI/aphrodite-engine/tree/main/aphrodite/modeling/models/llava_next.py)
 
 :::tip
-See also: [Input Processing Pipeline](/pages/developer/input-processing).
+See also: [Input Processing Pipeline](/developer/input-processing).
 :::

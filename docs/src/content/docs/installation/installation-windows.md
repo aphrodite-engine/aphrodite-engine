@@ -134,4 +134,4 @@ You may need to replace the existing `NvToolsExt` directory. Now try building ag
 
 ## Windows Subsystem for Linux (WSL)
 
-The installation process for WSL is essentially the same as Linux. You can refer the [NVIDIA GPU Guide](/pages/installation/installation) or the [AMD GPU Guide](/pages/installation/installation-rocm) for more information. Just make sure you've installed CUDA on your Windows machine, and you should be good to go. You can't install CUDA on WSL.
+The installation process for WSL is essentially the same as Linux. You can refer the [NVIDIA GPU Guide](/installation/installation) or the [AMD GPU Guide](/installation/installation-rocm) for more information. Just make sure you've installed CUDA on your Windows machine, and you should be good to go. You can't install CUDA on WSL.
