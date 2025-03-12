@@ -511,10 +511,10 @@ class ModelConfig(ConfigMixin):
                            "with pipeline parallel")
             self.use_async_output_proc = False
             return
-        if device_config.device_type not in ("cuda", "tpu"):
+        if device_config.device_type not in ("cuda", "tpu", "xpu"):
             logger.warning(
-                "Async output processing is only supported for CUDA or TPU. "
-                "Disabling it for other platforms.")
+                "Async output processing is only supported for CUDA, TPU, or "
+                "XPU. Disabling it for other platforms.")
             self.use_async_output_proc = False
             return
         if envs.APHRODITE_USE_RAY_SPMD_WORKER:
@@ -610,14 +610,12 @@ class ModelConfig(ConfigMixin):
 
     def get_head_size(self) -> int:
         # TODO remove hard code
-        spec_model_types = ["medusa", "mlp_speculator"]
         if hasattr(self.hf_text_config, "model_type"
                    ) and self.hf_text_config.model_type == 'deepseek_v2':
             # FlashAttention supports only head_size 32, 64, 128, 256,
             # we need to pad head_size 192 to 256
             return 256
-        if self.is_attention_free or \
-            self.hf_text_config.model_type in spec_model_types:
+        if self.is_attention_free:
             return 0
         if hasattr(self.hf_text_config, "head_dim"):
             return self.hf_text_config.head_dim
