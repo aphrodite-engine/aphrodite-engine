@@ -24,6 +24,32 @@ void paged_attention_v2(
     const int64_t blocksparse_vert_stride, const int64_t blocksparse_block_size,
     const int64_t blocksparse_head_sliding_step);
 
+void burst_attention(
+    torch::Tensor& out,    // [num_seqs, num_heads, head_size]
+    torch::Tensor& query,  // [num_seqs, num_heads, head_size]
+    torch::Tensor&
+        key_cache,  // [num_blocks, num_heads, head_size/x, block_size, x]
+    torch::Tensor&
+        value_cache,       // [num_blocks, num_heads, head_size, block_size]
+    int64_t num_kv_heads,  // [num_heads]
+    double scale,
+    torch::Tensor& block_tables,  // [num_seqs, max_num_blocks_per_seq]
+    torch::Tensor& seq_lens,      // [num_seqs]
+    int64_t block_size, int64_t max_seq_len,
+    const c10::optional<torch::Tensor>& alibi_slopes,
+    const std::string& kv_cache_dtype, double k_scale, double v_scale,
+    const int64_t tp_rank, const int64_t blocksparse_local_blocks,
+    const int64_t blocksparse_vert_stride, const int64_t blocksparse_block_size,
+    const int64_t blocksparse_head_sliding_step,
+    // IPC related parameters
+    torch::Tensor& ipc_handles, // Tensor of IPC handles
+    torch::Tensor& ipc_offsets, // Tensor of offsets
+    torch::Tensor& shared_signals, // Tensor of shared memory
+    int64_t world_size,
+    int64_t rank,
+    int64_t tile_size
+);
+
 void rms_norm(torch::Tensor& out, torch::Tensor& input, torch::Tensor& weight,
               double epsilon);
 
