@@ -933,6 +933,7 @@ class ExtractedToolCallInformation(BaseModel):
 
 class ChatMessage(OpenAIBaseModel):
     role: str
+    reasoning_content: Optional[str] = None
     content: Optional[str] = None
     tool_calls: List[ToolCall] = Field(default_factory=list)
 
@@ -974,6 +975,7 @@ class ChatCompletionResponse(OpenAIBaseModel):
 class DeltaMessage(OpenAIBaseModel):
     role: Optional[str] = None
     content: Optional[str] = None
+    reasoning_content: Optional[str] = None
     tool_calls: List[DeltaToolCall] = Field(default_factory=list)
 
 

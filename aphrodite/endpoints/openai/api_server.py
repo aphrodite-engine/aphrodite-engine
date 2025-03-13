@@ -44,6 +44,7 @@ from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  KAIGenerationInputSchema,
                                                  TokenizeRequest,
                                                  TokenizeResponse)
+from aphrodite.endpoints.openai.reasoning_parsers import ReasoningParserManager
 from aphrodite.endpoints.openai.serving_chat import OpenAIServingChat
 from aphrodite.endpoints.openai.serving_completions import (
     OpenAIServingCompletion)
@@ -1139,7 +1140,9 @@ def init_app_state(
         chat_template=args.chat_template,
         return_tokens_as_token_ids=args.return_tokens_as_token_ids,
         enable_auto_tools=args.enable_auto_tool_choice,
-        tool_parser=args.tool_call_parser
+        tool_parser=args.tool_call_parser,
+        enable_reasoning=args.enable_reasoning,
+        reasoning_parser=args.reasoning_parser,
     )
     state.openai_serving_completion = OpenAIServingCompletion(
         engine_client,
@@ -1180,11 +1183,19 @@ async def run_server(args, **uvicorn_kwargs) -> None:
 
     if args.tool_parser_plugin and len(args.tool_parser_plugin) > 3:
         ToolParserManager.import_tool_parser(args.tool_parser_plugin)
+
     valide_tool_parses = ToolParserManager.tool_parsers.keys()
     if args.enable_auto_tool_choice \
         and args.tool_call_parser not in valide_tool_parses:
         raise KeyError(f"invalid tool call parser: {args.tool_call_parser} "
                        f"(chose from {{ {','.join(valide_tool_parses)} }})")
+
+    valid_reasoning_parses = ReasoningParserManager.reasoning_parsers.keys()
+    if args.enable_reasoning \
+        and args.reasoning_parser not in valid_reasoning_parses:
+        raise KeyError(
+            f"invalid reasoning parser: {args.reasoning_parser} "
+            f"(chose from {{ {','.join(valid_reasoning_parses)} }})")
 
     def signal_handler(*_) -> None:
         # Interrupt server on sigterm while initializing
