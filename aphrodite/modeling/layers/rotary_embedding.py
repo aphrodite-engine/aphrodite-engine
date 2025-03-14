@@ -202,7 +202,19 @@ class RotaryEmbedding(CustomOp):
         key: torch.Tensor,
         offsets: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.forward_cuda(positions, query, key, offsets)
+        from aphrodite.modeling.layers.ops.rotary_embedding import (
+            rotary_emb_fwd)
+
+        rotary_emb_fwd(
+            positions,
+            query,
+            key,
+            self.cos_sin_cache,
+            self.rotary_dim,
+            self.is_neox_style,
+            offsets,
+        )
+        return query, key
 
     def extra_repr(self) -> str:
         s = f"head_size={self.head_size}, rotary_dim={self.rotary_dim}"
