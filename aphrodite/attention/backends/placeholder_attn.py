@@ -243,12 +243,12 @@ class PlaceholderAttentionMetadataBuilder(
 
         logits_soft_cap = getattr(self.runner.model_config.hf_config,
                                   "attn_logit_softcapping", None)
-        if logits_soft_cap is not None:
-            raise ValueError(
-                "Please use Flashinfer backend for models with logits_soft_cap"
-                " (i.e., Gemma-2). Otherwise, the output might be wrong."
-                " Set Flashinfer backend by "
-                "export APHRODITE_ATTENTION_BACKEND=FLASHINFER.")
+        # if logits_soft_cap is not None:
+        #     raise ValueError(
+        #         "Please use Flashinfer backend for models with logits_soft_cap"
+        #         " (i.e., Gemma-2). Otherwise, the output might be wrong."
+        #         " Set Flashinfer backend by "
+        #         "export APHRODITE_ATTENTION_BACKEND=FLASHINFER.")
 
         max_query_len = max(query_lens)
         decode_query_lens = query_lens[self.num_prefills:]
