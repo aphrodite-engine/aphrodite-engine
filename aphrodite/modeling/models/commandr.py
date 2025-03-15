@@ -49,7 +49,7 @@ from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (is_pp_missing_parameter,
+from .utils import (extract_layer_index, is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers)
 
 
@@ -120,6 +120,7 @@ class CohereAttention(nn.Module):
         config: CohereConfig,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ):
         super().__init__()
         tp_size = get_tensor_model_parallel_world_size()
@@ -170,12 +171,25 @@ class CohereAttention(nn.Module):
             rope_scaling=self.rope_scaling,
             is_neox_style=False,
         )
+        sliding_window = getattr(config, "sliding_window", None)
+        # Model v2 has sliding windows, v1 does not
+        self.v1 = sliding_window is None
+
+        layer_idx = extract_layer_index(prefix)
+        layer_has_sliding_window = (
+            getattr(config, "sliding_window_pattern", False)
+            and (layer_idx + 1) % self.config.sliding_window_pattern != 0)
+
+        self.sliding_window = (sliding_window
+                               if layer_has_sliding_window else None)
         self.attn = Attention(self.num_heads,
                               self.head_dim,
                               self.scaling,
                               num_kv_heads=self.num_kv_heads,
                               cache_config=cache_config,
-                              quant_config=quant_config)
+                              per_layer_sliding_window=self.sliding_window,
+                              quant_config=quant_config,
+                              prefix=f"{prefix}.attn")
         if self.use_qk_norm:
             self.q_norm = LayerNorm(param_shape=(self.num_heads,
                                                  self.head_dim),
@@ -204,7 +218,8 @@ class CohereAttention(nn.Module):
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         if self.use_qk_norm:
             q, k = self._apply_qk_norm(q, k)
-        q, k = self.rotary_emb(positions, q, k)
+        if self.v1 or self.sliding_window:
+            q, k = self.rotary_emb(positions, q, k)
         attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
         output, _ = self.o_proj(attn_output)
         return output
