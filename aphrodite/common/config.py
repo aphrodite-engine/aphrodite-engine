@@ -279,6 +279,7 @@ class ModelConfig(ConfigMixin):
         if not self.skip_tokenizer_init:
             self._verify_tokenizer_mode()
         self.is_attention_free = self._init_attention_free()
+        self.has_noops = self._init_has_noops()
         self.has_inner_state = self._init_has_inner_state()
         self.override_neuron_config = override_neuron_config if is_neuron(
         ) else None
@@ -301,6 +302,10 @@ class ModelConfig(ConfigMixin):
     def _init_attention_free(self) -> bool:
         architectures = getattr(self.hf_config, "architectures", [])
         return ModelRegistry.is_attention_free_model(architectures)
+
+    def _init_has_noops(self) -> bool:
+        architectures = getattr(self.hf_config, "architectures", [])
+        return ModelRegistry.is_noops_model(architectures)
 
     def _init_has_inner_state(self) -> bool:
         architectures = getattr(self.hf_config, "architectures", [])
@@ -656,6 +661,14 @@ class ModelConfig(ConfigMixin):
         if self.hf_config.model_type == "dbrx":
             return getattr(self.hf_config.attn_config, "kv_n_heads",
                            self.hf_config.num_attention_heads)
+
+        if self.hf_config.model_type == "nemotron-nas":
+            for block in self.hf_config.block_configs:
+                if not block.attention.no_op:
+                    return self.hf_config.num_attention_heads \
+                        // block.attention.n_heads_in_group
+
+            raise RuntimeError("Couldn't determine number of kv heads")
 
         if self.is_attention_free:
             return 0

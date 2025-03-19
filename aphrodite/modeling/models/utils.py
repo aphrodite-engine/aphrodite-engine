@@ -336,7 +336,10 @@ def set_cpu_offload_max_bytes(max_bytes: int) -> None:
 
 
 def maybe_offload_to_cpu(module: torch.nn.Module) -> torch.nn.Module:
-    device = next(module.parameters()).device
+    if (params := next(module.parameters(), None)) is None:
+        return module
+
+    device = params.device
 
     if device == torch.device("cpu"):
         return module
@@ -459,6 +462,17 @@ def make_empty_intermediate_tensors_factory(keys: List[str], hidden_size: int):
         })
 
     return make_empty_intermediate_tensors
+
+
+def maybe_prefix(prefix: str, name: str) -> str:
+    """Add a prefix to a name if the prefix is non-empty.
+    Args:
+        prefix: The prefix to add. If empty, no prefix will be added.
+        name: The name to potentially prefix.
+    Returns:
+        The string "prefix.name" if prefix was non-empty, otherwise just "name".
+    """
+    return name if not prefix else f"{prefix}.{name}"
 
 
 class LLMWrapper(nn.Module):
