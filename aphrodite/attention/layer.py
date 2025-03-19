@@ -34,18 +34,25 @@ class Attention(nn.Module):
         quant_config: Optional[QuantizationConfig] = None,
         blocksparse_params: Optional[Dict[str, Any]] = None,
         logits_soft_cap: Optional[float] = None,
+        per_layer_sliding_window: Optional[int] = None,
         prefix: str = "",
     ) -> None:
         super().__init__()
+        if per_layer_sliding_window is not None:
+            # per-layer sliding window
+            sliding_window = per_layer_sliding_window
+        elif cache_config is not None:
+            # model-level sliding window
+            sliding_window = cache_config.sliding_window
+        else:
+            sliding_window = None
         if cache_config is not None:
             kv_cache_dtype = cache_config.cache_dtype
             block_size = cache_config.block_size
-            sliding_window = cache_config.sliding_window
             is_attention_free = cache_config.is_attention_free
         else:
             kv_cache_dtype = "auto"
             block_size = 16
-            sliding_window = None
             is_attention_free = False
         if num_kv_heads is None:
             num_kv_heads = num_heads
@@ -77,10 +84,9 @@ class Attention(nn.Module):
         # During model initialization, the default dtype is set as the model
         # weight and activation dtype.
         dtype = torch.get_default_dtype()
-        attn_backend = get_attn_backend(head_size, sliding_window, dtype,
-                                        kv_cache_dtype, block_size,
-                                        is_attention_free, blocksparse_params
-                                        is not None)
+        attn_backend = get_attn_backend(head_size, dtype, kv_cache_dtype,
+                                        block_size, is_attention_free,
+                                        blocksparse_params is not None)
         impl_cls = attn_backend.get_impl_cls()
         self.impl = impl_cls(num_heads, head_size, scale, num_kv_heads,
                              alibi_slopes, sliding_window, kv_cache_dtype,
