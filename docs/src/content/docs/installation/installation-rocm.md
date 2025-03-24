@@ -26,7 +26,7 @@ DOCKER_BUILDKIT=1 docker build -f Dockerfile.rocm -t aphrodite-rocm .
 To build Aphrodite on NAVI GPUs (e.g. RTX 7900 XTX), run this:
 
 ```sh
-DOCKER_BUILDKIT=1 docker build --build-arg BUILD_FA="0" -f Dockerfile.rocm aphrodite-rocm .
+DOCKER_BUILDKIT=1 docker build --build-arg BUILD_FA="0" -f Dockerfile.rocm -t aphrodite-rocm .
 ```
 
 Then run your image:
