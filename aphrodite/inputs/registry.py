@@ -13,7 +13,7 @@ from aphrodite.common.utils import (get_allowed_kwarg_only_overrides,
                                     print_warning_once,
                                     resolve_mm_processor_kwargs)
 
-from .data import LLMInputs
+from .data import DecoderOnlyInputs
 
 if TYPE_CHECKING:
     from aphrodite.common.config import ModelConfig
@@ -95,7 +95,7 @@ class _MultiModalCounts(UserDict):
                    f"Available keys: {set(self.keys())}")
             raise KeyError(msg) from exc
 
-InputProcessor = Callable[[InputContext, LLMInputs], LLMInputs]
+InputProcessor = Callable[[InputContext, DecoderOnlyInputs], DecoderOnlyInputs]
 """Preprocess the inputs to the model."""
 
 
@@ -128,7 +128,7 @@ class InputRegistry:
         # Avoid circular import
         from aphrodite.common.sequence import SequenceData
 
-        dummy_seq_data = SequenceData.from_token_counts((0, seq_len))
+        dummy_seq_data = SequenceData.from_prompt_token_counts((0, seq_len))
         dummy_multi_modal_data = None
 
         return dummy_seq_data, dummy_multi_modal_data
@@ -239,8 +239,11 @@ class InputRegistry:
 
         return seq_data, mm_data
 
-    def _default_input_processor(self, ctx: InputContext,
-                                 inputs: LLMInputs) -> LLMInputs:
+    def _default_input_processor(
+        self,
+        ctx: InputContext,
+        inputs: DecoderOnlyInputs,
+    ) -> DecoderOnlyInputs:
         """The default input processor is a no-op."""
         return inputs
 
@@ -271,7 +274,7 @@ class InputRegistry:
             .get(model_cls, self._default_input_processor)
 
     def process_input(self, model_config: "ModelConfig",
-                      inputs: LLMInputs) -> LLMInputs:
+                      inputs: DecoderOnlyInputs) -> DecoderOnlyInputs:
         """
         Apply an input processor to an instance of model inputs.
         The model is identified by ``model_config``.

@@ -1,5 +1,5 @@
 from typing import (TYPE_CHECKING, Any, Dict, Generic, Iterable, List,
-                    Optional, Tuple, Union)
+                    Optional, Tuple, Union, cast)
 
 from typing_extensions import NotRequired, TypedDict, TypeVar
 
@@ -51,7 +51,7 @@ class TokensPrompt(TypedDict):
 
 SingletonPrompt = Union[str, TextPrompt, TokensPrompt]
 """
-Set of possible schemas for a single LLM input:
+Set of possible schemas for a single prompt:
 
 - A text prompt (:class:`str` or :class:`TextPrompt`)
 - A tokenized prompt (:class:`TokensPrompt`)
@@ -121,13 +121,8 @@ both decoder-only and encoder/decoder input types:
 """
 
 
-class LLMInputs(TypedDict):
-    """
-    The inputs in :class:`~vllm.LLMEngine` before they are
-    passed to the model executor.
-
-    This specifies the data required for decoder-only models.
-    """
+class TokenInputs(TypedDict):
+    """Represents token-based inputs."""
     prompt_token_ids: List[int]
     """The token IDs of the prompt."""
 
@@ -151,9 +146,42 @@ class LLMInputs(TypedDict):
     """
 
 
-class EncoderDecoderLLMInputs(LLMInputs):
+def token_inputs(
+    prompt_token_ids: List[int],
+    prompt: Optional[str] = None,
+    multi_modal_data: Optional["MultiModalDataDict"] = None,
+    mm_processor_kwargs: Optional[Dict[str, Any]] = None,
+) -> TokenInputs:
+    """Construct :class:`TokenInputs` from optional values."""
+    inputs = TokenInputs(prompt_token_ids=prompt_token_ids)
+
+    if prompt is not None:
+        inputs["prompt"] = prompt
+    if multi_modal_data is not None:
+        inputs["multi_modal_data"] = multi_modal_data
+    if mm_processor_kwargs is not None:
+        inputs["mm_processor_kwargs"] = mm_processor_kwargs
+
+    return inputs
+
+
+SingletonInputs = TokenInputs
+"""
+A processed :class:`SingletonPrompt` which can be passed to
+:class:`aphrodite.sequence.Sequence`.
+"""
+
+DecoderOnlyInputs = TokenInputs
+"""
+The inputs in :class:`~aphrodite.AphroditeEngine` before they are
+passed to the model executor.
+This specifies the data required for decoder-only models.
+"""
+
+
+class EncoderDecoderInputs(TokenInputs):
     """
-    The inputs in :class:`~vllm.LLMEngine` before they are
+    The inputs in :class:`~aphrodite.AphroditeEngine` before they are
     passed to the model executor.
 
     This specifies the required data for encoder-decoder models.
@@ -205,11 +233,12 @@ def zip_enc_dec_prompts(
     be zipped with the encoder/decoder prompts.
     """
     if mm_processor_kwargs is None:
-        mm_processor_kwargs = {}
-    if isinstance(mm_processor_kwargs, Dict):
+        mm_processor_kwargs = cast(Dict[str, Any], {})
+    if isinstance(mm_processor_kwargs, dict):
         return [
-            build_explicit_enc_dec_prompt(encoder_prompt, decoder_prompt,
-                                          mm_processor_kwargs)
+            build_explicit_enc_dec_prompt(
+                encoder_prompt, decoder_prompt,
+                cast(Dict[str, Any], mm_processor_kwargs))
             for (encoder_prompt,
                  decoder_prompt) in zip(enc_prompts, dec_prompts)
         ]
@@ -227,3 +256,36 @@ def to_enc_dec_tuple_list(
     return [(enc_dec_prompt["encoder_prompt"],
              enc_dec_prompt["decoder_prompt"])
             for enc_dec_prompt in enc_dec_prompts]
+
+
+def __getattr__(name: str):
+    if name == "PromptInput":
+        import warnings
+    import warnings  # noqa: F811
+
+    if name == "PromptInput":
+        msg = ("PromptInput has been renamed to PromptType. "
+               "The original name will be removed in an upcoming version.")
+
+        warnings.warn(DeprecationWarning(msg), stacklevel=2)
+
+        return PromptType
+
+    if name == "LLMInputs":
+        msg = ("LLMInputs has been renamed to DecoderOnlyInputs. "
+               "The original name will be removed in an upcoming version.")
+
+        warnings.warn(DeprecationWarning(msg), stacklevel=2)
+
+        return DecoderOnlyInputs
+
+    if name == "EncoderDecoderLLMInputs":
+        msg = (
+            "EncoderDecoderLLMInputs has been renamed to EncoderDecoderInputs. "
+            "The original name will be removed in an upcoming version.")
+
+        warnings.warn(DeprecationWarning(msg), stacklevel=2)
+
+        return EncoderDecoderInputs
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
