@@ -1,4 +1,3 @@
-import logging
 import math
 import re
 from array import array
@@ -14,12 +13,9 @@ from torch import nn
 from torch.nn import functional as F
 from transformers import PretrainedConfig
 
-import aphrodite.common.envs as envs
 from aphrodite.attention import Attention, AttentionMetadata
-from aphrodite.attention.selector import (_Backend, backend_name_to_enum,
-                                          get_global_forced_attn_backend)
+from aphrodite.attention.selector import _Backend
 from aphrodite.common.config import CacheConfig, MultiModalConfig
-from aphrodite.common.logger import log_once
 from aphrodite.common.sequence import (APHRODITE_TOKEN_ID_ARRAY_TYPE,
                                        IntermediateTensors, SequenceData)
 from aphrodite.distributed import (get_pp_group,
@@ -45,11 +41,10 @@ from aphrodite.modeling.models.interfaces import SupportsMultiModal
 from aphrodite.modeling.models.utils import make_layers
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalInputs
-from aphrodite.platforms import current_platform
 from aphrodite.quantization.base_config import QuantizationConfig
 from aphrodite.transformers_utils.processor import get_processor
 
-log = logging.getLogger(__name__)
+from .utils import get_vit_attn_backend
 
 # TODO: hard-coded for now. Consider making it configurable.
 VIT_LAYERS = [-2, -9]
@@ -191,38 +186,12 @@ class MultiHeadDotProductAttention(nn.Module):
         )
 
         # Detect attention implementation.
-        selected_backend: Optional[_Backend] = get_global_forced_attn_backend()
-        if selected_backend is None:
-            backend_by_env_var: Optional[str] = envs.APHRODITE_ATTENTION_BACKEND
-            if backend_by_env_var is not None:
-                selected_backend = backend_name_to_enum(backend_by_env_var)
-        if selected_backend is None:
-            # For Volta and Turing GPUs, use xformers instead.
-            device_available = current_platform.get_device_capability()[0] >= 8
-            if device_available:
-                from transformers.utils import is_flash_attn_2_available
-                if is_flash_attn_2_available():
-                    self._use_flash_attn = True
-                else:
-                    log_once(
-                    level="WARNING",
-                    message=
-                        "Current Molmo implementation has a bug with "
-                        "`aphrodite-flash-attn` inside vision module, so we use"
-                        " xformers backend instead. You can run `pip install "
-                        "flash-attn to use flash-attention backend."
-                    )
-                    self._use_flash_attn = False
-            else:
-                self._use_flash_attn = False
-        else:
-            if selected_backend == _Backend.FLASH_ATTN:
-                self._use_flash_attn = True
-            elif selected_backend == _Backend.XFORMERS:
-                self._use_flash_attn = False
-            else:
-                raise RuntimeError(
-                    f"Molmo does not support {selected_backend} backend now.")
+        self.attn_backend: _Backend = get_vit_attn_backend()
+        if self.attn_backend not in {
+                _Backend.FLASH_ATTN, _Backend.TORCH_SDPA, _Backend.XFORMERS
+        }:
+            raise RuntimeError(
+                f"Molmo does not support {self.attn_backend} backend now.")
 
     def forward(self,
                 inputs_q: torch.Tensor,
@@ -244,10 +213,15 @@ class MultiHeadDotProductAttention(nn.Module):
         xk = xk.view(*kv_shape)
         xv = xv.view(*kv_shape)
 
-        if self._use_flash_attn:
+        if self.attn_backend == _Backend.FLASH_ATTN:
             from flash_attn import flash_attn_func
             output = flash_attn_func(xq, xk, xv, dropout_p=0.0, causal=False)
-        else:
+        elif self.attn_backend == _Backend.TORCH_SDPA:
+            xq, xk, xv = (rearrange(x, "b s h d -> b h s d")
+                          for x in (xq, xk, xv))
+            output = F.scaled_dot_product_attention(xq, xk, xv)
+            output = rearrange(output, "b h s d -> b s h d ")
+        elif self.attn_backend == _Backend.XFORMERS:
             from xformers import ops as xops
             output = xops.memory_efficient_attention_forward(xq, xk, xv, p=0)
 
