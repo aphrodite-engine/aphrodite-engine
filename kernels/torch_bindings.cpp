@@ -74,6 +74,10 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def("gelu_quick(Tensor! out, Tensor input) -> ()");
   ops.impl("gelu_quick", torch::kCUDA, &gelu_quick);
 
+  // FATReLU implementation.
+  ops.def("fatrelu_and_mul(Tensor! out, Tensor input, float threshold) -> ()");
+  ops.impl("fatrelu_and_mul", torch::kCUDA, &fatrelu_and_mul);
+
   // prepare_inputs advance_step
   ops.def(
       "advance_step_flashattn(int num_seqs, int num_queries, int block_size, "

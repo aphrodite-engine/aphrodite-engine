@@ -50,6 +50,25 @@ __device__ __forceinline__ T gelu_tanh_kernel(const T& x) {
   return (T)(0.5f * f * (1.0f + ::tanhf(inner)));
 }
 
+template <typename T>
+__device__ __forceinline__ T fatrelu_kernel(const T& x,
+                                            const double threshold) {
+  return (float)x > threshold ? x : (T)0.0f;
+}
+
+template <typename scalar_t>
+__global__ void fatrelu_and_mul_kernel(
+    scalar_t* __restrict__ out,          // [..., d]
+    const scalar_t* __restrict__ input,  // [..., 2, d]
+    const int d, const double threshold) {
+  const int64_t token_idx = blockIdx.x;
+  for (int64_t idx = threadIdx.x; idx < d; idx += blockDim.x) {
+    const scalar_t x = APHRODITE_LDG(&input[token_idx * 2 * d + idx]);
+    const scalar_t y = APHRODITE_LDG(&input[token_idx * 2 * d + d + idx]);
+    out[token_idx * d + idx] = fatrelu_kernel(x, threshold) * y;
+  }
+}
+
 }  // namespace aphrodite
 
 // Launch activation and gating kernel.
@@ -83,6 +102,22 @@ void gelu_tanh_and_mul(torch::Tensor& out,    // [..., d]
                        torch::Tensor& input)  // [..., 2 * d]
 {
   LAUNCH_ACTIVATION_GATE_KERNEL(aphrodite::gelu_tanh_kernel);
+}
+
+void fatrelu_and_mul(torch::Tensor& out,    // [..., d]
+                     torch::Tensor& input,  // [..., 2 * d]
+                     double threshold) {
+  int d = input.size(-1) / 2;
+  int64_t num_tokens = input.numel() / input.size(-1);
+  dim3 grid(num_tokens);
+  dim3 block(std::min(d, 1024));
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(input));
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  APHRODITE_DISPATCH_FLOATING_TYPES(
+      input.scalar_type(), "fatrelu_and_mul_kernel", [&] {
+        aphrodite::fatrelu_and_mul_kernel<scalar_t><<<grid, block, 0, stream>>>(
+            out.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(), d, threshold);
+      });
 }
 
 namespace aphrodite {

@@ -52,6 +52,9 @@ void gelu_fast(torch::Tensor& out, torch::Tensor& input);
 
 void gelu_quick(torch::Tensor& out, torch::Tensor& input);
 
+void fatrelu_and_mul(torch::Tensor& out, torch::Tensor& input,
+                     double threshold);
+
 void advance_step_flashattn(int64_t num_seqs, int64_t num_queries,
                             int64_t block_size, torch::Tensor& input_tokens,
                             torch::Tensor& sampled_token_ids,

@@ -13,6 +13,37 @@ from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationConfig
 
 
+class FatreluAndMul(CustomOp):
+    """An activation function for FATReLU.
+    
+    The function computes x -> FATReLU(x[:d]) * x[d:] where
+    d = x.shape[-1] // 2.
+    This is used in openbmb/MiniCPM-S-1B-sft.
+    Shapes:
+        x: (num_tokens, 2 * d) or (batch_size, seq_len, 2 * d)
+        return: (num_tokens, d) or (batch_size, seq_len, d)
+    """
+
+    def __init__(self, threshold: float = 0.):
+        super().__init__()
+        self.threshold = threshold
+
+    def forward_native(self, x: torch.Tensor) -> torch.Tensor:
+        d = x.shape[-1] // 2
+        x1 = x[..., :d]
+        x2 = x[..., d:]
+        x1 = F.threshold(x1, self.threshold, 0.0)
+        return x1 * x2
+
+    def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
+        from aphrodite import _custom_ops as ops
+        d = x.shape[-1] // 2
+        output_shape = (x.shape[:-1] + (d, ))
+        out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
+        ops.fatrelu_and_mul(out, x, self.threshold)
+        return out
+
+
 class SiluAndMul(CustomOp):
     """An activation function for SwiGLU.
 
@@ -195,7 +226,8 @@ class ReLUSquaredActivation(CustomOp):
         return self.forward_native(x)
 
     def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
-        from aphrodite.modeling.layers.ops.activation import relu_squared_kernel
+        from aphrodite.modeling.layers.ops.activation import (
+            relu_squared_kernel)
         return relu_squared_kernel(x)
 
 

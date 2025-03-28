@@ -93,6 +93,10 @@ def gelu_new(out: torch.Tensor, x: torch.Tensor) -> None:
 def gelu_quick(out: torch.Tensor, x: torch.Tensor) -> None:
     torch.ops._C.gelu_quick(out, x)
 
+def fatrelu_and_mul(out: torch.Tensor, x: torch.Tensor,
+                    threshold: float) -> None:
+    torch.ops._C.fatrelu_and_mul(out, x, threshold)
+
 
 # page attention ops
 def paged_attention_v1(
