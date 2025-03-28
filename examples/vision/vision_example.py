@@ -271,7 +271,8 @@ def run_qwen2_vl(question, modality):
 
 
 # Molmo
-def run_molmo(question):
+def run_molmo(question: str, modality: str):
+    assert modality == "image"
     model_name = "allenai/Molmo-7B-D-0924"
 
     llm = LLM(
