@@ -19,7 +19,8 @@ from aphrodite.attention import AttentionMetadata
 from aphrodite.common.config import CacheConfig, MultiModalConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.common.utils import is_list_of
-from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
+from aphrodite.inputs import (INPUT_REGISTRY, DecoderOnlyInputs, InputContext,
+                              token_inputs)
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.models.intern_vit import InternVisionModel
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
@@ -277,13 +278,13 @@ class InternVLInputPipeline:
     def input_processor(
         self,
         ctx: InputContext,
-        llm_inputs: LLMInputs,
+        inputs: DecoderOnlyInputs,
         *,
         max_dynamic_patch: Optional[int] = None,
-    ) -> LLMInputs:
-        multi_modal_data = llm_inputs.get("multi_modal_data")
+    ) -> DecoderOnlyInputs:
+        multi_modal_data = inputs.get("multi_modal_data")
         if multi_modal_data is None or "image" not in multi_modal_data:
-            return llm_inputs
+            return inputs
 
         model_config = ctx.model_config
         hf_config = ctx.get_hf_config()
@@ -312,8 +313,8 @@ class InternVLInputPipeline:
             model_config.tokenizer,
             trust_remote_code=model_config.trust_remote_code)
 
-        prompt = llm_inputs.get("prompt")
-        prompt_token_ids = llm_inputs["prompt_token_ids"]
+        prompt = inputs.get("prompt")
+        prompt_token_ids = inputs["prompt_token_ids"]
         if prompt is None:
             prompt = tokenizer.decode(prompt_token_ids)
 
@@ -321,9 +322,9 @@ class InternVLInputPipeline:
                                                num_patches)
         new_prompt_token_ids = tokenizer.encode(new_prompt)
 
-        return LLMInputs(prompt=prompt,
-                         prompt_token_ids=new_prompt_token_ids,
-                         multi_modal_data=multi_modal_data)
+        return token_inputs(prompt=prompt,
+                            prompt_token_ids=new_prompt_token_ids,
+                            multi_modal_data=multi_modal_data)
 
     def input_mapper(
         self,

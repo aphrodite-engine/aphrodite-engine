@@ -15,7 +15,7 @@ from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 from aphrodite.attention import AttentionMetadata
 from aphrodite.common.config import CacheConfig, MultiModalConfig
 from aphrodite.common.sequence import IntermediateTensors, SequenceData
-from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
+from aphrodite.inputs import INPUT_REGISTRY, DecoderOnlyInputs, InputContext
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
@@ -62,7 +62,7 @@ def dummy_data_for_pixtral(ctx: InputContext, seq_len: int,
     image_feature_size = (size**2) // (patch_size**2)
 
     num_image_tokens = image_feature_size * num_images
-    seq_data = SequenceData.from_token_counts(
+    seq_data = SequenceData.from_prompt_token_counts(
         (image_token_id, num_image_tokens),
         (0, seq_len - num_image_tokens),
     )
@@ -102,8 +102,9 @@ def input_mapper_for_pixtral(ctx: InputContext,
     return MultiModalInputs({"images": images})
 
 
-def input_processor_for_pixtral(ctx: InputContext, llm_inputs: LLMInputs):
-    multi_modal_data = llm_inputs.get("multi_modal_data")
+def input_processor_for_pixtral(ctx: InputContext,
+                                inputs: DecoderOnlyInputs):
+    multi_modal_data = inputs.get("multi_modal_data")
     if multi_modal_data is not None and "image" in multi_modal_data:
         tokenizer = cached_get_tokenizer(
             ctx.model_config.tokenizer,
@@ -112,13 +113,13 @@ def input_processor_for_pixtral(ctx: InputContext, llm_inputs: LLMInputs):
         mm_encoder = tokenizer.mistral.instruct_tokenizer.mm_encoder
         image_token_id = mm_encoder.special_ids.img
 
-        if image_token_id not in llm_inputs['prompt_token_ids']:
+        if image_token_id not in inputs['prompt_token_ids']:
             raise ValueError(
-                (f"You've passed {llm_inputs=} without {image_token_id=}"
+                (f"You've passed {inputs=} without {image_token_id=}"
                  " Make sure to process your input via mistral_common's"
                  " tokenizer or pass a chat completion request."))
 
-    return llm_inputs
+    return inputs
 
 
 @MULTIMODAL_REGISTRY.register_image_input_mapper(input_mapper_for_pixtral)

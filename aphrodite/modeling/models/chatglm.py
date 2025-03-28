@@ -17,7 +17,7 @@ from aphrodite.common.config import CacheConfig, LoRAConfig, MultiModalConfig
 from aphrodite.common.sequence import (APHRODITE_TOKEN_ID_ARRAY_TYPE,
                                        IntermediateTensors, SequenceData)
 from aphrodite.distributed import get_tensor_model_parallel_world_size
-from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
+from aphrodite.inputs import INPUT_REGISTRY, DecoderOnlyInputs, InputContext
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
@@ -147,20 +147,20 @@ def find_all_positions(input_ids: List[int], target: int) -> List[int]:
     return [index for index, value in enumerate(input_ids) if value == target]
 
 
-def input_processor_for_glmv(ctx: InputContext, llm_inputs: LLMInputs):
+def input_processor_for_glmv(ctx: InputContext, inputs: DecoderOnlyInputs):
     hf_config = ctx.get_hf_config(ChatGLMConfig)
     vision_config = getattr(hf_config, 'vision_config', None)
 
     if vision_config is None:
-        return llm_inputs
+        return inputs
     elif isinstance(vision_config, dict):
         image_placeholder_length = calculate_image_placeholder(vision_config)
     else:
         msg = f"Unsupported vision config: {type(vision_config)}"
         raise NotImplementedError(msg)
 
-    input_ids = llm_inputs.get("prompt_token_ids")
-    position_ids = llm_inputs.get("position_ids")
+    input_ids = inputs.get("prompt_token_ids")
+    position_ids = inputs.get("position_ids")
     tokenizer = cached_get_tokenizer(
         ctx.model_config.model,
         trust_remote_code=ctx.model_config.trust_remote_code)
@@ -169,15 +169,15 @@ def input_processor_for_glmv(ctx: InputContext, llm_inputs: LLMInputs):
         raw_batch_data = tokenizer.apply_chat_template(
             conversation=[{
                 "role": "user",
-                "image": llm_inputs['multi_modal_data']["image"],
-                "content": llm_inputs['prompt']
+                "image": inputs['multi_modal_data']["image"],
+                "content": inputs['prompt']
             }],
             add_generation_prompt=True,
             tokenize=True,
             return_tensors="pt",
             return_dict=True).data
     except Exception:
-        logger.error(f"Failed to process content ({llm_inputs['prompt']})")
+        logger.error(f"Failed to process content ({inputs['prompt']})")
         raise
     input_ids = raw_batch_data['input_ids'][0].tolist()
 
@@ -212,9 +212,9 @@ def input_processor_for_glmv(ctx: InputContext, llm_inputs: LLMInputs):
 
     assert len(new_input_ids) == len(new_position_ids)
 
-    llm_inputs["prompt_token_ids"] = new_input_ids
-    llm_inputs["position_ids"] = new_position_ids
-    return llm_inputs
+    inputs["prompt_token_ids"] = new_input_ids
+    inputs["position_ids"] = new_position_ids
+    return inputs
 
 
 class GLMAttention(nn.Module):

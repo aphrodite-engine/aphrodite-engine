@@ -50,7 +50,8 @@ from aphrodite.common.sequence import IntermediateTensors, SequenceData
 from aphrodite.common.utils import is_cpu
 from aphrodite.distributed import get_pp_group, parallel_state
 from aphrodite.distributed import utils as dist_utils
-from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
+from aphrodite.inputs import (INPUT_REGISTRY, DecoderOnlyInputs, InputContext,
+                              token_inputs)
 from aphrodite.modeling.layers.activation import QuickGELU
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)
@@ -718,7 +719,7 @@ def dummy_data_for_qwen2_vl(
 
     hf_config = ctx.get_hf_config(Qwen2VLConfig)
 
-    dummy_seqdata = SequenceData.from_token_counts(
+    dummy_seqdata = SequenceData.from_prompt_token_counts(
         (hf_config.vision_start_token_id, 1),
         (hf_config.image_token_id, max_llm_image_tokens),
         (hf_config.vision_end_token_id, 1),
@@ -801,11 +802,13 @@ def _expand_pad_tokens(inputs: list, token_id: int, make_batched_fn: Callable,
     return prompt_token_ids_with_data
 
 
-def input_processor_for_qwen2_vl(ctx: InputContext,
-                                 llm_inputs: LLMInputs) -> LLMInputs:
-    multi_modal_data = llm_inputs.get("multi_modal_data", None)
+def input_processor_for_qwen2_vl(
+    ctx: InputContext,
+    inputs: DecoderOnlyInputs,
+) -> DecoderOnlyInputs:
+    multi_modal_data = inputs.get("multi_modal_data", None)
     if multi_modal_data is None:
-        return llm_inputs
+        return inputs
 
     image_inputs = multi_modal_data.get("image", None)
     video_inputs = multi_modal_data.get("video", None)
@@ -819,7 +822,7 @@ def input_processor_for_qwen2_vl(ctx: InputContext,
     # `transformers.models.qwen2_vl.processing_qwen2_vl.Qwen2VLProcessor`.
     #
     # The following code is equivalent to:
-    #    prompt = llm_inputs["prompt"]
+    #    prompt = inputs["prompt"]
     #    inputs = processor(text=[prompt],
     #                       images=image_inputs,
     #                       videos=video_inputs,
@@ -827,9 +830,9 @@ def input_processor_for_qwen2_vl(ctx: InputContext,
     #                       return_tensors="pt")
     #    prompt_token_ids = inputs["input_ids"][0].tolist()
 
-    prompt_token_ids = llm_inputs.get("prompt_token_ids", None)
+    prompt_token_ids = inputs.get("prompt_token_ids", None)
     if prompt_token_ids is None:
-        prompt = llm_inputs["prompt"]
+        prompt = inputs["prompt"]
         prompt_token_ids = processor.tokenizer(
             prompt,
             padding=True,
@@ -870,9 +873,9 @@ def input_processor_for_qwen2_vl(ctx: InputContext,
                                               image_processor,
                                               prompt_token_ids)
 
-    return LLMInputs(
+    return token_inputs(
         prompt_token_ids=prompt_token_ids,
-        prompt=llm_inputs["prompt"],
+        prompt=inputs["prompt"],
         multi_modal_data=multi_modal_data,
     )
 

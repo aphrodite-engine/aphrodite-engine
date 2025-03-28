@@ -26,7 +26,8 @@ from aphrodite.common.sequence import IntermediateTensors, SequenceData
 from aphrodite.common.utils import is_list_of
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
-from aphrodite.inputs import INPUT_REGISTRY, InputContext, LLMInputs
+from aphrodite.inputs import (INPUT_REGISTRY, DecoderOnlyInputs, InputContext,
+                              token_inputs)
 from aphrodite.modeling.layers.activation import SiluAndMul, get_act_fn
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
@@ -653,7 +654,7 @@ def get_image_text(image_num: int, padding: bool) -> str:
 
 
 def input_processor_for_qwen(ctx: InputContext,
-                             llm_inputs: LLMInputs) -> LLMInputs:
+                             inputs: DecoderOnlyInputs) -> DecoderOnlyInputs:
     """Processes the inputs, which may or may not be multimodal.
     Multimodal inputs will only be processed if the model has a "visual"
     component in its model config, otherwise they'll be ignored.
@@ -667,16 +668,16 @@ def input_processor_for_qwen(ctx: InputContext,
         returns llm_inputs unmodified. Otherwise, processes the multimodal
         images / image embeddings and adds the fixed-length image placeholders.
     """
-    multi_modal_data = llm_inputs.get("multi_modal_data")
+    multi_modal_data = inputs.get("multi_modal_data")
 
     # Only process images if we have multimodal data and a visual config
     hf_config = ctx.get_hf_config()
     if (multi_modal_data is None or "image" not in multi_modal_data
             or not hasattr(hf_config, "visual")):
-        return llm_inputs
+        return inputs
 
-    prompt = llm_inputs.get("prompt")
-    prompt_token_ids = llm_inputs["prompt_token_ids"]
+    prompt = inputs.get("prompt")
+    prompt_token_ids = inputs["prompt_token_ids"]
     model_config = ctx.model_config
     tokenizer = cached_get_tokenizer(
         model_config.tokenizer,
@@ -715,9 +716,9 @@ def input_processor_for_qwen(ctx: InputContext,
 
     new_prompt_token_ids = tokenizer.encode(new_prompt)
 
-    return LLMInputs(prompt=new_prompt,
-                     prompt_token_ids=new_prompt_token_ids,
-                     multi_modal_data=multi_modal_data)
+    return token_inputs(prompt=new_prompt,
+                        prompt_token_ids=new_prompt_token_ids,
+                        multi_modal_data=multi_modal_data)
 
 
 def input_mapper_for_qwen(ctx: InputContext, data: object) -> MultiModalInputs:
@@ -824,7 +825,7 @@ def dummy_data_for_qwen(
     # The presence of a visual config indicates this is a multimodal model.
     # If we don't have it, the model is considered an LLM for warmup purposes.
     if not hasattr(hf_config, "visual"):
-        seq_data = SequenceData.from_token_counts((0, seq_len))
+        seq_data = SequenceData.from_prompt_token_counts((0, seq_len))
         mm_data = None
         return seq_data, mm_data
 
