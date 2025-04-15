@@ -1,4 +1,4 @@
-# This vLLM Dockerfile is used to construct image that can build and run vLLM on x86 CPU platform.
+# This Aphrodite Dockerfile is used to construct image that can build and run Aphrodite on x86 CPU platform.
 
 FROM ubuntu:22.04 AS cpu-test-1
 
