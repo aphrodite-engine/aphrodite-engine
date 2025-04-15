@@ -1,7 +1,8 @@
-import os
 from typing import List, Optional, Type
 
+import aphrodite.common.envs as envs
 from aphrodite.platforms import current_platform
+from aphrodite.quantization.kernels.exllama import ExllamaLinearKernel
 from aphrodite.quantization.kernels.machete import MacheteLinearKernel
 from aphrodite.quantization.kernels.marlin import MarlinLinearKernel
 from aphrodite.quantization.kernels.MPLinearKernel import (MPLinearKernel,
@@ -11,6 +12,7 @@ from aphrodite.quantization.kernels.MPLinearKernel import (MPLinearKernel,
 _POSSIBLE_KERNELS: List[Type[MPLinearKernel]] = [
     MacheteLinearKernel,
     MarlinLinearKernel,
+    ExllamaLinearKernel,
 ]
 
 
@@ -40,8 +42,7 @@ def choose_mp_linear_kernel(
 
     failure_reasons = []
     for kernel in _POSSIBLE_KERNELS:
-        if kernel.__name__ in os.environ.get("APHRODITE_DISABLED_KERNELS", "")\
-            .split(","):
+        if kernel.__name__ in envs.APHRODITE_DISABLED_KERNELS:
             failure_reasons.append(
                 f' {kernel.__name__} disabled by environment variable')
             continue

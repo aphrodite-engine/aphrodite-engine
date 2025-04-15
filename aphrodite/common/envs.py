@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT: bool = False
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
     APHRODITE_TORCH_COMPILE_LEVEL: int = 0
+    APHRODITE_DISABLED_KERNELS: List[str] = []
 
 
 def get_default_cache_root():
@@ -425,6 +426,15 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # interval-based metrics.
     "APHRODITE_REQUEST_LEVEL_METRICS":
     lambda: bool(int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "0"))),
+
+    # List of quantization kernels that should be disabled, used for testing
+    # and performance comparisons. Currently only affects MPLinearKernel
+    # selection
+    # (kernels: MacheteLinearKernel, MarlinLinearKernel, ExllamaLinearKernel)
+    "APHRODITE_DISABLED_KERNELS":
+    lambda: [
+    ] if "APHRODITE_DISABLED_KERNELS" not in os.environ else os.environ[
+        "APHRODITE_DISABLED_KERNELS"].split(","),
 }
 
 # end-env-vars-definition
