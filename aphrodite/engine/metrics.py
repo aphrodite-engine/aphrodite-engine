@@ -468,6 +468,9 @@ class PrometheusStatLogger(StatLoggerBase):
 
     def _log_counter(self, counter, data: Union[int, float]) -> None:
         # Convenience function for logging to counter.
+        if data < 0:
+            logger.warning(f"Attempted to increment counter with negative value: {data}")
+            return
         counter.labels(**self.labels).inc(data)
 
     def _log_counter_labels(self, counter, data: CollectionsCounter,
