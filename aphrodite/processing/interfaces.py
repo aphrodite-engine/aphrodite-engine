@@ -30,17 +30,11 @@ class BlockSpaceManager(ABC):
     def get_block_space_manager_class(version: str):
         version = version.lower()
 
-        if version == "v1":
-            from aphrodite.processing.block_manager_v1 import (
-                BlockSpaceManagerV1)
-            logger.info("Using v1 BlockSpaceManager")
-            return BlockSpaceManagerV1
-
-        if version == "v2":
-            from aphrodite.processing.block_manager_v2 import (
-                BlockSpaceManagerV2)
-            logger.info("Using v2 BlockSpaceManager")
-            return BlockSpaceManagerV2
+        if version == "selfattn":
+            from aphrodite.processing.block_manager import (
+                SelfAttnBlockSpaceManager)
+            logger.info("Using selfattn BlockSpaceManager")
+            return SelfAttnBlockSpaceManager
 
         if version == "placeholder":
             from aphrodite.processing.placeholder_block_space_manager import (

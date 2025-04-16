@@ -616,12 +616,14 @@ class EngineArgs:
             'loaded from CPU memory to GPU memory on the fly in each '
             'model forward pass.')
         # Scheduler Options
-        parser.add_argument(
-            '--use-v2-block-manager',
-            default=EngineArgs.use_v2_block_manager,
-            action='store_true',
-            help='Use BlockSpaceMangerV2. By default this is set to True. '
-            'Set to False to use BlockSpaceManagerV1')
+        parser.add_argument('--use-v2-block-manager',
+                            action='store_true',
+                            default=EngineArgs.use_v2_block_manager,
+                            help='[DEPRECATED] block manager v1 has been '
+                            'removed and SelfAttnBlockSpaceManager (i.e. '
+                            'block manager v2) is now the default. '
+                            'Setting this flag to True or False'
+                            ' has no effect on Aphrodite behavior.')
         parser.add_argument(
             "--scheduler-delay-factor",
             "-sdf",
@@ -1068,12 +1070,6 @@ class EngineArgs:
                 "KV cache space. Consider setting --max-model-len to a "
                 "smaller value.")
 
-        if self.num_scheduler_steps > 1 and not self.use_v2_block_manager:
-            self.use_v2_block_manager = True
-            logger.warning(
-                "Enabled BlockSpaceManagerV2 because it is "
-                "required for multi-step scheduling.")
-
         speculative_config = SpeculativeConfig.maybe_create_spec_config(
             target_model_config=model_config,
             target_parallel_config=parallel_config,
@@ -1089,7 +1085,6 @@ class EngineArgs:
             speculative_disable_by_batch_size,
             speculative_max_model_len=self.speculative_max_model_len,
             enable_chunked_prefill=self.enable_chunked_prefill,
-            use_v2_block_manager=self.use_v2_block_manager,
             disable_log_stats=self.disable_log_stats,
             ngram_prompt_lookup_max=self.ngram_prompt_lookup_max,
             ngram_prompt_lookup_min=self.ngram_prompt_lookup_min,
@@ -1118,13 +1113,22 @@ class EngineArgs:
             if speculative_config is None \
             else speculative_config.num_lookahead_slots
 
+        if not self.use_v2_block_manager:
+            logger.warning(
+                "[DEPRECATED] Block manager v1 has been removed, "
+                "and setting --use-v2-block-manager to True or False has "
+                "no effect on Aphrodite behavior. Please remove "
+                "--use-v2-block-manager in your engine argument. "
+                "If your use case is not supported by "
+                "SelfAttnBlockSpaceManager (i.e. block manager v2),"
+                " please file an issue with detailed information.")
+
         scheduler_config = SchedulerConfig(
             max_num_batched_tokens=self.max_num_batched_tokens,
             max_num_seqs=self.max_num_seqs,
             max_model_len=model_config.max_model_len,
             cache_config=cache_config,
             is_attention_free=model_config.is_attention_free,
-            use_v2_block_manager=self.use_v2_block_manager,
             num_lookahead_slots=num_lookahead_slots,
             delay_factor=self.scheduler_delay_factor,
             enable_chunked_prefill=self.enable_chunked_prefill,
@@ -1169,13 +1173,6 @@ class EngineArgs:
 
         decoding_config = DecodingConfig(
             guided_decoding_backend=self.guided_decoding_backend)
-
-        if (model_config.get_sliding_window() is not None
-                and scheduler_config.chunked_prefill_enabled
-                and not scheduler_config.use_v2_block_manager):
-            raise ValueError(
-                "Chunked prefill is not supported with sliding window. "
-                "Set --disable-sliding-window to disable sliding window.")
 
         return EngineConfig(model_config=model_config,
                             cache_config=cache_config,

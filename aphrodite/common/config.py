@@ -1136,7 +1136,6 @@ class SchedulerConfig(ConfigMixin):
             and generated text).
         is_attention_free: True if the running model does not have state that
             grows as the context size increases.
-        use_v2_block_manager: Whether to use the BlockSpaceManagerV2 or not.
         num_lookahead_slots: The number of slots to allocate per sequence per
             step, beyond the known token ids. This is used in speculative
             decoding to store KV activations of tokens which may or may not be
@@ -1167,7 +1166,6 @@ class SchedulerConfig(ConfigMixin):
                  max_num_batched_tokens: Optional[int] = 512,
                  cache_config: Optional["CacheConfig"] = None,
                  is_attention_free: bool = False,
-                 use_v2_block_manager: bool = True,
                  num_lookahead_slots: int = 0,
                  delay_factor: float = 0.0,
                  enable_chunked_prefill: bool = False,
@@ -1233,7 +1231,6 @@ class SchedulerConfig(ConfigMixin):
         self.max_model_len = max_model_len
         self.cache_config = cache_config
         self.is_attention_free = is_attention_free
-        self.use_v2_block_manager = use_v2_block_manager
         self.num_lookahead_slots = num_lookahead_slots
         self.delay_factor = delay_factor
         self.chunked_prefill_enabled = enable_chunked_prefill
@@ -1332,7 +1329,6 @@ class SpeculativeConfig(ConfigMixin):
         speculative_disable_mqa_scorer: Optional[bool],
         speculative_max_model_len: Optional[int],
         enable_chunked_prefill: bool,
-        use_v2_block_manager: bool,
         disable_log_stats: bool,
         speculative_disable_by_batch_size: Optional[int],
         ngram_prompt_lookup_max: Optional[int],
@@ -1373,9 +1369,6 @@ class SpeculativeConfig(ConfigMixin):
             enable_chunked_prefill (bool): Whether Aphrodite is configured to
                 use chunked prefill or not. Used for raising an error since its
                 not yet compatible with spec decode.
-            use_v2_block_manager (bool): Whether Aphrodite is configured to
-                use the v2 block manager or not. Used for raising an error
-                since the v2 block manager is required with spec decode.
             speculative_disable_by_batch_size (Optional[int]): Disable
                 speculative decoding for new incoming requests when the number
                 of enqueue requests  is larger than this value, if provided.
@@ -1422,11 +1415,6 @@ class SpeculativeConfig(ConfigMixin):
             raise ValueError(
                 "Speculative decoding and chunked prefill are "
                 f"currently mutually exclusive ({enable_chunked_prefill=}).")
-
-        if not use_v2_block_manager:
-            raise ValueError(
-                "Speculative decoding requires usage of the V2 "
-                "block manager. Enable it with --use-v2-block-manager.")
 
         # TODO: The user should be able to specify revision/max model len
         # for the draft model. It is not currently supported.
