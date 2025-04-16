@@ -52,7 +52,6 @@ if __name__ == "__main__":
         model="NousResearch/Meta-Llama-3.1-8B-Instruct",
         speculative_model="ibm-fms/llama3-8b-accelerator",
         # These are currently required for MLPSpeculator decoding
-        use_v2_block_manager=True,
         enforce_eager=True,
         max_model_len=8192,
     )

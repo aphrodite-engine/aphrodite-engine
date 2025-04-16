@@ -16,7 +16,6 @@ def main(args):
         enforce_eager=True,
         enable_prefix_caching=True,
         tensor_parallel_size=args.tensor_parallel_size,
-        use_v2_block_manager=args.use_v2_block_manager,
     )
 
     sampling_params = SamplingParams(temperature=0, max_tokens=args.output_len)

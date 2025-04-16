@@ -19,7 +19,6 @@ llm = LLM(
     tensor_parallel_size=1,
     speculative_model="facebook/opt-125m",  # [!code highlight]
     num_speculative_tokens=5,  # [!code highlight]
-    use_v2_block_manager=True,  # [!code highlight]
 )
 outputs = llm.generate(prompts, sampling_params)
 

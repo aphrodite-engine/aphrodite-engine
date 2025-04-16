@@ -34,7 +34,6 @@ llm = LLM(
     tensor_parallel_size=4,
     speculative_model="ibm-fms/llama3-70b-accelerator",  # [!code highlight]
     speculative_draft_tensor_parallel_size=1,  # [!code highlight]
-    use_v2_block_manager=True,  # [!code highlight]
 )
 outputs = llm.generate(prompts, sampling_params)
 

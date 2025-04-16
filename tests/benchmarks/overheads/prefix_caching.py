@@ -20,7 +20,6 @@ def main(args):
               tokenizer_mode='auto',
               trust_remote_code=True,
               enforce_eager=True,
-              use_v2_block_manager=args.use_v2_block_manager,
               tensor_parallel_size=args.tensor_parallel_size,
               enable_prefix_caching=args.enable_prefix_caching)
 

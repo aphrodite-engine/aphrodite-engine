@@ -22,7 +22,6 @@ llm = LLM(
     speculative_model="[ngram]",  # [!code highlight]
     num_speculative_tokens=5,  # [!code highlight]
     ngram_prompt_lookup_max=4,  # [!code highlight]
-    use_v2_block_manager=True,  # [!code highlight]
 )
 outputs = llm.generate(prompts, sampling_params)
 
