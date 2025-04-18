@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from aphrodite.common.utils import LazyDict
 from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling._custom_op import CustomOp
@@ -13,6 +14,7 @@ from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationConfig
 
 
+@CustomOp.register("fatrelu_and_mul")
 class FatreluAndMul(CustomOp):
     """An activation function for FATReLU.
     
@@ -44,6 +46,7 @@ class FatreluAndMul(CustomOp):
         return out
 
 
+@CustomOp.register("silu_and_mul")
 class SiluAndMul(CustomOp):
     """An activation function for SwiGLU.
 
@@ -82,6 +85,7 @@ class SiluAndMul(CustomOp):
         return swiglu_fg_kernel(x[..., :d], x[..., d:])
 
 
+@CustomOp.register("gelu_and_mul")
 class GeluAndMul(CustomOp):
     """An activation function for GeGLU.
 
@@ -141,6 +145,7 @@ class GeluAndMul(CustomOp):
         return f'approximate={repr(self.approximate)}'
 
 
+@CustomOp.register("gelu_new")
 class NewGELU(CustomOp):
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
@@ -165,6 +170,7 @@ class NewGELU(CustomOp):
         return gelu_new_kernel(x)
 
 
+@CustomOp.register("gelu_fast")
 class FastGELU(CustomOp):
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
@@ -188,6 +194,7 @@ class FastGELU(CustomOp):
         return fast_gelu_kernel(x)
 
 
+@CustomOp.register("gelu_quick")
 class QuickGELU(CustomOp):
 
     # https://github.com/huggingface/transformers/blob/main/src/transformers/activations.py#L90
@@ -213,6 +220,7 @@ class QuickGELU(CustomOp):
         return quick_gelu_kernel(x)
 
 
+@CustomOp.register("relu2")
 class ReLUSquaredActivation(CustomOp):
     """
     Applies the relu^2 activation introduced in https://arxiv.org/abs/2109.08668v2
@@ -273,15 +281,22 @@ class ScaledActivation(nn.Module):
         param_data.copy_(loaded_weight)
 
 
-_ACTIVATION_REGISTRY = {
-    "gelu": nn.GELU(),
-    "gelu_fast": FastGELU(),
-    "gelu_new": NewGELU(),
-    "gelu_pytorch_tanh": nn.GELU(approximate="tanh"),
-    "relu": nn.ReLU(),
-    "relu2": ReLUSquaredActivation(),
-    "quick_gelu": QuickGELU(),
-}
+_ACTIVATION_REGISTRY = LazyDict({
+    "gelu":
+    lambda: nn.GELU(),
+    "gelu_fast":
+    lambda: FastGELU(),
+    "gelu_new":
+    lambda: NewGELU(),
+    "gelu_pytorch_tanh":
+    lambda: nn.GELU(approximate="tanh"),
+    "relu":
+    lambda: nn.ReLU(),
+    "relu2":
+    lambda: ReLUSquaredActivation(),
+    "quick_gelu":
+    lambda: QuickGELU(),
+})
 
 
 def get_act_fn(

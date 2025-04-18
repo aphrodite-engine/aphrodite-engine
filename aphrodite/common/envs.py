@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT: bool = False
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
     APHRODITE_TORCH_COMPILE_LEVEL: int = 0
+    APHRODITE_CUSTOM_OPS: List[str] = []
     APHRODITE_DISABLED_KERNELS: List[str] = []
 
 
@@ -207,6 +208,19 @@ environment_variables: Dict[str, Callable[[], Any]] = {
         os.environ.get("APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE", "1") != "0"),
     "APHRODITE_TORCH_COMPILE_LEVEL":
     lambda: int(os.environ.get("APHRODITE_TORCH_COMPILE_LEVEL", "0")),
+
+    # Fine-grained control over which custom ops to enable/disable.
+    # Use 'all' to enable all, 'none' to disable all.
+    # Also specify a list of custom op names to enable (prefixed with a '+'),
+    # or disable (prefixed with a '-').
+    # Examples:
+    # - 'all,-op1' to enable all except op1
+    # - 'none,+op1,+op2' to enable only op1 and op2
+    # By default, all custom ops are enabled when running without Inductor
+    # and disabled when running with Inductor (compile_level >= Inductor).
+    "APHRODITE_CUSTOM_OPS":
+    lambda: os.environ.get("APHRODITE_CUSTOM_OPS",
+                           "").replace(" ", "").split(","),
 
     # local rank of the process in the distributed setting, used to determine
     # the GPU device id

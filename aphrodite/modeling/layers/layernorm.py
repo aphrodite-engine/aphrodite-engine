@@ -7,6 +7,7 @@ import torch.nn as nn
 from aphrodite.modeling._custom_op import CustomOp
 
 
+@CustomOp.register("layernorm")
 class LayerNorm(nn.LayerNorm):
 
     def __init__(
@@ -32,6 +33,7 @@ class LayerNorm(nn.LayerNorm):
             return x, residual
 
 
+@CustomOp.register("rms_norm")
 class RMSNorm(CustomOp):
     """Root mean square normalization.
 
@@ -152,6 +154,7 @@ class RMSNorm(CustomOp):
         return s
 
 
+@CustomOp.register("gemma_rms_norm")
 class GemmaRMSNorm(CustomOp):
     """RMS normalization for Gemma.
     Two differences from the above RMSNorm:
