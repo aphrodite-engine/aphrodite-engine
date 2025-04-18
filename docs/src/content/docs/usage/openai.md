@@ -622,3 +622,12 @@ Known issues:
 - This implementation technically supports InternLM2 as well, but they're not that stable.
 
 Enable with: `--tool-call-parser internlm --chat-template examples/chat_templates/internlm2_tools.jinja`
+
+
+#### Jamba Models
+AI21's Jamba-1.5 models are supported.
+* `ai21labs/AI21-Jamba-1.6-Mini`
+* `ai21labs/AI21-Jamba-1.6-Large`
+
+
+Flags: `--tool-call-parser jamba`
