@@ -1061,14 +1061,8 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         if tp > 1:
             if rank == 0:
                 logger.info(f"Model loaded in {total_time:.2f} seconds.")
-                logger.info(
-                    "Total model weights memory usage: "
-                    f"{self.model_memory_usage * tp / float(2**30):.2f} GiB")
         else:
             logger.info(f"Model weights loaded in {total_time:.2f} seconds.")
-            logger.info(
-                "Total model weights memory usage: "
-                f"{self.model_memory_usage / float(2**30):.2f} GiB")
 
         if self.lora_config:
             assert supports_lora(

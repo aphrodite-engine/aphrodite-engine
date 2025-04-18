@@ -1,7 +1,6 @@
 """A GPU worker class."""
 import gc
 import os
-import time
 from typing import Dict, List, Optional, Set, Tuple, Type, Union
 
 import torch
@@ -16,6 +15,7 @@ from aphrodite.common.sequence import (ExecuteModelRequest,
                                        IntermediateTensors,
                                        SequenceGroupMetadata,
                                        SequenceGroupMetadataDelta)
+from aphrodite.common.utils import GiB_bytes, memory_profiling
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    get_tensor_model_parallel_rank,
                                    init_distributed_environment,
@@ -191,26 +191,30 @@ class Worker(LocalOrDistributedWorkerBase):
         # Profile the memory usage of the model and get the maximum number of
         # cache blocks that can be allocated with the remaining free memory.
         torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+        free_memory_pre_profile, total_gpu_memory = torch.cuda.mem_get_info()
         tp_rank = get_tensor_model_parallel_rank()
 
         # Execute a forward pass with dummy inputs to profile the memory usage
         # of the model.
-        start = time.time()
-        self.model_runner.profile_run()
-        end = time.time()
-        if tp_rank == 0:
-            logger.info(f"Model profiling took {end - start:.2f} seconds.")
+        with memory_profiling(baseline_memory_in_bytes=total_gpu_memory -
+                              self.init_gpu_memory,
+                              weights_memory_in_bytes=self.model_runner.
+                              model_memory_usage) as result:
+            self.model_runner.profile_run()
+            torch.cuda.synchronize()
+
+        self._assert_memory_footprint_increased_during_profiling()
+
+        memory_for_current_instance = total_gpu_memory * \
+            self.cache_config.gpu_memory_utilization
+        available_kv_cache_memory = (memory_for_current_instance -
+                                     result.non_kv_cache_memory_in_bytes)
+
 
         # Calculate the number of blocks that can be allocated with the
         # profiled peak memory.
-        torch.cuda.synchronize()
-        free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
-        # NOTE: Here we assume that the other processes using the same
-        # GPU did not change their memory usage during the profiling.
-        peak_memory = self.init_gpu_memory - free_gpu_memory
-        assert peak_memory > 0, (
-            "Error in memory profiling. This happens when the GPU memory was "
-            "not properly cleaned up before initializing Aphrodite.")
 
         cache_block_size = self.get_cache_block_size_bytes()
         if cache_block_size == 0:
@@ -226,7 +230,7 @@ class Worker(LocalOrDistributedWorkerBase):
                 max_possible_blocks = int(
                     (total_gpu_memory *
                      self.cache_config.gpu_memory_utilization -
-                     peak_memory) // cache_block_size)
+                     result.non_kv_cache_memory_in_bytes) // cache_block_size)
                 num_gpu_blocks = min(num_gpu_blocks, max_possible_blocks)
                 if tp_rank == 0:
                     logger.info(
@@ -237,20 +241,51 @@ class Worker(LocalOrDistributedWorkerBase):
             else:
                 # Original logic for multi-sequence mode
                 num_gpu_blocks = int(
-                    (total_gpu_memory *
-                     self.cache_config.gpu_memory_utilization -
-                     peak_memory) // cache_block_size)
+                    available_kv_cache_memory // cache_block_size)
 
             num_cpu_blocks = int(self.cache_config.swap_space_bytes //
                                 cache_block_size)
 
         num_gpu_blocks = max(num_gpu_blocks, 0)
         num_cpu_blocks = max(num_cpu_blocks, 0)
+
+        if tp_rank == 0:
+            tokens_per_block = self.cache_config.block_size
+            blocks_per_seq = (self.model_config.max_model_len +
+                              tokens_per_block - 1) // tokens_per_block
+            memory_per_seq = blocks_per_seq * cache_block_size
+
+            msg = (f"Memory profiling completed in {result.profile_time:.2f} seconds\n"  # noqa: E501
+                  f"\nGPU memory breakdown:\n"
+                  f"  Total GPU memory: {(total_gpu_memory / GiB_bytes):.2f} GiB\n"  # noqa: E501
+                  f"  Memory utilization: {(self.cache_config.gpu_memory_utilization * 100):.0f}%\n"  # noqa: E501
+                  f"  Available for Aphrodite: {(memory_for_current_instance / GiB_bytes):.2f} GiB\n"  # noqa: E501
+                  f"  Model weights: {(result.weights_memory_in_bytes / GiB_bytes):.2f} GiB\n"  # noqa: E501
+                  f"  Reserved for KV cache: {(available_kv_cache_memory / GiB_bytes):.2f} GiB\n"  # noqa: E501
+                  f"  KV cache for {self.model_config.max_model_len} tokens: {memory_per_seq / GiB_bytes:.2f} GiB\n"  # noqa: E501
+                  f"  Wasted memory: {(result.non_torch_increase_in_bytes / GiB_bytes):.2f} GiB\n"  # noqa: E501
+                  f"  Peak activations memory: {(result.torch_peak_increase_in_bytes / GiB_bytes):.2f} GiB\n"  # noqa: E501
+            )
+
+            logger.info(msg)
+
+        # Final cleanup
         if self.model_runner.lora_manager:
             self.model_runner.remove_all_loras()
         gc.collect()
-        torch.cuda.empty_cache()
+
         return num_gpu_blocks, num_cpu_blocks
+
+    def _assert_memory_footprint_increased_during_profiling(self):
+        # NOTE: Here we assume that the other processes using the same
+        # GPU did not change their memory usage during the profiling.
+        free_gpu_memory, _ = torch.cuda.mem_get_info()
+        assert self.init_gpu_memory - free_gpu_memory > 0, (
+            "Error in memory profiling. "
+            f"Initial free memory {self.init_gpu_memory}, current free memory"
+            f" {free_gpu_memory}. This happens when the GPU memory was "
+            "not properly cleaned up before initializing the Aphrodite instance"
+            )
 
     def initialize_cache(self, num_gpu_blocks: int,
                          num_cpu_blocks: int) -> None:
