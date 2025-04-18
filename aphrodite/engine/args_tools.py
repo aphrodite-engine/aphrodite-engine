@@ -3,7 +3,7 @@ import dataclasses
 import json
 from dataclasses import dataclass
 from typing import (TYPE_CHECKING, Any, Dict, List, Literal, Mapping, Optional,
-                    Tuple, Type, Union)
+                    Tuple, Type, Union, get_args)
 
 from loguru import logger
 
@@ -13,7 +13,7 @@ from aphrodite.common.config import (CacheConfig, ConfigFormat, DecodingConfig,
                                      LoadFormat, LoRAConfig, ModelConfig,
                                      ParallelConfig, PromptAdapterConfig,
                                      SchedulerConfig, SpeculativeConfig,
-                                     TokenizerPoolConfig)
+                                     TaskOption, TokenizerPoolConfig)
 from aphrodite.common.utils import FlexibleArgumentParser, is_cpu
 from aphrodite.executor.executor_base import ExecutorBase
 from aphrodite.quantization import QUANTIZATION_METHODS
@@ -64,6 +64,7 @@ class EngineArgs:
     seed: int = 0
     served_model_name: Optional[Union[str, List[str]]] = None
     tokenizer: Optional[str] = None
+    task: TaskOption = "auto"
     revision: Optional[str] = None
     code_revision: Optional[str] = None
     tokenizer_revision: Optional[str] = None
@@ -205,6 +206,15 @@ class EngineArgs:
             "will also be used in `model_name` tag content of "
             "prometheus metrics, if multiple names provided, metrics"
             "tag will take the first one.")
+        parser.add_argument(
+            '--task',
+            default=EngineArgs.task,
+            choices=get_args(TaskOption),
+            help='The task to use the model for. Each Aphrodite instance only '
+            'supports one task, even if the same model can be used for '
+            'multiple tasks. When the model only supports one task, "auto" '
+            'can be used to select it; otherwise, you must specify explicitly '
+            'which task to use.')
         parser.add_argument(
             "--tokenizer",
             type=str,
@@ -941,6 +951,7 @@ class EngineArgs:
     def create_model_config(self) -> ModelConfig:
         return ModelConfig(
             model=self.model,
+            task=self.task,
             tokenizer=self.tokenizer,
             tokenizer_mode=self.tokenizer_mode,
             trust_remote_code=self.trust_remote_code,
@@ -1124,6 +1135,7 @@ class EngineArgs:
                 " please file an issue with detailed information.")
 
         scheduler_config = SchedulerConfig(
+            task=model_config.task,
             max_num_batched_tokens=self.max_num_batched_tokens,
             max_num_seqs=self.max_num_seqs,
             max_model_len=model_config.max_model_len,
@@ -1132,7 +1144,6 @@ class EngineArgs:
             num_lookahead_slots=num_lookahead_slots,
             delay_factor=self.scheduler_delay_factor,
             enable_chunked_prefill=self.enable_chunked_prefill,
-            embedding_mode=model_config.embedding_mode,
             is_multimodal_model=model_config.is_multimodal_model,
             preemption_mode=self.preemption_mode,
             num_scheduler_steps=self.num_scheduler_steps,

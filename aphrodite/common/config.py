@@ -3,8 +3,8 @@ import inspect
 import json
 import os
 from dataclasses import dataclass, field, fields
-from typing import (TYPE_CHECKING, Any, ClassVar, Dict, List, Mapping,
-                    Optional, Tuple, Type, Union)
+from typing import (TYPE_CHECKING, Any, ClassVar, Dict, Final, List, Literal,
+                    Mapping, Optional, Set, Tuple, Type, Union)
 
 import torch
 from loguru import logger
@@ -56,6 +56,9 @@ _OPTIMIZED_QUANTS = [
     "quant_llm",
 ]
 
+Task = Literal["generate", "embedding"]
+TaskOption = Literal["auto", Task]
+
 
 class ConfigMixin:
     def get_config_diff(self) -> Dict[str, Any]:
@@ -105,6 +108,10 @@ class ModelConfig(ConfigMixin):
         model: Name or path of the huggingface model to use.
             It is also used as the content for `model_name` tag in metrics
             output when `served_model_name` is not specified.
+        task: The task to use the model for. Each Aphrodite instance only
+            supports one task, even if the same model can be used for multiple
+            tasks. When the model only supports one task, "auto" can be used to
+            select it; otherwise, you must specify explicitly which task to use.
         tokenizer: Name or path of the huggingface tokenizer to use.
         tokenizer_mode: Tokenizer mode. "auto" will use the fast tokenizer if
             available, "slow" will always use the slow tokenizer, and
@@ -177,6 +184,7 @@ class ModelConfig(ConfigMixin):
     def __init__(
         self,
         model: str,
+        task: TaskOption,
         tokenizer: str,
         dtype: Union[str, torch.dtype],
         tokenizer_mode: str = "auto",
@@ -283,7 +291,11 @@ class ModelConfig(ConfigMixin):
         self.has_inner_state = self._init_has_inner_state()
         self.override_neuron_config = override_neuron_config if is_neuron(
         ) else None
-        self._verify_embedding_mode()
+
+        supported_tasks, task = self._resolve_task(task, self.hf_config)
+        self.supported_tasks = supported_tasks
+        self.task: Final = task
+
         self._verify_quantization()
         self._verify_cuda_graph()
         self._verify_bnb_config()
@@ -319,18 +331,41 @@ class ModelConfig(ConfigMixin):
                 "either 'auto', 'slow' or 'mistral'.")
         self.tokenizer_mode = tokenizer_mode
 
-    def _verify_embedding_mode(self) -> None:
-        architectures = getattr(self.hf_config, "architectures", [])
+    def _resolve_task(
+        self,
+        task_option: TaskOption,
+        hf_config: PretrainedConfig,
+    ) -> Tuple[Set[Task], Task]:
+        architectures = getattr(hf_config, "architectures", [])
 
-        # TODO: Allow the same model architecture to be specified as either
-        # generation or embedding model
-        if "Phi3VForCausalLM" in architectures:
-            # Match both remote and local names
-            embedding_mode = "/VLM2Vec" in self.model
+        task_support: Dict[Task, bool] = {
+            # NOTE: Listed from highest to lowest priority,
+            # in case the model supports multiple of them
+            "generate": ModelRegistry.is_text_generation_model(architectures),
+            "embedding": ModelRegistry.is_embedding_model(architectures),
+        }
+        supported_tasks_lst: List[Task] = [
+            task for task, is_supported in task_support.items() if is_supported
+        ]
+        supported_tasks = set(supported_tasks_lst)
+
+        if task_option == "auto":
+            selected_task = next(iter(supported_tasks_lst))
+
+            if len(supported_tasks) > 1:
+                logger.info(
+                    f"This model supports multiple tasks: {supported_tasks}. "
+                    f"Defaulting to '{selected_task}'.")
         else:
-            embedding_mode = ModelRegistry.is_embedding_model(architectures)
+            if task_option not in supported_tasks:
+                msg = (
+                    f"This model does not support the '{task_option}' task. "
+                    f"Supported tasks: {supported_tasks}")
+                raise ValueError(msg)
 
-        self.embedding_mode = embedding_mode
+            selected_task = task_option
+
+        return supported_tasks, selected_task
 
     def _parse_quant_hf_config(self):
         quant_cfg = getattr(self.hf_config, "quantization_config", None)
@@ -545,7 +580,7 @@ class ModelConfig(ConfigMixin):
             return
         # Async postprocessor is not necessary with embedding mode
         # since there is no token generation
-        if self.embedding_mode:
+        if self.task == "embedding":
             self.use_async_output_proc = False
         if speculative_config:
             logger.warning("Async output processing is not supported with"
@@ -756,11 +791,6 @@ class ModelConfig(ConfigMixin):
         return getattr(self.hf_config, "is_encoder_decoder", False) or (
             (hasattr(self.hf_config, "text_config") and getattr(
                 self.hf_config.text_config, "is_encoder_decoder", False)))
-
-    @property
-    def is_embedding_model(self) -> bool:
-        """Extract the embedding model flag."""
-        return self.embedding_mode
 
     @property
     def is_multimodal_model(self) -> bool:
@@ -1128,6 +1158,7 @@ class SchedulerConfig(ConfigMixin):
     """Scheduler configuration.
 
     Args:
+        task: The task to use the model for.
         max_num_batched_tokens: Maximum number of tokens to be processed in
             a single iteration.
         max_num_seqs: Maximum number of sequences to be processed in a single
@@ -1144,7 +1175,6 @@ class SchedulerConfig(ConfigMixin):
             prompt latency) before scheduling next prompt.
         enable_chunked_prefill: If True, prefill requests can be chunked based
             on the remaining max_num_batched_tokens.
-        embedding_mode: Whether the running model is for embedding.
         preemption_mode: Whether to perform preemption by swapping or
             recomputation. If not specified, we determine the mode as follows:
             We use recomputation by default since it incurs lower overhead than
@@ -1161,6 +1191,7 @@ class SchedulerConfig(ConfigMixin):
     """
 
     def __init__(self,
+                 task: Task,
                  max_model_len: int,
                  max_num_seqs: int = 256,
                  max_num_batched_tokens: Optional[int] = 512,
@@ -1169,7 +1200,6 @@ class SchedulerConfig(ConfigMixin):
                  num_lookahead_slots: int = 0,
                  delay_factor: float = 0.0,
                  enable_chunked_prefill: bool = False,
-                 embedding_mode: bool = False,
                  is_multimodal_model: bool = False,
                  preemption_mode: Optional[str] = None,
                  num_scheduler_steps: int = 1,
@@ -1193,7 +1223,7 @@ class SchedulerConfig(ConfigMixin):
                 # If max_model_len is too short, use 2048 as the default value
                 # for higher throughput.
                 max_num_batched_tokens = max(max_model_len, 2048)
-            if embedding_mode:
+            if task == "embedding":
                 # For embedding, choose specific value for higher throughput
                 max_num_batched_tokens = max(
                     max_num_batched_tokens,
@@ -1227,6 +1257,7 @@ class SchedulerConfig(ConfigMixin):
                         "this is not recommended and may lead to memory "
                         "issues.")
 
+        self.task: Final = task
         self.max_num_seqs = max_num_seqs
         self.max_model_len = max_model_len
         self.cache_config = cache_config
@@ -1234,7 +1265,6 @@ class SchedulerConfig(ConfigMixin):
         self.num_lookahead_slots = num_lookahead_slots
         self.delay_factor = delay_factor
         self.chunked_prefill_enabled = enable_chunked_prefill
-        self.embedding_mode = embedding_mode
         self.preemption_mode = preemption_mode
         self.num_scheduler_steps = num_scheduler_steps
         self.multi_step_stream_outputs = multi_step_stream_outputs
@@ -1443,6 +1473,7 @@ class SpeculativeConfig(ConfigMixin):
             ngram_prompt_lookup_min = 0
             draft_model_config = ModelConfig(
                 model=speculative_model,
+                task=target_model_config.task,
                 tokenizer=target_model_config.tokenizer,
                 tokenizer_mode=target_model_config.tokenizer_mode,
                 trust_remote_code=target_model_config.trust_remote_code,

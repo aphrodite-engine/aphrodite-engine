@@ -343,7 +343,7 @@ class AphroditeEngine:
             prompt_adapter_config=prompt_adapter_config,
         )
 
-        if not self.model_config.embedding_mode:
+        if self.model_config.task != "embedding":
             self._initialize_kv_caches()
 
         if self.tokenizer:
@@ -1000,7 +1000,7 @@ class AphroditeEngine:
                         seq_group_meta.token_chunk_size)
 
 
-            if self.model_config.embedding_mode:
+            if self.model_config.task == "embedding":
                 self._process_sequence_group_outputs(seq_group, output)
             else:
                 self.output_processor.process_prompt_logprob(seq_group, output)
@@ -1667,8 +1667,6 @@ class AphroditeEngine:
     def is_encoder_decoder_model(self):
         return self.input_preprocessor.is_encoder_decoder_model()
 
-    def is_embedding_model(self):
-        return self.model_config.is_embedding_model
 
     def _validate_model_inputs(self, inputs: Union[DecoderOnlyInputs,
                                                    EncoderDecoderInputs]):

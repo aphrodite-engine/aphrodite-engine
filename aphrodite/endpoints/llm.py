@@ -10,13 +10,14 @@ from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import (GuidedDecodingParams,
                                               RequestOutputKind,
                                               SamplingParams)
-from aphrodite.common.utils import Counter, deprecate_kwargs, is_list_of
+from aphrodite.common.utils import (Counter, deprecate_args, deprecate_kwargs,
+                                    is_list_of)
 from aphrodite.endpoints.chat_utils import (ChatCompletionMessageParam,
                                             apply_hf_chat_template,
                                             apply_mistral_chat_template,
                                             parse_chat_messages)
 from aphrodite.engine.aphrodite_engine import AphroditeEngine
-from aphrodite.engine.args_tools import EngineArgs
+from aphrodite.engine.args_tools import EngineArgs, TaskOption
 from aphrodite.inputs import PromptType, TextPrompt, TokensPrompt
 from aphrodite.inputs.parse import parse_and_batch_prompt
 from aphrodite.lora.request import LoRARequest
@@ -103,6 +104,12 @@ class LLM:
     DEPRECATE_LEGACY: ClassVar[bool] = False
     """A flag to toggle whether to deprecate the legacy generate/encode API."""
 
+    DEPRECATE_INIT_POSARGS: ClassVar[bool] = True
+    """
+    A flag to toggle whether to deprecate positional arguments in
+    :meth:`LLM.__init__`.
+    """
+
     @classmethod
     @contextmanager
     def deprecate_legacy_api(cls):
@@ -112,6 +119,13 @@ class LLM:
 
         cls.DEPRECATE_LEGACY = False
 
+    @deprecate_args(
+        start_index=2,  # Ignore self and model
+        is_deprecated=lambda: LLM.DEPRECATE_INIT_POSARGS,
+        additional_message=(
+            "All positional arguments other than `model` will be "
+            "replaced with keyword arguments in an upcoming version."),
+    )
     def __init__(
         self,
         model: str,
@@ -134,6 +148,8 @@ class LLM:
         disable_custom_all_reduce: bool = False,
         disable_async_output_proc: bool = False,
         mm_processor_kwargs: Optional[Dict[str, Any]] = None,
+        # After positional args are removed, move this right below `model`
+        task: TaskOption = "auto",
         **kwargs,
     ) -> None:
         '''
@@ -156,6 +172,7 @@ class LLM:
                 "There is no need to pass vision-related arguments anymore.")
         engine_args = EngineArgs(
             model=model,
+            task=task,
             tokenizer=tokenizer,
             tokenizer_mode=tokenizer_mode,
             skip_tokenizer_init=skip_tokenizer_init,
@@ -319,10 +336,21 @@ class LLM:
             considered legacy and may be deprecated in the future. You should
             instead pass them via the ``inputs`` parameter.
         """
-        if self.llm_engine.model_config.embedding_mode:
-            raise ValueError(
+        task = self.llm_engine.model_config.task
+        if task != "generate":
+            messages = [
                 "LLM.generate() is only supported for (conditional) generation "
-                "models (XForCausalLM, XForConditionalGeneration).")
+                "models (XForCausalLM, XForConditionalGeneration).",
+            ]
+
+            supported_tasks = self.llm_engine.model_config.supported_tasks
+            if "generate" in supported_tasks:
+                messages.append(
+                    "Your model supports the 'generate' task, but is "
+                    f"currently initialized for the '{task}' task. Please "
+                    "initialize the model using `--task generate`.")
+
+            raise ValueError(" ".join(messages))
 
         if prompt_token_ids is not None:
             parsed_prompts = self._convert_v1_inputs(
@@ -580,10 +608,18 @@ class LLM:
             considered legacy and may be deprecated in the future. You should
             instead pass them via the ``inputs`` parameter.
         """
-        if not self.llm_engine.model_config.embedding_mode:
-            raise ValueError(
-                "LLM.encode() is only supported for embedding models (XModel)."
-            )
+        task = self.llm_engine.model_config.task
+        if task != "embedding":
+            messages = ["LLM.encode() is only supported for embedding models."]
+
+            supported_tasks = self.llm_engine.model_config.supported_tasks
+            if "embedding" in supported_tasks:
+                messages.append(
+                    "Your model supports the 'embedding' task, but is "
+                    f"currently initialized for the '{task}' task. Please "
+                    "initialize the model using `--task embedding`.")
+
+            raise ValueError(" ".join(messages))
 
         if prompt_token_ids is not None:
             parsed_prompts = self._convert_v1_inputs(
@@ -785,6 +821,3 @@ class LLM:
 
     def _is_encoder_decoder_model(self):
         return self.llm_engine.is_encoder_decoder_model()
-
-    def _is_embedding_model(self):
-        return self.llm_engine.is_embedding_model()
