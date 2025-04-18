@@ -303,9 +303,6 @@ def _build_custom_ops() -> bool:
     return _is_cuda() or _is_hip() or _is_cpu()
 
 
-def _build_core_ext() -> bool:
-    return not (_is_neuron() or _is_tpu() or _is_openvino() or _is_xpu())
-
 def _install_xqa_kernels() -> bool:
     return bool(int(os.getenv("APHRODITE_BUILD_XQA_KERNELS", "0")))
 
@@ -478,9 +475,6 @@ def get_requirements() -> List[str]:
 
 
 ext_modules = []
-
-if _build_core_ext():
-    ext_modules.append(CMakeExtension(name="aphrodite._core_C"))
 
 if _is_cuda() or _is_hip():
     ext_modules.append(CMakeExtension(name="aphrodite._moe_C"))

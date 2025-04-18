@@ -99,24 +99,6 @@ endif()
 # cmake --build . --target default
 #
 add_custom_target(default)
-message(STATUS "Enabling core extension.")
-
-# Define _core_C extension
-#  built for (almost) every target platform, (excludes TPU and Neuron)
-
-set(APHRODITE_EXT_SRC
-  "kernels/core/torch_bindings.cpp")
-
-define_gpu_extension_target(
-  _core_C
-  DESTINATION aphrodite
-  LANGUAGE CXX
-  SOURCES ${APHRODITE_EXT_SRC}
-  COMPILE_FLAGS ${CXX_COMPILE_FLAGS}
-  USE_SABI 3
-  WITH_SOABI)
-
-add_dependencies(default _core_C)
 
 #
 # Forward the non-CUDA device extensions to external CMake scripts.

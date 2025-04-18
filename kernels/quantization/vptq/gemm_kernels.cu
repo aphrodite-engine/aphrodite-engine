@@ -67,18 +67,19 @@ struct TypeVec2<float> {
   typedef float2 type;
 };
 
+#pragma nv_diag_suppress 550
 template <typename T>
 T __device__ __forceinline__ ConvertFromFloat(float v, T vv) {
-  (void)(vv);
   if constexpr (std::is_same<T, __bfloat16>::value) {
     return vv = __float2bfloat16(v);
   } else if constexpr (std::is_same<T, float>::value) {
     return vv = v;
   } else {
     static_assert(std::is_same<T, __half>::value);
-    return vv = __float2half(v);
+    return __float2half(v);
   }
 }
+#pragma nv_diag_default 550
 
 template <typename T>
 float __device__ __forceinline__ ConvertToFloat(T v) {
