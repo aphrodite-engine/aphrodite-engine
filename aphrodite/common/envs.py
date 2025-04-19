@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     APHRODITE_TORCH_COMPILE_LEVEL: int = 0
     APHRODITE_CUSTOM_OPS: List[str] = []
     APHRODITE_DISABLED_KERNELS: List[str] = []
+    APHRODITE_FLASHINFER_FORCE_TENSOR_CORES: bool = False
 
 
 def get_default_cache_root():
@@ -449,6 +450,12 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: [
     ] if "APHRODITE_DISABLED_KERNELS" not in os.environ else os.environ[
         "APHRODITE_DISABLED_KERNELS"].split(","),
+
+    # If set, Aphrodite will force flashinfer to use tensor cores;
+    # otherwise will use heuristic based on model architecture.
+    "APHRODITE_FLASHINFER_FORCE_TENSOR_CORES":
+    lambda: bool(int(os.getenv("APHRODITE_FLASHINFER_FORCE_TENSOR_CORES",
+                               "0"))),
 }
 
 # end-env-vars-definition

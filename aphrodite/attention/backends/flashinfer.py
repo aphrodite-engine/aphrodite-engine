@@ -18,6 +18,7 @@ except ImportError:
 
 import torch
 
+import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionImpl,
@@ -118,6 +119,9 @@ class FlashInferState(AttentionState):
 
     def _get_prefill_wrapper(self):
         if self._prefill_wrapper is None:
+            assert BatchDecodeWithPagedKVCacheWrapper is not None, (
+                "flashinfer is not installed, please install "
+                "flashinfer==0.1.6")
             self._prefill_wrapper = BatchPrefillWithPagedKVCacheWrapper(
                 self._get_workspace_buffer(), "NHD")
         return self._prefill_wrapper
@@ -128,7 +132,8 @@ class FlashInferState(AttentionState):
                 self.runner.parallel_config))
             num_kv_heads = self.runner.model_config.get_num_kv_heads(
                 self.runner.parallel_config)
-            use_tensor_cores = num_qo_heads // num_kv_heads > 4
+            use_tensor_cores = envs.APHRODITE_FLASHINFER_FORCE_TENSOR_CORES or (
+                num_qo_heads // num_kv_heads > 4)
             self._decode_wrapper = BatchDecodeWithPagedKVCacheWrapper(
                 self._get_workspace_buffer(),
                 "NHD",
@@ -187,7 +192,8 @@ class FlashInferState(AttentionState):
             self.runner.parallel_config))
         num_kv_heads = self.runner.model_config.get_num_kv_heads(
             self.runner.parallel_config)
-        use_tensor_cores = num_qo_heads // num_kv_heads > 4
+        use_tensor_cores = envs.APHRODITE_FLASHINFER_FORCE_TENSOR_CORES or (
+            num_qo_heads // num_kv_heads > 4)
         self._graph_decode_wrapper = \
             CUDAGraphBatchDecodeWithPagedKVCacheWrapper(
             self._graph_decode_workspace_buffer, _indptr_buffer,
