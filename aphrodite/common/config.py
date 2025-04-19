@@ -269,8 +269,9 @@ class ModelConfig(ConfigMixin):
                 self.hf_text_config.sliding_window)
             print_warning_once(
                 f"{self.hf_text_config.model_type} has interleaved attention, "
-                "which is currently not supported by vLLM. Disabling sliding "
-                "window and capping the max length to the sliding window size "
+                "which is currently not supported by Aphrodite. Disabling "
+                "sliding window and capping the max length to the sliding "
+                "window size "
                 f"({sliding_window_len_min}).")
             self.disable_sliding_window = True
 
