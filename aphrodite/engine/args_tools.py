@@ -1088,7 +1088,7 @@ class EngineArgs:
                 "smaller value.")
 
         if self.enable_chunked_prefill and fp8_kv_on_ampere:
-            raise ValueError("Chunked prefill is not supported with FP8 on "
+            raise ValueError("Chunked prefill is not supported with FP8 KV on "
                              "Ampere or older GPUs.")
 
 
