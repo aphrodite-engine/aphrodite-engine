@@ -10,7 +10,6 @@ from aphrodite.attention.backends.abstract import AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig, SchedulerConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import get_tensor_model_parallel_world_size
-from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               MergedColumnParallelLinear,
@@ -22,7 +21,7 @@ from aphrodite.modeling.layers.mamba.ops.mamba_ssm import (
     selective_scan_fn, selective_state_update)
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import (
     composed_weight_loader, default_weight_loader, sharded_weight_loader)
 from aphrodite.modeling.models.interfaces import HasInnerState, IsAttentionFree
@@ -35,7 +34,6 @@ from aphrodite.worker.model_runner import (_BATCH_SIZES_TO_CAPTURE,
                                            _get_graph_batch_size)
 
 KVCache = Tuple[torch.Tensor, torch.Tensor]
-
 
 
 # Adapted from transformers.models.mamba.modeling_mamba.MambaMixer
@@ -59,7 +57,7 @@ class MambaMixer(nn.Module):
         self.conv_kernel_size = config.conv_kernel
         self.intermediate_size = config.intermediate_size
         self.time_step_rank = int(config.time_step_rank)
-
+        self.is_falcon_mamba = config.model_type == "falcon_mamba"
         self.conv1d = ColumnParallelLinear(
             input_size=self.conv_kernel_size,
             output_size=self.intermediate_size,
@@ -109,6 +107,13 @@ class MambaMixer(nn.Module):
             input_is_parallel=True,
         )
         self.activation = config.hidden_act
+        if self.is_falcon_mamba:
+            self.dt_layernorm = RMSNorm(self.time_step_rank,
+                                        eps=config.mixer_rms_eps)
+            self.b_layernorm = RMSNorm(self.ssm_state_size,
+                                       eps=config.mixer_rms_eps)
+            self.c_layernorm = RMSNorm(self.ssm_state_size,
+                                       eps=config.mixer_rms_eps)
 
     def forward(self, hidden_states: torch.Tensor,
                 attn_metadata: AttentionMetadata,
@@ -146,8 +151,7 @@ class MambaMixer(nn.Module):
                 conv_weights,
                 self.conv1d.bias,
                 self.activation,
-                conv_state_indices=mamba_cache_params.state_indices_tensor,
-            )
+                conv_state_indices=mamba_cache_params.state_indices_tensor)
             hidden_states = hidden_states.transpose(0, 1)
 
         # 3. State Space Model sequence transformation
@@ -159,8 +163,12 @@ class MambaMixer(nn.Module):
             [self.time_step_rank, self.ssm_state_size, self.ssm_state_size],
             dim=-1,
         )
-
-        # Note that Jamba normalizes B, C, and time_step here but Mamba doesn't.
+        # Note that Jamba and FalconMamba normalizes B, C, and time_step here
+        # but Mamba doesn't.
+        if self.is_falcon_mamba:
+            time_step = self.dt_layernorm(time_step.contiguous())
+            B = self.b_layernorm(B.contiguous())
+            C = self.c_layernorm(C.contiguous())
 
         discrete_time_step = self.dt_proj(time_step)[0].transpose(-2, -1)
         # 3.c perform the recurrence y ← SSM(A, B, C)(x)
@@ -195,45 +203,13 @@ class MambaMixer(nn.Module):
                 gate.transpose(0, 1),
                 time_proj_bias,
                 dt_softplus=True,
-                state_batch_indices=mamba_cache_params.state_indices_tensor,
-            )
+                state_batch_indices=mamba_cache_params.state_indices_tensor)
             scan_outputs = scan_outputs.transpose(0, 1)
 
         # 4. Final linear projection
         contextualized_states = self.out_proj(scan_outputs.transpose(-2,
                                                                      -1))[0]
         return contextualized_states
-
-
-class MambaMLP(nn.Module):
-
-    def __init__(
-        self,
-        config: MambaConfig,
-        quant_config: Optional[QuantizationConfig] = None,
-    ) -> None:
-        super().__init__()
-        hidden_size = config.hidden_size
-        intermediate_size = config.intermediate_size
-        hidden_act = config.hidden_act
-        self.gate_up_proj = MergedColumnParallelLinear(
-            hidden_size, [intermediate_size] * 2,
-            bias=False,
-            quant_config=quant_config)
-        self.down_proj = RowParallelLinear(intermediate_size,
-                                           hidden_size,
-                                           bias=False,
-                                           quant_config=quant_config)
-        if hidden_act != "silu":
-            raise ValueError(f"Unsupported activation: {hidden_act}. "
-                             "Only silu is supported for now.")
-        self.act_fn = SiluAndMul()
-
-    def forward(self, x):
-        gate_up, _ = self.gate_up_proj(x)
-        x = self.act_fn(gate_up)
-        x, _ = self.down_proj(x)
-        return x
 
 
 class MambaDecoderLayer(nn.Module):
@@ -246,12 +222,9 @@ class MambaDecoderLayer(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.config = config
+        self.is_falcon_mamba = config.model_type == "falcon_mamba"
         self.mixer = MambaMixer(config, layer_idx)
-
-        self.feed_forward = MambaMLP(config, quant_config=quant_config)
         self.norm = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
-        self.pre_ff_layernorm = RMSNorm(config.hidden_size,
-                                        eps=config.layer_norm_epsilon)
 
     def forward(
         self,
@@ -269,10 +242,6 @@ class MambaDecoderLayer(nn.Module):
 
         hidden_states = self.mixer(hidden_states, attn_metadata,
                                    mamba_cache_params)
-        # Fully Connected
-        hidden_states, residual = self.pre_ff_layernorm(
-            hidden_states, residual)
-        hidden_states = self.feed_forward(hidden_states)
         return hidden_states, residual
 
 
@@ -314,49 +283,27 @@ class MambaModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         mamba_cache_params: MambaCacheParams,
     ) -> torch.Tensor:
+
         hidden_states = self.embeddings(input_ids)
         residual = None
 
         for i in range(len(self.layers)):
             layer = self.layers[i]
-
             hidden_states, residual = layer(
                 positions=positions,
                 hidden_states=hidden_states,
                 attn_metadata=attn_metadata,
                 residual=residual,
-                mamba_cache_params=mamba_cache_params.at_layer_idx(i)
-            )
+                mamba_cache_params=mamba_cache_params.at_layer_idx(i))
         hidden_states, _ = self.norm_f(hidden_states, residual)
 
         return hidden_states
 
 
 class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree):
-    packed_modules_mapping = {
-        "qkv_proj": [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-        ],
-    }
-
-    # LoRA specific attributes
-    supported_lora_modules = [
-        "qkv_proj",
-        "o_proj",
-        "embed_tokens",
-        "lm_head",
-    ]
-    embedding_modules = {
-        "embeddings": "input_embeddings",
-        "lm_head": "output_embeddings",
-    }
-    embedding_padding_modules = ["lm_head"]
 
     def __init__(
         self,
@@ -379,8 +326,18 @@ class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree):
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
-
-        self.lm_head = self.backbone.embeddings
+        if config.tie_word_embeddings:
+            self.lm_head = self.backbone.embeddings
+        else:
+            self.lm_head = ParallelLMHead(
+                self.unpadded_vocab_size,
+                config.hidden_size,
+                org_num_embeddings=config.vocab_size,
+                padding_size=DEFAULT_VOCAB_PADDING_SIZE
+                # We need bigger padding if using lora for kernel
+                # compatibility
+                if not lora_config else lora_config.lora_vocab_padding_size,
+            )
 
         # Used to track and store by the Mamba cache between steps.
         self.mamba_cache: Optional[MambaCacheManager] = None
@@ -414,8 +371,8 @@ class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree):
                                               mamba_cache_tensors[1],
                                               state_indices_tensor)
 
-        hidden_states = self.backbone(input_ids, positions, kv_caches,
-                                      attn_metadata, mamba_cache_params)
+        hidden_states = self.backbone(input_ids, positions, attn_metadata,
+                                      mamba_cache_params)
 
         return hidden_states
 
@@ -454,43 +411,15 @@ class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree):
         return next_tokens
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
-        stacked_params_mapping = [
-            # (param_name, shard_name, shard_id)
-            ("qkv_proj", "q_proj", "q"),
-            ("qkv_proj", "k_proj", "k"),
-            ("qkv_proj", "v_proj", "v"),
-            ("gate_up_proj", "gate_proj", 0),
-            ("gate_up_proj", "up_proj", 1),
-        ]
-
         params_dict = dict(self.named_parameters())
         for name, loaded_weight in weights:
-            if "rotary_emb.inv_freq" in name:
-                continue
-
             if "A_log" in name:
                 name = name.replace("A_log", "A")
+            # Skip loading extra bias for GPTQ models.
+            if name.endswith(".bias") and name not in params_dict:
+                continue
 
-            if ".self_attn." in name:
-                name = name.replace(".self_attn", "")
-
-            for param_name, weight_name, shard_id in stacked_params_mapping:
-                if weight_name not in name:
-                    continue
-                name = name.replace(weight_name, param_name)
-                # Skip loading extra bias for GPTQ models.
-                if name.endswith(".bias") and name not in params_dict:
-                    continue
-                param = params_dict[name]
-                weight_loader = param.weight_loader
-                weight_loader(param, loaded_weight, shard_id)
-                break
-            else:
-                # Skip loading extra bias for GPTQ models.
-                if name.endswith(".bias") and name not in params_dict:
-                    continue
-
-                param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
-                weight_loader(param, loaded_weight)
+            param = params_dict[name]
+            weight_loader = getattr(param, "weight_loader",
+                                    default_weight_loader)
+            weight_loader(param, loaded_weight)
