@@ -198,7 +198,7 @@ class Worker(LocalOrDistributedWorkerBase):
         with memory_profiling(baseline_memory_in_bytes=total_gpu_memory -
                               self.init_gpu_memory,
                               weights_memory_in_bytes=self.model_runner.
-                              model_memory_usage) as result:
+                              get_model_memory_usage()) as result:
             self.model_runner.profile_run()
             torch.cuda.synchronize()
 
