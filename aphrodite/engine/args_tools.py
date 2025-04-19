@@ -18,6 +18,8 @@ from aphrodite.common.utils import FlexibleArgumentParser, is_cpu
 from aphrodite.executor.executor_base import ExecutorBase
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QUANTIZATION_METHODS
+from aphrodite.transformers_utils.config import (
+    maybe_register_config_serialize_by_value)
 from aphrodite.transformers_utils.utils import check_gguf_file
 from aphrodite.triton_utils import HAS_TRITON
 
@@ -1020,6 +1022,8 @@ class EngineArgs:
                     "--enable-prefix-caching is currently not "
                     "supported for multimodal models and has been disabled.")
             self.enable_prefix_caching = False
+
+        maybe_register_config_serialize_by_value(self.trust_remote_code)
 
         cache_config = CacheConfig(
             block_size=self.block_size if self.device != "neuron" else
