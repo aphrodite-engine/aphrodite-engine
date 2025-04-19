@@ -10,8 +10,7 @@ from aphrodite.processing.block.interfaces import (Block, BlockAllocator,
                                                    BlockId, Device)
 from aphrodite.processing.block.naive_block import (BlockPool, NaiveBlock,
                                                     NaiveBlockAllocator)
-from aphrodite.processing.evictor_v2 import (EvictionPolicy, Evictor,
-                                             make_evictor)
+from aphrodite.processing.evictor import EvictionPolicy, Evictor, make_evictor
 
 PrefixHash = int
 
