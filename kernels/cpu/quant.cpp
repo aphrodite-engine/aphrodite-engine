@@ -370,7 +370,7 @@ void int8_scaled_mm(torch::Tensor& c,               // [M, OC], row-major
                 bias->dim() == 1);
   }
 
-  VLLM_DISPATCH_FLOATING_TYPES(c.scalar_type(), "int8_scaled_mm", [&] {
+  APHRODITE_DISPATCH_FLOATING_TYPES(c.scalar_type(), "int8_scaled_mm", [&] {
     if (a_scales.numel() != 1) {
       // per-token
       // Note: oneDNN doesn't support per-token activation quantization
@@ -463,7 +463,7 @@ void int8_scaled_mm_azp(torch::Tensor& c,        // [M, OC], row-major
   TORCH_CHECK(!bias || bias->dtype() == c.dtype(),
               "currently bias dtype must match output dtype ", c.dtype());
 
-  VLLM_DISPATCH_FLOATING_TYPES(c.scalar_type(), "int8_scaled_mm_azp", [&] {
+  APHRODITE_DISPATCH_FLOATING_TYPES(c.scalar_type(), "int8_scaled_mm_azp", [&] {
     torch::Tensor tmp_fp32_out = torch::empty_like(c, ::at::ScalarType::Float);
     if (a_scales.numel() != 1) {
       // per-token
@@ -557,7 +557,7 @@ void static_scaled_int8_quant(torch::Tensor& out,          // [..., hidden_size]
 
   const int hidden_size = input.size(-1);
   const int num_tokens = input.numel() / hidden_size;
-  VLLM_DISPATCH_FLOATING_TYPES(
+  APHRODITE_DISPATCH_FLOATING_TYPES(
       input.scalar_type(), "static_scaled_int8_quant_impl", [&] {
         if (azp.has_value()) {
           static_scaled_int8_quant_impl<true>(
@@ -584,7 +584,7 @@ void dynamic_scaled_int8_quant(
 
   int const hidden_size = input.size(-1);
   int const num_tokens = input.numel() / hidden_size;
-  VLLM_DISPATCH_FLOATING_TYPES(
+  APHRODITE_DISPATCH_FLOATING_TYPES(
       input.scalar_type(), "dynamic_scaled_int8_quant_impl", [&] {
         if (azp.has_value()) {
           dynamic_scaled_int8_quant_impl<true>(

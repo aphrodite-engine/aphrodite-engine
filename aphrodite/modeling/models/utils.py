@@ -507,19 +507,20 @@ class LLMWrapper(nn.Module):
 def get_vit_attn_backend() -> _Backend:
     selected_backend: Optional[_Backend] = get_global_forced_attn_backend()
     if selected_backend is None:
-        backend_by_env_var: Optional[str] = envs.VLLM_ATTENTION_BACKEND
+        backend_by_env_var: Optional[str] = envs.APHRODITE_ATTENTION_BACKEND
         if backend_by_env_var is not None:
             selected_backend = backend_name_to_enum(backend_by_env_var)
     if selected_backend is None:
         # For Volta and Turing GPUs, use xformers instead.
-        device_available = current_platform.has_device_capability(80)
+        major, minor = current_platform.get_device_capability()
+        device_available = major >= 8 and minor >= 0
         if device_available:
             from transformers.utils import is_flash_attn_2_available
             if is_flash_attn_2_available():
                 selected_backend = _Backend.FLASH_ATTN
             else:
                 log_once(
-                    level="warning",
+                    level="WARNING",
                     message="Current `aphrodite-flash-attn` has a bug inside "
                     "vision module, so we use xformers backend instead. You "
                     "can run `pip install flash-attn` to use flash-attention "
