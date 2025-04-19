@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Any, cast
 
 
@@ -33,6 +34,10 @@ def get_processor(
         else:
             raise e
     return cast(ProcessorMixin, processor)
+
+
+cached_get_processor = lru_cache(get_processor)
+
 
 def get_image_processor(
     processor_name: str,

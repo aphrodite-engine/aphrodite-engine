@@ -321,6 +321,21 @@ def run_glm4v(question: str, modality: str):
     return llm, prompt, stop_token_ids
 
 
+# Pixtral HF-format
+def run_pixtral_hf(question: str, modality: str):
+    assert modality == "image"
+    model_name = "mistral-community/pixtral-12b"
+
+    llm = LLM(
+        model=model_name,
+        max_model_len=8192,
+    )
+
+    prompt = f"<s>[INST]{question}\n[IMG][/INST]"
+    stop_token_ids = None
+    return llm, prompt, stop_token_ids
+
+
 model_example_map = {
     "llava": run_llava,
     "llava-next": run_llava_next,
@@ -338,6 +353,7 @@ model_example_map = {
     "molmo": run_molmo,
     "mllama": run_mllama,
     "glm4v": run_glm4v,
+    "pixtral_hf": run_pixtral_hf,
 }
 
 

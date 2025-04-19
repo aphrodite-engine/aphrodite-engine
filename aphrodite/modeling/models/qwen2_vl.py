@@ -22,7 +22,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only Qwen2-VL model compatible with HuggingFace weights."""
-from functools import lru_cache, partial
+from functools import partial
 from typing import (Any, Callable, Iterable, List, Literal, Mapping, Optional,
                     Tuple, Type, TypedDict, Union)
 
@@ -63,7 +63,7 @@ from aphrodite.multimodal.base import MultiModalData
 from aphrodite.multimodal.image import cached_get_image_processor
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.config import uses_mrope
-from aphrodite.transformers_utils.processor import get_processor
+from aphrodite.transformers_utils.processor import cached_get_processor
 
 from .interfaces import SupportsMultiModal, SupportsPP
 from .utils import (PPMissingLayer, get_vit_attn_backend,
@@ -541,8 +541,6 @@ class Qwen2VisionTransformer(nn.Module):
 
 
 # === Vision input helpers === #
-
-cached_get_processor = lru_cache(get_processor)
 
 
 def mm_input_mapper_for_qwen2_vl(
