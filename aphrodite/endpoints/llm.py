@@ -5,6 +5,7 @@ from typing import (Any, ClassVar, Dict, List, Optional, Sequence, Union, cast,
 
 from tqdm import tqdm
 
+import aphrodite.common.envs as envs
 from aphrodite.common.outputs import EmbeddingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import (GuidedDecodingParams,
@@ -16,7 +17,6 @@ from aphrodite.endpoints.chat_utils import (ChatCompletionMessageParam,
                                             apply_hf_chat_template,
                                             apply_mistral_chat_template,
                                             parse_chat_messages)
-from aphrodite.engine.aphrodite_engine import AphroditeEngine
 from aphrodite.engine.args_tools import EngineArgs, TaskOption
 from aphrodite.inputs import PromptType, TextPrompt, TokensPrompt
 from aphrodite.inputs.parse import parse_and_batch_prompt
@@ -28,6 +28,11 @@ from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
                                                     MistralTokenizer,
                                                     get_cached_tokenizer)
 from aphrodite.transformers_utils.tokenizer_group import TokenizerGroup
+
+if envs.APHRODITE_USE_V1:
+    from aphrodite.v1.engine.aphrodite_engine import AphroditeEngine
+else:
+    from aphrodite.engine.aphrodite_engine import AphroditeEngine
 
 
 class LLM:

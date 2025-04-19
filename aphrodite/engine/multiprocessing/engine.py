@@ -11,10 +11,10 @@ import cloudpickle
 import zmq
 from loguru import logger
 
-from aphrodite import AphroditeEngine, AsyncEngineArgs, SamplingParams
+from aphrodite import AsyncEngineArgs, SamplingParams
 from aphrodite.common.config import (DecodingConfig, LoRAConfig, ModelConfig,
                                      ParallelConfig, SchedulerConfig)
-from aphrodite.common.envs import APHRODITE_RPC_TIMEOUT
+from aphrodite.common.envs import APHRODITE_RPC_TIMEOUT, APHRODITE_USE_V1
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,
                                               ENGINE_DEAD_ERROR, IPC_DATA_EXT,
@@ -26,6 +26,11 @@ from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,
                                               RPCShutdownRequest,
                                               RPCStartupRequest,
                                               RPCStartupResponse)
+
+if APHRODITE_USE_V1:
+    from aphrodite.v1.engine.aphrodite_engine import AphroditeEngine
+else:
+    from aphrodite.engine.aphrodite_engine import AphroditeEngine
 
 CONFIG_TYPE = Union[ModelConfig, DecodingConfig, ParallelConfig,
                     SchedulerConfig, LoRAConfig]
@@ -136,13 +141,15 @@ class MQAphroditeEngine:
 
         executor_class = AphroditeEngine._get_executor_cls(engine_config)
 
-        return cls(
-            ipc_path=ipc_path,
-            use_async_sockets=engine_config.model_config.use_async_output_proc,
-            **engine_config.to_dict(),
-            executor_class=executor_class,
-            log_requests=not engine_args.disable_log_requests,
-            log_stats=not engine_args.disable_log_stats)
+        use_async_sockets = (engine_config.model_config.use_async_output_proc
+                             and not APHRODITE_USE_V1)
+
+        return cls(ipc_path=ipc_path,
+                   use_async_sockets=use_async_sockets,
+                   **engine_config.to_dict(),
+                   executor_class=executor_class,
+                   log_requests=not engine_args.disable_log_requests,
+                   log_stats=not engine_args.disable_log_stats)
 
     def start(self):
         try:

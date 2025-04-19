@@ -18,6 +18,7 @@ APHRODITE_ATTENTION_BACKEND = envs.APHRODITE_ATTENTION_BACKEND
 
 class _Backend(enum.Enum):
     FLASH_ATTN = enum.auto()
+    FLASH_ATTN_APHRODITE_V1 = enum.auto()
     XFORMERS = enum.auto()
     ROCM_FLASH = enum.auto()
     TORCH_SDPA = enum.auto()
@@ -109,6 +110,10 @@ def get_attn_backend(
                                 is_attention_free)
     if backend == _Backend.FLASH_ATTN:
         from aphrodite.attention.backends.flash_attn import (  # noqa: F401
+            FlashAttentionBackend)
+        return FlashAttentionBackend
+    elif backend == _Backend.FLASH_ATTN_APHRODITE_V1:
+        from aphrodite.v1.attention.backends.flash_attn import (  # noqa: F401
             FlashAttentionBackend)
         return FlashAttentionBackend
     if backend == _Backend.XFORMERS:
@@ -216,6 +221,9 @@ def which_attn_to_use(
         else:
             logger.info(f"{selected_backend} is not supported in AMD GPUs.")
         return _Backend.ROCM_FLASH
+
+    if envs.APHRODITE_USE_V1:
+        return _Backend.FLASH_ATTN_APHRODITE_V1
 
     # FlashAttn in NVIDIA GPUs.
     if selected_backend == _Backend.FLASH_ATTN:

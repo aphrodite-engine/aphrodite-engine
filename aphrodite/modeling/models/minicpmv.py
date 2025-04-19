@@ -351,7 +351,7 @@ def input_mapper_for_minicpmv(ctx: InputContext, data: object):
 
     if not isinstance(data, list):
         raise ValueError(
-            "Image input must be list of MiniCPMVImageInput, got (%s)", data)
+            f"Image input must be list of MiniCPMVImageInput, got {data}")
 
     if len(data) > 0 and isinstance(data[0]['image'], torch.Tensor):
         batch_data = {

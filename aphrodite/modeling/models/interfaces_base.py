@@ -63,11 +63,8 @@ def _check_aphrodite_model_init(model: Union[Type[object], object]) -> bool:
     if missing_kws and (isinstance(model, type)
                         and issubclass(model, nn.Module)):
         logger.warning(
-            "The model (%s) is missing "
-            "Aphrodite-specific keywords from its initializer: %s",
-            model,
-            missing_kws,
-        )
+            f"The model ({model}) is missing "
+            f"Aphrodite-specific keywords from its initializer: {missing_kws}")
 
     return len(missing_kws) == 0
 
@@ -84,11 +81,8 @@ def _check_aphrodite_model_forward(model: Union[Type[object], object]) -> bool:
     if missing_kws and (isinstance(model, type)
                         and issubclass(model, nn.Module)):
         logger.warning(
-            "The model (%s) is missing "
-            "Aphrodite-specific keywords from its initializer: %s",
-            model,
-            missing_kws,
-        )
+            f"The model ({model}) is missing "
+            f"Aphrodite-specific keywords from its initializer: {missing_kws}")
 
     return len(missing_kws) == 0
 

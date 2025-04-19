@@ -69,6 +69,7 @@ if TYPE_CHECKING:
     APHRODITE_CUSTOM_OPS: List[str] = []
     APHRODITE_DISABLED_KERNELS: List[str] = []
     APHRODITE_FLASHINFER_FORCE_TENSOR_CORES: bool = False
+    APHRODITE_USE_V1: bool = False
 
 
 def get_default_cache_root():
@@ -456,6 +457,10 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     "APHRODITE_FLASHINFER_FORCE_TENSOR_CORES":
     lambda: bool(int(os.getenv("APHRODITE_FLASHINFER_FORCE_TENSOR_CORES",
                                "0"))),
+
+    # If set, use the V1 code path.
+    "APHRODITE_USE_V1":
+    lambda: bool(int(os.getenv("APHRODITE_USE_V1", "0"))),
 }
 
 # end-env-vars-definition

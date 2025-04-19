@@ -96,9 +96,9 @@ def input_processor_for_paligemma(ctx: InputContext,
 
     if orig_prompt is not None and image_token_str in orig_prompt:
         logger.warning(
-            "The image token '%s' was detected in the prompt and "
-            "will be removed. Please follow the proper prompt format"
-            " documented on HuggingFace.", image_token_str)
+            f"The image token '{image_token_str}' was detected in the prompt "
+            "and will be removed. Please follow the proper prompt format "
+            "documented on HuggingFace.")
         orig_prompt = orig_prompt.replace(image_token_str, "")
         orig_prompt_ids.remove(hf_config.image_token_index)
 

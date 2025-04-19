@@ -166,9 +166,8 @@ class InputRegistry:
         def wrapper(model_cls: N) -> N:
             if model_cls in self._dummy_encoder_factories_by_model_type:
                 logger.warning(
-                    "Model class %s already has dummy encoder data "
-                    "registered to %s. It is overwritten by the new one.",
-                    model_cls, self)
+                    f"Model class {model_cls} already has dummy encoder data "
+                    f"registered to {self}. It is overwritten by the new one.")
             self._dummy_encoder_factories_by_model_type[model_cls] = factory
             return model_cls
         return wrapper
@@ -179,9 +178,8 @@ class InputRegistry:
                 model_cls]
         else:
             logger.warning(
-                "No dummy encoder data factory registered to %s. "
-                "Using the dummy data factory for the model instead.",
-                model_cls)
+                f"No dummy encoder data factory registered to {model_cls}. "
+                "Using the dummy data factory for the model instead.")
             dummy_factory = self._get_dummy_data_factory(model_cls)
         return dummy_factory
 
