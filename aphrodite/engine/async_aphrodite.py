@@ -577,6 +577,9 @@ class AsyncAphrodite:
         elif engine_config.device_config.device_type == "cpu":
             from aphrodite.executor.cpu_executor import CPUExecutorAsync
             executor_class = CPUExecutorAsync
+        elif engine_config.device_config.device_type == "qaic":
+            from aphrodite.executor.qaic_executor import QaicExecutorAsync
+            executor_class = QaicExecutorAsync
         elif engine_config.device_config.device_type == "openvino":
             assert distributed_executor_backend is None, (
                 "Distributed execution is not supported with "

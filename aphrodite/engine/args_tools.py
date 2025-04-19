@@ -92,6 +92,7 @@ class EngineArgs:
     max_logprobs: int = 10  # OpenAI default is 5, setting to 10 because ST
     # Device Options
     device: str = "auto"
+    device_group: List[int] = dataclasses.field(default_factory=lambda:[0])
     # Load Options
     load_format: str = "auto"
     config_format: str = "auto"
@@ -397,6 +398,14 @@ class EngineArgs:
             help=("Category: Model Options\n"
                   "Device to use for model execution."),
         )
+        parser.add_argument(
+            '--device-group',
+            type=lambda device_ids: [int(x) for x in device_ids.split(",")],
+            default=EngineArgs.device_group,
+            help=('Define qaic device ids in csv format (e.g., '
+                  '--device-group 0,1,2).'),
+        )
+
         # Load Options
         parser.add_argument(
             '--load-format',
@@ -561,12 +570,13 @@ class EngineArgs:
         parser.add_argument(
             '--kv-cache-dtype',
             type=str,
-            choices=['auto', 'fp8', 'fp8_e5m2', 'fp8_e4m3'],
+            choices=['auto', 'fp8', 'fp8_e5m2', 'fp8_e4m3', 'mxint8'],
             default=EngineArgs.kv_cache_dtype,
             help='Category: Cache Options\n'
             'Data type for kv cache storage. If "auto", will use model '
             'data type. CUDA 11.8+ supports fp8 (=fp8_e4m3) and fp8_e5m2. '
-            'ROCm (AMD GPU) supports fp8 (=fp8_e4m3)')
+            'ROCm (AMD GPU) supports fp8 (=fp8_e4m3). MXINT8 is supported on '
+            'QAIC.')
         parser.add_argument(
             "--block-size",
             type=int,

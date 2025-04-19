@@ -64,6 +64,7 @@ QUANTIZATION_METHODS = {
     "neuron_quant": NeuronQuantConfig,
     "vptq": VPTQConfig,
     "ipex": IPEXConfig,
+    "mxfp6": "mxfp6",
 }
 
 

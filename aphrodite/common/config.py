@@ -13,7 +13,8 @@ from transformers import PretrainedConfig
 import aphrodite.common.envs as envs
 from aphrodite.common.utils import (GiB_bytes, cuda_device_count_stateless,
                                     get_cpu_memory, is_cpu, is_hip, is_neuron,
-                                    is_openvino, is_xpu, print_warning_once)
+                                    is_openvino, is_qaic, is_xpu,
+                                    print_warning_once)
 from aphrodite.distributed import get_current_tp_rank_partition_size
 from aphrodite.modeling.models import ModelRegistry
 from aphrodite.platforms import current_platform
@@ -497,6 +498,10 @@ class ModelConfig(ConfigMixin):
                 raise ValueError(
                     f"{self.quantization} quantization is currently not "
                     "supported in ROCm.")
+            if is_qaic() and self.quantization not in ["mxfp6"]:
+                raise ValueError(
+                    f"{self.quantization} quantization is currently not "
+                    "supported in QAIC.")
             if current_platform.is_tpu(
             ) and self.quantization not in tpu_supported_quantization:
                 raise ValueError(
@@ -1314,11 +1319,15 @@ class SchedulerConfig(ConfigMixin):
 
 class DeviceConfig(ConfigMixin):
 
-    def __init__(self, device: str = "auto") -> None:
+    def __init__(self, device: str = "auto",
+                 device_group: Optional[List[int]] = None) -> None:
+        self.device_group = None
         if device == "auto":
             # Automated device type detection
             if is_neuron():
                 self.device_type = "neuron"
+            elif is_qaic():
+                self.device_type = "qaic"
             elif is_openvino():
                 self.device_type = "openvino"
             elif current_platform.is_tpu():
@@ -1335,8 +1344,17 @@ class DeviceConfig(ConfigMixin):
             # Device type is assigned explicitly
             self.device_type = device
 
+        # Device group is only applicable to QAIC
+        if self.device_type == "qaic":
+            if device_group is None:
+                self.device_group = [0]
+            elif isinstance(device_group, int):
+                self.device_group = [device_group]
+            else:
+                self.device_group = device_group
+
         # Some device types require processing inputs on CPU
-        if self.device_type in ["neuron", "openvino"]:
+        if self.device_type in ["neuron", "openvino", "qaic"]:
             self.device = torch.device("cpu")
         elif self.device_type in ["tpu"]:
             self.device = None

@@ -4,10 +4,12 @@ import contextlib
 import datetime
 import enum
 import gc
+import importlib
 import inspect
 import ipaddress
 import math
 import os
+import platform
 import random
 import socket
 import subprocess
@@ -372,6 +374,27 @@ def is_triton() -> bool:
             return False
         return True
     return False
+
+
+@lru_cache(maxsize=None)
+def is_qaic() -> bool:
+    """Check if QAIC libraries are available without importing them."""
+
+    qaicrt_spec = importlib.util.find_spec("qaicrt")
+    if qaicrt_spec is None:
+        platform_path = f"/opt/qti-aic/dev/lib/{platform.machine()}"
+        if platform_path not in sys.path:
+            sys.path.append(platform_path)
+        qaicrt_spec = importlib.util.find_spec("qaicrt")
+
+    aicapi_spec = importlib.util.find_spec("QAicApi_pb2")
+    if aicapi_spec is None:
+        qaic_python_path = "/opt/qti-aic/dev/python"
+        if qaic_python_path not in sys.path:
+            sys.path.append(qaic_python_path)
+        aicapi_spec = importlib.util.find_spec("QAicApi_pb2")
+    
+    return qaicrt_spec is not None and aicapi_spec is not None
 
 
 @lru_cache(maxsize=None)
@@ -799,6 +822,9 @@ def is_pin_memory_available() -> bool:
         return False
     elif is_neuron():
         print_warning_once("Pin memory is not supported on Neuron.")
+        return False
+    elif is_qaic():
+        print_warning_once("Pin memory is not supported on QAIC.")
         return False
     elif is_cpu() or is_openvino():
         return False

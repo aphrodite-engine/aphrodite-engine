@@ -286,6 +286,15 @@ def _is_neuron() -> bool:
 def _is_tpu() -> bool:
     return APHRODITE_TARGET_DEVICE == "tpu"
 
+def _is_qaic() -> bool:
+    qaic_sdk_installed = True
+    try:
+       subprocess.run(["/opt/qti-aic/tools/qaic-util", "-q"],
+                      capture_output=True, check=True)
+    except (FileNotFoundError, PermissionError, subprocess.CalledProcessError):
+       qaic_sdk_installed = False
+    return qaic_sdk_installed or envs.APHRODITE_BUILD_WITH_QAIC
+
 
 def _is_cpu() -> bool:
     return APHRODITE_TARGET_DEVICE == "cpu"
@@ -404,6 +413,12 @@ def get_aphrodite_version() -> str:
         version += "+openvino"
     elif _is_tpu():
         version += "+tpu"
+    elif _is_qaic():
+        # Get the qaic sdk version
+        # TBD extract version from qaic-util
+        qaic_version_str = "AIC.1.16"
+        version += f"+qaic_{qaic_version_str}"
+
     elif _is_cpu():
         version += "+cpu"
     elif _is_xpu():
@@ -461,6 +476,8 @@ def get_requirements() -> List[str]:
         requirements = _read_requirements("requirements-openvino.txt")
     elif _is_tpu():
         requirements = _read_requirements("requirements-tpu.txt")
+    elif _is_qaic():
+        requirements = _read_requirements("requirements-qaic.txt")
     elif _is_cpu():
         requirements = _read_requirements("requirements-cpu.txt")
     elif _is_xpu():

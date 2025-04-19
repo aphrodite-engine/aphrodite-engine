@@ -14,7 +14,7 @@ from aphrodite.common.sequence import (Sequence, SequenceData, SequenceGroup,
                                        SequenceGroupMetadata,
                                        SequenceGroupMetadataDelta,
                                        SequenceStatus)
-from aphrodite.common.utils import Device, PyObjectCache
+from aphrodite.common.utils import Device, PyObjectCache, is_qaic
 from aphrodite.lora.request import LoRARequest
 from aphrodite.processing.interfaces import AllocStatus, BlockSpaceManager
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
@@ -1188,6 +1188,15 @@ class Scheduler:
             # Appending prefill slots only happens multi-step and
             # chunked-prefill are enabled together.
             assert self.scheduler_config.is_multi_step and enable_chunking
+
+        if is_qaic():
+            """Since max_num_seqs is set according to the maximum KV cache
+            available in hardware, there appears to be no need to preempt any
+            requests. Additionally, best_of >1 is not supported in the current
+            version. Based on the system design, it seems that when all
+            max_num_seq blocks are allocated, the scheduler begins preempting
+            the last allocated block, which is unnecessary."""
+            return True
 
         return self.block_manager.can_append_slots(
             seq_group=seq_group, num_lookahead_slots=num_lookahead_slots)

@@ -1,0 +1,91 @@
+from typing import List, Set, Tuple
+
+from loguru import logger
+
+from aphrodite.executor.executor_base import ExecutorAsyncBase, ExecutorBase
+from aphrodite.lora.request import LoRARequest
+from aphrodite.common.sequence import ExecuteModelRequest, SamplerOutput
+from aphrodite.common.utils import make_async
+
+
+class QaicExecutor(ExecutorBase):
+
+    def _init_executor(self) -> None:
+        assert self.device_config.device_type == "qaic"
+        assert self.lora_config is None, (
+            "qaic backend doesn't support LoRA yet.")
+        assert self.speculative_config is None, (
+            "qaic backend doesn't support Speculative decoding yet.")
+
+        # Instantiate the worker and load the model to the device.
+        self._init_worker()
+
+    def _init_worker(self):
+        from aphrodite.worker.qaic_worker import QaicWorker
+
+        self.driver_worker = QaicWorker(
+            self.model_config,
+            self.parallel_config,
+            self.scheduler_config,
+            self.device_config,
+            self.cache_config,
+        )
+        self.driver_worker.init_device()
+        self.driver_worker.load_model()
+
+    def determine_num_available_blocks(self) -> Tuple[int, int]:
+        """Determine the number of available KV blocks by invoking the
+        underlying worker.
+        """
+        return self.driver_worker.determine_num_available_blocks()
+
+    def initialize_cache(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        """Initialize the KV cache by invoking the underlying worker.
+        """
+        self.driver_worker.initialize_cache(num_gpu_blocks, num_cpu_blocks)
+
+    def execute_model(
+            self,
+            execute_model_req: ExecuteModelRequest) -> List[SamplerOutput]:
+        assert (execute_model_req.blocks_to_swap_in == {}
+                and execute_model_req.blocks_to_swap_out == {}
+                and execute_model_req.blocks_to_copy == {}), (
+                    "Cache operations are not supported for Qaic backend.")
+        assert execute_model_req.num_lookahead_slots == 0, (
+            "lookahead not supported for Qaic backend.")
+
+        output = self.driver_worker.execute_model(
+            execute_model_req.seq_group_metadata_list)
+        return output
+
+    def add_lora(self, lora_request: LoRARequest) -> bool:
+        return self.driver_worker.add_lora(lora_request)
+
+    def remove_lora(self, lora_id: int) -> bool:
+        return self.driver_worker.remove_lora(lora_id)
+
+    def list_loras(self) -> Set[int]:
+        return self.driver_worker.list_loras()
+
+    def check_health(self) -> None:
+        # QaicExecutor will always be healthy as long as
+        # it's running.
+        return
+
+
+class QaicExecutorAsync(QaicExecutor, ExecutorAsyncBase):
+
+    async def execute_model_async(
+        self,
+        execute_model_req: ExecuteModelRequest,
+    ) -> List[SamplerOutput]:
+        output = await make_async(
+            self.driver_worker.execute_model
+        )(seq_group_metadata_list=execute_model_req.seq_group_metadata_list, )
+        return output
+
+    async def check_health_async(self) -> None:
+        # QaicExecutor will always be healthy as long as
+        # it's running.
+        return
