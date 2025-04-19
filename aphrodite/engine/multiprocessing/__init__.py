@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Mapping, Optional, Union
+from typing import List, Optional, Union
 
 from aphrodite import PoolingParams
 from aphrodite.common.outputs import RequestOutput
@@ -27,7 +27,6 @@ class RPCProcessRequest:
     params: Union[SamplingParams, PoolingParams]
     request_id: str
     lora_request: Optional[LoRARequest] = None
-    trace_headers: Optional[Mapping[str, str]] = None
     prompt_adapter_request: Optional[PromptAdapterRequest] = None
     priority: int = 0
 

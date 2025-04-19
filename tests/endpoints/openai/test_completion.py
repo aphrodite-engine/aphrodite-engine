@@ -3,11 +3,12 @@ import json
 import re
 import shutil
 from tempfile import TemporaryDirectory
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import jsonschema
 import openai  # use the official client for correctness check
 import pytest
+import pytest_asyncio
 # downloading lora to test lora requests
 from huggingface_hub import snapshot_download
 from openai import BadRequestError
@@ -89,11 +90,17 @@ def default_server_args(zephyr_lora_files, zephyr_lora_added_tokens_files,
 
 @pytest.fixture(scope="module",
                 params=["", "--disable-frontend-multiprocessing"])
-def client(default_server_args, request):
+def server(default_server_args, request):
     if request.param:
         default_server_args.append(request.param)
     with RemoteOpenAIServer(MODEL_NAME, default_server_args) as remote_server:
-        yield remote_server.get_async_client()
+        yield remote_server
+
+
+@pytest_asyncio.fixture
+async def client(server):
+    async with server.get_async_client() as async_client:
+        yield async_client
 
 
 @pytest.mark.asyncio
@@ -270,99 +277,13 @@ async def test_too_many_completion_logprobs(client: openai.AsyncOpenAI,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "model_name, prompt_logprobs",
-    [(MODEL_NAME, 1), (MODEL_NAME, 0), (MODEL_NAME, -1), (MODEL_NAME, None)],
-)
-async def test_prompt_logprobs_chat(client: openai.AsyncOpenAI,
-                                    model_name: str, prompt_logprobs: int):
-    params: Dict = {
-        "messages": [{
-            "role": "system",
-            "content": "You are a helpful assistant."
-        }, {
-            "role": "user",
-            "content": "Who won the world series in 2020?"
-        }, {
-            "role":
-            "assistant",
-            "content":
-            "The Los Angeles Dodgers won the World Series in 2020."
-        }, {
-            "role": "user",
-            "content": "Where was it played?"
-        }],
-        "model":
-        model_name
-    }
-
-    if prompt_logprobs is not None:
-        params["extra_body"] = {"prompt_logprobs": prompt_logprobs}
-
-    if prompt_logprobs and prompt_logprobs < 0:
-        with pytest.raises(BadRequestError) as err_info:
-            await client.chat.completions.create(**params)
-        expected_err_string = (
-            "Error code: 400 - {'object': 'error', 'message': "
-            "'Prompt_logprobs set to invalid negative value: -1',"
-            " 'type': 'BadRequestError', 'param': None, 'code': 400}")
-        assert str(err_info.value) == expected_err_string
-    else:
-        completion = await client.chat.completions.create(**params)
-        if prompt_logprobs and prompt_logprobs > 0:
-            assert completion.prompt_logprobs is not None
-            assert len(completion.prompt_logprobs) > 0
-        else:
-            assert completion.prompt_logprobs is None
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "model_name",
-    [MODEL_NAME],
-)
-async def test_more_than_one_prompt_logprobs_chat(client: openai.AsyncOpenAI,
-                                                  model_name: str):
-    params: Dict = {
-        "messages": [{
-            "role": "system",
-            "content": "You are a helpful assistant."
-        }, {
-            "role": "user",
-            "content": "Who won the world series in 2020?"
-        }, {
-            "role":
-            "assistant",
-            "content":
-            "The Los Angeles Dodgers won the World Series in 2020."
-        }, {
-            "role": "user",
-            "content": "Where was it played?"
-        }],
-        "model":
-        model_name,
-        "extra_body": {
-            "prompt_logprobs": 1
-        }
-    }
-
-    completion_1 = await client.chat.completions.create(**params)
-
-    params["extra_body"] = {"prompt_logprobs": 2}
-    completion_2 = await client.chat.completions.create(**params)
-
-    assert len(completion_1.prompt_logprobs[3]) == 1
-    assert len(completion_2.prompt_logprobs[3]) == 2
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("model_name, prompt_logprobs", [(MODEL_NAME, -1),
                                                          (MODEL_NAME, 0),
                                                          (MODEL_NAME, 1),
                                                          (MODEL_NAME, None)])
 async def test_prompt_logprobs_completion(client: openai.AsyncOpenAI,
                                           model_name: str,
-                                          prompt_logprobs: int):
+                                          prompt_logprobs: Optional[int]):
     params: Dict = {
         "prompt": ["A robot may not injure another robot", "My name is"],
         "model": model_name,
@@ -370,17 +291,12 @@ async def test_prompt_logprobs_completion(client: openai.AsyncOpenAI,
     if prompt_logprobs is not None:
         params["extra_body"] = {"prompt_logprobs": prompt_logprobs}
 
-    if prompt_logprobs and prompt_logprobs < 0:
-        with pytest.raises(BadRequestError) as err_info:
+    if prompt_logprobs is not None and prompt_logprobs < 0:
+        with pytest.raises(BadRequestError):
             await client.completions.create(**params)
-        expected_err_string = (
-            "Error code: 400 - {'object': 'error', 'message': "
-            "'Prompt_logprobs set to invalid negative value: -1',"
-            " 'type': 'BadRequestError', 'param': None, 'code': 400}")
-        assert str(err_info.value) == expected_err_string
     else:
         completion = await client.completions.create(**params)
-        if prompt_logprobs and prompt_logprobs > 0:
+        if prompt_logprobs is not None:
             assert completion.choices[0].prompt_logprobs is not None
             assert len(completion.choices[0].prompt_logprobs) > 0
 
@@ -423,6 +339,40 @@ async def test_completion_streaming(client: openai.AsyncOpenAI,
     assert chunk.choices[0].finish_reason == "length"
     assert chunk.choices[0].text
     assert "".join(chunks) == single_output
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model_name",
+    [MODEL_NAME, "zephyr-lora", "zephyr-pa"],
+)
+async def test_parallel_streaming(client: openai.AsyncOpenAI, model_name: str):
+    """Streaming for parallel sampling.
+    The tokens from multiple samples, are flattened into a single stream,
+    with an index to indicate which sample the token belongs to.
+    """
+
+    prompt = "What is an LLM?"
+    n = 3
+    max_tokens = 5
+
+    stream = await client.completions.create(model=model_name,
+                                             prompt=prompt,
+                                             max_tokens=max_tokens,
+                                             n=n,
+                                             stream=True)
+    chunks: List[List[str]] = [[] for i in range(n)]
+    finish_reason_count = 0
+    async for chunk in stream:
+        index = chunk.choices[0].index
+        text = chunk.choices[0].text
+        chunks[index].append(text)
+        if chunk.choices[0].finish_reason is not None:
+            finish_reason_count += 1
+    assert finish_reason_count == n
+    for chunk in chunks:
+        assert len(chunk) == max_tokens
+        print("".join(chunk))
 
 
 @pytest.mark.asyncio

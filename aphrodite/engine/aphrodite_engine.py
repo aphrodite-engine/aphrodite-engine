@@ -26,9 +26,10 @@ from aphrodite.common.outputs import (EmbeddingRequestOutput, RequestOutput,
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import RequestOutputKind, SamplingParams
 from aphrodite.common.sequence import (EmbeddingSequenceGroupOutput,
-                                       ExecuteModelRequest, Sequence,
-                                       SequenceGroup, SequenceGroupMetadata,
-                                       SequenceStatus)
+                                       ExecuteModelRequest,
+                                       ParallelSampleSequenceGroup, Sequence,
+                                       SequenceGroup, SequenceGroupBase,
+                                       SequenceGroupMetadata, SequenceStatus)
 from aphrodite.common.utils import Counter, Device, weak_bind
 from aphrodite.endpoints.openai.logits_processors import get_logits_processors
 from aphrodite.engine.args_tools import EngineArgs
@@ -428,6 +429,8 @@ class AphroditeEngine:
                 ),
             ))
 
+        self.seq_id_to_seq_group: Dict[str, SequenceGroupBase] = {}
+
     def _initialize_kv_caches(self) -> None:
         """Initialize the KV cache in the worker(s).
 
@@ -588,7 +591,10 @@ class AphroditeEngine:
         lora_request: Optional[LoRARequest],
         prompt_adapter_request: Optional[PromptAdapterRequest],
         priority: int = 0,
-    ) -> None:
+    ) -> SequenceGroup:
+        """Add a processed request to the engine's request pool.
+        return the created sequence group.
+        """
         self._validate_model_inputs(processed_inputs)
         # Create the sequences.
         block_size = self.cache_config.block_size
@@ -641,6 +647,8 @@ class AphroditeEngine:
         min_cost_scheduler = self.scheduler[costs.index(min(costs))]
         min_cost_scheduler.add_seq_group(seq_group)
 
+        return seq_group
+
     def stop_remote_worker_execution_loop(self) -> None:
         self.model_executor.stop_remote_worker_execution_loop()
 
@@ -653,7 +661,7 @@ class AphroditeEngine:
         lora_request: Optional[LoRARequest] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
-    ) -> None:
+    ) -> Optional[SequenceGroup]:
         """Add a request to the engine's request pool.
 
         The request is added to the request pool and will be processed by the
@@ -700,6 +708,20 @@ class AphroditeEngine:
             >>> # continue the request processing
             >>> ...
         """
+
+        if isinstance(params, SamplingParams) and params.n > 1:
+            ParallelSampleSequenceGroup.add_request(
+                request_id,
+                self,
+                params,
+                prompt=prompt,
+                arrival_time=arrival_time,
+                lora_request=lora_request,
+                prompt_adapter_request=prompt_adapter_request,
+                priority=priority,
+            )
+            return None
+
         if lora_request is not None and not self.lora_config:
             raise ValueError(f"Got lora_request {lora_request} but LoRA is "
                              "not enabled!")
@@ -724,7 +746,7 @@ class AphroditeEngine:
         processed_inputs["mm_processor_kwargs"] = preprocessed_inputs.get(
             "mm_processor_kwargs")
 
-        self._add_processed_request(
+        return self._add_processed_request(
             request_id=request_id,
             processed_inputs=processed_inputs,
             params=params,
@@ -1019,7 +1041,9 @@ class AphroditeEngine:
             seq_group = scheduled_seq_group.seq_group
             seq_group.maybe_set_first_token_time(now)
             request_output = RequestOutputFactory.create(
-                seq_group, use_cache=self.use_cached_outputs)
+                seq_group,
+                self.seq_id_to_seq_group,
+                use_cache=self.use_cached_outputs)
             if request_output:
                 ctx.request_outputs.append(request_output)
 
@@ -1059,7 +1083,9 @@ class AphroditeEngine:
             seq_group = scheduled_seq_group.seq_group
             seq_group.maybe_set_first_token_time(now)
             request_output = RequestOutputFactory.create(
-                seq_group, use_cache=self.use_cached_outputs)
+                seq_group,
+                self.seq_id_to_seq_group,
+                use_cache=self.use_cached_outputs)
             if request_output:
                 ctx.request_outputs.append(request_output)
 
@@ -1078,7 +1104,10 @@ class AphroditeEngine:
                 continue
 
             request_output = RequestOutputFactory.create(
-                seq_group, use_cache=self.use_cached_outputs)
+                seq_group,
+                self.seq_id_to_seq_group,
+                use_cache=self.use_cached_outputs,
+            )
             if request_output:
                 ctx.request_outputs.append(request_output)
 
