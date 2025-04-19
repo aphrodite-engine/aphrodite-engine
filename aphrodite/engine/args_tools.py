@@ -16,6 +16,7 @@ from aphrodite.common.config import (CacheConfig, ConfigFormat, DecodingConfig,
                                      TaskOption, TokenizerPoolConfig)
 from aphrodite.common.utils import FlexibleArgumentParser, is_cpu
 from aphrodite.executor.executor_base import ExecutorBase
+from aphrodite.platforms import current_platform
 from aphrodite.quantization import QUANTIZATION_METHODS
 from aphrodite.transformers_utils.utils import check_gguf_file
 from aphrodite.triton_utils import HAS_TRITON
@@ -1048,10 +1049,15 @@ class EngineArgs:
             distributed_executor_backend=self.distributed_executor_backend)
 
         max_model_len = model_config.max_model_len
-        use_long_context = max_model_len > 32768
+        use_long_context = max_model_len > 16384
+        major, minor = current_platform.get_device_capability()
+        device_capability = major * 10 + minor
+        fp8_kv_on_ampere = (self.kv_cache_dtype == "fp8" and
+                            device_capability < 89)
+
         if self.enable_chunked_prefill is None:
             # If not explicitly set, enable chunked prefill by default for
-            # long context (> 32K) models. This is to avoid OOM errors in the
+            # long context (> 16K) models. This is to avoid OOM errors in the
             # initial memory profiling phase.
             # Chunked prefill is currently disabled for multimodal models by
             # default.
@@ -1061,12 +1067,12 @@ class EngineArgs:
                                       is not None)
                 use_spec_decode = self.speculative_model is not None
                 if (is_gpu and not use_sliding_window and not use_spec_decode
-                        and not self.enable_lora
+                        and not fp8_kv_on_ampere
                         and not self.enable_prompt_adapter):
                     self.enable_chunked_prefill = True
                     logger.warning(
                         "Chunked prefill is enabled by default for models with "
-                        "max_model_len > 32K. Currently, chunked prefill might "
+                        "max_model_len > 16K. Currently, chunked prefill might "
                         "not work with some features or models. If you "
                         "encounter any issues, please disable chunked prefill "
                         "by setting --enable-chunked-prefill=False.")
@@ -1080,6 +1086,11 @@ class EngineArgs:
                 "profiling phase, or result in low performance due to small "
                 "KV cache space. Consider setting --max-model-len to a "
                 "smaller value.")
+
+        if self.enable_chunked_prefill and fp8_kv_on_ampere:
+            raise ValueError("Chunked prefill is not supported with FP8 on "
+                             "Ampere or older GPUs.")
+
 
         speculative_config = SpeculativeConfig.maybe_create_spec_config(
             target_model_config=model_config,
