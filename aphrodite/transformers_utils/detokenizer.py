@@ -1,6 +1,6 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
-from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
+from transformers import PreTrainedTokenizer
 
 from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID, Logprob,
                                        SamplingParams, Sequence, SequenceGroup)

@@ -6,10 +6,10 @@ import msgspec
 import zmq
 from msgspec import msgpack
 
+from aphrodite.common.utils import get_open_port
 from aphrodite.transformers_utils.detokenizer_utils import (
     convert_prompt_ids_to_tokens, detokenize_incrementally)
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
-from aphrodite.common.utils import get_open_port
 
 
 class DetokenizerInputs(msgspec.Struct):

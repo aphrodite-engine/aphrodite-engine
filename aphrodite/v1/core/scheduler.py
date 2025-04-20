@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from aphrodite.common.config import CacheConfig, LoRAConfig, SchedulerConfig
-from aphrodite.multimodal import MultiModalDataDict
 from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.multimodal import MultiModalDataDict
 from aphrodite.v1.core.kv_cache_manager import KVCacheManager
 from aphrodite.v1.outputs import ModelRunnerOutput
 from aphrodite.v1.request import Request, RequestStatus
