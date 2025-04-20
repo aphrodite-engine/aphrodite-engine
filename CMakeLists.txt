@@ -336,9 +336,9 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
     message(STATUS "Building flash_attn kernels for archs: ${MARLIN_ARCHS}")
   else()
     message(STATUS "Not building Marlin kernels as no compatible archs found"
-                    "in CUDA target architectures")
+                    " in CUDA target architectures")
     message(STATUS "Not building flash_attn kernels as no compatible archs found"
-                    "in CUDA target architectures")
+                    " in CUDA target architectures")
   endif()
 
   #
