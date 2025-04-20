@@ -12,10 +12,12 @@ from typing_extensions import NotRequired
 
 from aphrodite.attention import AttentionMetadata
 from aphrodite.common.config import CacheConfig, MultiModalConfig
-from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.common.sequence import IntermediateTensors, PoolerOutput
 from aphrodite.common.utils import is_list_of
 from aphrodite.inputs import INPUT_REGISTRY, DecoderOnlyInputs, InputContext
+from aphrodite.modeling.layers.pooler import Pooler, PoolingType
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
+from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.quantization import QuantizationConfig
@@ -28,9 +30,8 @@ from .llava import LlavaMultiModalProjector
 from .siglip import (SiglipVisionModel, dummy_image_for_siglip,
                      dummy_seq_data_for_siglip, get_siglip_image_feature_size,
                      get_siglip_patch_grid_length, input_processor_for_siglip)
-from .utils import (AutoWeightsLoader, flatten_bn,
-                    init_aphrodite_registered_model,
-                    merge_multimodal_embeddings)
+from .utils import (AutoWeightsLoader, embed_multimodal, flatten_bn,
+                    init_aphrodite_registered_model)
 
 # Result in the max possible feature size (2x2 grid of 336x336px tiles)
 MAX_IMAGE_FEATURE_SIZE_HEIGHT = MAX_IMAGE_FEATURE_SIZE_WIDTH = 448
@@ -312,6 +313,10 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal,
 
         self.language_model = init_aphrodite_registered_model(
             config.text_config, cache_config, quant_config)
+
+        # The same model class supports both language generation and embedding
+        # because the architecture name is the same
+        self._pooler = Pooler(pooling_type=PoolingType.LAST, normalize=True)
 
         self.make_empty_intermediate_tensors = (
             self.language_model.make_empty_intermediate_tensors)
@@ -606,13 +611,12 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal,
             image_input = self._parse_and_validate_image_input(**kwargs)
 
             if image_input is not None:
-                vision_embeddings = self._process_image_input(image_input)
-                inputs_embeds = self.language_model.model.get_input_embeddings(
-                    input_ids)
-
-                inputs_embeds = merge_multimodal_embeddings(
-                    input_ids, inputs_embeds, vision_embeddings,
-                    self.config.image_token_index)
+                inputs_embeds = embed_multimodal(
+                    input_ids,
+                    self.config.image_token_index,
+                    self.language_model.model.get_input_embeddings,
+                    lambda _: self._process_image_input(image_input),
+                )
 
                 input_ids = None
             else:
@@ -641,6 +645,13 @@ class LlavaNextForConditionalGeneration(nn.Module, SupportsMultiModal,
         sampling_metadata: SamplingMetadata,
     ) -> Optional[SamplerOutput]:
         return self.language_model.sample(logits, sampling_metadata)
+
+    def pooler(
+        self,
+        hidden_states: torch.Tensor,
+        pooling_metadata: PoolingMetadata,
+    ) -> Optional[PoolerOutput]:
+        return self._pooler(hidden_states, pooling_metadata)
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(self)
