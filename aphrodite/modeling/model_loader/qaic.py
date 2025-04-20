@@ -105,7 +105,7 @@ class QaicCausalLM(nn.Module):
         self.model = model
 
 def _check_model_architecture(config: PretrainedConfig) -> None:
-    from QEfficient.transformers.modeling_utils import (
+    from aphrodite.qaic.transformers.modeling_utils import (
         get_lists_of_cb_qeff_models)
     architectures = getattr(config, "architectures", [])
 
