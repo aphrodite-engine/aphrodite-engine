@@ -70,9 +70,9 @@ def support_torch_compile(
                 ]:
                     inferred_dynamic_arg_dims[k] = 0
 
-            logger.debug(("Inferred dynamic dimensions for "
-                          "forward method of %s: %s"), cls,
-                         list(inferred_dynamic_arg_dims.keys()))
+            logger.debug(
+                "Inferred dynamic dimensions for forward method of "
+                f"{cls}: {list(inferred_dynamic_arg_dims.keys())}")
 
         if len(inferred_dynamic_arg_dims) == 0:
             raise ValueError(
