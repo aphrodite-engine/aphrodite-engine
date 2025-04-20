@@ -10,7 +10,7 @@ from fastapi import Request
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sequence import Logprob
-from aphrodite.common.utils import merge_async_iterators, random_uuid
+from aphrodite.common.utils import merge_async_iterators
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (
     CompletionLogProbs, CompletionRequest, CompletionResponse,
@@ -81,7 +81,7 @@ class OpenAIServingCompletion(OpenAIServing):
                 "suffix is not currently supported")
 
         model_name = self.base_model_paths[0].name
-        request_id = f"cmpl-{random_uuid()}"
+        request_id = f"cmpl-{request.request_id}"
         created_time = int(time.time())
 
         request_metadata = RequestResponseMetadata(request_id=request_id)

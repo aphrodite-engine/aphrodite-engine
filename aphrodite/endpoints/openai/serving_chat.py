@@ -13,7 +13,7 @@ from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import CompletionOutput, RequestOutput
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import Logprob
-from aphrodite.common.utils import iterate_with_cancellation, random_uuid
+from aphrodite.common.utils import iterate_with_cancellation
 from aphrodite.endpoints.chat_utils import (ConversationMessage,
                                             apply_hf_chat_template,
                                             apply_mistral_chat_template,
@@ -174,7 +174,7 @@ class OpenAIServingChat(OpenAIServing):
                 "\"auto\" tool choice requires "
                 "--enable-auto-tool-choice and --tool-call-parser to be set")
 
-        request_id = f"chat-{random_uuid()}"
+        request_id = f"chat-{request.request_id}"
 
         request_metadata = RequestResponseMetadata(request_id=request_id)
         if raw_request:
