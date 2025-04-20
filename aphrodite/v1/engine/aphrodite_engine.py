@@ -53,35 +53,14 @@ class AphroditeEngine:
 
         logger.info(
             f"Initializing an LLM engine (v{APHRODITE_VERSION}) with config: "
-            f"model={model_config.model}, speculative_config={speculative_config}, "  # noqa: E501
-            f"tokenizer={model_config.tokenizer}, "
-            f"skip_tokenizer_init={model_config.skip_tokenizer_init}, "
-            f"tokenizer_mode={model_config.tokenizer_mode}, "
-            f"revision={model_config.revision}, "
-            f"override_neuron_config={model_config.override_neuron_config}, "
-            f"rope_scaling={model_config.rope_scaling}, "
-            f"rope_theta={model_config.rope_theta}, "
-            f"tokenizer_revision={model_config.tokenizer_revision}, "
-            f"trust_remote_code={model_config.trust_remote_code}, "
-            f"dtype={model_config.dtype}, "
-            f"max_seq_len={model_config.max_model_len}, "
-            f"download_dir={load_config.download_dir}, "
-            f"load_format={load_config.load_format}, "
+            f"(model={model_config.model}, "  # noqa: E501
             f"tensor_parallel_size={parallel_config.tensor_parallel_size}, "
             f"pipeline_parallel_size={parallel_config.pipeline_parallel_size}, "
-            f"disable_custom_all_reduce={parallel_config.disable_custom_all_reduce}, "  # noqa: E501
             f"quantization={model_config.quantization}, "
             f"enforce_eager={model_config.enforce_eager}, "
-            f"kv_cache_dtype={model_config.kv_cache_dtype}, "
-            f"quantization_param_path={model_config.quantization_param_path}, "
-            f"device_config={model_config.device_config}, "
-            f"decoding_config={model_config.decoding_config}, "
-            f"seed={model_config.seed}, "
+            f"kv_cache_dtype={cache_config.cache_dtype}, "
             f"served_model_name={model_config.served_model_name}, "
-            f"num_scheduler_steps={model_config.num_scheduler_steps}, "
-            f"enable_prefix_caching={model_config.enable_prefix_caching}, "
-            f"use_async_output_proc={model_config.use_async_output_proc}, "
-            f"mm_processor_kwargs={model_config.mm_processor_kwargs}")
+            f"enable_prefix_caching={cache_config.enable_prefix_caching})")
 
         self.model_config = model_config
         self.cache_config = cache_config
