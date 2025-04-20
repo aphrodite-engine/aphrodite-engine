@@ -45,6 +45,7 @@ _TEXT_GENERATION_MODELS = {
     "GraniteMoeForCausalLM": ('granitemoe', 'GraniteMoeForCausalLM'),
     "InternLM2ForCausalLM": ('internlm2', 'InternLM2ForCausalLM'),
     "InternLMForCausalLM": ('llama', 'LlamaForCausalLM'),
+    "InternLM2VEForCausalLM": ("internlm2_ve", "InternLM2VEForCausalLM"),
     "JAISLMHeadModel": ('jais', 'JAISLMHeadModel'),
     "JambaForCausalLM": ('jamba', 'JambaForCausalLM'),
     "LLaMAForCausalLM": ('llama', 'LlamaForCausalLM'),

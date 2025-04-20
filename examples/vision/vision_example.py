@@ -224,6 +224,24 @@ def run_internvl(question, modality):
     return llm, prompt, stop_token_ids
 
 
+def run_mono_internvl(question, modality):
+    assert modality == "image"
+
+    model_name = "OpenGVLab/Mono-InternVL-2B-S1-3"
+
+    llm = LLM(model=model_name,
+              trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_name,
+                                              trust_remote_code=True)
+    messages = [{'role': 'user', 'content': f"<image>\n{question}"}]
+    prompt = tokenizer.apply_chat_template(messages,
+                                           tokenize=False,
+                                           add_generation_prompt=True)
+    stop_tokens = ["<|endoftext|>", "<|im_start|>", "<|im_end|>", "<|end|>"]
+    stop_token_ids = [tokenizer.convert_tokens_to_ids(i) for i in stop_tokens]
+    return llm, prompt, stop_token_ids
+
+
 # BLIP-2
 def run_blip2(question, modality):
     assert modality == "image"
@@ -348,6 +366,7 @@ model_example_map = {
     "minicpmv": run_minicpmv,
     "blip-2": run_blip2,
     "internvl_chat": run_internvl,
+    "mono_internvl": run_mono_internvl,
     "qwen_vl": run_qwen_vl,
     "qwen2_vl": run_qwen2_vl,
     "molmo": run_molmo,
