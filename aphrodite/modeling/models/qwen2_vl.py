@@ -547,6 +547,9 @@ def mm_input_mapper_for_qwen2_vl(
     ctx: InputContext,
     data: MultiModalData[object],
     data_type_key: str,
+    *,
+    min_pixels: Optional[int] = None,
+    max_pixels: Optional[int] = None,
 ) -> MultiModalInputs:
     """Input mapper for Qwen2-VL."""
     if data_type_key == "image" and isinstance(data, dict):
@@ -555,8 +558,19 @@ def mm_input_mapper_for_qwen2_vl(
             "image_grid_thw": data.get("image_grid_thw"),
         })
     model_config = ctx.model_config
+    # Handle mm processor kwargs; we pass these at creation time
+    # because preprocess() in transformers doesn't expose them
+    mm_processor_kwargs = {}
+    if min_pixels:
+        mm_processor_kwargs["min_pixels"] = min_pixels
+    if max_pixels:
+        mm_processor_kwargs["max_pixels"] = max_pixels
+
     image_processor = cached_get_image_processor(
-        model_config.model, trust_remote_code=model_config.trust_remote_code)
+        model_config.model,
+        trust_remote_code=model_config.trust_remote_code,
+        **mm_processor_kwargs,
+    )
     if image_processor is None:
         raise RuntimeError("No HuggingFace processor is available "
                            "to process the image object")
@@ -629,25 +643,37 @@ def _get_max_image_info(
     image_processor,
     data_type_key: str = "image",
     mm_count: int = 1,
+    min_pixels: Optional[int] = None,
+    max_pixels: Optional[int] = None,
 ):
+    # Limit min / max pixels unless they're explicitly provided
+    if min_pixels is None:
+        min_pixels = max(image_processor.min_pixels, 28 * 28)
+    if max_pixels is None:
+        max_pixels = min(image_processor.max_pixels, 1280 * 28 * 28)
+
     return _get_vision_info(
         image_processor,
         height=9999999,
         width=9999999,
 
-        # Limit min / max pixels.
-        min_pixels=max(image_processor.min_pixels, 28 * 28),
-        max_pixels=min(image_processor.max_pixels, 1280 * 28 * 28),
+        min_pixels=min_pixels,
+        max_pixels=max_pixels,
         data_type_key=data_type_key,
         mm_count=mm_count,
     )
 
 
-def get_max_qwen2_vl_mm_tokens(ctx: InputContext, data_type_key: str) -> int:
+def get_max_qwen2_vl_mm_tokens(ctx: InputContext,
+                               data_type_key: str,
+                               *,
+                               min_pixels=None,
+                               max_pixels=None) -> int:
     image_processor = cached_get_image_processor(ctx.model_config.model)
     max_resized_height, max_resized_width, max_llm_image_tokens = \
         _get_max_image_info(image_processor, data_type_key=data_type_key,
-                            mm_count=1)
+                            mm_count=1, min_pixels=min_pixels,
+                            max_pixels=max_pixels)
     return max_llm_image_tokens
 
 
@@ -658,14 +684,20 @@ get_max_qwen2_vl_video_tokens = partial(get_max_qwen2_vl_mm_tokens,
 
 
 def dummy_data_for_qwen2_vl(
-    ctx: InputContext, seq_len: int, mm_counts: Mapping[str, int]
+    ctx: InputContext,
+    seq_len: int,
+    mm_counts: Mapping[str, int],
+    *,
+    min_pixels: Optional[int] = None,
+    max_pixels: Optional[int] = None
 ) -> Tuple[SequenceData, Optional[MultiModalDataDict]]:
     image_processor = cached_get_image_processor(ctx.model_config.model)
 
     num_images = mm_counts["image"]
     max_resized_height, max_resized_width, max_llm_image_tokens = \
         _get_max_image_info(image_processor, data_type_key="image",
-                            mm_count=num_images)
+                            mm_count=num_images, min_pixels=min_pixels,
+                            max_pixels=max_pixels)
     if seq_len - max_llm_image_tokens - 2 < 0:
         raise RuntimeError(
             f"Qwen2-VL cannot process {num_images} images in a prompt, "
@@ -676,10 +708,11 @@ def dummy_data_for_qwen2_vl(
     num_videos = mm_counts["video"]
     max_resized_height, max_resized_width, max_llm_video_tokens = \
         _get_max_image_info(image_processor, data_type_key="video",
-                            mm_count=num_videos)
+                            mm_count=num_videos, min_pixels=min_pixels,
+                            max_pixels=max_pixels)
     if seq_len - max_llm_video_tokens - 2 < 0:
         raise RuntimeError(
-            f"Qwen2-VL cannot process {num_images} videos in a prompt, "
+            f"Qwen2-VL cannot process {num_videos} videos in a prompt, "
             "please increase max_model_len or reduce video limit by "
             "--limit-mm-per-prompt.")
 
@@ -704,6 +737,8 @@ def _get_llm_num_vision_tokens(
     mm_inputs: list,
     data_type_key: str,
     image_processor,
+    min_pixels: int,
+    max_pixels: int,
 ):
     """Get number of vision tokens of multimodal inputs.
 
@@ -717,8 +752,8 @@ def _get_llm_num_vision_tokens(
         image_processor,
         height=height,
         width=width,
-        min_pixels=image_processor.min_pixels,
-        max_pixels=image_processor.max_pixels,
+        min_pixels=min_pixels,
+        max_pixels=max_pixels,
         do_resize=image_processor.do_resize,
         data_type_key=data_type_key,
         mm_count=len(mm_inputs),
@@ -728,7 +763,8 @@ def _get_llm_num_vision_tokens(
 
 def _expand_pad_tokens(inputs: list, token_id: int, make_batched_fn: Callable,
                        data_type_key: str, image_processor: Any,
-                       prompt_token_ids: List[int]) -> List[int]:
+                       prompt_token_ids: List[int], min_pixels: Optional[int],
+                       max_pixels: Optional[int]) -> List[int]:
     """
     Expand pad tokens for multi-modal inputs (e.g., images or videos).
 
@@ -739,6 +775,8 @@ def _expand_pad_tokens(inputs: list, token_id: int, make_batched_fn: Callable,
         data_type_key (str): The type of the multi-modal input.
         image_processor (Any): The image processor used to process the inputs.
         prompt_token_ids (List[int]): The list of token IDs in the prompt.
+        min_pixels (int): min pixels to used for img processing
+        max_pixels (int): max pixels to be used for img processing
 
     Returns:
         List[int]: The list of token IDs for the multi-modal inputs.
@@ -755,6 +793,8 @@ def _expand_pad_tokens(inputs: list, token_id: int, make_batched_fn: Callable,
             [data] if data_type_key == "image" else data,
             data_type_key=data_type_key,
             image_processor=image_processor,
+            min_pixels=min_pixels,
+            max_pixels=max_pixels,
         )
         if cnt == 0:
             end_idx = indices[cnt]
@@ -771,6 +811,9 @@ def _expand_pad_tokens(inputs: list, token_id: int, make_batched_fn: Callable,
 def input_processor_for_qwen2_vl(
     ctx: InputContext,
     inputs: DecoderOnlyInputs,
+    *,
+    min_pixels: Optional[int] = None,
+    max_pixels: Optional[int] = None,
 ) -> DecoderOnlyInputs:
     multi_modal_data = inputs.get("multi_modal_data", None)
     if multi_modal_data is None:
@@ -781,6 +824,9 @@ def input_processor_for_qwen2_vl(
 
     processor = cached_get_processor(ctx.model_config.model)
     image_processor = processor.image_processor
+    # Apply processor kwarg overrides for image processor options
+    min_pixels = min_pixels if min_pixels else image_processor.min_pixels
+    max_pixels = max_pixels if max_pixels else image_processor.max_pixels
     hf_config = ctx.get_hf_config(Qwen2VLConfig)
 
     # To avoid redundant processing of vision objects (resize, rescale, etc.),
@@ -828,16 +874,22 @@ def input_processor_for_qwen2_vl(
         else:
             prompt_token_ids = _expand_pad_tokens(image_inputs,
                                                   hf_config.image_token_id,
-                                                  make_batched_images, "image",
+                                                  make_batched_images,
+                                                  "image",
                                                   image_processor,
-                                                  prompt_token_ids)
+                                                  prompt_token_ids,
+                                                  min_pixels=min_pixels,
+                                                  max_pixels=max_pixels)
 
     if video_inputs is not None:
         prompt_token_ids = _expand_pad_tokens(video_inputs,
                                               hf_config.video_token_id,
-                                              make_batched_videos, "video",
+                                              make_batched_videos,
+                                              "video",
                                               image_processor,
-                                              prompt_token_ids)
+                                              prompt_token_ids,
+                                              min_pixels=min_pixels,
+                                              max_pixels=max_pixels)
 
     return token_inputs(
         prompt_token_ids=prompt_token_ids,

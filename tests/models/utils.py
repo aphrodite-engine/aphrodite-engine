@@ -1,9 +1,12 @@
 import warnings
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from aphrodite.common.config import ModelConfig
+import torch
+
+from aphrodite.common.config import ModelConfig, TaskOption
 from aphrodite.common.sequence import Logprob, PromptLogprobs, SampleLogprobs
 from aphrodite.inputs import InputContext
+from aphrodite.platforms import current_platform
 
 TokensText = Tuple[List[int], str]
 
@@ -245,8 +248,10 @@ def check_logprobs_close(
 
 
 def build_model_context(model_name: str,
+                        task: TaskOption = "auto",
                         tokenizer_name: Optional[str] = None,
                         trust_remote_code: bool = False,
+                        dtype: Optional[Union[str, torch.dtype]] = None,
                         mm_processor_kwargs: Optional[Dict] = None,
                         limit_mm_per_prompt: Optional[Dict] = None):
     """Creates an InputContext for a given model.
@@ -258,17 +263,22 @@ def build_model_context(model_name: str,
         mm_processor_kwargs: optional processor kwargs for to be leveraged
             in the input processor, mapper, dummy data creation, etc.
         limit_mm_per_prompt: Multimodal limits.
+
     Returns:
         InputContext for the model being considered.
     """
     if tokenizer_name is None:
         tokenizer_name = model_name
+    if dtype is None:
+        dtype = "bfloat16" if current_platform.is_cpu() else "half"
+
     model_config = ModelConfig(
         model_name,
-        tokenizer_name,
+        task=task,
+        tokenizer=tokenizer_name,
         tokenizer_mode="auto",
         trust_remote_code=trust_remote_code,
-        dtype="float32",
+        dtype=dtype,
         seed=0,
         mm_processor_kwargs=mm_processor_kwargs,
         limit_mm_per_prompt=limit_mm_per_prompt,
