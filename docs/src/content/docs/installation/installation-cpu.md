@@ -11,7 +11,7 @@ The only CPU backend that supports quantization is OpenVINO, which can load FP16
 
 ### Requirements
 - Linux
-- Python 3.8 - 3.11
+- Python 3.9 - 3.11
 - Instruction set architecture: at least AVX2
 
 ### Dockerfile

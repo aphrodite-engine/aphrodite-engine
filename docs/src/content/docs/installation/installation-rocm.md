@@ -7,7 +7,7 @@ Aphrodite supports AMD GPUs using ROCm 6.1.
 ## Requirements
 
 - Linux (or WSL on Windows)
-- Python 3.8 - 3.11
+- Python 3.9 - 3.11
 - GPU: MI200 (gfx90a), MI300 (gfx942), RX 7900 Series (gfx1100)
 - ROCm 6.1
 

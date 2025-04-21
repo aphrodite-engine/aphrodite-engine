@@ -8,7 +8,7 @@ The installation process for Aphrodite is different depending on your hardware. 
 ## Requirements
 
 - Linux (or WSL on Windows)
-- Python 3.8 - 3.11
+- Python 3.9 - 3.11
 - NVIDIA GPU (compute capability 6.0 or higher)
 
 To find out what compute capability your GPU has, you can run this in a python interpreter:

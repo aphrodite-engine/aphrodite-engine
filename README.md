@@ -71,7 +71,7 @@ This will pull the Aphrodite Engine image (~8GiB download), and launch the engin
 ## Requirements
 
 - Operating System: Linux, Windows (Needs building from source)
-- Python: 3.8 to 3.12
+- Python: 3.9 to 3.12
 
 #### Build Requirements:
 - CUDA >= 11

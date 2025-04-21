@@ -522,7 +522,7 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     packages=find_packages(exclude=("kernels", "examples", "tests*")),
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     install_requires=get_requirements(),
     extras_require={
         "flash-attn": ["flash-attn==2.5.8"],

@@ -6,7 +6,7 @@ Aphrodite supports inference with AWS Trainium/Inferentia chips. At the moment P
 
 ## Requirements
 - Linux
-- Python 3.8 - 3.11
+- Python 3.9 - 3.11
 - Accelerator: NeuronCore_v2 (in trn1/inf2 instances)
 - PyTorch 2.0.1/2.1.1
 - AWS Neuron SDK 2.16/2.17
