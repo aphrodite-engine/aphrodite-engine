@@ -5,6 +5,7 @@ from typing import (Any, Callable, Dict, Iterable, List, Literal, Mapping,
 
 import torch
 import torch.nn as nn
+from loguru import logger
 from torch.func import functional_call
 from transformers import PretrainedConfig
 
@@ -74,6 +75,8 @@ class AutoWeightsLoader:
     by defining a ``load_weights`` method.
     Similarly, the weight loading logic for individual parameters can be
     overridden by defining a ``weight_loader`` method.
+    Detailed weight loading information can be viewed by setting the
+    environment variable ``APHRODITE_LOGGING_LEVEL=DEBUG``.
     """
 
     def __init__(
@@ -131,19 +134,25 @@ class AutoWeightsLoader:
             weight_qualname = self._get_qualname(base_prefix, weight_name)
 
             if self._can_skip(weight_qualname):
+                logger.debug(f"Skipping weight '{weight_qualname}'")
                 continue
 
             if weight_name != "":
-                if not self._can_ignore_unexpected(weight_qualname):
-                    raise ValueError(
-                        f"Attempted to load nested weight '{weight_qualname}' "
-                        f"into a single parameter '{base_prefix}'")
+                if self._can_ignore_unexpected(weight_qualname):
+                    logger.debug(f"Ignoring weight '{weight_qualname}'")
 
-                continue
+                    continue
+
+                raise ValueError(
+                    f"Attempted to load nested weight '{weight_qualname}' "
+                    f"into a single parameter '{base_prefix}'")
 
             weight_loader = getattr(param, "weight_loader",
                                     default_weight_loader)
             weight_loader(param, weight_data)
+
+            logger.debug(
+                f"Loaded weight '{weight_qualname}' with shape {param.shape}")
 
             yield weight_qualname
 
@@ -170,21 +179,39 @@ class AutoWeightsLoader:
         for child_prefix, child_weights in self._groupby_prefix(weights):
             prefix = self._get_qualname(base_prefix, child_prefix)
 
-            if self._can_skip(prefix):
-                continue
-
             if child_prefix in child_modules:
+                if self._can_skip(prefix + "."):
+                    logger.debug(f"Skipping module '{prefix}'")
+
+                    continue
                 yield from self._load_module(prefix,
                                              child_modules[child_prefix],
                                              child_weights)
             elif child_prefix in child_params:
+                if self._can_skip(prefix):
+                    logger.debug(f"Skipping param '{prefix}'")
+
+                    continue
                 yield from self._load_param(prefix, child_params[child_prefix],
                                             child_weights)
             else:
-                if not self._can_ignore_unexpected(prefix):
-                    msg = (f"There is no module or parameter named '{prefix}' "
-                           f"in {type(self.module).__name__}")
-                    raise ValueError(msg)
+                can_skip_module = self._can_skip(prefix + ".")
+                can_skip_param = self._can_skip(prefix)
+                if can_skip_module or can_skip_param:
+                    logger.debug(f"Skipping missing '{prefix}'")
+
+                    continue
+
+                can_ignore_module = self._can_ignore_unexpected(prefix + ".")
+                can_ignore_param = self._can_ignore_unexpected(prefix)
+                if can_ignore_module or can_ignore_param:
+                    logger.debug(f"Ignoring missing '{prefix}'")
+
+                    continue
+
+                msg = (f"There is no module or parameter named '{prefix}' "
+                       f"in {type(self.module).__name__}")
+                raise ValueError(msg)
 
     def load_weights(
         self,

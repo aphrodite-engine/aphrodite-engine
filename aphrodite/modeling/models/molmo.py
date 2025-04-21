@@ -37,14 +37,15 @@ from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import SupportsMultiModal
-from aphrodite.modeling.models.utils import make_layers
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalInputs
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.multimodal.utils import cached_get_tokenizer
+from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.processor import get_processor
 
-from .utils import get_vit_attn_backend
+from .interfaces import SupportsMultiModal, SupportsPP
+from .utils import (get_vit_attn_backend,
+                    make_empty_intermediate_tensors_factory, make_layers)
 
 # TODO: hard-coded for now. Consider making it configurable.
 VIT_LAYERS = [-2, -9]
@@ -744,6 +745,10 @@ class MolmoModel(nn.Module):
         assert config.layer_norm_type == "rms"
         self.norm = RMSNorm(config.hidden_size, config.layer_norm_eps)
 
+        self.make_empty_intermediate_tensors = (
+            make_empty_intermediate_tensors_factory(
+                ["hidden_states", "residual"], config.hidden_size))
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -925,15 +930,18 @@ def pad_images(
 
 
 def input_processor_for_molmo(ctx: InputContext, inputs: DecoderOnlyInputs):
-    prompt = inputs.get("prompt", None)
-    multi_modal_data = inputs.get("multi_modal_data", None)
-    if multi_modal_data is not None:
-        image = multi_modal_data.get("image", None)
-    else:
-        image = None
+    prompt = inputs.get("prompt")
+    multi_modal_data = inputs.get("multi_modal_data")
+    image = None if multi_modal_data is None else multi_modal_data.get("image")
+
     processor = cached_get_processor(ctx.model_config.model,
                                      trust_remote_code=True,
                                      revision=ctx.model_config.code_revision)
+
+    model_config = ctx.model_config
+    tokenizer = cached_get_tokenizer(
+        model_config.tokenizer,
+        trust_remote_code=model_config.trust_remote_code)
 
     # NOTE: message formatting for raw text prompt is only applied for
     # offline inference; for online inference, the prompt is always in
@@ -997,9 +1005,13 @@ def input_processor_for_molmo(ctx: InputContext, inputs: DecoderOnlyInputs):
 
     multi_modal_data = dict(image=image_data)
 
+    prompt = inputs.get("prompt")
+    if prompt is None:
+        prompt = tokenizer.decode(out["input_ids"])
+
     return token_inputs(
         prompt_token_ids=out["input_ids"],
-        prompt=inputs["prompt"],
+        prompt=prompt,
         multi_modal_data=multi_modal_data,
     )
 
@@ -1008,7 +1020,7 @@ def input_processor_for_molmo(ctx: InputContext, inputs: DecoderOnlyInputs):
 @MULTIMODAL_REGISTRY.register_max_image_tokens(get_max_molmo_image_tokens)
 @INPUT_REGISTRY.register_dummy_data(dummy_data_for_molmo)
 @INPUT_REGISTRY.register_input_processor(input_processor_for_molmo)
-class MolmoForCausalLM(nn.Module, SupportsMultiModal):
+class MolmoForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
 
     def __init__(
         self,
@@ -1039,6 +1051,9 @@ class MolmoForCausalLM(nn.Module, SupportsMultiModal):
         self.logits_processor = LogitsProcessor(config.embedding_size
                                                 or config.vocab_size)
         self.sampler = Sampler()
+
+        self.make_empty_intermediate_tensors = (
+            self.model.make_empty_intermediate_tensors)
 
     def _parse_and_validate_image_input(
         self,
@@ -1123,31 +1138,36 @@ class MolmoForCausalLM(nn.Module, SupportsMultiModal):
         positions: torch.LongTensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
         **kwargs: object,
     ) -> SamplerOutput:
-
-        image_input = self._parse_and_validate_image_input(**kwargs)
-
-        if image_input is not None:
-            inputs_embeds = self.model.embed_tokens(input_ids)
-            image_features = self._process_image_input(image_input)
-
-            inputs_embeds = self._merge_multimodal_embeddings(
-                inputs_embeds,
-                image_features,
-                image_input["image_input_idx"],
-                image_input["seq_len"],
-            )
-
+        if intermediate_tensors is not None:
             input_ids = None
-        else:
             inputs_embeds = None
+        else:
+            image_input = self._parse_and_validate_image_input(**kwargs)
+
+            if image_input is not None:
+                inputs_embeds = self.model.embed_tokens(input_ids)
+                image_features = self._process_image_input(image_input)
+
+                inputs_embeds = self._merge_multimodal_embeddings(
+                    inputs_embeds,
+                    image_features,
+                    image_input["image_input_idx"],
+                    image_input["seq_len"],
+                )
+
+                input_ids = None
+            else:
+                inputs_embeds = None
 
         hidden_states = self.model(
             input_ids=input_ids,
             positions=positions,
             kv_caches=kv_caches,
             attn_metadata=attn_metadata,
+            intermediate_tensors=intermediate_tensors,
             inputs_embeds=inputs_embeds,
         )
 
