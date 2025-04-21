@@ -124,6 +124,7 @@ _MULTIMODAL_MODELS = {
     "QWenLMHeadModel": ('qwen', 'QWenLMHeadModel'),
     "Qwen2VLForConditionalGeneration":
     ('qwen2_vl', 'Qwen2VLForConditionalGeneration'),
+    "Qwen2AudioForConditionalGeneration": ("qwen2_audio", "Qwen2AudioForConditionalGeneration"),  # noqa: E501
     "UltravoxModel": ('ultravox', 'UltravoxModel'),
 }
 
