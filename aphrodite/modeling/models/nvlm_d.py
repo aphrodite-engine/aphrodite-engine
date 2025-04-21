@@ -4,11 +4,14 @@
 # Copyright (c) 2024 NVIDIA
 # Licensed under Apache 2.0 License [see LICENSE for details]
 # --------------------------------------------------------
+from typing import Optional
+
 import torch.nn as nn
 from transformers import PretrainedConfig
 
 from aphrodite.inputs import INPUT_REGISTRY
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
+from aphrodite.quantization import QuantizationConfig
 
 from .intern_vit import InternVisionModel
 from .internvl import (InternVLChatModel, InternVLInputPipeline,
@@ -56,9 +59,11 @@ class NVLM_D_Model(InternVLChatModel):
         )
 
     def _init_vision_model(self, config: PretrainedConfig,
+                           quant_config: Optional[QuantizationConfig],
                            num_hidden_layers: int):
         # We added additional dummy heads to the original num of heads to make
         # the number of heads divisible by 8.
         return InternVisionModel(config.vision_config,
+                                 quant_config=quant_config,
                                  num_hidden_layers_override=num_hidden_layers,
                                  num_dummy_heads=7)
