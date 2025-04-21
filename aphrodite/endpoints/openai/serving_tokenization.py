@@ -11,7 +11,9 @@ from aphrodite.endpoints.chat_utils import (apply_hf_chat_template,
 from aphrodite.endpoints.logger import RequestLogger
 # yapf conflicts with isort for this block
 # yapf: disable
-from aphrodite.endpoints.openai.protocol import (DetokenizeRequest,
+from aphrodite.endpoints.openai.protocol import (BatchTokenizeRequest,
+                                                 BatchTokenizeResponse,
+                                                 DetokenizeRequest,
                                                  DetokenizeResponse,
                                                  ErrorResponse,
                                                  TokenizeChatRequest,
@@ -153,3 +155,40 @@ class OpenAIServingTokenization(OpenAIServing):
         input_text = prompt_input["prompt"]
 
         return DetokenizeResponse(prompt=input_text)
+
+    async def create_batch_tokenize(
+        self,
+        request: BatchTokenizeRequest,
+    ) -> Union[BatchTokenizeResponse, ErrorResponse]:
+        error_check_ret = await self._check_model(request)
+        if error_check_ret is not None:
+            return error_check_ret
+
+        request_id = f"tokn-batch-{random_uuid()}"
+
+        lora_request, prompt_adapter_request = self._maybe_get_adapters(request)
+        tokenizer = await self.engine_client.get_tokenizer(lora_request)
+
+        self._log_inputs(request_id,
+                         "Batch tokenization request with "
+                         f"{len(request.inputs)} inputs",
+                         params=None,
+                         lora_request=lora_request,
+                         prompt_adapter_request=prompt_adapter_request)
+
+        results = []
+        for input_text in request.inputs:
+            prompt_input = self._tokenize_prompt_input(
+                request,
+                tokenizer,
+                input_text,
+                add_special_tokens=request.add_special_tokens,
+            )
+            input_ids = prompt_input["prompt_token_ids"]
+
+            results.append({
+                "tokens": input_ids,
+                "count": len(input_ids)
+            })
+
+        return BatchTokenizeResponse(results=results)

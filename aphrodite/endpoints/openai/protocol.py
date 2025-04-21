@@ -1087,6 +1087,18 @@ class TokenizeChatRequest(OpenAIBaseModel):
         return data
 
 
+class BatchTokenizeRequest(OpenAIBaseModel):
+    model: str
+    inputs: List[str]
+    add_special_tokens: bool = Field(default=True)
+    max_tokens: Optional[int] = None
+    truncate_prompt_tokens: Optional[Annotated[int, Field(ge=1)]] = None
+
+
+class BatchTokenizeResponse(OpenAIBaseModel):
+    results: List[Dict[str, Union[int, List[int]]]]
+    
+
 TokenizeRequest = Union[TokenizeCompletionRequest, TokenizeChatRequest]
 
 

@@ -34,7 +34,8 @@ from aphrodite.common.utils import (FlexibleArgumentParser,
                                     random_uuid)
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.args import make_arg_parser
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
+from aphrodite.endpoints.openai.protocol import (BatchTokenizeRequest,
+                                                 ChatCompletionRequest,
                                                  ChatCompletionResponse,
                                                  CompletionRequest,
                                                  DetokenizeRequest,
@@ -541,6 +542,31 @@ async def tokenize(request: TokenizeRequest, raw_request: Request):
     else:
         assert isinstance(generator, TokenizeResponse)
         return JSONResponse(content=generator.model_dump())
+
+
+@router.post("/v1/batch/tokenize")
+async def batch_tokenize(request: BatchTokenizeRequest, raw_request: Request):
+    if hasattr(request, "model"):
+        error_response = await _handle_model_switch(raw_request, request.model)
+        if error_response is not None:
+            return error_response
+
+    if not raw_request.app.state.model_is_loaded:
+        return JSONResponse(
+            content={
+                "status": "error",
+                "message": "No model loaded."
+            },
+            status_code=500
+        )
+
+    response = await tokenization(raw_request).create_batch_tokenize(request)
+
+    if isinstance(response, ErrorResponse):
+        return JSONResponse(content=response.model_dump(),
+                            status_code=response.code)
+
+    return JSONResponse(content=response.model_dump())
 
 
 @router.post("/v1/detokenize")
