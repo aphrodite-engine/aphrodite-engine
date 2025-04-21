@@ -26,6 +26,7 @@ from transformers import BloomConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
@@ -219,6 +220,7 @@ class BloomBlock(nn.Module):
         return output
 
 
+@support_torch_compile
 class BloomModel(nn.Module):
 
     def __init__(

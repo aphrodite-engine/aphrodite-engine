@@ -30,6 +30,7 @@ from transformers import CohereConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import SiluAndMul
@@ -251,6 +252,7 @@ class CohereDecoderLayer(nn.Module):
         return hidden_states, residual
 
 
+@support_torch_compile
 class CohereModel(nn.Module):
 
     def __init__(

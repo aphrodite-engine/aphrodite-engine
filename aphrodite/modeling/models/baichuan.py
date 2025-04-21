@@ -28,6 +28,7 @@ from transformers import PretrainedConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
@@ -251,6 +252,7 @@ class BaiChuanDecoderLayer(nn.Module):
         return hidden_states, residual
 
 
+@support_torch_compile
 class BaiChuanModel(nn.Module):
 
     def __init__(self,

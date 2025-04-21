@@ -26,6 +26,7 @@ from transformers import GPT2Config
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed.parallel_state import (
     get_pp_group, get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import get_act_fn
@@ -182,6 +183,7 @@ class GPT2Block(nn.Module):
         return hidden_states
 
 
+@support_torch_compile
 class GPT2Model(nn.Module):
 
     def __init__(
