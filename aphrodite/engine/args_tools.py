@@ -72,6 +72,7 @@ class EngineArgs:
     code_revision: Optional[str] = None
     tokenizer_revision: Optional[str] = None
     tokenizer_mode: str = "auto"
+    chat_template_text_format: str = "string"
     trust_remote_code: bool = False
     download_dir: Optional[str] = None
     max_model_len: Optional[int] = None
@@ -261,6 +262,14 @@ class EngineArgs:
             'fast tokenizer if available.\n* "slow" will '
             'always use the slow tokenizer. \n* '
             '"mistral" will always use the `mistral_common` tokenizer.')
+        parser.add_argument(
+            '--chat-template-text-format',
+            type=str,
+            default=EngineArgs.chat_template_text_format,
+            choices=['string', 'openai'],
+            help='The format to render text content within a chat template. '
+            '"string" will keep the content field as a string whereas '
+            '"openai" will parse content in the current OpenAI format.')
         parser.add_argument(
             "--trust-remote-code",
             action="store_true",
@@ -957,6 +966,7 @@ class EngineArgs:
             task=self.task,
             tokenizer=self.tokenizer,
             tokenizer_mode=self.tokenizer_mode,
+            chat_template_text_format=self.chat_template_text_format,
             trust_remote_code=self.trust_remote_code,
             dtype=self.dtype,
             seed=self.seed,
