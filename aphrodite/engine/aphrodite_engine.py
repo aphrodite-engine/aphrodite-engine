@@ -591,10 +591,22 @@ class AphroditeEngine:
         lora_request: Optional[LoRARequest],
         prompt_adapter_request: Optional[PromptAdapterRequest],
         priority: int = 0,
-    ) -> SequenceGroup:
+    ) -> Optional[SequenceGroup]:
         """Add a processed request to the engine's request pool.
         return the created sequence group.
         """
+        if isinstance(params, SamplingParams) and params.n > 1:
+            ParallelSampleSequenceGroup.add_request(
+                request_id,
+                self,
+                params,
+                processed_inputs=processed_inputs,
+                arrival_time=arrival_time,
+                lora_request=lora_request,
+                prompt_adapter_request=prompt_adapter_request,
+                priority=priority,
+            )
+            return None
         self._validate_model_inputs(processed_inputs)
         # Create the sequences.
         block_size = self.cache_config.block_size
@@ -661,7 +673,7 @@ class AphroditeEngine:
         lora_request: Optional[LoRARequest] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
-    ) -> Optional[SequenceGroup]:
+    ) -> None:
         """Add a request to the engine's request pool.
 
         The request is added to the request pool and will be processed by the
@@ -709,19 +721,6 @@ class AphroditeEngine:
             >>> ...
         """
 
-        if isinstance(params, SamplingParams) and params.n > 1:
-            ParallelSampleSequenceGroup.add_request(
-                request_id,
-                self,
-                params,
-                prompt=prompt,
-                arrival_time=arrival_time,
-                lora_request=lora_request,
-                prompt_adapter_request=prompt_adapter_request,
-                priority=priority,
-            )
-            return None
-
         if lora_request is not None and not self.lora_config:
             raise ValueError(f"Got lora_request {lora_request} but LoRA is "
                              "not enabled!")
@@ -746,7 +745,7 @@ class AphroditeEngine:
         processed_inputs["mm_processor_kwargs"] = preprocessed_inputs.get(
             "mm_processor_kwargs")
 
-        return self._add_processed_request(
+        self._add_processed_request(
             request_id=request_id,
             processed_inputs=processed_inputs,
             params=params,
