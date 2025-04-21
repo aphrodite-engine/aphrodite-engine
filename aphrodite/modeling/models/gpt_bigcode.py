@@ -27,6 +27,7 @@ from transformers import GPTBigCodeConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import get_act_fn
@@ -188,6 +189,7 @@ class GPTBigCodeBlock(nn.Module):
         return hidden_states
 
 
+@support_torch_compile
 class GPTBigCodeModel(nn.Module):
 
     def __init__(

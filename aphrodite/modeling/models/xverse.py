@@ -29,6 +29,7 @@ from transformers import PretrainedConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import SiluAndMul
@@ -221,6 +222,7 @@ class XverseDecoderLayer(nn.Module):
         return hidden_states, residual
 
 
+@support_torch_compile
 class XverseModel(nn.Module):
 
     def __init__(
@@ -267,6 +269,7 @@ class XverseModel(nn.Module):
             residual = None
         else:
             hidden_states = intermediate_tensors["hidden_states"]
+            residual = intermediate_tensors["residual"]
         for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
             hidden_states, residual = layer(

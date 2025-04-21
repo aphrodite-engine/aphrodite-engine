@@ -29,6 +29,7 @@ from transformers import PersimmonConfig
 from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import get_act_fn
@@ -210,6 +211,7 @@ class PersimmonDecoderLayer(nn.Module):
         return outputs
 
 
+@support_torch_compile
 class PersimmonModel(nn.Module):
 
     def __init__(self,
