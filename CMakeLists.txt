@@ -209,7 +209,6 @@ set(APHRODITE_EXT_SRC
   "kernels/quantization/compressed_tensors/int8_quant_kernels.cu"
   "kernels/quantization/fp8/common.cu"
   "kernels/cuda_utils_kernels.cu"
-  "kernels/moe/align_block_size_kernel.cu"
   "kernels/prepare_inputs/advance_step.cu"
   "kernels/torch_bindings.cpp")
 
@@ -485,7 +484,8 @@ target_compile_definitions(_C PRIVATE CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL=1)
 
 set(APHRODITE_MOE_EXT_SRC
   "kernels/moe/torch_bindings.cpp"
-  "kernels/moe/topk_softmax_kernels.cu")
+  "kernels/moe/topk_softmax_kernels.cu"
+  "kernels/moe/moe_align_sum_kernels.cu")
 
 set_gencode_flags_for_srcs(
   SRCS "${APHRODITE_MOE_EXT_SRC}"
