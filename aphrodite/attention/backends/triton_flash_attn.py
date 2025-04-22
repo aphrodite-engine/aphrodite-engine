@@ -21,29 +21,32 @@ if TYPE_CHECKING:
         ModelInputForGPUWithSamplingMetadata)
 
 _PARTITION_SIZE_ROCM = 512
-_ON_NAVI = "gfx1" in torch.cuda.get_device_properties("cuda").gcnArchName
+_GPU_ARCH = torch.cuda.get_device_properties("cuda").gcnArchName
+_ON_NAVI = "gfx1" in _GPU_ARCH
+_ON_MI250_MI300 = any(arch in _GPU_ARCH
+                      for arch in ["gfx90a", "gfx940", "gfx941", "gfx942"])
 
-class ROCmFlashAttentionBackend(AttentionBackend):
+class TritonFlashAttentionBackend(AttentionBackend):
 
     @staticmethod
     def get_name() -> str:
         return "rocm-flash-attn"
 
     @staticmethod
-    def get_impl_cls() -> Type["ROCmFlashAttentionImpl"]:
-        return ROCmFlashAttentionImpl
+    def get_impl_cls() -> Type["TritonFlashAttentionImpl"]:
+        return TritonFlashAttentionImpl
 
     @staticmethod
     def get_metadata_cls() -> Type["AttentionMetadata"]:
-        return ROCmFlashAttentionMetadata
+        return TritonFlashAttentionMetadata
 
     @staticmethod
     def get_state_cls() -> Type["CommonAttentionState"]:
         return CommonAttentionState
 
     @staticmethod
-    def get_builder_cls() -> Type["ROCmFlashAttentionMetadataBuilder"]:
-        return ROCmFlashAttentionMetadataBuilder
+    def get_builder_cls() -> Type["TritonFlashAttentionMetadataBuilder"]:
+        return TritonFlashAttentionMetadataBuilder
 
     @staticmethod
     def get_kv_cache_shape(
@@ -72,7 +75,7 @@ class ROCmFlashAttentionBackend(AttentionBackend):
 
 
 @dataclass
-class ROCmFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
+class TritonFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
     """Metadata for FlashAttentionBackend.
 
     NOTE: Any python object stored here is not updated when it is
@@ -122,11 +125,11 @@ class ROCmFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
     # Max number of query tokens among request in the batch.
     max_decode_query_len: Optional[int] = None
 
-    _cached_prefill_metadata: Optional["ROCmFlashAttentionMetadata"] = None
-    _cached_decode_metadata: Optional["ROCmFlashAttentionMetadata"] = None
+    _cached_prefill_metadata: Optional["TritonFlashAttentionMetadata"] = None
+    _cached_decode_metadata: Optional["TritonFlashAttentionMetadata"] = None
 
     @property
-    def prefill_metadata(self) -> Optional["ROCmFlashAttentionMetadata"]:
+    def prefill_metadata(self) -> Optional["TritonFlashAttentionMetadata"]:
         if self.num_prefills == 0:
             return None
 
@@ -140,7 +143,7 @@ class ROCmFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
         assert self.block_tables is not None
         assert self.seq_start_loc is not None
 
-        self._cached_prefill_metadata = ROCmFlashAttentionMetadata(
+        self._cached_prefill_metadata = TritonFlashAttentionMetadata(
             num_prefills=self.num_prefills,
             num_prefill_tokens=self.num_prefill_tokens,
             num_decode_tokens=0,
@@ -159,7 +162,7 @@ class ROCmFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
         return self._cached_prefill_metadata
 
     @property
-    def decode_metadata(self) -> Optional["ROCmFlashAttentionMetadata"]:
+    def decode_metadata(self) -> Optional["TritonFlashAttentionMetadata"]:
         if self.num_decode_tokens == 0:
             return None
 
@@ -168,7 +171,7 @@ class ROCmFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
         assert self.block_tables is not None
         assert self.seq_lens_tensor is not None
 
-        self._cached_decode_metadata = ROCmFlashAttentionMetadata(
+        self._cached_decode_metadata = TritonFlashAttentionMetadata(
             num_prefills=0,
             num_prefill_tokens=0,
             num_decode_tokens=self.num_decode_tokens,
@@ -241,10 +244,10 @@ class ROCmFlashAttentionMetadata(AttentionMetadata, PagedAttentionMetadata):
                                    block_tables=self.block_tables)
 
 
-class ROCmFlashAttentionMetadataBuilder(
-        CommonMetadataBuilder[ROCmFlashAttentionMetadata]):
+class TritonFlashAttentionMetadataBuilder(
+        CommonMetadataBuilder[TritonFlashAttentionMetadata]):
 
-    _metadata_cls = ROCmFlashAttentionMetadata
+    _metadata_cls = TritonFlashAttentionMetadata
 
 
 def _make_alibi_bias(alibi_slopes: torch.Tensor,
@@ -278,7 +281,7 @@ def _make_alibi_bias(alibi_slopes: torch.Tensor,
     return attn_biases
 
 
-class ROCmFlashAttentionImpl(AttentionImpl):
+class TritonFlashAttentionImpl(AttentionImpl):
     """
     If the input tensors contain prompt tokens, the layout is as follows:
     |<--------------- num_prompt_tokens -------------->|
@@ -318,10 +321,10 @@ class ROCmFlashAttentionImpl(AttentionImpl):
     ) -> None:
         if blocksparse_params is not None:
             raise ValueError(
-                "ROCmFlashAttention does not support blocksparse attention.")
+                "TritonFlashAttention does not support blocksparse attention.")
         if logits_soft_cap is not None:
             raise ValueError(
-                "ROCmFlashAttention does not support attention logits soft "
+                "TritonFlashAttention does not support attention logits soft "
                 "capping.")
         self.num_heads = num_heads
         self.head_size = head_size
@@ -388,7 +391,7 @@ class ROCmFlashAttentionImpl(AttentionImpl):
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
-        attn_metadata: ROCmFlashAttentionMetadata,
+        attn_metadata: TritonFlashAttentionMetadata,
         k_scale: float = 1.0,
         v_scale: float = 1.0,
         attn_type: AttentionType = AttentionType.DECODER,
@@ -410,7 +413,7 @@ class ROCmFlashAttentionImpl(AttentionImpl):
             raise NotImplementedError("Encoder self-attention and "
                                       "encoder/decoder cross-attention "
                                       "are not implemented for "
-                                      "ROCmFlashAttentionImpl")
+                                      "TritonFlashAttentionImpl")
         num_tokens, hidden_size = query.shape
         # Reshape the query, key, and value tensors.
         query = query.view(-1, self.num_heads, self.head_size)
@@ -648,7 +651,8 @@ def _use_rocm_custom_paged_attention(qtype: torch.dtype, head_size: int,
                                      block_size: int, gqa_ratio: int,
                                      max_seq_len: int) -> bool:
     # rocm custom page attention not support on navi (gfx1*)
-    return (not _ON_NAVI and (qtype == torch.half or qtype == torch.bfloat16)
+    return (_ON_MI250_MI300 and not _ON_NAVI
+            and (qtype == torch.half or qtype == torch.bfloat16)
             and (head_size == 64 or head_size == 128)
             and (block_size == 16 or block_size == 32)
             and (gqa_ratio >= 1 and gqa_ratio <= 16) and max_seq_len <= 32768)

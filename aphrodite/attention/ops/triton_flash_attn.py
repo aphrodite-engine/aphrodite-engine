@@ -24,6 +24,8 @@ import torch
 import triton
 import triton.language as tl
 
+from aphrodite.platforms import current_platform
+
 torch_dtype: tl.constexpr = torch.float16
 
 
@@ -207,102 +209,86 @@ def _attn_fwd_inner(
     return acc, l_i, m_i
 
 
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {
-                "BLOCK_M": 256,
-                "BLOCK_N": 64,
-                "waves_per_eu": 2,
-                "PRE_LOAD_V": False,
-            },
-            num_stages=1,
-            num_warps=8,
-        ),
-        triton.Config(
-            {
-                "BLOCK_M": 128,
-                "BLOCK_N": 128,
-                "waves_per_eu": 2,
-                "PRE_LOAD_V": False,
-            },
-            num_stages=1,
-            num_warps=4,
-        ),
-        triton.Config(
-            {
-                "BLOCK_M": 256,
-                "BLOCK_N": 128,
-                "waves_per_eu": 2,
-                "PRE_LOAD_V": False,
-            },
-            num_stages=1,
-            num_warps=8,
-        ),
-        triton.Config(
-            {
-                "BLOCK_M": 128,
-                "BLOCK_N": 64,
-                "waves_per_eu": 1,
-                "PRE_LOAD_V": False,
-            },
-            num_stages=1,
-            num_warps=4,
-        ),
-        triton.Config(
-            {
-                "BLOCK_M": 128,
-                "BLOCK_N": 64,
-                "waves_per_eu": 3,
-                "PRE_LOAD_V": True,
-            },
-            num_stages=1,
-            num_warps=4,
-        ),
-        triton.Config(
-            {
-                "BLOCK_M": 128,
-                "BLOCK_N": 64,
-                "waves_per_eu": 3,
-                "PRE_LOAD_V": False,
-            },
-            num_stages=1,
-            num_warps=4,
-        ),
-        triton.Config(
-            {
-                "BLOCK_M": 64,
-                "BLOCK_N": 64,
-                "waves_per_eu": 4,
-                "PRE_LOAD_V": False,
-            },
-            num_stages=1,
-            num_warps=8,
-        ),
-        triton.Config(
-            {
-                "BLOCK_M": 32,
-                "BLOCK_N": 32,
-                "waves_per_eu": 4,
-                "PRE_LOAD_V": False,
-            },
-            num_stages=1,
-            num_warps=8,
-        ),
+def get_configs():
+    base_configs = [
+        {
+            "BLOCK_M": 256,
+            "BLOCK_N": 64,
+            "PRE_LOAD_V": False,
+        },
+        {
+            "BLOCK_M": 128,
+            "BLOCK_N": 128,
+            "PRE_LOAD_V": False,
+        },
+        {
+            "BLOCK_M": 256,
+            "BLOCK_N": 128,
+            "PRE_LOAD_V": False,
+        },
+        {
+            "BLOCK_M": 128,
+            "BLOCK_N": 64,
+            "PRE_LOAD_V": False,
+        },
+        {
+            "BLOCK_M": 128,
+            "BLOCK_N": 64,
+            "PRE_LOAD_V": True,
+        },
+        {
+            "BLOCK_M": 128,
+            "BLOCK_N": 64,
+            "PRE_LOAD_V": False,
+        },
+        {
+            "BLOCK_M": 64,
+            "BLOCK_N": 64,
+            "PRE_LOAD_V": False,
+        },
+        {
+            "BLOCK_M": 32,
+            "BLOCK_N": 32,
+            "PRE_LOAD_V": False,
+        },
         # TODO: This config fails with head_size not pow2 with data mismatches.
-        #    triton.Config({'BLOCK_M': 32, 'BLOCK_N': 16, 'waves_per_eu': 1,
-        #                   'PRE_LOAD_V': False}, num_stages=1, num_warps=4),
-        triton.Config(
-            {
-                "BLOCK_M": 16,
-                "BLOCK_N": 16,
-                "waves_per_eu": 1,
-                "PRE_LOAD_V": False,
-            },
-            num_stages=1,
-            num_warps=4,
-        ),
-    ],
+        # {
+        #     "BLOCK_M": 32,
+        #     "BLOCK_N": 16,
+        #     "PRE_LOAD_V": False,
+        # },
+        {
+            "BLOCK_M": 16,
+            "BLOCK_N": 16,
+            "PRE_LOAD_V": False,
+        },
+    ]
+
+    configs = []
+    # waves_per_eu seems to be AMD-only
+    if current_platform.is_rocm():
+        waves_values = [2, 2, 2, 1, 3, 3, 4, 4, 1]
+        for config, waves in zip(base_configs, waves_values):
+            config_with_waves = config.copy()
+            config_with_waves["waves_per_eu"] = waves
+            configs.append(triton.Config(
+                config_with_waves,
+                num_stages=1,
+                num_warps=8 if config["BLOCK_M"] >= 128 else 4,
+            ))
+    else:
+        for config in base_configs:
+            configs.append(triton.Config(
+                config,
+                num_stages=1,
+                num_warps=8 if config["BLOCK_M"] >= 128 else 4,
+            ))
+
+    return configs
+
+
+@triton.autotune(
+    configs=get_configs(),
     key=['IS_CAUSAL', 'dropout_p', 'BLOCK_DMODEL'],
 )
 @triton.jit

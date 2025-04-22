@@ -26,7 +26,7 @@ def test_num_computed_tokens_update(num_scheduler_steps: int,
 
     if is_multi_step_chunked_prefill and current_platform.is_rocm():
         pytest.skip("Multi-step with Chunked-Prefill does not support "
-                    "rocm_flash_attn backend")
+                    "triton_flash_attn backend")
 
     # Make a aphrodite engine
     runner = AphroditeRunner(model_name=MODEL,

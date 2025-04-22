@@ -20,7 +20,7 @@ class _Backend(enum.Enum):
     FLASH_ATTN = enum.auto()
     FLASH_ATTN_APHRODITE_V1 = enum.auto()
     XFORMERS = enum.auto()
-    ROCM_FLASH = enum.auto()
+    TRITON_FLASH = enum.auto()
     TORCH_SDPA = enum.auto()
     OPENVINO = enum.auto()
     FLASHINFER = enum.auto()
@@ -121,11 +121,11 @@ def get_attn_backend(
         from aphrodite.attention.backends.xformers import (  # noqa: F401
             XFormersBackend)
         return XFormersBackend
-    elif backend == _Backend.ROCM_FLASH:
-        logger.info("Using ROCmFlashAttention backend.")
-        from aphrodite.attention.backends.rocm_flash_attn import (  # noqa: F401
-            ROCmFlashAttentionBackend)
-        return ROCmFlashAttentionBackend
+    elif backend == _Backend.TRITON_FLASH:
+        logger.info("Using TritonFlashAttention backend.")
+        from aphrodite.attention.backends.triton_flash_attn import (  # noqa: F401
+            TritonFlashAttentionBackend)
+        return TritonFlashAttentionBackend
     elif backend == _Backend.TORCH_SDPA:
         assert is_cpu(), RuntimeError(
             "Torch SDPA backend is only used for the CPU device.")
@@ -212,15 +212,15 @@ def which_attn_to_use(
 
     if is_hip():
         # AMD GPUs.
-        selected_backend = (_Backend.ROCM_FLASH if selected_backend
+        selected_backend = (_Backend.TRITON_FLASH if selected_backend
                             == _Backend.FLASH_ATTN else selected_backend)
-        if selected_backend == _Backend.ROCM_FLASH:
+        if selected_backend == _Backend.TRITON_FLASH:
             if current_platform.get_device_capability()[0] != 9:
                 # not Instinct series GPUs.
                 logger.info("flash_attn is not supported on NAVI GPUs.")
         else:
             logger.info(f"{selected_backend} is not supported in AMD GPUs.")
-        return _Backend.ROCM_FLASH
+        return _Backend.TRITON_FLASH
 
     if envs.APHRODITE_USE_V1:
         return _Backend.FLASH_ATTN_APHRODITE_V1
