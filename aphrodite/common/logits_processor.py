@@ -1,71 +1,120 @@
-from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Callable, List, Tuple, Union
 
 import torch
 
+from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
+                                                    MistralTokenizer)
 
-class LogitsProcessor(ABC):
-
-    @abstractmethod
-    def __call__(self, output_tokens: List[int],
-                 logits: torch.Tensor) -> torch.Tensor:
-        """Logits are edited in-place"""
-        pass
-
-    @abstractmethod
-    def batched(self, logits: torch.Tensor,
-                output_tokens: List[List[int]]) -> None:
-        """Logits are edited in-place"""
-        pass
+LogitsProcessor = Union[Callable[[List[int], torch.Tensor], torch.Tensor],
+                        Callable[[List[int], List[int], torch.Tensor],
+                                 torch.Tensor]]
+"""LogitsProcessor is a function that takes a list
+of previously generated tokens, the logits tensor
+for the next token and, optionally, prompt tokens as a
+first argument, and returns a modified tensor of logits
+to sample from."""
 
 
-class BiasLogitsProcessor(LogitsProcessor):
-    """Apply an additive bias to specific token logits.
-    Args:
-      biases: Dict of bias values. Each key corresponds to the the token id.
-    """
+def get_bad_words_logits_processors(
+        bad_words: List[str],
+        tokenizer: AnyTokenizer) -> List[LogitsProcessor]:
+    bad_words_ids: List[List[int]] = list()
 
-    def __init__(self, biases: Dict[int, float]):
-        assert biases
-        self.biases = biases
-        self.keys = torch.tensor(list(self.biases.keys()), dtype=torch.long)
-        self.values = torch.tensor(list(self.biases.values()),
-                                   dtype=torch.float)
+    for bad_word in bad_words:
+        # To prohibit words both at the beginning
+        # and in the middle of text
+        # (related to add_prefix_space tokenizer parameter)
+        for add_prefix_space in [False, True]:
+            prefix = " " if add_prefix_space else ""
+            prompt = prefix + bad_word.lstrip()
 
-    def __call__(self, output_tokens: List[int],
-                 logits: torch.Tensor) -> torch.Tensor:
-        values = self.values.to(logits.device)
-        keys = self.keys.to(logits.device)
-        logits[keys] += values
+            if isinstance(tokenizer, MistralTokenizer):
+                # Mistral tokenizers should not add special tokens
+                prompt_token_ids = tokenizer.encode(prompt=prompt)
+            else:
+                prompt_token_ids = tokenizer.encode(text=prompt,
+                                                    add_special_tokens=False)
+
+            # If no space at the beginning
+            # or if prefix space produces a new word token
+            if (not add_prefix_space) or (
+                    add_prefix_space
+                    and prompt_token_ids[0] != bad_words_ids[-1][0]
+                    and len(prompt_token_ids) == len(bad_words_ids[-1])):
+                bad_words_ids.append(prompt_token_ids)
+
+    return [NoBadWordsLogitsProcessor(bad_words_ids=bad_words_ids)]
+
+
+class NoBadWordsLogitsProcessor:
+    _SMALLEST_LOGIT = float("-inf")
+    _NEUTRAL_LOGIT = 0.0
+
+    def __init__(self, bad_words_ids: List[List[int]]):
+        self.bad_words_ids = bad_words_ids
+        self.word_bias: torch.FloatTensor = None
+
+    def __call__(
+        self,
+        past_tokens_ids: Union[List[int], Tuple[int]],
+        logits: torch.FloatTensor,
+    ) -> torch.Tensor:
+        if self.word_bias is None:
+            self._init_word_bias(logits=logits)
+
+        last_token_bias = torch.zeros_like(logits)
+
+        for bad_word_ids in self.bad_words_ids:
+            if len(bad_word_ids) == 1:  # 1-token words already processed
+                continue
+
+            if len(bad_word_ids) > len(past_tokens_ids) + 1:
+                continue
+
+            prefix_length = len(bad_word_ids) - 1
+            last_token_id = bad_word_ids[-1]
+            actual_prefix = past_tokens_ids[-prefix_length:]
+            expected_prefix = bad_word_ids[:prefix_length]
+
+            assert len(actual_prefix) == len(expected_prefix)
+
+            is_match = tuple(actual_prefix) == tuple(expected_prefix)
+            last_token_bias[last_token_id] += (self._SMALLEST_LOGIT if is_match
+                                               else self._NEUTRAL_LOGIT)
+
+        logits = logits + self.word_bias + last_token_bias
+
         return logits
 
-    def batched(self, logits: torch.Tensor,
-                output_tokens: List[List[int]]) -> None:
-        values = self.values.to(logits.device)
-        keys = self.keys.to(logits.device)
-        logits[:, keys] += values
+    def _init_word_bias(self, logits: torch.FloatTensor) -> None:
+        # Code based on NoBadWordsLogitsProcessor and SequenceBiasLogitsProcessor  # noqa: E501
+        # from https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
 
+        vocab_size = logits.shape[-1]
 
-class BanEOSUntil(LogitsProcessor):
-    """Bans the EOS token until a certain condition is met.
-    In this case, 'number of output tokens'.
+        self._check_token_ids_bounds(vocab_size=vocab_size)
 
-    With this condition, both 'min_tokens' and 'ignore_eos'
-    parameters can be handled gracefully."""
+        self.word_bias = torch.zeros((vocab_size, ),
+                                     dtype=torch.float,
+                                     device=logits.device)
 
-    def __init__(self, min_tokens: int, eos_token_id: int):
-        self._min_tokens = min_tokens
-        self._eos_token_id = eos_token_id
+        for bad_word_ids in self.bad_words_ids:
+            if len(bad_word_ids) == 1:
+                bad_word_id = bad_word_ids[-1]
+                self.word_bias[bad_word_id] = self._SMALLEST_LOGIT
 
-    def __call__(self, output_tokens: List[int],
-                 logits: torch.Tensor) -> torch.Tensor:
-        if len(output_tokens) < self._min_tokens:
-            logits[self._eos_token_id] = -float("inf")
-        return logits
+    def _check_token_ids_bounds(self, vocab_size: int) -> None:
+        invalid_token_ids = []
 
-    def batched(self, logits: torch.Tensor,
-                output_tokens: List[List[int]]) -> None:
-        terminate_mask = torch.tensor(
-            [len(toks) < self._min_tokens for toks in output_tokens],
-            device=logits.device)
-        logits[terminate_mask, self._eos_token_id] = -float("inf")
+        for bad_word_ids in self.bad_words_ids:
+            for token_id in bad_word_ids:
+                if token_id < 0 or token_id >= vocab_size:
+                    invalid_token_ids.append(token_id)
+
+        if len(invalid_token_ids) > 0:
+            raise ValueError(
+                f"The model vocabulary size is {vocab_size},"
+                f" but the following tokens"
+                f" were specified as bad: {invalid_token_ids}."
+                f" All token id values should be integers satisfying:"
+                f" 0 <= token_id < {vocab_size}.")

@@ -3,10 +3,9 @@ import copy
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 from functools import cached_property
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import msgspec
-import torch
 from loguru import logger
 from pydantic import BaseModel
 from typing_extensions import Annotated
@@ -138,16 +137,6 @@ class SamplerID(IntEnum):
             raise ValueError(
                 f"Invalid sampler name '{value}'. Must be one of: {valid_names}"
             ) from e
-
-
-LogitsProcessorFunc = Union[Callable[[List[int], torch.Tensor], torch.Tensor],
-                            Callable[[List[int], List[int], torch.Tensor],
-                                     torch.Tensor]]
-"""LogitsProcessor is a function that takes a list
-of previously generated tokens, the logits tensor
-for the next token and, optionally, prompt tokens as a
-first argument, and returns a modified tensor of logits
-to sample from."""
 
 
 class SamplingParams(
@@ -307,6 +296,10 @@ class SamplingParams(
         allowed_token_ids: If provided, the engine will construct a logits
             processor which only retains scores for the given token ids.
             Defaults to None.
+        bad_words: List of words that are not allowed to be generated.
+            More precisely, only the last token of a corresponding
+            token sequence is not allowed when the next generated token
+            can complete the sequence.
     """
 
     n: int = 1
@@ -348,7 +341,7 @@ class SamplingParams(
     token_ban_ranges: Optional[List[Tuple[List[int], int, int]]] = None
     skip_special_tokens: bool = True
     spaces_between_special_tokens: bool = True
-    # Optional[List[LogitsProcessorFunc]] type.
+    # Optional[List[LogitsProcessor]] type.
     # We use Any here because the type above
     # is not supported by msgspec.
     logits_processors: Optional[Any] = None
@@ -376,7 +369,7 @@ class SamplingParams(
     guided_decoding: Optional[GuidedDecodingParams] = None
     logit_bias: Optional[Dict[int, float]] = None
     allowed_token_ids: Optional[List[int]] = None
-
+    bad_words: Optional[List[str]] = None
     default_values = {
         "n": 1,
         "best_of": None,
@@ -435,6 +428,7 @@ class SamplingParams(
         "guided_decoding": None,
         "logit_bias": None,
         "allowed_token_ids": None,
+        "bad_words": None,
     }
 
     def __post_init__(self) -> None:
@@ -626,6 +620,10 @@ class SamplingParams(
             self.token_ban_ranges, list):
             raise ValueError(
                 "token_ban_ranges must be a list of tuples")
+        if self.bad_words is None:
+            self.bad_words = []
+        else:
+            self.bad_words = list(self.bad_words)
 
         if self.sampler_priority is not None:
             if not self.sampler_priority:

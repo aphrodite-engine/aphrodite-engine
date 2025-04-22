@@ -4,7 +4,7 @@ from typing import Dict, FrozenSet, Iterable, List, Optional, Union
 import torch
 from transformers import PreTrainedTokenizer
 
-from aphrodite.common.sampling_params import LogitsProcessorFunc
+from aphrodite.common.logits_processor import LogitsProcessor
 
 
 class AllowedTokenIdsLogitsProcessor:
@@ -31,7 +31,7 @@ class AllowedTokenIdsLogitsProcessor:
 def _get_allowed_token_ids_logits_processor(
     allowed_token_ids: FrozenSet[int],
     vocab_size: int,
-) -> LogitsProcessorFunc:
+) -> LogitsProcessor:
     if not allowed_token_ids:
         raise ValueError("Empty allowed_token_ids provided")
     if not all(0 <= tid < vocab_size for tid in allowed_token_ids):
@@ -53,7 +53,7 @@ def logit_bias_logits_processor(
 def get_logits_processors(
         logit_bias: Optional[Union[Dict[int, float], Dict[str, float]]],
         allowed_token_ids: Optional[List[int]],
-        tokenizer: PreTrainedTokenizer) -> List[LogitsProcessorFunc]:
+        tokenizer: PreTrainedTokenizer) -> List[LogitsProcessor]:
     logits_processors = []
     if logit_bias:
         try:

@@ -7,8 +7,8 @@ from lmformatenforcer import (CharacterLevelParser, JsonSchemaParser,
                               TokenEnforcerTokenizerData, UnionParser)
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.common.sampling_params import (GuidedDecodingParams,
-                                              LogitsProcessorFunc)
+from aphrodite.common.logits_processor import LogitsProcessor
+from aphrodite.common.sampling_params import GuidedDecodingParams
 from aphrodite.modeling.guided_decoding.lm_format_enforcer_logits_processors import (  # noqa: E501
     build_aphrodite_logits_processor,
     build_aphrodite_token_enforcer_tokenizer_data)
@@ -16,7 +16,7 @@ from aphrodite.modeling.guided_decoding.lm_format_enforcer_logits_processors imp
 
 def get_local_lm_format_enforcer_guided_decoding_logits_processor(
         guided_params: GuidedDecodingParams,
-        tokenizer) -> Optional[LogitsProcessorFunc]:
+        tokenizer) -> Optional[LogitsProcessor]:
     """
     Given an OpenAI-compatible request, check for guided decoding parameters
     and get the necessary logits processor for the given guide.

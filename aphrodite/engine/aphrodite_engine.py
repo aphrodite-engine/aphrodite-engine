@@ -21,6 +21,7 @@ from aphrodite.common.config import (CacheConfig, ConfigMixin, DecodingConfig,
                                      PromptAdapterConfig, SchedulerConfig,
                                      SpeculativeConfig)
 from aphrodite.common.logger import setup_logger
+from aphrodite.common.logits_processor import get_bad_words_logits_processors
 from aphrodite.common.outputs import (EmbeddingRequestOutput, RequestOutput,
                                       RequestOutputFactory)
 from aphrodite.common.pooling_params import PoolingParams
@@ -31,7 +32,8 @@ from aphrodite.common.sequence import (EmbeddingSequenceGroupOutput,
                                        SequenceGroup, SequenceGroupBase,
                                        SequenceGroupMetadata, SequenceStatus)
 from aphrodite.common.utils import Counter, Device, weak_bind
-from aphrodite.endpoints.openai.logits_processors import get_logits_processors
+from aphrodite.endpoints.openai.logits_processors import (
+    get_logits_processors as get_openai_logits_processors)
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.engine.metrics_types import StatLoggerBase, Stats
 from aphrodite.engine.output_processor.interfaces import (
@@ -1787,7 +1789,7 @@ class AphroditeEngine:
             sampling_params.guided_decoding = None
         if sampling_params.logit_bias or sampling_params.allowed_token_ids:
             tokenizer = self.get_tokenizer(lora_request=lora_request)
-            processors = get_logits_processors(
+            processors = get_openai_logits_processors(
                 logit_bias=sampling_params.logit_bias,
                 allowed_token_ids=sampling_params.allowed_token_ids,
                 tokenizer=tokenizer,
@@ -1796,6 +1798,13 @@ class AphroditeEngine:
             # Unset so these don't get passed down to the model
             sampling_params.logit_bias = None
             sampling_params.allowed_token_ids = None
+
+        if len(sampling_params.bad_words) > 0:
+            tokenizer = self.get_tokenizer(lora_request)
+            processors = get_bad_words_logits_processors(
+                bad_words=sampling_params.bad_words, tokenizer=tokenizer)
+            logits_processors.extend(processors)
+
         if logits_processors:
             if sampling_params.logits_processors is None:
                 sampling_params.logits_processors = logits_processors
