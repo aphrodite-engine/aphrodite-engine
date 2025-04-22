@@ -1,4 +1,4 @@
-from .interface import Platform, PlatformEnum, UnspecifiedPlatform, CpuArchEnum
+from .interface import CpuArchEnum, Platform, PlatformEnum, UnspecifiedPlatform
 
 current_platform: Platform
 
@@ -54,7 +54,7 @@ except Exception:
 is_cpu = False
 try:
     from importlib.metadata import version
-    is_cpu = "cpu" in version("vllm")
+    is_cpu = "cpu" in version("aphrodite-engine")
 except Exception:
     pass
 
@@ -63,6 +63,13 @@ try:
     import transformers_neuronx  # noqa: F401
     is_neuron = True
 except ImportError:
+    pass
+
+is_openvino = False
+try:
+    from importlib.metadata import version
+    is_openvino = "openvino" in version("aphrodite-engine")
+except Exception:
     pass
 
 if is_tpu:
