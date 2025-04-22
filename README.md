@@ -42,6 +42,8 @@ Then launch a model:
 aphrodite run meta-llama/Meta-Llama-3.1-8B-Instruct
 ```
 
+If you're not serving at scale, you can append the `--single-user-mode` flag to limit memory usage.
+
 This will create a [OpenAI](https://platform.openai.com/docs/api-reference/)-compatible API server that can be accessed at port 2242 of the localhost. You can plug in the API into a UI that supports OpenAI, such as [SillyTavern](https://github.com/SillyTavern/SillyTavern).
 
 Please refer to the [documentation](https://aphrodite.pygmalion.chat) for the full list of arguments and flags you can pass to the engine.
@@ -74,7 +76,7 @@ This will pull the Aphrodite Engine image (~8GiB download), and launch the engin
 - Python: 3.9 to 3.12
 
 #### Build Requirements:
-- CUDA >= 11
+- CUDA >= 12
 
 For supported devices, see [here](https://aphrodite.pygmalion.chat/pages/quantization/support-matrix.html). Generally speaking, all semi-modern GPUs are supported - down to Pascal (GTX 10xx, P40, etc.) We also support AMD GPUs, Intel CPUs and GPUs, Google TPU, and AWS Inferentia.
 
@@ -88,8 +90,8 @@ For supported devices, see [here](https://aphrodite.pygmalion.chat/pages/quantiz
 2. You can view the full list of commands by running `aphrodite run --help`.
 
 ## Acknowledgements
-Aphrodite Engine would have not been possible without the phenomenal work of other open-source projects. Credits go to:
-- [vLLM](https://github.com/vllm-project/vllm) (CacheFlow)
+Aphrodite Engine would have not been possible without the phenomenal work of other open-source projects. A (non-exhaustive) list:
+- [vLLM](https://github.com/vllm-project/vllm)
 - [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)
 - [xFormers](https://github.com/facebookresearch/xformers)
 - [Flash Attention](https://github.com/Dao-AILab/flash-attention)
@@ -104,6 +106,15 @@ Aphrodite Engine would have not been possible without the phenomenal work of oth
 - [Text Generation WebUI](https://github.com/oobabooga/text-generation-webui)
 - [Megatron-LM](https://github.com/NVIDIA/Megatron-LM)
 - [Ray](https://github.com/ray-project/ray)
+
+### Sponsors
+Past and present, in alphabetical order:
+
+- [Arc Compute](https://www.arccompute.io/)
+- [Prime Intellect](https://www.primeintellect.ai/)
+- [PygmalionAI](https://pygmalion.chat)
+- [Ruliad AI](https://ruliad.ai)
+
 
 ## Contributing
 Everyone is welcome to contribute. You can support the project by opening Pull Requests for new features, fixes, or general UX improvements.
