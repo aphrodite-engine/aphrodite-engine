@@ -14,8 +14,6 @@ from transformers.models.pixtral.image_processing_pixtral import (
     _num_image_tokens)
 from transformers.models.pixtral.modeling_pixtral import (
     PixtralRotaryEmbedding, apply_rotary_pos_emb, position_ids_in_meshgrid)
-from xformers.ops.fmha import memory_efficient_attention
-from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
 from aphrodite.attention import AttentionMetadata
 from aphrodite.common.config import CacheConfig, ModelConfig, MultiModalConfig
@@ -37,6 +35,12 @@ from aphrodite.transformers_utils.processor import cached_get_processor
 
 from .interfaces import SupportsMultiModal, SupportsPP
 from .utils import init_aphrodite_registered_model
+
+try:
+    from xformers import ops as xops
+    USE_XFORMERS_OPS = True
+except ImportError:
+    USE_XFORMERS_OPS = False
 
 
 def get_max_pixtral_image_tokens(ctx: InputContext):
@@ -414,7 +418,7 @@ class Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: BlockDiagonalMask,
+        mask: torch.Tensor,
         freqs_cis: torch.Tensor,
     ) -> torch.Tensor:
         batch, patches, _ = x.shape
@@ -425,7 +429,7 @@ class Attention(nn.Module):
         v = v.reshape(batch, patches, self.n_heads, self.head_dim)
 
         q, k = apply_rotary_emb_vit(q, k, freqs_cis=freqs_cis)
-        out = memory_efficient_attention(q, k, v, attn_bias=mask)
+        out = xops.memory_efficient_attention(q, k, v, attn_bias=mask)
         out = out.reshape(batch, patches, self.n_heads * self.head_dim)
         return self.wo(out)
 
@@ -442,7 +446,7 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: BlockDiagonalMask,
+        mask: torch.Tensor,
         freqs_cis: torch.Tensor,
     ) -> torch.Tensor:
         r = self.attention.forward(self.attention_norm(x),
@@ -465,7 +469,7 @@ class Transformer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: BlockDiagonalMask,
+        mask: torch.Tensor,
         freqs_cis: Optional[torch.Tensor],
     ) -> torch.Tensor:
         for layer in self.layers:
@@ -560,8 +564,12 @@ class VisionTransformer(nn.Module):
         freqs_cis = self.freqs_cis[positions[:, 0], positions[:, 1]]
 
         # pass through Transformer with a block diagonal mask delimiting images
-        mask = BlockDiagonalMask.from_seqlens(
-            [p.shape[-2] * p.shape[-1] for p in patch_embeds_list], )
+        if USE_XFORMERS_OPS:
+            mask = xops.fmha.attn_bias.BlockDiagonalMask.from_seqlens(
+                [p.shape[-2] * p.shape[-1] for p in patch_embeds_list], )
+        else:
+            raise ImportError("Xformers is required for Pixtral inference "
+                              "with the Mistral format")
         out = self.transformer(patch_embeds, mask=mask, freqs_cis=freqs_cis)
 
         # remove batch dimension of the single sequence
@@ -824,7 +832,7 @@ class PixtralHFAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: BlockDiagonalMask,
+        attention_mask: torch.Tensor,
         position_embeddings: torch.Tensor,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         batch, patches, _ = hidden_states.size()
@@ -840,12 +848,23 @@ class PixtralHFAttention(nn.Module):
         cos, sin = position_embeddings
         q, k = apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=0)
 
-        # Transpose q and k back for attention
-        q = q.transpose(1, 2).contiguous()
-        k = k.transpose(1, 2).contiguous()
-        v = v.reshape(batch, patches, self.n_heads, self.head_dim)
+        if USE_XFORMERS_OPS:
+            # Transpose q and k back for attention
+            q = q.transpose(1, 2).contiguous()
+            k = k.transpose(1, 2).contiguous()
+            v = v.reshape(batch, patches, self.n_heads, self.head_dim)
 
-        out = memory_efficient_attention(q, k, v, attn_bias=attention_mask)
+            out = xops.memory_efficient_attention(q,
+                                                  k,
+                                                  v,
+                                                  attn_bias=attention_mask)
+        else:
+            v = v.reshape(batch, patches, self.n_heads,
+                          self.head_dim).transpose(1, 2)
+            out = nn.functional.scaled_dot_product_attention(
+                q, k, v, attn_mask=attention_mask)
+            out = out.transpose(1, 2)
+
         out = out.reshape(batch, patches, self.n_heads * self.head_dim)
 
         return self.o_proj(out)
@@ -873,7 +892,7 @@ class PixtralHFTransformerBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: BlockDiagonalMask,
+        attention_mask: torch.Tensor,
         position_embeddings: torch.Tensor,
     ) -> torch.Tensor:
         r = self.attention.forward(self.attention_norm(hidden_states),
@@ -912,7 +931,7 @@ class PixtralHFTransformer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        attention_mask: BlockDiagonalMask,
+        attention_mask: torch.Tensor,
         position_embeddings: torch.Tensor,
     ) -> torch.Tensor:
         for layer in self.layers:
@@ -998,8 +1017,17 @@ class PixtralHFVisionModel(nn.Module):
 
         position_embedding = self.patch_positional_embedding(
             patch_embeds, position_ids)
-        attention_mask = BlockDiagonalMask.from_seqlens(
-            [p.shape[-2] * p.shape[-1] for p in patch_embeds_list], )
+
+        if USE_XFORMERS_OPS:
+            attention_mask = xops.fmha.attn_bias.BlockDiagonalMask.from_seqlens(
+                [p.shape[-2] * p.shape[-1] for p in patch_embeds_list], )
+        else:
+            from transformers.models.pixtral.modeling_pixtral import (
+                generate_block_attention_mask)
+            attention_mask = generate_block_attention_mask(
+                [p.shape[-2] * p.shape[-1] for p in patch_embeds_list],
+                patch_embeds)
+
         out = self.transformer(patch_embeds, attention_mask,
                                position_embedding)
 
