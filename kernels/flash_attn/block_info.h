@@ -4,7 +4,8 @@
 
 #pragma once
 
-namespace flash {
+#include "namespace_config.h"
+namespace FLASH_NAMESPACE {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -26,13 +27,15 @@ struct BlockInfo {
         // cu_seqlens_k[bidb]. Otherwise it's cu_seqlens_k[bidb], i.e., we use
         // cu_seqlens_k to store the sequence lengths of K.
         ,
-        seqlen_k_cache(!Varlen || params.cu_seqlens_k == nullptr
-                           ? params.seqlen_k
-                           : (params.is_seqlens_k_cumulative
-                                  ? params.cu_seqlens_k[bidb + 1] - sum_s_k
-                                  : params.cu_seqlens_k[bidb])),
+        leftpad_k(params.leftpad_k == nullptr ? 0 : params.leftpad_k[bidb]),
+        seqlen_k_cache((!Varlen || params.cu_seqlens_k == nullptr
+                            ? params.seqlen_k
+                            : (params.is_seqlens_k_cumulative
+                                   ? params.cu_seqlens_k[bidb + 1] - sum_s_k
+                                   : params.cu_seqlens_k[bidb])) -
+                       leftpad_k),
         actual_seqlen_k(params.seqused_k
-                            ? params.seqused_k[bidb]
+                            ? params.seqused_k[bidb] - leftpad_k
                             : seqlen_k_cache + (params.knew_ptr == nullptr
                                                     ? 0
                                                     : params.seqlen_knew)) {}
@@ -48,7 +51,8 @@ struct BlockInfo {
   __forceinline__ __device__ index_t k_offset(const index_t batch_stride,
                                               const index_t row_stride,
                                               const int bidb) const {
-    return sum_s_k == -1 ? bidb * batch_stride : uint32_t(sum_s_k) * row_stride;
+    return sum_s_k == -1 ? bidb * batch_stride + leftpad_k * row_stride
+                         : uint32_t(sum_s_k + leftpad_k) * row_stride;
   }
 
   const int sum_s_q;
@@ -56,10 +60,11 @@ struct BlockInfo {
   const int actual_seqlen_q;
   // We have to have seqlen_k_cache declared before actual_seqlen_k, otherwise
   // actual_seqlen_k is set to 0.
+  const int leftpad_k;
   const int seqlen_k_cache;
   const int actual_seqlen_k;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-}  // namespace flash
+}  // namespace FLASH_NAMESPACE
