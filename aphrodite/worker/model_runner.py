@@ -14,6 +14,7 @@ import torch
 import torch.distributed
 import torch.nn as nn
 from loguru import logger
+from rich.progress import track
 
 import aphrodite.common.envs as envs
 from aphrodite.attention import AttentionMetadata, get_attn_backend
@@ -25,9 +26,11 @@ from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
-from aphrodite.common.utils import (DeviceMemoryProfiler, PyObjectCache,
-                                    async_tensor_h2d, flatten_2d_lists, is_hip,
-                                    is_pin_memory_available, supports_dynamo)
+from aphrodite.common.utils import (DeviceMemoryProfiler, GiB_bytes,
+                                    PyObjectCache, async_tensor_h2d,
+                                    flatten_2d_lists, is_hip,
+                                    is_pin_memory_available, supports_dynamo,
+                                    weak_ref_tensor)
 from aphrodite.compilation.compile_context import set_compile_context
 from aphrodite.compilation.levels import CompilationLevel
 from aphrodite.distributed import get_pp_group
@@ -1432,17 +1435,12 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         assert not self.model_config.enforce_eager
         if tp_rank == 0:
             logger.info(
-                "Capturing the model for CUDA graphs. This may lead to "
-                "unexpected consequences if the model is not static. To "
-                "run the model in eager mode, set 'enforce_eager=True' or "
-                "use '--enforce-eager' in the CLI.")
-            logger.info(
-                "CUDA graphs can take additional 1~3 GiB memory per GPU. "
-                "If you are running out of memory, consider decreasing "
-                "`gpu_memory_utilization` or enforcing eager mode. "
-                "You can also reduce the `max_num_seqs` as needed "
-                "to decrease memory usage.")
+                "Capturing the model for CUDA graphs. This will increase "
+                "throughput, at the cost of some memory usage. You can disable "
+                "this by setting `--enforce-eager=True`, or lower the memory "
+                "usage by setting `--max-num-seqs` to a smaller value.")
         start_time = time.perf_counter()
+        start_free_gpu_memory = torch.cuda.mem_get_info()[0]
 
         # Prepare dummy inputs. These will be reused for all batch sizes.
         max_batch_size = self.max_batchsize_to_capture
@@ -1467,12 +1465,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                 dtype=self.model_config.dtype,
                 device=self.device)
 
-        # Prepare buffer for outputs. These will be reused for all batch sizes.
-        # It will be filled after the first graph capture.
-        hidden_or_intermediate_states: List[Optional[torch.Tensor]] = [
-            None
-        ] * self.parallel_config.pipeline_parallel_size
-
 
         graph_batch_size = self.max_batchsize_to_capture
         batch_size_capture_list = [
@@ -1486,7 +1478,14 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
             # memory usage of CUDA graph.
             for virtual_engine in range(
                     self.parallel_config.pipeline_parallel_size):
-                for batch_size in reversed(batch_size_capture_list):
+                reversed_batch_sizes = list(reversed(batch_size_capture_list))
+                batch_sizes_to_capture = (track(
+                    reversed_batch_sizes,
+                    description="Capturing CUDA graph shapes",
+                    transient=True,
+                ) if tp_rank == 0 else reversed_batch_sizes)
+
+                for batch_size in batch_sizes_to_capture:
                     attn_metadata = (
                         self.attn_state.graph_capture_get_metadata_for_batch(
                             batch_size,
@@ -1519,12 +1518,6 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         input_tokens[:batch_size],
                         "positions":
                         input_positions[..., :batch_size],
-                        "hidden_or_intermediate_states":
-                        hidden_or_intermediate_states[
-                            virtual_engine]  # type: ignore
-                        [:batch_size]
-                        if hidden_or_intermediate_states[virtual_engine]
-                        is not None else None,
                         "intermediate_inputs":
                         intermediate_inputs[:batch_size]
                         if intermediate_inputs is not None else None,
@@ -1560,10 +1553,13 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         graph_runner)
 
         end_time = time.perf_counter()
+        end_free_gpu_memory = torch.cuda.mem_get_info()[0]
         elapsed_time = end_time - start_time
+        cuda_graph_size = start_free_gpu_memory - end_free_gpu_memory
         # This usually takes < 10 seconds.
         if tp_rank == 0:
-            logger.info(f"Graph capturing finished in {elapsed_time:.2f} secs")
+            logger.info(f"Graph capturing finished in {elapsed_time:.2f} secs, "
+                        f"took {(cuda_graph_size / GiB_bytes):.2f} GiB")
 
     def _update_inputs_to_capture_for_enc_dec_model(self,
                                                     capture_inputs: Dict[str,
@@ -1765,15 +1761,13 @@ class CUDAGraphRunner(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        hidden_or_intermediate_states: Optional[Union[IntermediateTensors,
-                                                      torch.Tensor]],
         intermediate_inputs: Optional[IntermediateTensors],
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         memory_pool: Optional[Tuple[int, int]],
         stream: torch.cuda.Stream,
         **kwargs,
-    ) -> Union[torch.Tensor, IntermediateTensors]:
+    ):
         assert self._graph is None
         # Run the model a few times without capturing the graph.
         # This is to make sure that the captured graph does not include the
@@ -1803,20 +1797,20 @@ class CUDAGraphRunner(nn.Module):
                 intermediate_tensors=intermediate_inputs,
                 **kwargs,
             )
-            if hidden_or_intermediate_states is not None:
-                if get_pp_group().is_last_rank:
-                    hidden_or_intermediate_states.copy_(
-                        output_hidden_or_intermediate_states)
-                else:
-                    for key in hidden_or_intermediate_states.tensors:
-                        hidden_or_intermediate_states[key].copy_(
-                            output_hidden_or_intermediate_states[key])
-            else:
-                hidden_or_intermediate_states = (
+            if isinstance(output_hidden_or_intermediate_states, torch.Tensor):
+                hidden_or_intermediate_states = weak_ref_tensor(
                     output_hidden_or_intermediate_states)
+            elif isinstance(output_hidden_or_intermediate_states,
+                            IntermediateTensors):
+                hidden_or_intermediate_states = IntermediateTensors(
+                    tensors={
+                        key: weak_ref_tensor(value)
+                        for key, value in
+                        output_hidden_or_intermediate_states.tensors.items()
+                    })
 
             del output_hidden_or_intermediate_states
-            # make sure `output_hidden_states` is deleted
+            # make sure `output_hidden_or_intermediate_states` is deleted
             # in the graph's memory pool
             gc.collect()
         torch.cuda.synchronize()
@@ -1841,7 +1835,6 @@ class CUDAGraphRunner(nn.Module):
             }
         else:
             self.output_buffers = hidden_or_intermediate_states
-        return hidden_or_intermediate_states
 
     def forward(
         self,

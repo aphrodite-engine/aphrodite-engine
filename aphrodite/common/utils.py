@@ -1558,3 +1558,12 @@ def memory_profiling(
     result.non_torch_increase_in_bytes = current_cuda_memory_bytes - baseline_memory_in_bytes - weights_memory_in_bytes - diff.torch_memory_in_bytes  # noqa
     result.profile_time = diff.timestamp
     result.non_kv_cache_memory_in_bytes = result.non_torch_increase_in_bytes + result.torch_peak_increase_in_bytes + result.weights_memory_in_bytes  # noqa
+
+
+def weak_ref_tensor(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Create a weak reference to a tensor.
+    The new tensor will share the same data as the original tensor,
+    but will not keep the original tensor alive.
+    """
+    return torch.ops._C.weak_ref_tensor(tensor)

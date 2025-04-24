@@ -20,6 +20,9 @@
 TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   // Aphrodite custom ops
 
+  ops.def("weak_ref_tensor(Tensor input) -> Tensor");
+  ops.impl("weak_ref_tensor", torch::kCUDA, &weak_ref_tensor);
+
   // Attention ops
   // Compute the attention between an input query and the cached
   // keys/values using PagedAttention.
