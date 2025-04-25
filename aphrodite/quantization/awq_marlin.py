@@ -4,6 +4,7 @@ import torch
 from loguru import logger
 from torch.nn import Parameter
 
+import aphrodite.modeling.layers.fused_moe  # noqa
 from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.fused_moe.layer import (
     FusedMoE, FusedMoEMethodBase, FusedMoeWeightScaleSupported)
@@ -433,9 +434,6 @@ class AWQMoEMethod(FusedMoEMethodBase):
         custom_routing_function: Optional[Callable] = None,
     ) -> torch.Tensor:
 
-        from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-            fused_marlin_moe)
-
         topk_weights, topk_ids = FusedMoE.select_experts(
             hidden_states=x,
             router_logits=router_logits,
@@ -446,7 +444,7 @@ class AWQMoEMethod(FusedMoEMethodBase):
             num_expert_group=num_expert_group,
             custom_routing_function=custom_routing_function)
 
-        return fused_marlin_moe(
+        return torch.ops.aphrodite.fused_marlin_moe(
             x,
             layer.w13_qweight,
             layer.w2_qweight,

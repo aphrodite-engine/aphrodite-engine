@@ -6,6 +6,7 @@ import torch
 from compressed_tensors import CompressionFormat
 from compressed_tensors.quantization import QuantizationStrategy
 
+import aphrodite.modeling.layers.fused_moe  # noqa
 from aphrodite import _custom_ops as ops
 from aphrodite.common.utils import is_hip, print_warning_once
 from aphrodite.modeling.layers.fused_moe import (FusedMoE, FusedMoEMethodBase,
@@ -481,9 +482,6 @@ class CompressedTensorsWNA16MoEMethod(CompressedTensorsMoEMethod):
         custom_routing_function: Optional[Callable] = None,
     ) -> torch.Tensor:
 
-        from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-            fused_marlin_moe)
-
         topk_weights, topk_ids = FusedMoE.select_experts(
             hidden_states=x,
             router_logits=router_logits,
@@ -494,7 +492,7 @@ class CompressedTensorsWNA16MoEMethod(CompressedTensorsMoEMethod):
             num_expert_group=num_expert_group,
             custom_routing_function=custom_routing_function)
 
-        return fused_marlin_moe(
+        return torch.ops.aphrodite.fused_marlin_moe(
             x,
             layer.w13_weight_packed,
             layer.w2_weight_packed,

@@ -3,6 +3,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 import torch
 from loguru import logger
 
+import aphrodite.modeling.layers.fused_moe  # noqa
 from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.fused_moe.layer import (
     FusedMoE, FusedMoEMethodBase, FusedMoeWeightScaleSupported)
@@ -533,8 +534,6 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
         topk_group: Optional[int] = None,
         custom_routing_function: Optional[Callable] = None,
     ) -> torch.Tensor:
-        from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-            fused_marlin_moe)
 
         # The input must currently be float16
         orig_dtype = x.dtype
@@ -550,7 +549,7 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
             num_expert_group=num_expert_group,
             custom_routing_function=None)
 
-        return fused_marlin_moe(
+        return torch.ops.aphrodite.fused_marlin_moe(
             x,
             layer.w13_qweight,
             layer.w2_qweight,
