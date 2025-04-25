@@ -53,15 +53,14 @@ class VideoPlugin(ImagePlugin):
     ) -> MultiModalInputs:
         model_config = ctx.model_config
 
-        # single video input as np.ndarray
-        if isinstance(data, np.ndarray):
+        if isinstance(data, np.ndarray) or is_list_of(data, np.ndarray):
             video_processor = self._get_hf_video_processor(
                 model_config,
                 mm_processor_kwargs,
             )
             if video_processor is None:
                 raise RuntimeError("No HuggingFace processor is available "
-                                   "to process the image object")
+                                   "to process the video object")
             try:
                 # NOTE: Similar to image; it may be a good idea to filter and
                 # pass mm_processor_kwargs here too, but for now we don't to
@@ -69,13 +68,10 @@ class VideoPlugin(ImagePlugin):
                 # signatures of the processor don't align
                 batch_data = video_processor(data, return_tensors="pt").data
             except Exception:
-                logger.error(f"Failed to process image ({data})")
+                logger.error(f"Failed to process video ({data})")
                 raise
             return MultiModalInputs(batch_data)
-        elif is_list_of(data, np.ndarray):
-            raise NotImplementedError(
-                "Multi video for a prompt is not supported yet"
-            )
+
         raise TypeError(f"Invalid video type: {type(data)}")
 
     def _default_max_multimodal_tokens(self, ctx: InputContext) -> int:
