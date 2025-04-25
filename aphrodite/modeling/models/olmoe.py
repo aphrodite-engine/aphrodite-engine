@@ -20,6 +20,7 @@ from aphrodite.attention import Attention, AttentionMetadata
 from aphrodite.common.config import CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.common.utils import print_warning_once
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.fused_moe import FusedMoE
@@ -240,6 +241,7 @@ class OlmoeDecoderLayer(nn.Module):
         return hidden_states, residual
 
 
+@support_torch_compile
 class OlmoeModel(nn.Module):
 
     def __init__(

@@ -18,7 +18,6 @@ from aphrodite.common.sampling_params import RequestOutputKind, SamplingParams
 from aphrodite.inputs.parse import is_encoder_decoder_inputs
 from aphrodite.lora.request import LoRARequest
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
-from aphrodite.spec_decode.metrics import SpecDecodeWorkerMetrics
 
 if TYPE_CHECKING:
     from aphrodite.inputs import SingletonInputs
@@ -1125,6 +1124,8 @@ class PoolerOutput(
     """The output from a pooling operation in the embedding model."""
     outputs: List[EmbeddingSequenceGroupOutput]
 
+    # avoid circular import
+    from aphrodite.spec_decode.metrics import SpecDecodeWorkerMetrics
     spec_decode_worker_metrics: Optional[SpecDecodeWorkerMetrics] = None
 
     def __getitem__(self, idx: int):
