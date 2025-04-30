@@ -4,17 +4,14 @@
 
 #pragma once
 
+#include "namespace_config.h"
+
 #include <cuda.h>
 #include <vector>
 
-#ifdef OLD_GENERATOR_PATH
-  #include <ATen/CUDAGeneratorImpl.h>
-#else
-  #include <ATen/cuda/CUDAGeneratorImpl.h>
-#endif
+#include <ATen/cuda/CUDAGeneratorImpl.h>  // For at::Generator and at::PhiloxCudaState
 
-#include <ATen/cuda/CUDAGraphsUtils.cuh>  // For at::cuda::philox::unpack
-
+namespace FLASH_NAMESPACE {
 constexpr int TOTAL_DIM = 0;
 constexpr int H_DIM = 1;
 constexpr int D_DIM = 2;
@@ -76,6 +73,7 @@ struct Flash_fwd_params : public Qkv_params {
   // array of length b+1 holding starting offset of each sequence.
   int* __restrict__ cu_seqlens_q;
   int* __restrict__ cu_seqlens_k;
+  int* __restrict__ leftpad_k;
 
   // If provided, the actual length of each k sequence.
   int* __restrict__ seqused_k;
@@ -149,8 +147,54 @@ struct Flash_fwd_params : public Qkv_params {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+struct Flash_bwd_params : public Flash_fwd_params {
+  // The dO and dQKV matrices.
+  void* __restrict__ do_ptr;
+  void* __restrict__ dq_ptr;
+  void* __restrict__ dk_ptr;
+  void* __restrict__ dv_ptr;
+
+  // To accumulate dQ
+  void* __restrict__ dq_accum_ptr;
+  void* __restrict__ dk_accum_ptr;
+  void* __restrict__ dv_accum_ptr;
+
+  // // To accumulate dK and dV in case we're splitting the bwd along seqlen_q
+  // dimension void *__restrict__ dk_accum_ptr; void *__restrict__
+  // dv_accum_ptr;
+
+  // The stride between rows of the dO, dQ, dK and dV matrices.
+  // TD [2022-04-16]: We're using 32-bit indexing to save registers.
+  // The code probably won't work for arrays larger than 2GB.
+  index_t do_batch_stride;
+  index_t do_row_stride;
+  index_t do_head_stride;
+  index_t dq_batch_stride;
+  index_t dk_batch_stride;
+  index_t dv_batch_stride;
+  index_t dq_row_stride;
+  index_t dk_row_stride;
+  index_t dv_row_stride;
+  index_t dq_head_stride;
+  index_t dk_head_stride;
+  index_t dv_head_stride;
+
+  // The pointer to the softmax d sum.
+  void* __restrict__ dsoftmax_sum;
+
+  bool deterministic;
+  index_t dq_accum_split_stride;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename T, int Headdim, bool Is_causal>
 void run_mha_fwd_(Flash_fwd_params& params, cudaStream_t stream);
 template <typename T, int Headdim, bool Is_causal>
 void run_mha_fwd_splitkv_dispatch(Flash_fwd_params& params,
                                   cudaStream_t stream);
+
+template <typename T, int Headdim, bool Is_causal>
+void run_mha_bwd_(Flash_bwd_params& params, cudaStream_t stream);
+
+}  // namespace FLASH_NAMESPACE

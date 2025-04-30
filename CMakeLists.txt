@@ -22,7 +22,7 @@ set(ignoreMe "${APHRODITE_PYTHON_PATH}")
 set(PYTHON_SUPPORTED_VERSIONS "3.9" "3.10" "3.11" "3.12")
 
 # Supported NVIDIA architectures.
-set(CUDA_SUPPORTED_ARCHS "6.0;6.1;7.0;7.5;8.0;8.6;8.9;9.0")
+set(CUDA_SUPPORTED_ARCHS "6.0;6.1;7.0;7.5;8.0;8.6;8.9;9.0;10.0;10.1;12.0")
 
 # Supported AMD GPU architectures.
 set(HIP_SUPPORTED_ARCHS "gfx906;gfx908;gfx90a;gfx940;gfx941;gfx942;gfx1030;gfx1100;gfx1101")
@@ -317,7 +317,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   # Only build Marlin and flash_attn kernels if we are building for at least some compatible archs.
   # Keep building Marlin for 9.0 as there are some group sizes and shapes that
   # are not supported by Machete yet, and we aren't using XQA kernels yet.
-  cuda_archs_loose_intersection(MARLIN_ARCHS "8.0;8.6;8.9;9.0" ${CUDA_ARCHS})
+  cuda_archs_loose_intersection(MARLIN_ARCHS "8.0;8.6;8.9;9.0;10.0;10.1;12.0" ${CUDA_ARCHS})
   if (MARLIN_ARCHS)
     set(MARLIN_SRCS 
       "kernels/quantization/fp8/fp8_marlin.cu"
@@ -342,8 +342,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
 
   #
   # The cutlass_scaled_mm kernels for Hopper (c3x, i.e. CUTLASS 3.x) require
-  # CUDA 12.0 or later (and only work on Hopper, 9.0/9.0a for now).
-  cuda_archs_loose_intersection(SCALED_MM_3X_ARCHS "9.0;9.0a" "${CUDA_ARCHS}")
+  # CUDA 12.0 or later (and only work on Hopper or Blackwell for now).
+  cuda_archs_loose_intersection(SCALED_MM_3X_ARCHS "9.0;9.0a;10.0a;10.1a;12.0a" "${CUDA_ARCHS}")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.0 AND SCALED_MM_3X_ARCHS)
     set(SRCS "kernels/quantization/cutlass_w8a8/scaled_mm_c3x.cu")
     set_gencode_flags_for_srcs(
@@ -371,7 +371,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   # For the cutlass_scaled_mm kernels we want to build the c2x (CUTLASS 2.x)
   # kernels for the remaining archs that are not already built for 3x.
   cuda_archs_loose_intersection(SCALED_MM_2X_ARCHS 
-    "7.5;8.0;8.6;8.9;9.0;9.0a" "${CUDA_ARCHS}")
+    "7.5;8.0;8.6;8.9;9.0;9.0a;10.0a;10.1a;12.0a" "${CUDA_ARCHS}")
   # subtract out the archs that are already built for 3x
   list(REMOVE_ITEM SCALED_MM_2X_ARCHS ${SCALED_MM_3X_ARCHS})
   if (SCALED_MM_2X_ARCHS)
@@ -397,7 +397,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
 
   # The machete kernels only work on hopper and require CUDA 12.0 or later.
   # Only build Machete kernels if we are building for something compatible with sm90a
-  cuda_archs_loose_intersection(MACHETE_ARCHS "9.0a" "${CUDA_ARCHS}")
+  cuda_archs_loose_intersection(MACHETE_ARCHS "9.0a;10.0a;10.1a;12.0a" "${CUDA_ARCHS}")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.0 AND MACHETE_ARCHS)
     #
     # For the Machete kernels we automatically generate sources for various 
@@ -492,7 +492,7 @@ set_gencode_flags_for_srcs(
   CUDA_ARCHS "${CUDA_ARCHS}")
 
 if(APHRODITE_GPU_LANG STREQUAL "CUDA")
-  cuda_archs_loose_intersection(MARLIN_MOE_ARCHS "8.0;8.6;8.9;9.0" "${CUDA_ARCHS}")
+  cuda_archs_loose_intersection(MARLIN_MOE_ARCHS "8.0;8.6;8.9;9.0;10.0;10.1;12.0" "${CUDA_ARCHS}")
   if (MARLIN_MOE_ARCHS)
     set(MARLIN_MOE_SRC
         "kernels/moe/marlin_kernels/marlin_moe_kernel.h"
@@ -536,7 +536,7 @@ endif()
 # XQA Kernels
 #
 
-cuda_archs_loose_intersection(XQA_ARCHS "9.0" "${CUDA_ARCHS}")
+cuda_archs_loose_intersection(XQA_ARCHS "" "${CUDA_ARCHS}")
 if (XQA_ARCHS)
   set(APHRODITE_XQA_EXT_SRC
     "kernels/xqa/xqa_kernel_launcher.cu"
