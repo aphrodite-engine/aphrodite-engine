@@ -62,4 +62,10 @@ inline __device__ void zero(T& dst) {
   dst = tmp.raw;
 }
 
+constexpr int kMaxBlocks = 64;
+struct Signal {
+  alignas(128) uint32_t start[kMaxBlocks][8];
+  alignas(128) uint32_t end[kMaxBlocks][8];
+};
+
 } // namespace aphrodite
