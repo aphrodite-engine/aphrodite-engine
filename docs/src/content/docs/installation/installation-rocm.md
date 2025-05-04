@@ -56,6 +56,13 @@ You will need the following installed beforehand:
 - [PyTorch](https://pytorch.org/get-started/locally/) with `pip3 install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.3`
 
 
+Then install amd_smi (if you have root you can just `pip install /opt/share/rocm/amd_smi`)
+```sh
+sudo cp -r /opt/share/rocm/amd_smi .
+sudo chown -R $(whoami) amd_smi
+pip install amd_smi
+```
+
 Then install Triton
 ```sh
 git clone https://github.com/triton-lang/triton
