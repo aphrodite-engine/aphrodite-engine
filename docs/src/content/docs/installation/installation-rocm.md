@@ -61,9 +61,10 @@ Then install Triton
 git clone https://github.com/triton-lang/triton
 cd triton
 git checkout e5be006a4
+cd python
 pip install ninja cmake wheel pybind11
 pip install .
-cd ..
+cd ../..
 ```
 
 You may also Install [CK Flash Attention](https://github.com/ROCm/flash-attention) if needed.
