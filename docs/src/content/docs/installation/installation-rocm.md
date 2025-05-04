@@ -60,6 +60,7 @@ Then install Triton
 ```sh
 git clone https://github.com/triton-lang/triton
 cd triton
+git checkout e5be006a4
 pip install ninja cmake wheel pybind11
 pip install .
 cd ..
