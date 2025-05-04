@@ -3,7 +3,6 @@
 #include "ops.h"
 #include "core/registration.h"
 #include "quantization/quant_ops.h"
-#include "flash_attn/flash_api.h"
 
 #include <torch/library.h>
 
