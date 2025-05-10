@@ -1,15 +1,18 @@
-from typing import Callable, Dict, Optional, Union
+import logging
+import os
+from typing import Callable, Dict
 
-from loguru import logger
+import torch
 
 import aphrodite.common.envs as envs
 
+logger = logging.getLogger(__name__)
 
-def load_general_plugins():
-    """WARNING: plugins can be loaded for multiple times in different
-    processes. They should be designed in a way that they can be loaded
-    multiple times without causing issues.
-    """
+# make sure one process only loads plugins once
+plugins_loaded = False
+
+
+def load_plugins_by_group(group: str) -> Dict[str, Callable]:
     import sys
     if sys.version_info < (3, 10):
         from importlib_metadata import entry_points
@@ -18,37 +21,60 @@ def load_general_plugins():
 
     allowed_plugins = envs.APHRODITE_PLUGINS
 
-    discovered_plugins = entry_points(group='aphrodite.general_plugins')
+    discovered_plugins = entry_points(group=group)
+    if len(discovered_plugins) == 0:
+        logger.debug("No plugins for group %s found.", group)
+        return {}
+    logger.info("Available plugins for group %s:", group)
     for plugin in discovered_plugins:
-        logger.info(f"Found general plugin: {plugin.name}")
+        logger.info("name=%s, value=%s", plugin.name, plugin.value)
+    if allowed_plugins is None:
+        logger.info("all available plugins for group %s will be loaded.",
+                    group)
+        logger.info("set environment variable APHRODITE_PLUGINS to control"
+                    " which plugins to load.")
+    plugins = {}
+    for plugin in discovered_plugins:
         if allowed_plugins is None or plugin.name in allowed_plugins:
             try:
                 func = plugin.load()
-                func()
-                logger.info(f"Loaded general plugin: {plugin.name}")
+                plugins[plugin.name] = func
+                logger.info("plugin %s loaded.", plugin.name)
             except Exception:
-                logger.exception("Failed to load general plugin: "
-                                 f"{plugin.name}")
-
-_torch_compile_backend: Optional[Union[Callable, str]] = None
+                logger.exception("Failed to load plugin %s", plugin.name)
+    return plugins
 
 
-def set_torch_compile_backend(backend: Union[Callable, str]):
-    global _torch_compile_backend
-    _torch_compile_backend = backend
+def load_general_plugins():
+    """WARNING: plugins can be loaded for multiple times in different
+    processes. They should be designed in a way that they can be loaded
+    multiple times without causing issues.
+    """
+    global plugins_loaded
+    if plugins_loaded:
+        return
+    plugins_loaded = True
 
+    # some platform-specific configurations
+    from aphrodite.platforms import current_platform
 
-def get_torch_compile_backend() -> Optional[Union[Callable, str]]:
-    return _torch_compile_backend
+    if current_platform.is_xpu():
+        # see https://github.com/pytorch/pytorch/blob/43c5f59/torch/_dynamo/config.py#L158
+        torch._dynamo.config.disable = True
+    elif current_platform.is_hpu():
+        # NOTE: PT HPU lazy backend (PT_HPU_LAZY_MODE = 1)
+        # does not support torch.compile
+        # Eager backend (PT_HPU_LAZY_MODE = 0) must be selected for
+        # torch.compile support
+        is_lazy = os.environ.get('PT_HPU_LAZY_MODE', '1') == '1'
+        if is_lazy:
+            torch._dynamo.config.disable = True
+            # NOTE: multi-HPU inference with HPUGraphs (lazy-only)
+            # requires enabling lazy collectives
+            # see https://docs.habana.ai/en/latest/PyTorch/Inference_on_PyTorch/Inference_Using_HPU_Graphs.html # noqa: E501
+            os.environ['PT_HPU_ENABLE_LAZY_COLLECTIVES'] = 'true'
 
-
-_inductor_additional_configs: Dict = {}
-
-
-def set_inductor_additional_configs(configs: Dict):
-    global _inductor_additional_configs
-    _inductor_additional_configs = configs
-
-
-def get_inductor_additional_configs() -> Dict:
-    return _inductor_additional_configs
+    plugins = load_plugins_by_group(group='aphrodite.general_plugins')
+    # general plugins, we only need to execute the loaded functions
+    for func in plugins.values():
+        func()

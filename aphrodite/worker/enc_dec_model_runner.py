@@ -9,13 +9,9 @@ from loguru import logger
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionMetadata)
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
-from aphrodite.attention.selector import (_Backend,
-                                          get_env_variable_attn_backend,
-                                          get_global_forced_attn_backend,
-                                          global_force_attn_backend)
-from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
-                                     LoRAConfig, ModelConfig, ParallelConfig,
-                                     PromptAdapterConfig, SchedulerConfig)
+from aphrodite.attention.selector import (get_env_variable_attn_backend,
+                                          get_global_forced_attn_backend)
+from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors, PoolerOutput,
                                        SequenceGroupMetadata)
@@ -23,17 +19,21 @@ from aphrodite.common.utils import (STR_NOT_IMPL_ENC_DEC_BACKEND,
                                     make_tensor_with_pad)
 from aphrodite.forward_context import set_forward_context
 from aphrodite.inputs import INPUT_REGISTRY, InputRegistry
+from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.multimodal import (MULTIMODAL_REGISTRY, MultiModalInputs,
+from aphrodite.multimodal import (MULTIMODAL_REGISTRY, MultiModalKwargs,
                                   MultiModalRegistry)
+from aphrodite.platforms import _Backend
 from aphrodite.worker.model_runner import (
     GPUModelRunnerBase, ModelInputForGPUBuilder,
-    ModelInputForGPUWithSamplingMetadata, _get_graph_batch_size)
+    ModelInputForGPUWithSamplingMetadata)
 from aphrodite.worker.model_runner_base import (
     _add_attn_metadata_broadcastable_dict,
     _add_sampling_metadata_broadcastable_dict)
 from aphrodite.worker.utils import assert_enc_dec_mr_supported_scenario
+
+LORA_WARMUP_RANK = 8
 
 
 @dataclasses.dataclass(frozen=True)
@@ -47,6 +47,7 @@ class EncoderDecoderModelInput(ModelInputForGPUWithSamplingMetadata):
     def as_broadcastable_tensor_dict(self) -> Dict[str, Any]:
         tensor_dict = {
             "input_tokens": self.input_tokens,
+            "inputs_embeds": self.inputs_embeds,
             "input_positions": self.input_positions,
             "encoder_input_tokens": self.encoder_input_tokens,
             "encoder_input_positions": self.encoder_input_positions,
@@ -78,41 +79,28 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
-        cache_config: CacheConfig,
-        load_config: LoadConfig,
-        lora_config: Optional[LoRAConfig],
+        aphrodite_config: AphroditeConfig,
         kv_cache_dtype: Optional[str] = "auto",
         is_driver_worker: bool = False,
-        prompt_adapter_config: Optional[PromptAdapterConfig] = None,
         input_registry: InputRegistry = INPUT_REGISTRY,
         mm_registry: MultiModalRegistry = MULTIMODAL_REGISTRY,
-        **kwargs,
     ):
         '''
         EncoderDecoderModelRunner constructor.
+
         `lora_config` and `prompt_adapter_config` are
         unused (since these features are not yet supported for encoder/decoder
-        models) but these arguments are present here for compatibility with
+        models) but these arguments are present here for compatibility with 
         the base-class constructor.
         '''
-
         self._maybe_force_supported_attention_backend()
 
         super().__init__(
-            model_config,
-            parallel_config,
-            scheduler_config,
-            device_config,
-            cache_config,
-            load_config,
-            lora_config=None,
+            aphrodite_config=aphrodite_config,
             kv_cache_dtype=kv_cache_dtype,
             is_driver_worker=is_driver_worker,
-            **kwargs,
+            input_registry=input_registry,
+            mm_registry=mm_registry,
         )
 
         # Crash for unsupported encoder/scenarios
@@ -133,23 +121,17 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         maybe_global_forced_backend = get_global_forced_attn_backend()
         is_forced_by_global = maybe_global_forced_backend is not None
         is_forced_by_env_var = maybe_env_var_forced_backend is not None
-
-        if not (is_forced_by_global or is_forced_by_env_var):
-            # The user has not already specified an attention backend
-            # override
-            logger.info("EncoderDecoderModelRunner requires "
-                        "XFormers backend; overriding backend "
-                        "auto-selection and forcing XFormers.")
-            global_force_attn_backend(_Backend.XFORMERS)
-        elif is_forced_by_global:
+        if is_forced_by_global:  # noqa: SIM102
             # Backend override enforced by global variable takes
             # precedence over Aphrodite backend environment variable.
-            if maybe_global_forced_backend != _Backend.XFORMERS:
+            if maybe_global_forced_backend not in\
+                 [_Backend.XFORMERS, _Backend.FLASH_ATTN]:
                 raise_backend_err()
-        elif is_forced_by_env_var:
+        elif is_forced_by_env_var:  # noqa: SIM102
             # Backend override enforced by Aphrodite backend
             # environment variable
-            if maybe_env_var_forced_backend != _Backend.XFORMERS:
+            if maybe_env_var_forced_backend not in\
+                 [_Backend.XFORMERS, _Backend.FLASH_ATTN]:
                 raise_backend_err()
 
     def _list_to_int32_tensor(
@@ -181,14 +163,25 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         if num_steps > 1:
             raise ValueError("num_steps > 1 is not supported in "
                              "EncoderDecoderModelRunner")
-
+        if self.lora_config:
+            assert model_input.lora_requests is not None
+            assert model_input.lora_mapping is not None
+            self.set_active_loras(model_input.lora_requests,
+                                  model_input.lora_mapping)
         if (model_input.attn_metadata is not None
                 and model_input.attn_metadata.prefill_metadata is None
                 and model_input.attn_metadata.decode_metadata.use_cuda_graph):
-            assert model_input.input_tokens is not None
-            graph_batch_size = model_input.input_tokens.shape[0]
-            model_executable = self.graph_runners[
-                model_input.virtual_engine][graph_batch_size]
+            if model_input.inputs_embeds is None:
+                assert model_input.input_tokens is not None
+                graph_batch_size = model_input.input_tokens.shape[0]
+                model_executable = (
+                    self.graph_runners[model_input.virtual_engine][(
+                        graph_batch_size, False)])
+            else:
+                graph_batch_size = model_input.inputs_embeds.shape[0]
+                model_executable = (
+                    self.graph_runners[model_input.virtual_engine][(
+                        graph_batch_size, True)])
         else:
             model_executable = self.model
 
@@ -196,17 +189,19 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
             "finished_requests_ids": model_input.finished_requests_ids,
             "request_ids_to_seq_ids": model_input.request_ids_to_seq_ids,
         } if self.has_inner_state else {}
+
         multi_modal_kwargs = model_input.multi_modal_kwargs or {}
-        with set_forward_context(model_input.attn_metadata):
+        with set_forward_context(model_input.attn_metadata,
+                                 self.aphrodite_config,
+                                 model_input.virtual_engine):
             hidden_or_intermediate_states = model_executable(
                 input_ids=model_input.input_tokens,
+                inputs_embeds=model_input.inputs_embeds,
                 positions=model_input.input_positions,
                 encoder_input_ids=model_input.encoder_input_tokens,
                 encoder_positions=model_input.encoder_input_positions,
-                kv_caches=kv_caches,
-                attn_metadata=model_input.attn_metadata,
                 intermediate_tensors=intermediate_tensors,
-                **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                **MultiModalKwargs.as_kwargs(multi_modal_kwargs,
                                              device=self.device),
                 **seqlen_agnostic_kwargs)
 
@@ -218,8 +213,9 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
 
         if model_input.async_callback is not None:
             model_input.async_callback()
+
         # Sample the next token.
-        output: SamplerOutput = self.model.sample(
+        output: SamplerOutput = self.sampler(
             logits=logits,
             sampling_metadata=model_input.sampling_metadata,
         )
@@ -241,20 +237,20 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
     ) -> EncoderDecoderModelInput:
         """Prepare the model input based on a given sequence group, including
         metadata for the sampling step.
+
         Since chunked prefill is not supported for encoder/decoder models,
         `input_tokens` is assumed to be either entirely prefill tokens or
         entirely decode tokens.
+
         """
         model_input = self._prepare_model_input_tensors(
             seq_group_metadata_list, finished_requests_ids)
-
         (
             attn_metadata,
             encoder_input_tokens_tensor,
             encoder_input_positions_tensor,
         ) = (self._prepare_encoder_model_input_tensors(seq_group_metadata_list,
                                                        model_input))
-
         # Inject attn_metadata encoder/cross-attention fields &
         # encoder input tokens/positions into model_input.
         # Frozen dataclass fields cannot be modified, so use
@@ -288,6 +284,22 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         max_num_batched_tokens = self.scheduler_config.max_num_batched_tokens
         max_num_seqs = self.scheduler_config.max_num_seqs
 
+        # This represents the maximum number of different requests
+        # that will have unique loras, and therefore the max amount of
+        # memory consumption. Create dummy lora request copies from the
+        # lora request passed in, which contains a lora from the lora
+        # warmup path.
+        dummy_lora_requests: List[LoRARequest] = []
+        dummy_lora_requests_per_seq: List[LoRARequest] = []
+        if self.lora_config:
+            dummy_lora_requests = self._add_dummy_loras(
+                self.lora_config.max_loras)
+            assert len(dummy_lora_requests) == self.lora_config.max_loras
+            dummy_lora_requests_per_seq = [
+                dummy_lora_requests[idx % len(dummy_lora_requests)]
+                for idx in range(max_num_seqs)
+            ]
+
         # Profile memory usage with max_num_sequences sequences and the total
         # number of tokens equal to max_num_batched_tokens.
         seqs: List[SequenceGroupMetadata] = []
@@ -303,56 +315,52 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
                        (group_id < max_num_batched_tokens % max_num_seqs))
             batch_size += seq_len
 
-            decoder_seq_data, decoder_dummy_multi_modal_data \
-                = self.input_registry.dummy_data_for_profiling(
-                    self.model_config,
+            decoder_dummy_data = self.input_registry \
+                .dummy_data_for_profiling(self.model_config,
                                           seq_len,
                                           self.mm_registry,
                                           is_encoder_data=False)
-            encoder_seq_data, encoder_dummy_multi_modal_data \
-                = self.input_registry.dummy_data_for_profiling(
-                    self.model_config,
-                                         seq_len,
-                                         self.mm_registry,
-                                         is_encoder_data=True)
+            encoder_dummy_data = self.input_registry \
+                .dummy_data_for_profiling(self.model_config,
+                                          seq_len,
+                                          self.mm_registry,
+                                          is_encoder_data=True)
 
             # Having more tokens is over-conservative but otherwise fine
-            assert len(decoder_seq_data.prompt_token_ids) >= seq_len, (
+            assert len(
+                decoder_dummy_data.seq_data.prompt_token_ids
+            ) >= seq_len, (
                 f"Expected at least {seq_len} dummy tokens for profiling, "
-                f"but got: {len(decoder_seq_data.prompt_token_ids)}")
-            assert decoder_dummy_multi_modal_data is None or \
-            encoder_dummy_multi_modal_data is None, (
+                f"but got: {len(decoder_dummy_data.seq_data.prompt_token_ids)}"
+            )
+
+            assert decoder_dummy_data.multi_modal_data is None or \
+            encoder_dummy_data.multi_modal_data is None, (
                 "Multi-modal data can't be provided in both encoder and decoder"
             )
 
             seq = SequenceGroupMetadata(
                 request_id=str(group_id),
                 is_prompt=True,
-                seq_data={group_id: decoder_seq_data},
+                seq_data={group_id: decoder_dummy_data.seq_data},
                 sampling_params=sampling_params,
                 block_tables=None,
-                encoder_seq_data=encoder_seq_data,
+                encoder_seq_data=encoder_dummy_data.seq_data,
                 cross_block_table=None,
-                multi_modal_data=decoder_dummy_multi_modal_data
-                or encoder_dummy_multi_modal_data,
-            )
+                lora_request=dummy_lora_requests_per_seq[group_id]
+                if dummy_lora_requests_per_seq else None,
+                multi_modal_data=decoder_dummy_data.multi_modal_data
+                or encoder_dummy_data.multi_modal_data,
+                multi_modal_placeholders=decoder_dummy_data.
+                multi_modal_placeholders
+                or encoder_dummy_data.multi_modal_placeholders)
             seqs.append(seq)
 
-        # Run the model with the dummy inputs.
-        num_layers = self.model_config.get_num_layers(self.parallel_config)
-        # use an empty tensor instead of `None`` to force Dynamo to pass
-        # it by reference, rather by specializing on the value ``None``.
-        # the `dtype` argument does not matter, and we use `float32` as
-        # a placeholder (it has wide hardware support).
-        kv_caches = [
-            torch.tensor([], dtype=torch.float32, device=self.device)
-            for _ in range(num_layers)
-        ]
         finished_requests_ids = [seq.request_id for seq in seqs]
         model_input = self.prepare_model_input(
             seqs, finished_requests_ids=finished_requests_ids)
         intermediate_tensors = None
-        self.execute_model(model_input, kv_caches, intermediate_tensors)
+        self.execute_model(model_input, None, intermediate_tensors)
         torch.cuda.synchronize()
         return
 
@@ -367,6 +375,7 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         are used to augment an already-computed `EncoderDecoderModelInput`
         data structure which already has decoder-related model inputs
         populated.
+
         Sets the following attn_metadata fields:
         * `num_encoder_tokens`
         * `encoder_seq_lens`
@@ -374,20 +383,25 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         * `max_encoder_seq_len`
         * `cross_slot_mapping`
         * `cross_block_tables`
+
         Constructs a new model inputs data structure, based on
         (1) the existing fields in the `model_inputs` argument,
         and (2) the following additional fields which are
-        computed (or in the case of `attn_metadata`, updated)
+        computed (or in the case of `attn_metadata`, updated) 
         by this function:
         * attn_metadata
         * encoder_input_tokens
         * encoder_input_positions
+
         Arguments:
+
         * seq_group_metadata_list: list of sequence groups for which to
                                    compute inputs
         * model_inputs: model inputs data structure with decoder-oriented
                         fields already computed.
+
         Return:
+
         * Updated model inputs data structure
         """
 
@@ -456,7 +470,6 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
             encoder_input_tokens_tensor = self._empty_long_tensor()
             encoder_input_positions_tensor = self._empty_long_tensor()
             cross_slot_mapping_tensor = self._empty_long_tensor()
-
             # Extract cross-attention block tables &
             # seq len from each sequence group metadata.
             # Cross-attention block tables are empty
@@ -475,7 +488,8 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
                 # We will be using CUDA graph replay for this decode.
                 max_len_of_block_table = self.get_max_block_per_batch()
                 batch_size = len(encoder_seq_lens)
-                graph_batch_size = _get_graph_batch_size(batch_size)
+                graph_batch_size = self.aphrodite_config.pad_for_cudagraph(
+                    batch_size)
                 assert graph_batch_size >= batch_size
                 cuda_graph_pad_size = graph_batch_size - batch_size
                 # extend the cross_block_tables and encoder_seq_lens to match
@@ -485,9 +499,11 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
                                            ])
                 encoder_seq_lens.extend(
                     itertools.repeat(1, cuda_graph_pad_size))
+
             else:
                 max_len_of_block_table = max(
                     len(block_table) for block_table in cross_block_tables)
+
             cross_block_tables = make_tensor_with_pad(
                 cross_block_tables,
                 max_len=max_len_of_block_table,
@@ -517,6 +533,7 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
             attn_metadata.encoder_seq_lens,
             attn_metadata.encoder_seq_lens_tensor,
             attn_metadata.max_encoder_seq_len,
+            attn_metadata.encoder_seq_start_loc,
             attn_metadata.cross_slot_mapping,
             attn_metadata.cross_block_tables,
         ) = (
@@ -524,6 +541,7 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
             encoder_seq_lens,
             encoder_seq_lens_tensor,
             max_encoder_seq_len,
+            encoder_seq_start_loc,
             cross_slot_mapping_tensor,
             cross_block_tables,
         )

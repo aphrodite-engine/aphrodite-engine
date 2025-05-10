@@ -1,5 +1,5 @@
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 import msgspec
 import torch
@@ -7,6 +7,7 @@ import torch
 from aphrodite.common.utils import is_pin_memory_available
 from aphrodite.modeling.layers.spec_decode_base_sampler import (
     SpecDecodeBaseSampler)
+from aphrodite.platforms import current_platform
 
 
 class SpecDecodeWorkerMetrics(
@@ -81,8 +82,21 @@ class AsyncMetricsCollector:
         self._rank = rank
         self._copy_stream = torch.cuda.Stream()
 
+    def init_tensors(self,
+                     rank: int,
+                     device_type: Union[torch.device, str] = 'cuda') -> None:
+        self._rank = rank
+        if isinstance(device_type, torch.device):
+            device_type = device_type.type
+        stream = current_platform.Stream
+        if stream is not None:
+            self._copy_stream = stream()
+
     def maybe_collect_rejsample_metrics(
             self, k: int) -> Optional[SpecDecodeWorkerMetrics]:
+        # Skip for any platform that doesn't have device Event
+        if current_platform.Event is None:
+            return None
 
         # If a copy was initiated in the previous call, collect and return.
         if self._in_flight_copy is not None:
@@ -104,10 +118,7 @@ class AsyncMetricsCollector:
         if self._rank != 0:
             return False
 
-        if (now - self._last_metrics_collect_time <
-                self._rejsample_metrics_collect_interval_s):
-            return False
-        return True
+        return now - self._last_metrics_collect_time >= self._rejsample_metrics_collect_interval_s  # noqa: E501
 
     def _copy_rejsample_metrics_async(self) -> torch.cuda.Event:
         """Copy rejection/typical-acceptance sampling metrics

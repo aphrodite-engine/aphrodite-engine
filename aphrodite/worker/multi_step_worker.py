@@ -20,27 +20,21 @@ class MultiStepState:
 
 
 class MultiStepWorker(Worker):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         base_model_runner = self.model_runner
         # for multi-step model, wrap the model runner with MultiStepModelRunner
         self.model_runner = MultiStepModelRunner(
             base_model_runner,
-            base_model_runner.model_config,
-            base_model_runner.parallel_config,
-            base_model_runner.scheduler_config,
-            base_model_runner.device_config,
-            base_model_runner.cache_config,
-            load_config=base_model_runner.load_config,
-            lora_config=self.lora_config,
+            aphrodite_config=base_model_runner.aphrodite_config,
             kv_cache_dtype=self.cache_config.cache_dtype,
             is_driver_worker=base_model_runner.is_driver_worker,
-            prompt_adapter_config=base_model_runner.prompt_adapter_config,
         )
+
         pipeline_parallel_size = self.parallel_config.pipeline_parallel_size
-        self.multi_step_states: List[Optional[MultiStepState]] = [
-            None
-        ] * pipeline_parallel_size
+        self.multi_step_states: List[
+            Optional[MultiStepState]] = [None] * pipeline_parallel_size
         self.temp_output = None
 
     def _get_driver_input_and_broadcast(
@@ -55,8 +49,7 @@ class MultiStepWorker(Worker):
         if is_first_multi_step:
             # on first step we prepare the worker input and model input normally
             worker_input: WorkerInput = self.prepare_worker_input(
-                execute_model_req=execute_model_req
-            )
+                execute_model_req=execute_model_req)
             model_input: StatefulModelInput = (
                 self.model_runner.prepare_model_input(
                     execute_model_req.seq_group_metadata_list,
@@ -79,14 +72,16 @@ class MultiStepWorker(Worker):
             # the workers.
             frozen_model_input.attn_metadata._cached_prefill_metadata = None
             frozen_model_input.attn_metadata._cached_decode_metadata = None
+
         model_input.is_first_multi_step = is_first_multi_step
         model_input.is_last_step = execute_model_req.is_last_step
+
         if not is_first_multi_step:
             # we broadcast the last sampled token ids to all TP workers so they
             # can update their model input metadata in-place.
             self._prepare_last_sampled_token_ids_for_tp_workers(
-                execute_model_req=execute_model_req, model_input=model_input
-            )
+                execute_model_req=execute_model_req, model_input=model_input)
+
         if self.do_metadata_broadcast:
             broadcast_data = worker_input.as_broadcastable_tensor_dict()
             broadcast_data.update(model_input.as_broadcastable_tensor_dict())
@@ -101,21 +96,18 @@ class MultiStepWorker(Worker):
         execute_model_req: ExecuteModelRequest,
         model_input: StatefulModelInput,
     ) -> None:
-        """
-        Prepare the last sampled token ids for TP workers. If it's the last
+        """ 
+        Prepare the last sampled token ids for TP workers. If it's the last 
         PP rank, then the last sampled token ids are already in the model_input.
         If it is NOT the last PP rank, then we need to get the last sampled
         token that is cached in the execute_model_req.
         """
         if get_pp_group().is_last_rank:
-            assert (
-                model_input.cached_outputs[-1].sampler_output.sampled_token_ids
-                is None
-            )
+            assert model_input.cached_outputs[
+                -1].sampler_output.sampled_token_ids is None
             assert model_input.cached_outputs[-1].sampled_token_ids is not None
             model_input.last_sampled_token_ids = model_input.cached_outputs[
-                -1
-            ].sampled_token_ids
+                -1].sampled_token_ids
             # free sampled token ids from the previous step if it has been
             # pythonized. Cannot free the last sampled token ids because
             # we need it for GPU advance_step.
@@ -127,14 +119,13 @@ class MultiStepWorker(Worker):
             # execute_model_req
             assert execute_model_req.last_sampled_token_ids is not None
             model_input.last_sampled_token_ids = (
-                execute_model_req.last_sampled_token_ids.cuda()
-            )
+                execute_model_req.last_sampled_token_ids.cuda())
             model_input.add_sampler_output(
                 SamplerOutput(outputs=[], sampled_token_ids=None),
-                model_input.last_sampled_token_ids,
-            )
+                model_input.last_sampled_token_ids)
+
             # free sampled token ids from the previous step.
-            # TODO: we could reuse the sampled token ids tensor from
+            # TODO(will) we could reuse the sampled token ids tensor from
             # the previous step instead.
             for output in model_input.cached_outputs[:-1]:
                 output.sampled_token_ids = None
@@ -160,6 +151,7 @@ class MultiStepWorker(Worker):
                     # notify all other workers to stop their execution loop.
                     broadcast_tensor_dict({}, src=0)
                 return None
+
             virtual_engine = execute_model_req.virtual_engine
             (model_input, worker_input,
              kwargs) = self._get_driver_input_and_broadcast(execute_model_req)
@@ -167,8 +159,7 @@ class MultiStepWorker(Worker):
             if execute_model_req.is_first_multi_step:
                 # cache the worker input and model input for the next steps
                 self.multi_step_states[virtual_engine] = MultiStepState(
-                    worker_input=worker_input, model_input=model_input
-                )
+                    worker_input=worker_input, model_input=model_input)
         # if TP workers
         else:
             broadcast_data = self._get_worker_input_from_broadcast()
@@ -189,14 +180,15 @@ class MultiStepWorker(Worker):
                 # optimization for model_inputs. Where the TP workers can cache
                 # the model input states and we only broadcast the delta need
                 # for the next step (sampled_token_ids from the previous step)
+
                 assert isinstance(model_input, StatefulModelInput)
                 # we need to update the last sampled token ids in the model
                 # input for the workers so that they can run inplace
                 # advance_step
                 model_input.add_sampler_output(
                     SamplerOutput(outputs=[], sampled_token_ids=None),
-                    model_input.last_sampled_token_ids,
-                )
+                    model_input.last_sampled_token_ids)
+
         assert model_input is not None
         assert worker_input is not None
         return model_input, worker_input, kwargs

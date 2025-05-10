@@ -1,10 +1,11 @@
-from typing import (TYPE_CHECKING, Any, Dict, Generic, Iterable, List,
-                    Optional, Tuple, Union, cast)
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Generic, Literal, Optional, Union, cast
 
+import torch
 from typing_extensions import NotRequired, TypedDict, TypeVar
 
 if TYPE_CHECKING:
-    from aphrodite.multimodal import MultiModalDataDict
+    from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalInputs
 
 
 class TextPrompt(TypedDict):
@@ -19,7 +20,7 @@ class TextPrompt(TypedDict):
     if the model supports it.
     """
 
-    mm_processor_kwargs: NotRequired[Dict[str, Any]]
+    mm_processor_kwargs: NotRequired[dict[str, Any]]
     """
     Optional multi-modal processor kwargs to be forwarded to the
     multimodal input mapper & processor. Note that if multiple modalities
@@ -27,12 +28,20 @@ class TextPrompt(TypedDict):
     to pass the mm_processor_kwargs to each of them.
     """
 
+    cache_salt: NotRequired[str]
+    """
+    Optional cache salt to be used for prefix caching.
+    """
+
 
 class TokensPrompt(TypedDict):
     """Schema for a tokenized prompt."""
 
-    prompt_token_ids: List[int]
+    prompt_token_ids: list[int]
     """A list of token IDs to pass to the model."""
+
+    token_type_ids: NotRequired[list[int]]
+    """A list of token type IDs to pass to the cross encoder model."""
 
     multi_modal_data: NotRequired["MultiModalDataDict"]
     """
@@ -40,7 +49,7 @@ class TokensPrompt(TypedDict):
     if the model supports it.
     """
 
-    mm_processor_kwargs: NotRequired[Dict[str, Any]]
+    mm_processor_kwargs: NotRequired[dict[str, Any]]
     """
     Optional multi-modal processor kwargs to be forwarded to the
     multimodal input mapper & processor. Note that if multiple modalities
@@ -48,13 +57,26 @@ class TokensPrompt(TypedDict):
     to pass the mm_processor_kwargs to each of them.
     """
 
+    cache_salt: NotRequired[str]
+    """
+    Optional cache salt to be used for prefix caching.
+    """
 
-SingletonPrompt = Union[str, TextPrompt, TokensPrompt]
+
+class EmbedsPrompt(TypedDict):
+    """Schema for a prompt provided via token embeddings."""
+
+    prompt_embeds: torch.Tensor
+    """The embeddings of the prompt."""
+
+
+SingletonPrompt = Union[str, TextPrompt, TokensPrompt, EmbedsPrompt]
 """
 Set of possible schemas for a single prompt:
 
 - A text prompt (:class:`str` or :class:`TextPrompt`)
 - A tokenized prompt (:class:`TokensPrompt`)
+- An embeddings prompt (:class:`EmbedsPrompt`)
 
 Note that "singleton" is as opposed to a data structure
 which encapsulates multiple prompts, i.e. of the sort
@@ -62,7 +84,7 @@ which may be utilized for encoder/decoder models when
 the user desires to express both the encoder & decoder
 prompts explicitly, i.e. :class:`ExplicitEncoderDecoderPrompt`
 
-A prompt of type :class:`SingletonPromptType` may be employed
+A prompt of type :class:`SingletonPrompt` may be employed
 as (1) input to a decoder-only model, (2) input to
 the encoder of an encoder/decoder model, in the scenario
 where the decoder-prompt is not specified explicitly, or
@@ -82,14 +104,13 @@ _T2_co = TypeVar("_T2_co",
 
 # TODO: Make fields ReadOnly once mypy supports it
 class ExplicitEncoderDecoderPrompt(TypedDict, Generic[_T1_co, _T2_co]):
-    """Represents an encoder/decoder model input prompt,
-    comprising an explicit encoder prompt and a
-    decoder prompt.
+    """
+    Represents an encoder/decoder model input prompt,
+    comprising an explicit encoder prompt and a decoder prompt.
 
-    The encoder and decoder prompts, respectively,
-    may formatted according to any of the
-    :class:`SingletonPromptType` schemas, and are not
-    required to have the same schema.
+    The encoder and decoder prompts, respectively, may be formatted
+    according to any of the :class:`SingletonPrompt` schemas,
+    and are not required to have the same schema.
 
     Only the encoder prompt may have multi-modal data. mm_processor_kwargs
     should be at the top-level, and should not be set in the encoder/decoder
@@ -97,16 +118,16 @@ class ExplicitEncoderDecoderPrompt(TypedDict, Generic[_T1_co, _T2_co]):
 
     Note that an :class:`ExplicitEncoderDecoderPrompt` may not
     be used as an input to a decoder-only model,
-    and that the `encoder_prompt` and `decoder_prompt`
+    and that the :code:`encoder_prompt` and :code:`decoder_prompt`
     fields of this data structure themselves must be
-    :class:`SingletonPromptType` instances.
+    :class:`SingletonPrompt` instances.
     """
 
     encoder_prompt: _T1_co
 
     decoder_prompt: Optional[_T2_co]
 
-    mm_processor_kwargs: NotRequired[Dict[str, Any]]
+    mm_processor_kwargs: NotRequired[dict[str, Any]]
 
 
 PromptType = Union[SingletonPrompt, ExplicitEncoderDecoderPrompt]
@@ -116,6 +137,7 @@ both decoder-only and encoder/decoder input types:
 
 - A text prompt (:class:`str` or :class:`TextPrompt`)
 - A tokenized prompt (:class:`TokensPrompt`)
+- An embeddings prompt (:class:`EmbedsPrompt`)
 - A single data structure containing both an encoder and a decoder prompt
   (:class:`ExplicitEncoderDecoderPrompt`)
 """
@@ -123,84 +145,98 @@ both decoder-only and encoder/decoder input types:
 
 class TokenInputs(TypedDict):
     """Represents token-based inputs."""
-    prompt_token_ids: List[int]
+
+    type: Literal["token"]
+    """The type of inputs."""
+
+    prompt_token_ids: list[int]
     """The token IDs of the prompt."""
 
-    prompt: NotRequired[Optional[str]]
+    token_type_ids: NotRequired[list[int]]
+    """The token type IDs of the prompt."""
+
+    prompt: NotRequired[str]
     """
     The original prompt text corresponding to the token IDs, if available.
     """
 
-    multi_modal_data: NotRequired[Optional["MultiModalDataDict"]]
+    cache_salt: NotRequired[str]
     """
-    Optional multi-modal data to pass to the model,
-    if the model supports it.
-    """
-
-    mm_processor_kwargs: NotRequired[Optional[Dict[str, Any]]]
-    """
-    Optional multi-modal processor kwargs to be forwarded to the
-    multimodal input mapper & processor. Note that if multiple modalities
-    have registered mappers etc for the model being considered, we attempt
-    to pass the mm_processor_kwargs to each of them.
+    Optional cache salt to be used for prefix caching.
     """
 
 
 def token_inputs(
-    prompt_token_ids: List[int],
+    prompt_token_ids: list[int],
+    token_type_ids: Optional[list[int]] = None,
     prompt: Optional[str] = None,
-    multi_modal_data: Optional["MultiModalDataDict"] = None,
-    mm_processor_kwargs: Optional[Dict[str, Any]] = None,
+    cache_salt: Optional[str] = None,
 ) -> TokenInputs:
     """Construct :class:`TokenInputs` from optional values."""
-    inputs = TokenInputs(prompt_token_ids=prompt_token_ids)
+    inputs = TokenInputs(type="token", prompt_token_ids=prompt_token_ids)
 
     if prompt is not None:
         inputs["prompt"] = prompt
-    if multi_modal_data is not None:
-        inputs["multi_modal_data"] = multi_modal_data
-    if mm_processor_kwargs is not None:
-        inputs["mm_processor_kwargs"] = mm_processor_kwargs
+    if token_type_ids is not None:
+        inputs["token_type_ids"] = token_type_ids
+    if cache_salt is not None:
+        inputs["cache_salt"] = cache_salt
 
     return inputs
 
 
-SingletonInputs = TokenInputs
-"""
-A processed :class:`SingletonPrompt` which can be passed to
-:class:`aphrodite.sequence.Sequence`.
-"""
+class EmbedsInputs(TypedDict):
+    """Represents embeddings-based inputs."""
 
-DecoderOnlyInputs = TokenInputs
+    type: Literal["embeds"]
+    """The type of inputs."""
+
+    prompt_embeds: torch.Tensor
+    """The embeddings of the prompt."""
+
+
+def embeds_inputs(prompt_embeds: torch.Tensor) -> EmbedsInputs:
+    """Construct :class:`EmbedsInputs` from optional values."""
+    inputs = EmbedsInputs(
+        type="embeds",
+        prompt_embeds=prompt_embeds,
+    )
+
+    return inputs
+
+
+DecoderOnlyInputs = Union[TokenInputs, EmbedsInputs, "MultiModalInputs"]
 """
-The inputs in :class:`~aphrodite.AphroditeEngine` before they are
+The inputs in :class:`~aphrodite.LLMEngine` before they are
 passed to the model executor.
 This specifies the data required for decoder-only models.
 """
 
 
-class EncoderDecoderInputs(TokenInputs):
+class EncoderDecoderInputs(TypedDict):
     """
-    The inputs in :class:`~aphrodite.AphroditeEngine` before they are
+    The inputs in :class:`~aphrodite.LLMEngine` before they are
     passed to the model executor.
 
     This specifies the required data for encoder-decoder models.
     """
-    encoder_prompt_token_ids: List[int]
-    """The token IDs of the encoder prompt."""
+    encoder: Union[TokenInputs, "MultiModalInputs"]
+    """The inputs for the encoder portion."""
 
-    encoder_prompt: NotRequired[Optional[str]]
-    """
-    The original encoder prompt text corresponding to the token IDs, if
-    available.
-    """
+    decoder: Union[TokenInputs, "MultiModalInputs"]
+    """The inputs for the decoder portion."""
 
-    encoder_multi_modal_data: NotRequired[Optional["MultiModalDataDict"]]
-    """
-    Optional multi-modal data to pass to the encoder model,
-    if the model supports it.
-    """
 
+SingletonInputs = Union[TokenInputs, EmbedsInputs, "MultiModalInputs"]
+"""
+A processed :class:`SingletonPrompt` which can be passed to
+:class:`aphrodite.sequence.Sequence`.
+"""
+
+ProcessorInputs = Union[DecoderOnlyInputs, EncoderDecoderInputs]
+"""
+The inputs to :data:`aphrodite.inputs.InputProcessor`.
+"""
 
 _T1 = TypeVar("_T1", bound=SingletonPrompt, default=SingletonPrompt)
 _T2 = TypeVar("_T2", bound=SingletonPrompt, default=SingletonPrompt)
@@ -209,7 +245,7 @@ _T2 = TypeVar("_T2", bound=SingletonPrompt, default=SingletonPrompt)
 def build_explicit_enc_dec_prompt(
     encoder_prompt: _T1,
     decoder_prompt: Optional[_T2],
-    mm_processor_kwargs: Optional[Dict[str, Any]] = None,
+    mm_processor_kwargs: Optional[dict[str, Any]] = None,
 ) -> ExplicitEncoderDecoderPrompt[_T1, _T2]:
     if mm_processor_kwargs is None:
         mm_processor_kwargs = {}
@@ -222,23 +258,24 @@ def build_explicit_enc_dec_prompt(
 def zip_enc_dec_prompts(
     enc_prompts: Iterable[_T1],
     dec_prompts: Iterable[Optional[_T2]],
-    mm_processor_kwargs: Optional[Union[Iterable[Dict[str, Any]],
-                                        Dict[str, Any]]] = None,
-) -> List[ExplicitEncoderDecoderPrompt[_T1, _T2]]:
+    mm_processor_kwargs: Optional[Union[Iterable[dict[str, Any]],
+                                        dict[str, Any]]] = None,
+) -> list[ExplicitEncoderDecoderPrompt[_T1, _T2]]:
     """
     Zip encoder and decoder prompts together into a list of
-    :class:`ExplicitEncoderDecoderPrompt` instances. mm_processor_kwargs
-    may also be provided; if a dict is passed, the same dictionary will be
-    used for every encoder/decoder prompt. If an iterable is provided, it will
-    be zipped with the encoder/decoder prompts.
+    :class:`ExplicitEncoderDecoderPrompt` instances.
+
+    ``mm_processor_kwargs`` may also be provided; if a dict is passed, the same
+    dictionary will be used for every encoder/decoder prompt. If an iterable is
+    provided, it will be zipped with the encoder/decoder prompts.
     """
     if mm_processor_kwargs is None:
-        mm_processor_kwargs = cast(Dict[str, Any], {})
+        mm_processor_kwargs = cast(dict[str, Any], {})
     if isinstance(mm_processor_kwargs, dict):
         return [
             build_explicit_enc_dec_prompt(
                 encoder_prompt, decoder_prompt,
-                cast(Dict[str, Any], mm_processor_kwargs))
+                cast(dict[str, Any], mm_processor_kwargs))
             for (encoder_prompt,
                  decoder_prompt) in zip(enc_prompts, dec_prompts)
         ]
@@ -252,40 +289,7 @@ def zip_enc_dec_prompts(
 
 def to_enc_dec_tuple_list(
     enc_dec_prompts: Iterable[ExplicitEncoderDecoderPrompt[_T1, _T2]],
-) -> List[Tuple[_T1, Optional[_T2]]]:
+) -> list[tuple[_T1, Optional[_T2]]]:
     return [(enc_dec_prompt["encoder_prompt"],
              enc_dec_prompt["decoder_prompt"])
             for enc_dec_prompt in enc_dec_prompts]
-
-
-def __getattr__(name: str):
-    if name == "PromptInput":
-        import warnings
-    import warnings  # noqa: F811
-
-    if name == "PromptInput":
-        msg = ("PromptInput has been renamed to PromptType. "
-               "The original name will be removed in an upcoming version.")
-
-        warnings.warn(DeprecationWarning(msg), stacklevel=2)
-
-        return PromptType
-
-    if name == "LLMInputs":
-        msg = ("LLMInputs has been renamed to DecoderOnlyInputs. "
-               "The original name will be removed in an upcoming version.")
-
-        warnings.warn(DeprecationWarning(msg), stacklevel=2)
-
-        return DecoderOnlyInputs
-
-    if name == "EncoderDecoderLLMInputs":
-        msg = (
-            "EncoderDecoderLLMInputs has been renamed to EncoderDecoderInputs. "
-            "The original name will be removed in an upcoming version.")
-
-        warnings.warn(DeprecationWarning(msg), stacklevel=2)
-
-        return EncoderDecoderInputs
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

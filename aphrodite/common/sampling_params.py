@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import msgspec
 from loguru import logger
 from pydantic import BaseModel
-from typing_extensions import Annotated
+from typing_extensions import Annotated, deprecated
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import SchedulerConfig
@@ -30,41 +30,37 @@ class SamplingType(IntEnum):
 @dataclass
 class GuidedDecodingParams:
     """One of these fields will be used to build a logit processor."""
-    json: Optional[Union[str, Dict]] = None
+    json: Optional[Union[str, dict]] = None
     regex: Optional[str] = None
-    choice: Optional[List[str]] = None
+    choice: Optional[list[str]] = None
     grammar: Optional[str] = None
     json_object: Optional[bool] = None
     """These are other options that can be set"""
     backend: Optional[str] = None
+    backend_was_auto: bool = False
+    disable_fallback: bool = False
+    disable_any_whitespace: bool = False
+    disable_additional_properties: bool = False
     whitespace_pattern: Optional[str] = None
+    structural_tag: Optional[str] = None
 
     @staticmethod
     def from_optional(
-        json: Optional[Union[Dict, BaseModel, str]] = None,
+        json: Optional[Union[dict, BaseModel, str]] = None,
         regex: Optional[str] = None,
-        choice: Optional[List[str]] = None,
+        choice: Optional[list[str]] = None,
         grammar: Optional[str] = None,
         json_object: Optional[bool] = None,
         backend: Optional[str] = None,
         whitespace_pattern: Optional[str] = None,
+        structural_tag: Optional[str] = None,
     ) -> Optional["GuidedDecodingParams"]:
-        if all(arg is None
-               for arg in (json, regex, choice, grammar, json_object)):
+        if all(arg is None for arg in (json, regex, choice, grammar,
+                                       json_object, structural_tag)):
             return None
         # Extract json schemas from pydantic models
         if isinstance(json, (BaseModel, type(BaseModel))):
             json = json.model_json_schema()
-
-        if isinstance(json, dict) and not json:
-            json = None
-        if isinstance(grammar, str) and not grammar:
-            grammar = None
-        if isinstance(regex, str) and not regex:
-            regex = None
-        if isinstance(choice, list) and not choice:
-            choice = None
-
         return GuidedDecodingParams(
             json=json,
             regex=regex,
@@ -73,6 +69,7 @@ class GuidedDecodingParams:
             json_object=json_object,
             backend=backend,
             whitespace_pattern=whitespace_pattern,
+            structural_tag=structural_tag,
         )
 
     def __post_init__(self):
@@ -85,6 +82,27 @@ class GuidedDecodingParams:
             raise ValueError(
                 "You can only use one kind of guided decoding but multiple are "
                 f"specified: {self.__dict__}")
+
+        if self.backend is not None and ":" in self.backend:
+            self._extract_backend_options()
+
+    @deprecated(
+        "Passing guided decoding backend options inside backend in the format "
+        "'backend:...' is deprecated. This will be removed in v0.10.0. Please "
+        "use the dedicated arguments '--disable-fallback', "
+        "'--disable-any-whitespace' and '--disable-additional-properties' "
+        "instead.")
+    def _extract_backend_options(self):
+        """Extract backend options from the backend string."""
+        assert isinstance(self.backend, str)
+        self.backend, options = self.backend.split(":")
+        options_set = set(options.strip().split(","))
+        if "no-fallback" in options_set:
+            self.disable_fallback = True
+        if "disable-any-whitespace" in options_set:
+            self.disable_any_whitespace = True
+        if "no-additional-properties" in options_set:
+            self.disable_additional_properties = True
 
 
 class RequestOutputKind(Enum):
@@ -369,7 +387,10 @@ class SamplingParams(
     guided_decoding: Optional[GuidedDecodingParams] = None
     logit_bias: Optional[Dict[int, float]] = None
     allowed_token_ids: Optional[List[int]] = None
+    extra_args: Optional[dict[str, Any]] = None
     bad_words: Optional[List[str]] = None
+
+
     default_values = {
         "n": 1,
         "best_of": None,
@@ -429,6 +450,7 @@ class SamplingParams(
         "logit_bias": None,
         "allowed_token_ids": None,
         "bad_words": None,
+        "extra_args": None,
     }
 
     def __post_init__(self) -> None:
@@ -764,3 +786,17 @@ class SamplingParams(
                 repr_str += f"{param}={current_value}, "
         repr_str = repr_str.rstrip(', ') + ")"
         return repr_str
+
+
+class BeamSearchParams(
+        msgspec.Struct,
+        omit_defaults=True,  # type: ignore[call-arg]
+        # required for @cached_property.
+        dict=True):  # type: ignore[call-arg]
+    """Beam search parameters for text generation."""
+    beam_width: int
+    max_tokens: int
+    ignore_eos: bool = False
+    temperature: float = 0.0
+    length_penalty: float = 1.0
+    include_stop_str_in_output: bool = False

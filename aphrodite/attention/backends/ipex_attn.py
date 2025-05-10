@@ -4,14 +4,16 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 import torch
+from loguru import logger
 
 from aphrodite._ipex_ops import ipex_ops
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionImpl,
+                                                   AttentionLayer,
                                                    AttentionMetadata,
-                                                   AttentionType)
-from aphrodite.attention.backends.utils import (CommonAttentionState,
-                                                CommonMetadataBuilder)
+                                                   AttentionType,
+                                                   is_quantized_kv_cache)
+from aphrodite.attention.backends.utils import CommonAttentionState
 from aphrodite.attention.ops.paged_attn import (PagedAttention,
                                                 PagedAttentionMetadata)
 
@@ -22,7 +24,7 @@ class IpexAttnBackend(AttentionBackend):
 
     @staticmethod
     def get_name() -> str:
-        return "ipex-attn"
+        return "IPEX"
 
     @staticmethod
     def get_impl_cls() -> Type["IpexAttnBackendImpl"]:
@@ -31,10 +33,6 @@ class IpexAttnBackend(AttentionBackend):
     @staticmethod
     def get_metadata_cls() -> Type["IpexAttnMetadata"]:
         return IpexAttnMetadata
-
-    @staticmethod
-    def get_builder_cls() -> Type["IpexAttnMetadataBuilder"]:
-        return IpexAttnMetadataBuilder
 
     @staticmethod
     def get_state_cls() -> Type["CommonAttentionState"]:
@@ -65,7 +63,6 @@ class IpexAttnBackend(AttentionBackend):
         src_to_dists: torch.Tensor,
     ) -> None:
         from aphrodite._ipex_ops import ipex_ops as ops
-
         key_caches = [kv_cache[0] for kv_cache in kv_caches]
         value_caches = [kv_cache[1] for kv_cache in kv_caches]
         ops.copy_blocks(key_caches, value_caches, src_to_dists)
@@ -110,11 +107,6 @@ class IpexAttnMetadata(AttentionMetadata, PagedAttentionMetadata):
         return self
 
 
-class IpexAttnMetadataBuilder(CommonMetadataBuilder[IpexAttnMetadata]):
-
-    _metadata_cls = IpexAttnMetadata
-
-
 class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
 
     def __init__(
@@ -128,12 +120,16 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
         kv_cache_dtype: str,
         blocksparse_params: Optional[Dict[str, Any]] = None,
         logits_soft_cap: Optional[float] = None,
+        attn_type: str = AttentionType.DECODER,
+        use_irope: bool = False,
     ) -> None:
+        if use_irope:
+            logger.warning_once(
+                "Using irope in Ipex is not supported yet, it will fall"
+                " back to global attention for long context.")
         if blocksparse_params is not None:
             raise ValueError(
                 "IPEX backend does not support block-sparse attention.")
-        if logits_soft_cap is not None:
-            raise ValueError("IPEX backend does not support logits_soft_cap.")
         self.num_heads = num_heads
         self.head_size = head_size
         self.scale = float(scale)
@@ -146,18 +142,25 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
 
         assert self.num_heads % self.num_kv_heads == 0
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
-        self.need_mask = (self.alibi_slopes is not None
-                          or self.sliding_window is not None)
+        self.need_mask = (self.sliding_window is not None)
+        if logits_soft_cap is None:
+            logits_soft_cap = -1
+        self.logits_soft_cap = logits_soft_cap
 
         supported_head_sizes = PagedAttention.get_supported_head_sizes()
         if head_size not in supported_head_sizes:
             raise ValueError(
                 f"Head size {head_size} is not supported by PagedAttention. "
                 f"Supported head sizes are: {supported_head_sizes}.")
-        if kv_cache_dtype != "auto":
+        if is_quantized_kv_cache(kv_cache_dtype):
             raise NotImplementedError(
                 "IPEX backend does not support FP8 KV cache. "
                 "Please use xFormers backend instead.")
+        if attn_type != AttentionType.DECODER:
+            raise NotImplementedError("Encoder self-attention and "
+                                      "encoder/decoder cross-attention "
+                                      "are not implemented for "
+                                      "IpexAttnBackendImpl")
 
     def split_kv_cache(
         self,
@@ -177,16 +180,16 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
 
     def forward(
         self,
+        layer: AttentionLayer,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
         attn_metadata: IpexAttnMetadata,  # type: ignore
-        k_scale: float = 1.0,
-        v_scale: float = 1.0,
-        attn_type: AttentionType = AttentionType.DECODER,
+        output: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass with IPEX varlen_attention and PagedAttention.
+
         Args:
             query: shape = [num_tokens, num_heads * head_size]
             key: shape = [num_tokens, num_kv_heads * head_size]
@@ -198,12 +201,7 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
-        assert k_scale == 1.0 and v_scale == 1.0
-        if attn_type != AttentionType.DECODER:
-            raise NotImplementedError("Encoder self-attention and "
-                                      "encoder/decoder cross-attention "
-                                      "are not implemented for "
-                                      "IpexAttnBackendImpl")
+        assert layer._k_scale_float == 1.0 and layer._v_scale_float == 1.0
         num_tokens, hidden_size = query.shape
         # Reshape the query, key, and value tensors.
         query = query.view(-1, self.num_heads, self.head_size)
@@ -220,8 +218,8 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
                 value_cache,
                 attn_metadata.slot_mapping.flatten(),
                 self.kv_cache_dtype,
-                k_scale,
-                v_scale,
+                layer._k_scale_float,
+                layer._v_scale_float,
             )
 
         if attn_metadata.is_prompt:
@@ -234,11 +232,7 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
                                                     dim=1)
 
                 if attn_metadata.attn_bias is None:
-                    if self.alibi_slopes is not None:
-                        att_masks = _make_alibi_bias(
-                            self.alibi_slopes, query.dtype,
-                            attn_metadata.seq_lens)  # type: ignore
-                    elif self.sliding_window is not None:
+                    if self.sliding_window is not None:
                         att_masks = _make_sliding_window_bias(
                             attn_metadata.seq_lens, self.sliding_window,
                             query.dtype)  # type: ignore
@@ -251,20 +245,26 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
                     (num_tokens, self.num_heads, self.head_size),
                     dtype=query.dtype,
                     device=query.device)
-                ipex_ops.varlen_attention(query,
-                                          key,
-                                          value,
-                                          output,
-                                          attn_metadata.seqlen_q,
-                                          attn_metadata.seqlen_q,
-                                          attn_metadata.max_seqlen,
-                                          attn_metadata.max_seqlen,
-                                          pdropout=0.0,
-                                          softmax_scale=self.scale,
-                                          zero_tensors=False,
-                                          is_causal=True,
-                                          return_softmax=False,
-                                          gen_=None)
+                ipex_ops.varlen_attention(
+                    query,
+                    key,
+                    value,
+                    output,
+                    attn_metadata.seqlen_q,
+                    attn_metadata.seqlen_q,
+                    self.alibi_slopes,
+                    attn_metadata.max_seqlen,
+                    attn_metadata.max_seqlen,
+                    pdropout=0.0,
+                    softmax_scale=self.scale,
+                    zero_tensors=False,
+                    is_causal=True,
+                    return_softmax=False,
+                    gen_=None,
+                    window_size_left=-1,
+                    window_size_right=-1,
+                    logits_soft_cap=self.logits_soft_cap,
+                )
             else:
                 # prefix-enabled attention
                 raise RuntimeError(
@@ -303,8 +303,8 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
                     max_seq_len,
                     self.alibi_slopes,
                     self.kv_cache_dtype,
-                    k_scale,
-                    v_scale,
+                    layer._k_scale_float,
+                    layer._v_scale_float,
                 )
             else:
                 # Run PagedAttention V2.
@@ -336,8 +336,8 @@ class IpexAttnBackendImpl(AttentionImpl[IpexAttnMetadata]):
                     max_seq_len,
                     self.alibi_slopes,
                     self.kv_cache_dtype,
-                    k_scale,
-                    v_scale,
+                    layer._k_scale_float,
+                    layer._v_scale_float,
                 )
 
             # Reshape the output tensor.
@@ -352,7 +352,7 @@ def _make_alibi_bias(
     attn_biases = []
     for seq_len in seq_lens:
         bias = torch.arange(seq_len, dtype=dtype, device=alibi_slopes.device)
-        # NOTE: HF uses
+        # NOTE(zhuohan): HF uses
         #     `bias = bias[None, :].repeat(seq_len, 1)`
         # here. We find that both biases give the same results, but
         # the bias below more accurately follows the original ALiBi

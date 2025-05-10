@@ -17,7 +17,7 @@ def _convert_tokens_to_string_with_added_encoders(
 ) -> str:
     # Adapted from
     # https://github.com/huggingface/transformers/blob/v4.28.0/src/transformers/tokenization_utils.py#L921
-    # NOTE: The following code is slow because it runs a for loop over
+    # NOTE(woosuk): The following code is slow because it runs a for loop over
     # the output_tokens. In Python, running a for loop over a list can be slow
     # even when the loop body is very simple.
     sub_texts: List[str] = []
@@ -55,6 +55,7 @@ def convert_prompt_ids_to_tokens(
 ) -> Tuple[List[str], int, int]:
     """Converts the prompt ids to tokens and returns the tokens and offsets
     for incremental detokenization.
+
     Note that not all tokens are converted to strings. Only the tokens that
     are necessary for incremental detokenization are converted to strings.
     """
@@ -71,6 +72,25 @@ def convert_prompt_ids_to_tokens(
     return new_tokens, prefix_offset, read_offset
 
 
+def convert_ids_list_to_tokens(
+    tokenizer: AnyTokenizer,
+    token_ids: List[int],
+) -> List[str]:
+    """Detokenize the input ids individually.
+
+    Args:
+      tokenizer: tokenizer used by model under test
+      token_ids: convert these tokens (Python list form)
+
+    Returns:
+      Python list of token string representations
+    
+    """
+    token_str_lst = tokenizer.convert_ids_to_tokens(token_ids)
+    _replace_none_with_empty(token_str_lst)  # type: ignore
+    return token_str_lst
+
+
 # Based on
 # https://github.com/huggingface/text-generation-inference/blob/v0.9.4/server/text_generation_server/models/model.py#L62C9-L62C15
 # under Apache 2.0 license
@@ -85,13 +105,17 @@ def detokenize_incrementally(
 ) -> Tuple[List[str], str, int, int]:
     """Detokenizes the input ids incrementally and returns the new tokens
     and the new text.
+
     If `prev_tokens` is None, this function will convert the input ids to
     tokens and return the tokens and the new text. Otherwise, it will return the
     new tokens and the new text.
+
     This function will also return the new prefix offset and the new read
     offset to be used in the next iteration.
+
     The offsets are necessary to defeat cleanup algorithms in the decode which
     decide to add a space or not depending on the surrounding ids.
+
     Args:
         tokenizer: The tokenizer to use.
         all_input_ids: The input ids. The last id is the new token id.

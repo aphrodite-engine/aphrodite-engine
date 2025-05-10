@@ -1,14 +1,16 @@
-from aphrodite.common.logger import log_once
+from loguru import logger
+
+from aphrodite.common.utils import resolve_obj_by_qualname
 from aphrodite.platforms import current_platform
 
 from .punica_base import PunicaWrapperBase
 
 
 def get_punica_wrapper(*args, **kwargs) -> PunicaWrapperBase:
-    if current_platform.is_cuda():
-        # Lazy import to avoid ImportError
-        from aphrodite.lora.punica_wrapper.punica_gpu import PunicaWrapperGPU
-        log_once(level="INFO", message="Using PunicaWrapperGPU.")
-        return PunicaWrapperGPU(*args, **kwargs)
-    else:
-        raise NotImplementedError
+    punica_wrapper_qualname = current_platform.get_punica_wrapper()
+    punica_wrapper_cls = resolve_obj_by_qualname(punica_wrapper_qualname)
+    punica_wrapper = punica_wrapper_cls(*args, **kwargs)
+    assert punica_wrapper is not None, \
+        "the punica_wrapper_qualname(" + punica_wrapper_qualname + ") is wrong."
+    logger.info_once("Using %s.", punica_wrapper_qualname.rsplit(".", 1)[1])
+    return punica_wrapper

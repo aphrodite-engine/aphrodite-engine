@@ -3,45 +3,36 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch_xla.core.xla_model as xm
+import torch_xla.debug.profiler as xp
 import torch_xla.runtime as xr
+from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
-                                     ModelConfig, ParallelConfig,
-                                     SchedulerConfig)
+from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE, get_dtype_size
+from aphrodite.common.utils import (STR_DTYPE_TO_TORCH_DTYPE, bind_kv_cache,
+                                    get_dtype_size)
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
 from aphrodite.modeling import set_random_seed
-from aphrodite.worker.tpu_model_runner import TPUModelRunner
+from aphrodite.worker.tpu_model_runner import ExecutionMode, TPUModelRunner
 from aphrodite.worker.worker_base import (LocalOrDistributedWorkerBase,
-                                          LoraNotSupportedWorkerBase,
-                                          WorkerInput)
+                                          LoRANotSupportedWorkerBase,
+                                          WorkerBase, WorkerInput)
 
 
-class TPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
+class TPUWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
-        cache_config: CacheConfig,
-        load_config: LoadConfig,
+        aphrodite_config: AphroditeConfig,
         local_rank: int,
         rank: int,
         distributed_init_method: str,
         is_driver_worker: bool,
     ) -> None:
-        self.model_config = model_config
-        self.parallel_config = parallel_config
+        WorkerBase.__init__(self, aphrodite_config=aphrodite_config)
         self.parallel_config.rank = rank
-        self.scheduler_config = scheduler_config
-        self.device_config = device_config
-        self.cache_config = cache_config
-        self.load_config = load_config
         self.local_rank = local_rank
         self.rank = rank
         self.distributed_init_method = distributed_init_method
@@ -55,13 +46,11 @@ class TPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                 self.cache_config.cache_dtype]
 
         self.model_runner: TPUModelRunner = TPUModelRunner(
-            model_config,
-            parallel_config,
-            scheduler_config,
-            device_config,
-            cache_config,
-            load_config,
+            aphrodite_config=aphrodite_config,
             is_driver_worker=is_driver_worker)
+
+        if self.model_config.seed is None:
+            self.model_config.seed = 0
 
     def init_device(self) -> None:
         os.environ["PJRT_DEVICE"] = "TPU"
@@ -102,9 +91,37 @@ class TPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # can have slightly different XLA graphs.
         world_size = self.parallel_config.world_size
         rank = xr.global_ordinal()
-        per_rank_path = os.path.join(envs.APHRODITE_XLA_CACHE_PATH,
-                                     f"tp{world_size}_rank{rank}")
-        xr.initialize_cache(per_rank_path, readonly=False)
+        # The PyTorch/XLA compilation cache uses the Torch IR to generate keys.
+        # Consequently, changes in optimization flags, which affect compilation
+        # results, don't change the cache key. This can result in the wrong
+        # compilation being used. To prevent this, disabling the XLA compilation
+        # cache during development is recommended.We can disable it by
+        # `export APHRODITE_XLA_CACHE_PATH=`
+        if envs.APHRODITE_XLA_CACHE_PATH:
+            per_rank_path = os.path.join(envs.APHRODITE_XLA_CACHE_PATH,
+                                         f"tp{world_size}_rank{rank}")
+            xr.initialize_cache(per_rank_path, readonly=False)
+
+        self.profiler = None
+        if envs.APHRODITE_TORCH_PROFILER_DIR and self.rank < 1:
+            # For TPU, we can only have 1 active profiler session for 1 profiler
+            # server. So we only profile on rank0.
+            self.profile_dir = envs.APHRODITE_TORCH_PROFILER_DIR
+            logger.info("Profiling enabled. Traces will be saved to: %s",
+                        self.profile_dir)
+            self.profiler = xp.start_server(9012)
+
+    def start_profile(self):
+        if self.rank < 1:
+            if self.profiler is None:
+                raise RuntimeError("Profiler is not enabled.")
+            xp.start_trace(self.profile_dir)
+
+    def stop_profile(self):
+        if self.rank < 1:
+            if self.profiler is None:
+                raise RuntimeError("Profiler is not enabled.")
+            xp.stop_trace()
 
     def load_model(self):
         self.model_runner.load_model()
@@ -123,27 +140,30 @@ class TPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                       torch.tensor([], dtype=torch.float32,
                                    device=self.device))
                      for _ in range(num_layers)]
+        bind_kv_cache(self.compilation_config.static_forward_context,
+                      [kv_caches])
         self.model_runner._dummy_run(
             batch_size=1,
             seq_len=self.scheduler_config.max_num_batched_tokens,
             kv_caches=kv_caches,
-            is_prompt=True,
+            exec_mode=ExecutionMode.PREFILL,
         )
         # Synchronize before measuring the memory usage.
         xm.wait_device_ops()
 
-        dtype_btyes = get_dtype_size(self.cache_dtype)
-        block_size = self.cache_config.block_size
-        block_size_bytes = (dtype_btyes * block_size * num_layers * 2 *
-                            head_size * num_kv_heads)
-
-        # Calculate the TPU KV cache size based on profiling.
+        # Get the maximum amount of memory used by the model weights and
+        # intermediate activations.
         m = xm.get_memory_info(self.device)
         total_memory_size = m["bytes_limit"]
+        profiled = m["peak_bytes_used"]  # Weights + intermediate activations.
+
+        # Calculate the TPU KV cache size based on profiling.
         usable_memory_size = int(total_memory_size *
                                  self.cache_config.gpu_memory_utilization)
-        profiled = m["bytes_used"]  # Weights + intermediate activations.
         tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
+        dtype_bytes = get_dtype_size(self.cache_dtype)
+        block_size_bytes = (dtype_bytes * self.cache_config.block_size *
+                            num_layers * 2 * head_size * num_kv_heads)
         num_tpu_blocks = tpu_kv_cache_bytes // block_size_bytes
         num_tpu_blocks = (num_tpu_blocks // 8) * 8  # Round down to 8.
 
@@ -151,7 +171,6 @@ class TPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         num_cpu_blocks = int(self.cache_config.swap_space_bytes //
                              block_size_bytes)
         num_cpu_blocks = (num_cpu_blocks // 8) * 8  # Round down to 8.
-
         return num_tpu_blocks, num_cpu_blocks
 
     def initialize_cache(
@@ -185,6 +204,8 @@ class TPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                                       device="cpu")
             cpu_v_cache = torch.zeros_like(cpu_k_cache)
             self.cpu_cache.append((cpu_k_cache, cpu_v_cache))
+        bind_kv_cache(self.compilation_config.static_forward_context,
+                      [self.tpu_cache])
         self._warmup_model()
 
     def _warmup_model(self) -> None:

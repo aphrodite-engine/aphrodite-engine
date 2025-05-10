@@ -1,13 +1,43 @@
+import types
 from importlib.util import find_spec
 
-from aphrodite.common.utils import print_warning_once
-from aphrodite.platforms import current_platform
+from loguru import logger
 
-HAS_TRITON = find_spec("triton") is not None
+HAS_TRITON = (
+    find_spec("triton") is not None
+    or find_spec("pytorch-triton-xpu") is not None  # Not compatible
+)
 
-if not HAS_TRITON and (current_platform.is_cuda() or
-                       current_platform.is_rocm()):
-    print_warning_once(
-        "Triton not installed; certain GPU-related functions"
-        " will be not be available."
-    )
+if not HAS_TRITON:
+    logger.info("Triton not installed or not compatible; certain GPU-related"
+                " functions will not be available.")
+
+    class TritonPlaceholder(types.ModuleType):
+
+        def __init__(self):
+            super().__init__("triton")
+            self.jit = self._dummy_decorator("jit")
+            self.autotune = self._dummy_decorator("autotune")
+            self.heuristics = self._dummy_decorator("heuristics")
+            self.language = TritonLanguagePlaceholder()
+            logger.warning_once(
+                "Triton is not installed. Using dummy decorators. "
+                "Install it via `pip install triton` to enable kernel"
+                "compilation.")
+
+        def _dummy_decorator(self, name):
+
+            def decorator(func=None, **kwargs):
+                if func is None:
+                    return lambda f: f
+                return func
+
+            return decorator
+
+    class TritonLanguagePlaceholder(types.ModuleType):
+
+        def __init__(self):
+            super().__init__("triton.language")
+            self.constexpr = None
+            self.dtype = None
+            self.int64 = None

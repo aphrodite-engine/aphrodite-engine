@@ -4,38 +4,31 @@ from typing import List, Optional, Tuple
 import torch
 import torch.distributed
 
-from aphrodite.common.config import (CacheConfig, DeviceConfig, ModelConfig,
-                                     ParallelConfig, SchedulerConfig)
+from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
 from aphrodite.modeling import set_random_seed
+from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.worker.neuron_model_runner import NeuronModelRunner
 from aphrodite.worker.worker_base import (LocalOrDistributedWorkerBase,
-                                                LoraNotSupportedWorkerBase,
-                                                WorkerInput)
+                                          LoRANotSupportedWorkerBase,
+                                          WorkerBase, WorkerInput)
 
 
-class NeuronWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
+class NeuronWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     """A worker class that executes the model on a group of neuron cores.
     """
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
-        cache_config: CacheConfig,
+        aphrodite_config: AphroditeConfig,
         local_rank: int,
         rank: int,
         distributed_init_method: str,
+        is_driver_worker: bool = True,
     ) -> None:
-        self.model_config = model_config
-        self.parallel_config = parallel_config
-        self.scheduler_config = scheduler_config
-        self.device_config = device_config
-        self.cache_config = cache_config
+        WorkerBase.__init__(self, aphrodite_config=aphrodite_config)
         self.local_rank = local_rank
         self.rank = rank
         self.distributed_init_method = distributed_init_method
@@ -45,11 +38,27 @@ class NeuronWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             init_cached_hf_modules()
 
         self.model_runner: NeuronModelRunner = NeuronModelRunner(
-            model_config, parallel_config, scheduler_config, device_config)
-        self.is_driver_worker = True
+            aphrodite_config=aphrodite_config)
+        self.is_driver_worker = is_driver_worker
+
+    def execute_model(
+        self,
+        execute_model_req: Optional[ExecuteModelRequest] = None,
+    ) -> Optional[List[SamplerOutput]]:
+        assert execute_model_req is not None
+        assert (not execute_model_req.blocks_to_swap_in
+                and not execute_model_req.blocks_to_swap_out
+                and not execute_model_req.blocks_to_copy), (
+                    "Cache operations are not supported for Neuron backend.")
+        assert execute_model_req.num_lookahead_slots == 0, (
+            "lookahead not supported for Neuron backend.")
+        output = LocalOrDistributedWorkerBase.execute_model(
+            self, execute_model_req)
+        return output
 
     def init_device(self) -> None:
         self.init_distributed_environment()
+
         # Set random seed.
         set_random_seed(self.model_config.seed)
 
@@ -66,7 +75,7 @@ class NeuronWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # Set the number of GPU blocks to be the same as the maximum number of
         # sequences that can be processed in a single batch. This is equivalent
         # to schedule without PagedAttention.
-        num_gpu_blocks = self.scheduler_config.max_num_seqs
+        num_gpu_blocks = self.scheduler_config.max_num_seqs + 1
 
         # Swap not yet supported with Neuron backend.
         num_cpu_blocks = 0
@@ -80,7 +89,7 @@ class NeuronWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
         # Different values are not tested.
         assert num_cpu_blocks == 0
-        assert num_gpu_blocks == self.scheduler_config.max_num_seqs
+        assert num_gpu_blocks == self.scheduler_config.max_num_seqs + 1
 
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
@@ -111,12 +120,14 @@ class NeuronWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
     def init_distributed_environment(self):
         """Neuron uses transformers-neuronx for tensor parallelism.
-        Aphrodite still needs the environment inited when TP/PP > 1
+        It has only one process to control multiple devices.
+        Aphrodite still needs the environment initialized when TP/PP > 1,
+        so we initialize a distributed environment with one process.
         """
         init_distributed_environment(
             world_size=1,
-            rank=self.rank,
-            local_rank=self.local_rank,
+            rank=0,
+            local_rank=0,
             distributed_init_method=self.distributed_init_method,
             backend="gloo",
         )

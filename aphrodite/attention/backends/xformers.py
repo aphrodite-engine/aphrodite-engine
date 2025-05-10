@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 import torch
+from loguru import logger
 from xformers import ops as xops
 from xformers.ops.fmha.attn_bias import (AttentionBias,
                                          BlockDiagonalCausalMask,
@@ -11,10 +12,13 @@ from xformers.ops.fmha.attn_bias import (AttentionBias,
 
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionImpl,
+                                                   AttentionLayer,
                                                    AttentionMetadata,
                                                    AttentionType)
-from aphrodite.attention.backends.utils import (CommonAttentionState,
-                                                CommonMetadataBuilder)
+from aphrodite.attention.backends.utils import (
+    CommonAttentionState, CommonMetadataBuilder,
+    get_num_prefill_decode_query_kv_tokens, get_seq_len_block_table_args,
+    is_all_cross_attn_metadata_set, is_all_encoder_attn_metadata_set)
 from aphrodite.attention.ops.paged_attn import (PagedAttention,
                                                 PagedAttentionMetadata)
 
@@ -23,7 +27,7 @@ class XFormersBackend(AttentionBackend):
 
     @staticmethod
     def get_name() -> str:
-        return "xformers"
+        return "XFORMERS"
 
     @staticmethod
     def get_impl_cls() -> Type["XFormersImpl"]:
@@ -134,6 +138,11 @@ class XFormersMetadata(AttentionMetadata, PagedAttentionMetadata):
     # Encoder sequence lengths representation
     encoder_seq_lens: Optional[List[int]] = None
     encoder_seq_lens_tensor: Optional[torch.Tensor] = None
+    # FIXME: It is for flash attn.
+    # (batch_size + 1,). The cumulative sequence lengths of the sequences in
+    # the batch, used to index into sequence. E.g., if the sequence length is
+    # [4, 6], it is [0, 4, 10].
+    encoder_seq_start_loc: Optional[torch.Tensor] = None
 
     # Maximum sequence length among encoder sequences
     max_encoder_seq_len: Optional[int] = None
@@ -161,9 +170,7 @@ class XFormersMetadata(AttentionMetadata, PagedAttentionMetadata):
         '''
         All attention metadata required for encoder attention is set.
         '''
-        return ((self.encoder_seq_lens is not None)
-                and (self.encoder_seq_lens_tensor is not None)
-                and (self.max_encoder_seq_len is not None))
+        return is_all_encoder_attn_metadata_set(self)
 
     @property
     def is_all_cross_attn_metadata_set(self):
@@ -172,9 +179,7 @@ class XFormersMetadata(AttentionMetadata, PagedAttentionMetadata):
 
         Superset of encoder attention required metadata.
         '''
-        return (self.is_all_encoder_attn_metadata_set
-                and (self.cross_slot_mapping is not None)
-                and (self.cross_block_tables is not None))
+        return is_all_cross_attn_metadata_set(self)
 
     @property
     def prefill_metadata(self) -> Optional["XFormersMetadata"]:
@@ -194,6 +199,8 @@ class XFormersMetadata(AttentionMetadata, PagedAttentionMetadata):
         # Compute some attn_metadata fields which default to None
         query_start_loc = (None if self.query_start_loc is None else
                            self.query_start_loc[:self.num_prefills + 1])
+        seq_start_loc = (None if self.seq_start_loc is None else
+                         self.seq_start_loc[:self.num_prefills + 1])
         slot_mapping = (None if self.slot_mapping is None else
                         self.slot_mapping[:self.num_prefill_tokens])
         seq_lens = (None if self.seq_lens is None else
@@ -211,12 +218,16 @@ class XFormersMetadata(AttentionMetadata, PagedAttentionMetadata):
             num_prefill_tokens=self.num_prefill_tokens,
             num_decode_tokens=0,
             slot_mapping=slot_mapping,
+            multi_modal_placeholder_index_maps=self.
+            multi_modal_placeholder_index_maps,
+            enable_kv_scales_calculation=self.enable_kv_scales_calculation,
             seq_lens=seq_lens,
             seq_lens_tensor=seq_lens_tensor,
             max_query_len=self.max_query_len,
             max_prefill_seq_len=self.max_prefill_seq_len,
             max_decode_seq_len=0,
             query_start_loc=query_start_loc,
+            seq_start_loc=seq_start_loc,
             context_lens_tensor=context_lens_tensor,
             block_tables=block_tables,
             use_cuda_graph=False,
@@ -254,6 +265,8 @@ class XFormersMetadata(AttentionMetadata, PagedAttentionMetadata):
             num_prefill_tokens=0,
             num_decode_tokens=self.num_decode_tokens,
             slot_mapping=slot_mapping,
+            multi_modal_placeholder_index_maps=None,
+            enable_kv_scales_calculation=True,
             seq_lens_tensor=seq_lens_tensor,
             max_prefill_seq_len=0,
             max_decode_seq_len=self.max_decode_seq_len,
@@ -265,12 +278,19 @@ class XFormersMetadata(AttentionMetadata, PagedAttentionMetadata):
             max_encoder_seq_len=self.max_encoder_seq_len,
             cross_slot_mapping=self.cross_slot_mapping,
             cross_block_tables=self.cross_block_tables)
+
+        # Batch may be composed of prefill|decodes, adjust query start indices
+        # to refer to the start of decodes when the two are split apart.
+        # E.g. in tokens:[3 prefills|6 decodes], query_start_loc=[3,9] => [0,6].
+        if self._cached_decode_metadata.query_start_loc is not None:
+            qs = self._cached_decode_metadata.query_start_loc
+            self._cached_decode_metadata.query_start_loc = qs - qs[0]
         return self._cached_decode_metadata
 
 
 def _get_attn_bias(
     attn_metadata: XFormersMetadata,
-    attn_type: AttentionType,
+    attn_type: str,
 ) -> Optional[AttentionBias]:
     '''
     Extract appropriate attention bias from attention metadata
@@ -300,7 +320,7 @@ def _get_attn_bias(
 def _set_attn_bias(
     attn_metadata: XFormersMetadata,
     attn_bias: List[Optional[AttentionBias]],
-    attn_type: AttentionType,
+    attn_type: str,
 ) -> None:
     '''
     Update appropriate attention bias field of attention metadata,
@@ -325,64 +345,6 @@ def _set_attn_bias(
         raise AttributeError(f"Invalid attention type {str(attn_type)}")
 
 
-def _get_seq_len_block_table_args(
-    attn_metadata: XFormersMetadata,
-    is_prompt: bool,
-    attn_type: AttentionType,
-) -> tuple:
-    '''
-    The particular choice of sequence-length- and block-table-related
-    attributes which should be extracted from attn_metadata is dependent
-    on the type of attention operation.
-
-    Decoder attn -> select entirely decoder self-attention-related fields
-    Encoder/decoder cross-attn -> select encoder sequence lengths &
-                                  cross-attn block-tables fields
-    Encoder attn -> select encoder sequence lengths fields & no block tables
-
-    Arguments:
-
-    * attn_metadata: Attention metadata structure associated with attention op
-    * is_prompt: True if prefill, False otherwise
-    * attn_type: encoder attention, decoder self-attention,
-                 encoder/decoder cross-attention
-
-    Returns:
-
-    * Appropriate sequence-lengths tensor
-    * Appropriate max sequence-length scalar
-    * Appropriate block tables (or None)
-    '''
-
-    if attn_type == AttentionType.DECODER:
-        # Decoder self-attention
-        # Choose max_seq_len based on whether we are in prompt_run
-        if is_prompt:
-            max_seq_len = attn_metadata.max_prefill_seq_len
-        else:
-            max_seq_len = attn_metadata.max_decode_seq_len
-        return (attn_metadata.seq_lens_tensor, max_seq_len,
-                attn_metadata.block_tables)
-    elif attn_type == AttentionType.ENCODER_DECODER:
-        # Enc/dec cross-attention KVs match encoder sequence length;
-        # cross-attention utilizes special "cross" block tables
-        return (attn_metadata.encoder_seq_lens_tensor,
-                attn_metadata.max_encoder_seq_len,
-                attn_metadata.cross_block_tables)
-    elif attn_type == AttentionType.ENCODER:
-        # No block tables associated with encoder attention
-        return (attn_metadata.encoder_seq_lens_tensor,
-                attn_metadata.max_encoder_seq_len, None)
-    elif attn_type == AttentionType.ENCODER_ONLY:
-        assert is_prompt, "Should not have decode for encoder only model."
-
-        # No block tables associated with encoder attention
-        return (attn_metadata.seq_lens_tensor,
-                attn_metadata.max_prefill_seq_len, None)
-    else:
-        raise AttributeError(f"Invalid attention type {str(attn_type)}")
-
-
 class XFormersMetadataBuilder(CommonMetadataBuilder[XFormersMetadata]):
 
     _metadata_cls = XFormersMetadata
@@ -391,11 +353,11 @@ class XFormersMetadataBuilder(CommonMetadataBuilder[XFormersMetadata]):
 class XFormersImpl(AttentionImpl[XFormersMetadata]):
     """
     If the input tensors contain prompt tokens, the layout is as follows:
-    |<--------------- num_prefill_tokens ----------------->|
+    |<--------------- num_prefill_tokens ----------------->|	
     |<--prefill_0-->|<--prefill_1-->|...|<--prefill_N-1--->|
 
-    Otherwise, the layout is as follows:
-    |<----------------- num_decode_tokens ------------------>|
+    Otherwise, the layout is as follows:	
+    |<----------------- num_decode_tokens ------------------>|	
     |<--decode_0-->|..........|<--decode_M-1-->|<--padding-->|
 
     Generation tokens can contain padding when cuda-graph is used.
@@ -425,13 +387,19 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
         kv_cache_dtype: str,
         blocksparse_params: Optional[Dict[str, Any]] = None,
         logits_soft_cap: Optional[float] = None,
+        attn_type: str = AttentionType.DECODER,
+        use_irope: bool = False,
     ) -> None:
         if blocksparse_params is not None:
             raise ValueError(
                 "XFormers does not support block-sparse attention.")
         if logits_soft_cap is not None:
-            raise ValueError(
-                "XFormers does not support attention logits soft capping.")
+            logger.warning_once("XFormers does not support logits soft cap. "
+                                "Outputs may be slightly off.")
+        if use_irope:
+            logger.warning_once(
+                "Using irope in XFormers is not supported yet, it will fall"
+                " back to global attention for long context.")
         self.num_heads = num_heads
         self.head_size = head_size
         self.scale = float(scale)
@@ -445,22 +413,23 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
         assert self.num_heads % self.num_kv_heads == 0
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
 
-        suppored_head_sizes = PagedAttention.get_supported_head_sizes()
-        if head_size not in suppored_head_sizes:
+        supported_head_sizes = PagedAttention.get_supported_head_sizes()
+        if head_size not in supported_head_sizes:
             raise ValueError(
                 f"Head size {head_size} is not supported by PagedAttention. "
-                f"Supported head sizes are: {suppored_head_sizes}.")
+                f"Supported head sizes are: {supported_head_sizes}.")
+
+        self.attn_type = attn_type
 
     def forward(
         self,
+        layer: AttentionLayer,
         query: torch.Tensor,
         key: Optional[torch.Tensor],
         value: Optional[torch.Tensor],
         kv_cache: torch.Tensor,
         attn_metadata: "XFormersMetadata",
-        k_scale: float = 1.0,
-        v_scale: float = 1.0,
-        attn_type: AttentionType = AttentionType.DECODER,
+        output: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass with xFormers and PagedAttention.
 
@@ -478,10 +447,10 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
               (1) key and value tensors were cached during prefill, and
               (2) cross-attention key and value tensors do not grow during
                   decode
-
+        
         A note on how the attn_type (attention type enum) argument impacts
         attention forward() behavior:
-
+    
             * DECODER: normal decoder-only behavior;
                 use decoder self-attention block table
             * ENCODER: no KV caching; pass encoder sequence
@@ -497,7 +466,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 will match encoder sequence lengths, pass encoder sequence
                 attributes to kernel (encoder_seq_lens/encoder_seq_lens_tensor/
                 max_encoder_seq_len)
-
+    
         Args:
             query: shape = [num_tokens, num_heads * head_size]
             key: shape = [num_tokens, num_kv_heads * head_size]
@@ -513,13 +482,14 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
-
+        attn_type = self.attn_type
         # Check that appropriate attention metadata attributes are
         # selected for the desired attention type
         if (attn_type == AttentionType.ENCODER
                 and (not attn_metadata.is_all_encoder_attn_metadata_set)):
             raise AttributeError("Encoder attention requires setting "
                                  "encoder metadata attributes.")
+
         elif (attn_type == AttentionType.ENCODER_DECODER
               and (not attn_metadata.is_all_cross_attn_metadata_set)):
             raise AttributeError("Encoder/decoder cross-attention "
@@ -564,49 +534,24 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 # If kv_cache is not provided, the new key and value tensors are
                 # not cached. This happens during the initial memory
                 # profiling run.
-                PagedAttention.write_to_paged_cache(key, value, key_cache,
-                                                    value_cache,
-                                                    updated_slot_mapping,
-                                                    self.kv_cache_dtype,
-                                                    k_scale, v_scale)
-
-        if attn_type == AttentionType.ENCODER:
-            # Encoder attention - chunked prefill is not applicable;
-            # derive token-count from query shape & and treat them
-            # as 100% prefill tokens
-            assert attn_metadata.num_encoder_tokens is not None
-            num_prefill_tokens = attn_metadata.num_encoder_tokens
-            num_encoder_tokens = attn_metadata.num_encoder_tokens
-            num_decode_tokens = 0
-        elif attn_type == AttentionType.DECODER:
-            # Decoder self-attention supports chunked prefill.
-            num_prefill_tokens = attn_metadata.num_prefill_tokens
-            num_encoder_tokens = attn_metadata.num_prefill_tokens
-            num_decode_tokens = attn_metadata.num_decode_tokens
-            # Only enforce this shape-constraint for decoder
-            # self-attention
-            assert key.shape[0] == num_prefill_tokens + num_decode_tokens
-            assert value.shape[0] == num_prefill_tokens + num_decode_tokens
-        else:  # attn_type == AttentionType.ENCODER_DECODER
-            # Encoder/decoder cross-attention requires no chunked
-            # prefill (100% prefill or 100% decode tokens, no mix)
-            num_prefill_tokens = attn_metadata.num_prefill_tokens
-            if attn_metadata.num_encoder_tokens is not None:
-                num_encoder_tokens = attn_metadata.num_encoder_tokens
-            else:
-                num_encoder_tokens = attn_metadata.num_prefill_tokens
-            num_decode_tokens = attn_metadata.num_decode_tokens
+                PagedAttention.write_to_paged_cache(
+                    key, value, key_cache, value_cache, updated_slot_mapping,
+                    self.kv_cache_dtype, layer._k_scale, layer._v_scale)
+        (num_prefill_query_tokens, num_prefill_kv_tokens,
+        num_decode_query_tokens) = \
+            get_num_prefill_decode_query_kv_tokens(attn_metadata, attn_type)
 
         output = torch.empty_like(query)
         # Query for decode. KV is not needed because it is already cached.
-        decode_query = query[num_prefill_tokens:]
+        decode_query = query[num_prefill_query_tokens:]
         # QKV for prefill.
-        query = query[:num_prefill_tokens]
+        query = query[:num_prefill_query_tokens]
         if key is not None and value is not None:
-            key = key[:num_encoder_tokens]
-            value = value[:num_encoder_tokens]
-        assert query.shape[0] == num_prefill_tokens
-        assert decode_query.shape[0] == num_decode_tokens
+            key = key[:num_prefill_kv_tokens]
+            value = value[:num_prefill_kv_tokens]
+
+        assert query.shape[0] == num_prefill_query_tokens
+        assert decode_query.shape[0] == num_decode_query_tokens
 
         if prefill_meta := attn_metadata.prefill_metadata:
             # Prompt run.
@@ -616,8 +561,8 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 # prefix.
                 out = self._run_memory_efficient_xformers_forward(
                     query, key, value, prefill_meta, attn_type=attn_type)
-                assert out.shape == output[:num_prefill_tokens].shape
-                output[:num_prefill_tokens] = out
+                assert out.shape == output[:num_prefill_query_tokens].shape
+                output[:num_prefill_query_tokens] = out
             else:
                 assert attn_type != AttentionType.ENCODER_ONLY, (
                     "Encoder-only models should not have prefix attention.")
@@ -626,7 +571,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 assert prefill_meta.max_query_len is not None
 
                 # prefix-enabled attention
-                # TODO: this triton kernel has regression issue (broke) to
+                # TODO(Hai) this triton kernel has regression issue (broke) to
                 # deal with different data types between KV and FP8 KV cache,
                 # to be addressed separately.
                 out = PagedAttention.forward_prefix(
@@ -639,15 +584,14 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                     prefill_meta.block_tables,
                     prefill_meta.query_start_loc,
                     prefill_meta.seq_lens_tensor,
-                    prefill_meta.context_lens_tensor,
                     prefill_meta.max_query_len,
                     self.alibi_slopes,
                     self.sliding_window,
-                    k_scale,
-                    v_scale,
+                    layer._k_scale,
+                    layer._v_scale,
                 )
-                assert output[:num_prefill_tokens].shape == out.shape
-                output[:num_prefill_tokens] = out
+                assert output[:num_prefill_query_tokens].shape == out.shape
+                output[:num_prefill_query_tokens] = out
 
         if decode_meta := attn_metadata.decode_metadata:
             assert attn_type != AttentionType.ENCODER_ONLY, (
@@ -657,9 +601,9 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 seq_lens_arg,
                 max_seq_len_arg,
                 block_tables_arg,
-            ) = _get_seq_len_block_table_args(decode_meta, False, attn_type)
+            ) = get_seq_len_block_table_args(decode_meta, False, attn_type)
 
-            output[num_prefill_tokens:] = PagedAttention.forward_decode(
+            output[num_prefill_query_tokens:] = PagedAttention.forward_decode(
                 decode_query,
                 key_cache,
                 value_cache,
@@ -670,8 +614,8 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 self.num_kv_heads,
                 self.scale,
                 self.alibi_slopes,
-                k_scale,
-                v_scale,
+                layer._k_scale,
+                layer._v_scale,
             )
 
         # Reshape the output tensor.
@@ -683,7 +627,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
         key: torch.Tensor,
         value: torch.Tensor,
         attn_metadata: XFormersMetadata,
-        attn_type: AttentionType = AttentionType.DECODER,
+        attn_type: str = AttentionType.DECODER,
     ) -> torch.Tensor:
         """Attention for 1D query of multiple prompts. Multiple prompt
         tokens are flattened in to `query` input.
@@ -717,6 +661,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                           None, :].expand(value.shape[0], self.num_kv_heads,
                                           self.num_queries_per_kv,
                                           value.shape[-1])
+
         # Set attention bias if not provided. This typically happens at
         # the very attention layer of every iteration.
         # FIXME: This is a hack.
@@ -732,16 +677,20 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
 
                     # Cross-attention mask is non-causal
                     attn_bias = BlockDiagonalMask.from_seqlens(
-                        attn_metadata.seq_lens, attn_metadata.encoder_seq_lens)
+                        attn_metadata.seq_lens,
+                        attn_metadata.encoder_seq_lens,
+                        device=query.device)
 
                 # Encoder branch of encoder-decoder model uses
                 # attn_metadata.encoder_seq_lens
                 elif attn_type == AttentionType.ENCODER:
+
                     assert attn_metadata.encoder_seq_lens is not None
 
                     # Encoder self-attention mask is non-causal
                     attn_bias = BlockDiagonalMask.from_seqlens(
-                        attn_metadata.encoder_seq_lens)
+                        attn_metadata.encoder_seq_lens, device=query.device)
+
                 # Self-attention block of encoder-only model just
                 # uses the seq_lens directly.
                 elif attn_type == AttentionType.ENCODER_ONLY:
@@ -749,7 +698,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
 
                     # Encoder self-attention mask is non-causal
                     attn_bias = BlockDiagonalMask.from_seqlens(
-                        attn_metadata.seq_lens)
+                        attn_metadata.seq_lens, device=query.device)
 
                 # Self-attention block of decoder branch just
                 # uses the seq_lens directly
@@ -758,9 +707,9 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
 
                     # Decoder self-attention mask is causal
                     attn_bias = BlockDiagonalCausalMask.from_seqlens(
-                        attn_metadata.seq_lens)
+                        attn_metadata.seq_lens, device=query.device)
                 else:
-                    raise ValueError(f"Unknown AttentionType: {attn_type}")
+                    raise ValueError("Unknown AttentionType: %s", attn_type)
 
                 if self.sliding_window is not None:
                     attn_bias = attn_bias.make_local_attention(
@@ -823,7 +772,7 @@ def _make_alibi_bias(
     attn_biases: List[AttentionBias] = []
     for seq_len in seq_lens:
         bias = torch.arange(seq_len, dtype=dtype)
-        # NOTE: HF uses
+        # NOTE(zhuohan): HF uses
         #     `bias = bias[None, :].repeat(seq_len, 1)`
         # here. We find that both biases give the same results, but
         # the bias below more accurately follows the original ALiBi
@@ -843,8 +792,6 @@ def _make_alibi_bias(
             dtype=dtype,
         )[:, :, :, :seq_len].copy_(bias)
         bias.mul_(alibi_slopes[:, None, None])
-        if num_heads != num_kv_heads:
-            bias = bias.unflatten(1, (num_kv_heads, num_heads // num_kv_heads))
         attn_biases.append(LowerTriangularMaskWithTensorBias(bias))
 
     return attn_biases

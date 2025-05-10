@@ -13,40 +13,38 @@ from aphrodite.common.config import LoRAConfig
 from aphrodite.lora.fully_sharded_layers import (
     ColumnParallelLinearWithShardedLoRA,
     MergedColumnParallelLinearWithShardedLoRA,
-    MergedQKVParallelLinearWithShardedLora, QKVParallelLinearWithShardedLora,
+    MergedQKVParallelLinearWithShardedLoRA, QKVParallelLinearWithShardedLoRA,
     RowParallelLinearWithShardedLoRA)
-# being imported for _all_lora_classes below
-# yapf conflicts with isort for this block
-# yapf: disable
 from aphrodite.lora.layers import (BaseLayerWithLoRA,
                                    ColumnParallelLinearWithLoRA,
-                                   LinearScalingRotaryEmbeddingWithLora,
+                                   LinearScalingRotaryEmbeddingWithLoRA,
                                    LogitsProcessorWithLoRA,
                                    MergedColumnParallelLinearWithLoRA,
-                                   MergedQKVParallelLinearWithLora,
-                                   QKVParallelLinearWithLora,
+                                   MergedQKVParallelLinearWithLoRA,
+                                   QKVParallelLinearWithLoRA,
                                    ReplicatedLinearWithLoRA,
                                    RowParallelLinearWithLoRA,
                                    VocabParallelEmbeddingWithLoRA)
-# yapf: enable
+from aphrodite.modeling.layers.linear import LinearBase
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
+from aphrodite.modeling.models.utils import WeightsMapper
 
 _all_lora_classes: Set[Type[BaseLayerWithLoRA]] = {
     VocabParallelEmbeddingWithLoRA,
     ColumnParallelLinearWithLoRA,
     MergedColumnParallelLinearWithLoRA,
-    QKVParallelLinearWithLora,
-    MergedQKVParallelLinearWithLora,
+    QKVParallelLinearWithLoRA,
+    MergedQKVParallelLinearWithLoRA,
     RowParallelLinearWithLoRA,
     ReplicatedLinearWithLoRA,
     LogitsProcessorWithLoRA,
     ColumnParallelLinearWithShardedLoRA,
-    QKVParallelLinearWithShardedLora,
+    QKVParallelLinearWithShardedLoRA,
     MergedColumnParallelLinearWithShardedLoRA,
-    MergedQKVParallelLinearWithShardedLora,
+    MergedQKVParallelLinearWithShardedLoRA,
     RowParallelLinearWithShardedLoRA,
-    LinearScalingRotaryEmbeddingWithLora,
+    LinearScalingRotaryEmbeddingWithLoRA,
 }
 
 
@@ -61,9 +59,10 @@ def from_layer(layer: nn.Module,
                                       lora_config=lora_config,
                                       packed_modules_list=packed_modules_list,
                                       model_config=model_config):
-            ret = lora_cls(layer)
-            ret.create_lora_weights(max_loras, lora_config, model_config)
-            return ret
+            instance_layer = lora_cls(layer)
+            instance_layer.create_lora_weights(max_loras, lora_config,
+                                               model_config)
+            return instance_layer
     return layer
 
 
@@ -90,32 +89,53 @@ def replace_submodule(model: nn.Module, module_name: str,
     return new_module
 
 
-def parse_fine_tuned_lora_name(name: str) -> Optional[Tuple[str, bool, bool]]:
+def parse_fine_tuned_lora_name(
+        name: str,
+        weights_mapper: Optional[WeightsMapper] = None
+) -> Tuple[str, bool, bool]:
     """Parse the name of lora weights.
 
     args:
         name: the name of the fine-tuned LoRA, e.g.
             base_model.model.dense1.weight
+        weights_mapper: maps the name of weight, e.g.
+            `model.` -> `language_model.model.`,
     return:
-        Optional[Tuple(module_name, is_lora_a)]:
-            If supported: (module_name, is_lora_a) where
-                module_name: the name of the module, e.g. model.dense1,
-                is_lora_a: whether the tensor is lora_a or lora_b.
-            If unsupported: None
+        Tuple(module_name, is_lora_a):
+            module_name: the name of the module, e.g. model.dense1,
+            is_lora_a whether the tensor is lora_a or lora_b.
             is_bias whether the tensor is lora bias.
     """
+
+    # LoRA weight qualified name usually starts with `base_model.model.`,
+    # so we remove the prefix `base_model.model.` to make the following
+    # mapping correctly.
+    if "base_model.model." in name:
+        name = name.replace("base_model.model.", "")
+        name = weights_mapper._map_name(name) if weights_mapper else name
+        # recover the prefix `base_model.model.`
+        name = "base_model.model." + name
+
+    # In some situations, we may not start with `base_model.model.`.
+    # If we don't (e.g., ibm-granite/granite-speech-3.3-8b),
+    # we should keep the prefix intact.
+    start_index = 2 if "base_model.model." in name else 0
+
     parts = name.split(".")
     if parts[-1] == "weight" and (parts[-2] == "lora_A"
                                   or parts[-2] == "lora_B"):
-        return ".".join(parts[2:-2]), parts[-2] == "lora_A", False
+        new_name = ".".join(parts[start_index:-2])
+        return new_name, parts[-2] == "lora_A", False
 
     if parts[-1] == "lora_embedding_A" or parts[-1] == "lora_embedding_B":
-        return ".".join(parts[2:-1]), parts[-1] == "lora_embedding_A", False
+        new_name = ".".join(parts[start_index:-1])
+        return new_name, parts[-1] == "lora_embedding_A", False
 
     if parts[-1] == "bias":
-        return ".".join(parts[2:-2]), False, True
+        new_name = ".".join(parts[start_index:-2])
+        return new_name, False, True
 
-    return None
+    raise ValueError(f"{name} is unsupported LoRA weight")
 
 
 def is_regex_target_modules(load_modules: Union[str, List[str]],
@@ -150,16 +170,36 @@ def is_regex_target_modules(load_modules: Union[str, List[str]],
     return False
 
 
+def get_supported_lora_modules(model: nn.Module) -> List[str]:
+    """
+    In Aphrodite, all linear layers support LoRA.
+    """
+    supported_lora_modules: Set[str] = set()
+    # step1: traverse the model to get all the linear subfixes.
+    for name, module in model.named_modules():
+        if isinstance(module, (LinearBase, )):
+            supported_lora_modules.add(name.split(".")[-1])
+    # step 2: get the embedding modules if the model's mbedding_modules
+    # is not empty.
+    if model.embedding_modules:
+        for name in model.embedding_modules:
+            supported_lora_modules.add(name)
+    return list(supported_lora_modules)
+
+
 def get_adapter_absolute_path(lora_path: str) -> str:
     """
     Resolves the given lora_path to an absolute local path.
+
     If the lora_path is identified as a Hugging Face model identifier,
     it will download the model and return the local snapshot path.
     Otherwise, it treats the lora_path as a local file path and
     converts it to an absolute path.
+
     Parameters:
     lora_path (str): The path to the lora model, which can be an absolute path,
                      a relative path, or a Hugging Face model identifier.
+
     Returns:
     str: The resolved absolute local path to the lora model.
     """

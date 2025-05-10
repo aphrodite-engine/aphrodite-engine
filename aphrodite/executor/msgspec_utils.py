@@ -1,11 +1,12 @@
 from array import array
 from typing import Any, Type
 
-from aphrodite.constants import APHRODITE_TOKEN_ID_ARRAY_TYPE
+from aphrodite.common.sequence import APHRODITE_TOKEN_ID_ARRAY_TYPE
 
 
 def encode_hook(obj: Any) -> Any:
     """Custom msgspec enc hook that supports array types.
+
     See https://jcristharif.com/msgspec/api.html#msgspec.msgpack.Encoder
     """
     if isinstance(obj, array):
@@ -14,8 +15,10 @@ def encode_hook(obj: Any) -> Any:
             f" type. Given array has a type code of {obj.typecode}.")
         return obj.tobytes()
 
+
 def decode_hook(type: Type, obj: Any) -> Any:
     """Custom msgspec dec hook that supports array types.
+
     See https://jcristharif.com/msgspec/api.html#msgspec.msgpack.Encoder
     """
     if type is array:

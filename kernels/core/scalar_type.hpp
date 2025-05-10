@@ -10,9 +10,9 @@ namespace aphrodite {
 //  in particular it can be used to represent sub-byte data types (something
 //  that torch.dtype currently does not support).
 //
-//  The type definitions on the Python side can be found in: aphrodite/scalar_type.py
-//  these type definitions should be kept up to date with any Python API changes
-//  here.
+//  The type definitions on the Python side can be found in:
+//  aphrodite/scalar_type.py these type definitions should be kept up to date
+//  with any Python API changes here.
 //
 class ScalarType {
  public:
@@ -32,7 +32,7 @@ class ScalarType {
         signed_(signed_),
         bias(bias),
         finite_values_only(finite_values_only),
-        nan_repr(nan_repr){};
+        nan_repr(nan_repr) {};
 
   static constexpr ScalarType int_(uint8_t size_bits, int32_t bias = 0) {
     return ScalarType(0, size_bits - 1, true, bias);

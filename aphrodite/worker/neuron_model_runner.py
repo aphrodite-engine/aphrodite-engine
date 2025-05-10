@@ -8,17 +8,16 @@ from loguru import logger
 from torch import nn
 from transformers_neuronx.config import GenerationConfig
 
-from aphrodite.common.config import (DeviceConfig, ModelConfig, ParallelConfig,
-                                     SchedulerConfig)
+from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
 from aphrodite.common.utils import (is_pin_memory_available,
                                     make_tensor_with_pad)
+from aphrodite.forward_context import set_forward_context
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.model_loader.neuron import get_neuron_model
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.multimodal import (MULTIMODAL_REGISTRY, BatchedTensorInputs,
-                                  MultiModalInputs)
+from aphrodite.multimodal import BatchedTensorInputs, MultiModalKwargs
 from aphrodite.worker.model_runner_base import (ModelRunnerBase,
                                                 ModelRunnerInputBase)
 
@@ -58,26 +57,15 @@ class NeuronModelRunner(ModelRunnerBase[ModelInputForNeuron]):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
+        aphrodite_config: AphroditeConfig,
     ):
-        self.model_config = model_config
-        self.parallel_config = parallel_config
-        self.scheduler_config = scheduler_config
-
+        ModelRunnerBase.__init__(self, aphrodite_config)
+        model_config = self.model_config
         if model_config is not None and model_config.get_sliding_window():
             logger.warning("Sliding window is not supported on Neuron. "
                            "The model will run without sliding window.")
-        self.device_config = (device_config
-                              if device_config is not None else DeviceConfig())
         self.device = self.device_config.device
         self.pin_memory = is_pin_memory_available()
-
-        # Multi-modal data support
-        self.multi_modal_input_mapper = MULTIMODAL_REGISTRY \
-            .create_input_mapper(self.model_config)
 
         # Lazy initialization.
         self.model: nn.Module  # initialize after load_model.
@@ -120,6 +108,9 @@ class NeuronModelRunner(ModelRunnerBase[ModelInputForNeuron]):
             raise NotImplementedError(
                 "Supports only Transformer-NeuronX based models.")
 
+    def get_model(self) -> nn.Module:
+        return self.model
+
     def _prepare_prompt(
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
@@ -131,7 +122,7 @@ class NeuronModelRunner(ModelRunnerBase[ModelInputForNeuron]):
         input_block_ids: List[int] = []
 
         seq_lens: List[int] = []
-        multi_modal_inputs_list: List[MultiModalInputs] = []
+        multi_modal_kwargs_list: List[MultiModalKwargs] = []
         for seq_group_metadata in seq_group_metadata_list:
             assert seq_group_metadata.is_prompt
             seq_ids = list(seq_group_metadata.seq_data.keys())
@@ -151,14 +142,9 @@ class NeuronModelRunner(ModelRunnerBase[ModelInputForNeuron]):
             assert len(block_table) == 1
             input_block_ids.append(block_table[0])
 
-            mm_data = seq_group_metadata.multi_modal_data
-            if mm_data:
-                # Process multi-modal data
-                mm_kwargs = self.multi_modal_input_mapper(
-                    mm_data,
-                    mm_processor_kwargs=seq_group_metadata.mm_processor_kwargs,
-                )
-                multi_modal_inputs_list.append(mm_kwargs)
+            mm_kwargs = seq_group_metadata.multi_modal_data
+            if mm_kwargs:
+                multi_modal_kwargs_list.append(mm_kwargs)
 
         max_seq_len = max(seq_lens)
         assert max_seq_len > 0
@@ -176,7 +162,7 @@ class NeuronModelRunner(ModelRunnerBase[ModelInputForNeuron]):
                                        dtype=torch.long,
                                        device=self.device)
 
-        multi_modal_kwargs = MultiModalInputs.batch(multi_modal_inputs_list)
+        multi_modal_kwargs = MultiModalKwargs.batch(multi_modal_kwargs_list)
 
         return (input_tokens, input_positions, input_block_ids, seq_lens,
                 multi_modal_kwargs)
@@ -319,13 +305,15 @@ class NeuronModelRunner(ModelRunnerBase[ModelInputForNeuron]):
             raise ValueError(
                 "NeuronModelRunner does not support multi-step execution.")
 
-        hidden_states = self.model(
-            input_ids=model_input.input_tokens,
-            positions=model_input.input_positions,
-            input_block_ids=model_input.input_block_ids,
-            **MultiModalInputs.as_kwargs(model_input.multi_modal_kwargs or {},
-                                         device=self.device),
-        )
+        with set_forward_context(None, self.aphrodite_config, 0):
+            hidden_states = self.model(
+                input_ids=model_input.input_tokens,
+                positions=model_input.input_positions,
+                input_block_ids=model_input.input_block_ids,
+                **MultiModalKwargs.as_kwargs(model_input.multi_modal_kwargs
+                                             or {},
+                                             device=self.device),
+            )
 
         # Compute the logits only if the on-device sampling is turned off as
         # on-device sampling outputs the token ids.

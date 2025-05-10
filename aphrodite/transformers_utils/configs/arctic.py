@@ -19,7 +19,7 @@ ARCTIC_PRETRAINED_CONFIG_ARCHIVE_MAP = {
 
 
 @dataclass
-class ArcticLoraConfig:
+class ArcticLoRAConfig:
     lora_r: int = 64
     lora_alpha: float = 16
     shard_base_weights: bool = False
@@ -38,8 +38,12 @@ class ArcticConfig(PretrainedConfig):
     This is the configuration class to store the configuration of a [`ArcticModel`]. It is used to instantiate an
     Arctic model according to the specified arguments, defining the model architecture. Instantiating a configuration
     with the defaults will yield a similar configuration to that of the #TODO(rsamdani): add what model has the default config..
+
+
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
+
+
     Args:
         vocab_size (`int`, *optional*, defaults to 32000):
             Vocabulary size of the Arctic model. Defines the number of different tokens that can be represented by the
@@ -92,12 +96,16 @@ class ArcticConfig(PretrainedConfig):
             Number of experts per Sparse MLP layer.
         router_aux_loss_coef (`float`, *optional*, defaults to 0.001):
             The aux loss factor for the total loss.
+
     ```python
     >>> from transformers import ArcticModel, ArcticConfig
+
     >>> # Initializing a Arctic 7B style configuration TODO(rsamdani): verify which model does the default configuration correspond to.
     >>> configuration = ArcticConfig()
+
     >>> # Initializing a model from the Arctic 7B style configuration
     >>> model = ArcticModel(configuration)
+
     >>> # Accessing the model configuration
     >>> configuration = model.config
     ```"""

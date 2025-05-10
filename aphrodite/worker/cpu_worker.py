@@ -1,5 +1,6 @@
 """A CPU worker class."""
-from typing import Dict, List, Optional, Tuple, Type
+import os
+from typing import Dict, List, Optional, Set, Tuple, Type
 
 import torch
 import torch.distributed
@@ -7,20 +8,21 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.attention import get_attn_backend
-from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig,
-                                     LoRAConfig, ModelConfig, ParallelConfig,
-                                     PromptAdapterConfig, SchedulerConfig)
+from aphrodite.common.config import (AphroditeConfig, CacheConfig,
+                                     DeviceConfig, ModelConfig, ParallelConfig)
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE, bind_kv_cache
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
+from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling import set_random_seed
 from aphrodite.worker.cpu_enc_dec_model_runner import (
     CPUEncoderDecoderModelRunner)
-from aphrodite.worker.cpu_model_runner import CPUModelRunner
+from aphrodite.worker.cpu_model_runner import (CPUModelRunner,
+                                               CPUModelRunnerBase)
+from aphrodite.worker.cpu_pooling_model_runner import CPUPoolingModelRunner
 from aphrodite.worker.worker_base import (LocalOrDistributedWorkerBase,
-                                          LoraNotSupportedWorkerBase,
-                                          WorkerInput)
+                                          WorkerBase, WorkerInput)
 
 
 class CPUCacheEngine:
@@ -51,8 +53,11 @@ class CPUCacheEngine:
 
         if cache_config.cache_dtype == "auto":
             self.dtype = model_config.dtype
+        elif cache_config.cache_dtype in ["fp8", "fp8_e5m2"]:
+            self.dtype = torch.float8_e5m2
         else:
-            self.dtype = STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype]
+            raise NotImplementedError(f"Unsupported KV cache type "
+                                      f"{cache_config.cache_dtype}.")
 
         # Get attention backend.
         self.attn_backend = get_attn_backend(
@@ -61,6 +66,7 @@ class CPUCacheEngine:
             cache_config.cache_dtype,
             self.block_size,
             self.model_config.is_attention_free,
+            use_mla=self.model_config.use_mla,
         )
 
         # Initialize the cache.
@@ -100,7 +106,7 @@ class CPUCacheEngine:
         num_layers = model_config.get_num_layers(parallel_config)
 
         key_cache_block = block_size * num_heads * head_size
-        value_cache_block = key_cache_block
+        value_cache_block = key_cache_block if not model_config.use_mla else 0
         total = num_layers * (key_cache_block + value_cache_block)
         if cache_dtype == "auto":
             dtype = model_config.dtype
@@ -110,7 +116,7 @@ class CPUCacheEngine:
         return dtype_size * total
 
 
-class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
+class CPUWorker(LocalOrDistributedWorkerBase):
     """A worker class that executes (a partition of) the model on a CPU socket.
 
     Each worker is associated with a single CPU socket. The worker is 
@@ -121,31 +127,22 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
     def __init__(
         self,
-        model_config: ModelConfig,
-        parallel_config: ParallelConfig,
-        scheduler_config: SchedulerConfig,
-        device_config: DeviceConfig,
-        cache_config: CacheConfig,
-        load_config: LoadConfig,
+        aphrodite_config: AphroditeConfig,
         local_rank: int,
         rank: int,
         distributed_init_method: str,
-        lora_config: Optional[LoRAConfig] = None,
         kv_cache_dtype: Optional[str] = "auto",
-        prompt_adapter_config: Optional[PromptAdapterConfig] = None,
         is_driver_worker: bool = False,
+        model_runner_cls: Optional[Type[CPUModelRunner]] = None,
     ) -> None:
-        self.model_config = model_config
-        self.parallel_config = parallel_config
-        self.scheduler_config = scheduler_config
-        self.device_config = device_config
-        self.cache_config = cache_config
-        self.load_config = load_config
+        WorkerBase.__init__(self, aphrodite_config=aphrodite_config)
+
         self.local_rank = local_rank
         self.rank = rank
+        aphrodite_config.parallel_config.rank = rank
+
         self.distributed_init_method = distributed_init_method
-        self.lora_config = lora_config
-        self.prompt_adapter_config = prompt_adapter_config
+
         self.is_driver_worker = is_driver_worker
         if self.is_driver_worker:
             assert self.rank == 0, "The driver worker must have rank 0."
@@ -162,27 +159,60 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         else:
             self.local_omp_cpuid = omp_cpuids.split("|")[rank]
 
-        ModelRunnerClass: Type[CPUModelRunner] = CPUModelRunner
-        if self._is_encoder_decoder_model():
+        # Return hidden states from target model if the draft model is an
+        # mlp_speculator
+        speculative_config = self.speculative_config
+        model_config = self.model_config
+        speculative_args = {} if speculative_config is None \
+            or (speculative_config.draft_model_config.model ==
+                model_config.model) \
+            or (speculative_config.draft_model_config.hf_config.model_type
+                not in ["medusa", "mlp_speculator", "eagle"]) \
+                    else {"return_hidden_states": True}
+        ModelRunnerClass: Type[CPUModelRunnerBase] = CPUModelRunner
+        if self.model_config.runner_type == "pooling":
+            ModelRunnerClass = CPUPoolingModelRunner
+        elif self.model_config.is_encoder_decoder:
             ModelRunnerClass = CPUEncoderDecoderModelRunner
-        self.model_runner: CPUModelRunner = ModelRunnerClass(
-            model_config,
-            parallel_config,
-            scheduler_config,
-            device_config,
-            cache_config,
-            load_config=self.load_config,
-            lora_config=self.lora_config,
+        self.model_runner: CPUModelRunnerBase = ModelRunnerClass(
+            aphrodite_config=aphrodite_config,
             kv_cache_dtype=kv_cache_dtype,
-            prompt_adapter_config=self.prompt_adapter_config,
-            is_driver_worker=is_driver_worker)
+            is_driver_worker=is_driver_worker,
+            **speculative_args,
+        )
+        if model_runner_cls is not None:
+            self.model_runner = model_runner_cls(self.model_runner)
         # Uninitialized cache engine. Will be initialized by
         # initialize_cache.
         self.cache_engine: List[CPUCacheEngine]
-        self.cpu_cache: List[List[torch.Tensor]]
+        # Initialize cpu_cache as pooling models don't initialize kv_caches
+        self.cpu_cache: Optional[List[List[torch.Tensor]]] = None
 
-    def _is_encoder_decoder_model(self):
-        return self.model_config.is_encoder_decoder_model
+        # Torch profiler. Enabled and configured through env vars:
+        # APHRODITE_TORCH_PROFILER_DIR=/path/to/save/trace
+        if envs.APHRODITE_TORCH_PROFILER_DIR:
+            torch_profiler_trace_dir = envs.APHRODITE_TORCH_PROFILER_DIR
+            logger.info("Profiling enabled. Traces will be saved to: %s",
+                        torch_profiler_trace_dir)
+            self.profiler = torch.profiler.profile(
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                ],
+                with_stack=True,
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    torch_profiler_trace_dir, use_gzip=True))
+        else:
+            self.profiler = None
+
+    def start_profile(self):
+        if self.profiler is None:
+            raise RuntimeError("Profiler is not enabled.")
+        self.profiler.start()
+
+    def stop_profile(self):
+        if self.profiler is None:
+            raise RuntimeError("Profiler is not enabled.")
+        self.profiler.stop()
 
     def init_device(self) -> None:
         if self.local_omp_cpuid != "all":
@@ -190,6 +220,10 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             if ret:
                 logger.info(ret)
 
+        # Note: unique identifier for creating allreduce shared memory
+        os.environ["APHRODITE_DIST_IDENT"] = self.distributed_init_method.split(
+            ":")[-1]
+        self.device = torch.device("cpu")
         self.init_distributed_environment()
         # Set random seed.
         set_random_seed(self.model_config.seed)
@@ -215,7 +249,7 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
                              cache_block_size)
         num_cpu_blocks = max(num_cpu_blocks, 0)
 
-        # NOTE: To reuse the cache management procedure,
+        # Note: To reuse the cache management procedure,
         # use cpu cache as 'gpu cache'.
         num_gpu_blocks = num_cpu_blocks
         num_cpu_blocks = 0
@@ -232,7 +266,7 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         assert (num_cpu_blocks == 0
                 ), f"{type(self)} does not support swappable cache"
 
-        # NOTE: To reuse the cache management procedure,
+        # Note: To reuse the cache management procedure,
         # use cpu cache as 'gpu cache'.
         num_cpu_blocks = num_gpu_blocks
 
@@ -243,13 +277,25 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
         # Initialize the cache.
         self._init_cache_engine()
 
+    def add_lora(self, lora_request: LoRARequest) -> bool:
+        return self.model_runner.add_lora(lora_request)
+
+    def remove_lora(self, lora_id: int) -> bool:
+        return self.model_runner.remove_lora(lora_id)
+
+    def pin_lora(self, lora_id: int) -> bool:
+        return self.model_runner.pin_lora(lora_id)
+
+    def list_loras(self) -> Set[int]:
+        return self.model_runner.list_loras()
+
     def _validate_num_cpu_blocks(self, num_cpu_blocks: int) -> None:
         """Raise errors if the num_cpu_blocks is invalid.
         """
         if num_cpu_blocks <= 0:
             raise ValueError("No available memory for the cache blocks. "
-                             "Try increasing `APHRODITE_CPU_KVCACHE_SPACE` when"
-                             " initializing the engine.")
+                             "Try increasing `APHRODITE_CPU_KVCACHE_SPACE` "
+                             "when initializing the engine.")
 
         max_seq_len = self.cache_config.block_size * num_cpu_blocks
         if self.model_config.max_model_len > max_seq_len:
@@ -270,6 +316,8 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
             self.cache_engine[ve].cpu_cache
             for ve in range(self.parallel_config.pipeline_parallel_size)
         ]
+        bind_kv_cache(self.compilation_config.static_forward_context,
+                      self.cpu_cache)
         self.model_runner.block_size = self.cache_engine[0].block_size
 
         assert all(
@@ -289,6 +337,14 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
         return self.cpu_cache
 
+    @property
+    def vocab_size(self) -> int:
+        return self.model_runner.vocab_size
+
+    @property
+    def max_model_len(self) -> int:
+        return self.model_config.max_model_len
+
     def execute_worker(
         self,
         worker_input: WorkerInput,
@@ -302,9 +358,8 @@ class CPUWorker(LoraNotSupportedWorkerBase, LocalOrDistributedWorkerBase):
     def prepare_worker_input(
             self, execute_model_req: ExecuteModelRequest) -> WorkerInput:
         assert execute_model_req is not None
-        virtual_engine = execute_model_req.virtual_engine
+        virtual_engine: int = execute_model_req.virtual_engine
         num_seq_groups: int = len(execute_model_req.seq_group_metadata_list)
-        blocks_to_copy = execute_model_req.blocks_to_copy
         blocks_to_copy = torch.tensor(execute_model_req.blocks_to_copy,
                                       device="cpu",
                                       dtype=torch.int64).view(-1, 2)

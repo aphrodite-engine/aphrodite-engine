@@ -312,7 +312,7 @@ def test_paged_attention(
         alibi_slopes,
     )
 
-    # NOTE(woosuk): Due to the kernel-level differences in the two
+    # NOTE: Due to the kernel-level differences in the two
     # implementations, there is a small numerical difference in the two
     # outputs. Thus, we use a relaxed tolerance for the test.
     atol = get_default_atol(output) if is_hip() else 1e-3
@@ -359,7 +359,7 @@ def ref_multi_query_kv_attention(
     return torch.cat(ref_outputs, dim=0)
 
 
-# TODO(woosuk): Add tests for USE_ALIBI=True.
+# TODO: Add tests for USE_ALIBI=True.
 @pytest.mark.parametrize("num_seqs", NUM_PREFILL_SEQS)
 @pytest.mark.parametrize("num_heads", NUM_HEADS)
 @pytest.mark.parametrize("head_size", HEAD_SIZES)

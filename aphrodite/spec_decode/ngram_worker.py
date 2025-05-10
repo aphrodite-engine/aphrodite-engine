@@ -2,12 +2,18 @@ import weakref
 from typing import List, Optional, Set, Tuple
 
 import torch
+import torch.nn as nn
 
+from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.spec_decode.interfaces import SpeculativeProposals
 from aphrodite.spec_decode.proposer_worker_base import NonLLMProposerWorkerBase
 from aphrodite.spec_decode.top1_proposer import Top1Proposer
+
+
+class _DummyModel(nn.Module):
+    pass
 
 
 class NGramWorker(NonLLMProposerWorkerBase):
@@ -18,10 +24,18 @@ class NGramWorker(NonLLMProposerWorkerBase):
     which don't rely on LLM model to give proposals.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+        local_rank: int,
+        device_type: str = "cuda",
+        **kwargs,
+    ):
+        super().__init__(aphrodite_config)
+
         # Get local_rank/vocab_size from kwargs attribute
-        self.local_rank = kwargs["local_rank"]
-        self.vocab_size = kwargs["model_config"].get_vocab_size()
+        self.local_rank = local_rank
+        self.device_type = device_type
 
         # Lazy initialization list.
         self._proposer: Top1Proposer
@@ -34,8 +48,7 @@ class NGramWorker(NonLLMProposerWorkerBase):
         self.ngram_prompt_lookup_min = ngram_prompt_lookup_min
 
     def init_device(self):
-        self.device = torch.device(f"cuda:{self.local_rank}")
-        self.load_model = lambda *args, **kwargs: None
+        self.device = torch.device(f"{self.device_type}:{self.local_rank}")
 
         # Current NGramWorker only supports Top1Proposer
         self._proposer = Top1Proposer(
@@ -43,6 +56,12 @@ class NGramWorker(NonLLMProposerWorkerBase):
             device=self.device,
             vocab_size=self.vocab_size,
         )
+
+    def load_model(self) -> None:
+        pass  # Dummy
+
+    def get_model(self) -> nn.Module:
+        return _DummyModel()
 
     def sampler_output(
         self,

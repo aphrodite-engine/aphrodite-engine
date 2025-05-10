@@ -17,7 +17,6 @@ namespace awq {
 __device__ uint4 dequantize_s4_to_fp16x2(uint32_t const& source) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 750
   assert(false);
-  return make_uint4(0, 0, 0, 0);
 #else
   uint4 result;
 
@@ -96,6 +95,7 @@ __device__ uint4 dequantize_s4_to_fp16x2(uint32_t const& source) {
 
   return result;
 #endif
+  __builtin_unreachable();  // Suppress missing return statement warning
 }
 
 }  // namespace awq

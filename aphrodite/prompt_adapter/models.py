@@ -47,12 +47,13 @@ def convert_mapping(
     prompt_adapter_index_to_id: List[Optional[int]],
 ) -> torch.Tensor:
     """Converts PromptAdapterMapping to index tensors.
-    Args:
-        mapping: PromptAdapterMapping mapping rows in a
-                batch to PromptAdapter ids.
-        prompt_adapter_index_to_id: List mapping PromptAdapter
-                ids to PromptAdapter indices.
 
+    Args:
+        mapping: PromptAdapterMapping mapping rows in a 
+                batch to PromptAdapter ids.
+        prompt_adapter_index_to_id: List mapping PromptAdapter 
+                ids to PromptAdapter indices.
+        
     Returns:
         pa_indices: Tensor of shape [batch_size] mapping batch rows to
             PromptAdapter indices.
@@ -115,6 +116,7 @@ class PromptAdapterModelManager(AdapterModelManager):
         prompt_adapter_config: PromptAdapterConfig,
     ):
         """Create a PromptAdapterModel and adapter for a given model.
+
         Args:
             model: the model to be adapted.
             max_num_seqs: the maximum number of sequences model can run in a
@@ -156,7 +158,7 @@ class PromptAdapterModelManager(AdapterModelManager):
         self,
         prompt_adapter_id: int,
     ) -> bool:
-        """Move PromptAdapter into a GPU buffer
+        """Move PromptAdapter into a GPU buffer 
             to be used in the forward pass."""
         if prompt_adapter_id in self._active_adapters:
             return False
@@ -169,9 +171,8 @@ class PromptAdapterModelManager(AdapterModelManager):
         index, _ = first_free_slot
         self._active_adapters[prompt_adapter_id] = None
         prompt_adapter_model = (self._registered_adapters[prompt_adapter_id])
-        logger.debug(f"Activating prompt_adapter. int id: "
-                     f"{prompt_adapter_model.id}, "
-                     f"slot index: {index}")
+        logger.debug("Activating prompt_adapter. int id: %d, slot index: %d",
+                     prompt_adapter_model.id, index)
         self.prompt_adapter_index_to_id[index] = prompt_adapter_model.id
         for _, v in self.modules.items():
             v.set_prompt_adapter(index, prompt_adapter_model.prompt_embedding)
@@ -224,7 +225,7 @@ class PromptAdapterModelManager(AdapterModelManager):
     def pin_adapter(self, prompt_adapter_id: int) -> bool:
         """Pin a PromptAdapterModel in the manager cache."""
         raise NotImplementedError(
-            "Pinning is not supported in PromptAdapterModelManager."
+            "Pinning is not supported in PromptAdapterModelManager. "
             "Use LRUCachePromptAdapterModelManager for pinning"
         )  # type: ignore
 

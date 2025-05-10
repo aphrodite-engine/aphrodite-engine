@@ -7,10 +7,12 @@ from aphrodite.attention import AttentionMetadata
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
 from aphrodite.common.utils import make_tensor_with_pad
+from aphrodite.forward_context import set_forward_context
+from aphrodite.modeling import SamplingMetadata
 from aphrodite.modeling.layers.sampler import SamplerOutput
-from aphrodite.multimodal import MultiModalInputs
+from aphrodite.multimodal import MultiModalKwargs
 from aphrodite.worker.cpu_model_runner import (
-    CPUModelRunner, ModelInputForCPUBuilder,
+    CPUModelRunnerBase, ModelInputForCPUBuilder,
     ModelInputForCPUWithSamplingMetadata)
 from aphrodite.worker.model_runner_base import (
     _add_attn_metadata_broadcastable_dict,
@@ -34,6 +36,7 @@ class EncoderDecoderModelInputForCPU(ModelInputForCPUWithSamplingMetadata):
             "input_positions": self.input_positions,
             "encoder_input_tokens": self.encoder_input_tokens,
             "encoder_input_positions": self.encoder_input_positions,
+            "multi_modal_kwargs": self.multi_modal_kwargs,
         }
         _add_attn_metadata_broadcastable_dict(tensor_dict, self.attn_metadata)
         _add_sampling_metadata_broadcastable_dict(tensor_dict,
@@ -51,7 +54,8 @@ class EncoderDecoderModelInputForCPU(ModelInputForCPUWithSamplingMetadata):
             super().from_broadcasted_tensor_dict(tensor_dict, attn_backend))
 
 
-class CPUEncoderDecoderModelRunner(CPUModelRunner):
+class CPUEncoderDecoderModelRunner(
+        CPUModelRunnerBase[EncoderDecoderModelInputForCPU]):
     _model_input_cls: Type[EncoderDecoderModelInputForCPU] = (
         EncoderDecoderModelInputForCPU)
     _builder_cls: Type[ModelInputForCPUBuilder] = ModelInputForCPUBuilder
@@ -88,21 +92,29 @@ class CPUEncoderDecoderModelRunner(CPUModelRunner):
         virtual_engine: int = 0,
         finished_requests_ids: Optional[List[str]] = None
     ) -> EncoderDecoderModelInputForCPU:
-        model_input = super().prepare_model_input(seq_group_metadata_list,
-                                                  virtual_engine,
-                                                  finished_requests_ids)
-        model_input = cast(EncoderDecoderModelInputForCPU, model_input)
+        model_input = self._prepare_model_input_tensors(
+            seq_group_metadata_list, finished_requests_ids)
         (
             attn_metadata,
             encoder_input_tokens_tensor,
             encoder_input_positions_tensor,
         ) = self._prepare_encoder_model_input_tensors(seq_group_metadata_list,
                                                       model_input)
+        # Sampling metadata is only required for the final pp group
+        generators = self.get_generators(finished_requests_ids)
+        sampling_metadata = SamplingMetadata.prepare(seq_group_metadata_list,
+                                                     model_input.seq_lens,
+                                                     model_input.query_lens,
+                                                     self.device,
+                                                     pin_memory=False,
+                                                     generators=generators)
         return dataclasses.replace(
             model_input,
+            sampling_metadata=sampling_metadata,
             attn_metadata=attn_metadata,
             encoder_input_tokens=encoder_input_tokens_tensor,
             encoder_input_positions=encoder_input_positions_tensor,
+            virtual_engine=virtual_engine,
         )
 
     def _prepare_encoder_model_input_tensors(
@@ -116,6 +128,7 @@ class CPUEncoderDecoderModelRunner(CPUModelRunner):
         are used to augment an already-computed `EncoderDecoderModelInput`
         data structure which already has decoder-related model inputs
         populated.
+
         Sets the following attn_metadata fields:
         * `num_encoder_tokens`
         * `encoder_seq_lens`
@@ -123,6 +136,7 @@ class CPUEncoderDecoderModelRunner(CPUModelRunner):
         * `max_encoder_seq_len`
         * `cross_slot_mapping`
         * `cross_block_tables`
+
         Constructs a new model inputs data structure, based on
         (1) the existing fields in the `model_inputs` argument,
         and (2) the following additional fields which are
@@ -131,12 +145,16 @@ class CPUEncoderDecoderModelRunner(CPUModelRunner):
         * attn_metadata
         * encoder_input_tokens
         * encoder_input_positions
+
         Arguments:
+
         * seq_group_metadata_list: list of sequence groups for which to
                                    compute inputs
         * model_inputs: model inputs data structure with decoder-oriented
                         fields already computed.
+
         Return:
+
         * Updated model inputs data structure
         """
 
@@ -278,17 +296,16 @@ class CPUEncoderDecoderModelRunner(CPUModelRunner):
             model_input.encoder_input_tokens,
             "encoder_positions":
             model_input.encoder_input_positions,
-            "kv_caches":
-            kv_caches,
-            "attn_metadata":
-            model_input.attn_metadata,
-            **MultiModalInputs.as_kwargs(model_input.multi_modal_kwargs or {},
+            **MultiModalKwargs.as_kwargs(model_input.multi_modal_kwargs or {},
                                          device=self.device),
             "intermediate_tensors":
             intermediate_tensors,
         }
 
-        hidden_states = model_executable(**execute_model_kwargs)
+        with set_forward_context(model_input.attn_metadata,
+                                 self.aphrodite_config,
+                                 model_input.virtual_engine):
+            hidden_states = model_executable(**execute_model_kwargs)
 
         # Compute the logits.
         logits = self.model.compute_logits(hidden_states,
@@ -299,7 +316,7 @@ class CPUEncoderDecoderModelRunner(CPUModelRunner):
             return []
 
         # Sample the next token.
-        output = self.model.sample(
+        output = self.sampler(
             logits=logits,
             sampling_metadata=model_input.sampling_metadata,
         )

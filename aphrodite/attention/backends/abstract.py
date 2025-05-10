@@ -1,28 +1,39 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, fields
-from enum import Enum, auto
-from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional, Set,
-                    Tuple, Type, TypeVar)
+from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional,
+                    Protocol, Set, Tuple, Type, TypeVar)
 
 import torch
+
+from aphrodite.multimodal import MultiModalPlaceholderMap
 
 if TYPE_CHECKING:
     from aphrodite.worker.model_runner_base import (
         ModelRunnerBase, ModelRunnerInputBase, ModelRunnerInputBuilderBase)
 
 
-class AttentionType(Enum):
-    DECODER = auto()  # Decoder attention between previous layer Q/K/V
-    ENCODER = auto(
-    )  # Encoder attention between previous layer Q/K/V for encoder-decoder
-    ENCODER_ONLY = auto()  # Encoder attention between previous layer Q/K/V
-    ENCODER_DECODER = auto(
-    )  # Attention between dec. Q and enc. K/V for encoder-decoder
+class AttentionType:
+    """
+    Attention type.
+    Use string to be compatible with `torch.compile`.
+    """
+    # Decoder attention between previous layer Q/K/V
+    DECODER = "decoder"
+    # Encoder attention between previous layer Q/K/V for encoder-decoder
+    ENCODER = "encoder"
+    # Encoder attention between previous layer Q/K/V
+    ENCODER_ONLY = "encoder_only"
+    # Attention between dec. Q and enc. K/V for encoder-decoder
+    ENCODER_DECODER = "encoder_decoder"
 
 
 class AttentionBackend(ABC):
     """Abstract class for attention backends."""
+    # For some attention backends, we allocate an output tensor before
+    # calling the custom op. When piecewise cudagraph is enabled, this
+    # makes sure the output tensor is allocated inside the cudagraph.
+    accept_output_buffer: bool = False
 
     @staticmethod
     @abstractmethod
@@ -40,6 +51,7 @@ class AttentionBackend(ABC):
         raise NotImplementedError
 
     @staticmethod
+    @abstractmethod
     def get_state_cls() -> Type["AttentionState"]:
         raise NotImplementedError
 
@@ -52,11 +64,6 @@ class AttentionBackend(ABC):
     def get_builder_cls() -> Type["AttentionMetadataBuilder"]:
         raise NotImplementedError
 
-    @classmethod
-    def make_metadata_builder(cls, *args,
-                              **kwargs) -> "AttentionMetadataBuilder":
-        return cls.get_builder_cls()(*args, **kwargs)
-
     @staticmethod
     @abstractmethod
     def get_kv_cache_shape(
@@ -65,6 +72,10 @@ class AttentionBackend(ABC):
         num_kv_heads: int,
         head_size: int,
     ) -> Tuple[int, ...]:
+        raise NotImplementedError
+
+    @staticmethod
+    def get_kv_cache_stride_order() -> Tuple[int, ...]:
         raise NotImplementedError
 
     @staticmethod
@@ -106,6 +117,19 @@ class AttentionMetadata:
     # in block 0, and 1st slot in block 1, respectively.
     slot_mapping: torch.Tensor
 
+    # The index maps that relate multi-modal embeddings to the corresponding
+    # placeholders.
+    #
+    # N.B. These aren't really related to attention and don't belong on this
+    # type -- this is just a temporary solution to make them available to
+    # `model_executable`.
+    multi_modal_placeholder_index_maps: Optional[Dict[
+        str, MultiModalPlaceholderMap.IndexMap]]
+
+    # Enable/disable KV scales calculation. This is so that we can disable the
+    # calculation until after prefill and cuda graph capture.
+    enable_kv_scales_calculation: bool
+
     @property
     @abstractmethod
     def prefill_metadata(self) -> Optional["AttentionMetadata"]:
@@ -138,9 +162,8 @@ T = TypeVar("T", bound=AttentionMetadata)
 
 
 class AttentionState(ABC, Generic[T]):
-    """Holds attention backend specific objects reused during the
-    lifetime of the model runner.
-    """
+    """Holds attention backend-specific objects reused during the
+    lifetime of the model runner."""
 
     @abstractmethod
     def __init__(self, runner: "ModelRunnerBase"):
@@ -149,7 +172,7 @@ class AttentionState(ABC, Generic[T]):
     @abstractmethod
     @contextmanager
     def graph_capture(self, max_batch_size: int):
-        """Context manager used when capturing a CUDA graph."""
+        """Context manager used when capturing CUDA graphs."""
         yield
 
     @abstractmethod
@@ -193,6 +216,12 @@ class AttentionMetadataBuilder(ABC, Generic[T]):
 
     @abstractmethod
     def __init__(self, input_builder: "ModelRunnerInputBuilderBase") -> None:
+        """Create the builder, remember some configuration and parameters."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def prepare(self) -> None:
+        """Prepare for one batch."""
         raise NotImplementedError
 
     @abstractmethod
@@ -200,6 +229,26 @@ class AttentionMetadataBuilder(ABC, Generic[T]):
               cuda_graph_pad_size: int, batch_size: int) -> T:
         """Build attention metadata with on-device tensors."""
         raise NotImplementedError
+
+
+class AttentionLayer(Protocol):
+
+    _q_scale: torch.Tensor
+    _k_scale: torch.Tensor
+    _v_scale: torch.Tensor
+    _k_scale_float: float
+    _v_scale_float: float
+    _prob_scale: torch.Tensor
+
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata: AttentionMetadata,
+    ) -> torch.Tensor:
+        ...
 
 
 class AttentionImpl(ABC, Generic[T]):
@@ -216,19 +265,39 @@ class AttentionImpl(ABC, Generic[T]):
         kv_cache_dtype: str = "auto",
         blocksparse_params: Optional[Dict[str, Any]] = None,
         logits_soft_cap: Optional[float] = None,
+        attn_type: str = AttentionType.DECODER,
     ) -> None:
         raise NotImplementedError
 
     @abstractmethod
     def forward(
         self,
+        layer: AttentionLayer,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
         attn_metadata: T,
-        k_scale: float = 1.0,
-        v_scale: float = 1.0,
-        attn_type: AttentionType = AttentionType.DECODER,
+        output: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
+
+
+class MLAAttentionImpl(AttentionImpl[T], Generic[T]):
+
+    @abstractmethod
+    def forward(
+        self,
+        layer: AttentionLayer,
+        hidden_states_or_cq: torch.Tensor,
+        kv_c_normed: torch.Tensor,
+        k_pe: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata: T,
+        output: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+
+
+def is_quantized_kv_cache(kv_cache_dtype: str) -> bool:
+    return kv_cache_dtype != "auto"

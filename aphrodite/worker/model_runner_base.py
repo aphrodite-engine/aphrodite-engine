@@ -1,24 +1,21 @@
 import dataclasses
-import pickle
 from abc import ABC, abstractmethod
-from datetime import datetime
-from functools import wraps
-from typing import (TYPE_CHECKING, Any, Dict, Generic, Iterable, List,
-                    Optional, Type, TypeVar)
+from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional, Type,
+                    TypeVar)
 
 import torch
-from loguru import logger
-from torch import is_tensor
+import torch.nn as nn
 
+from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
 from aphrodite.modeling.layers.sampler import SamplerOutput
-from aphrodite.platforms import current_platform
 
 if TYPE_CHECKING:
     from aphrodite.attention import AttentionMetadata
     from aphrodite.attention.backends.abstract import AttentionBackend
     from aphrodite.modeling.sampling_metadata import SamplingMetadata
+
 
 T = TypeVar('T', bound="BroadcastableModelInput")
 
@@ -45,9 +42,11 @@ def _init_attn_metadata_from_tensor_dict(
     # Extract the fields used to create AttentionMetadata.
     valid_attn_kwargs = {}
     for field in dataclasses.fields(attn_backend.get_metadata_cls()):
-        val = tensor_dict.pop(field.name, None)
-        if val is not None:
-            valid_attn_kwargs[field.name] = val
+        if field.name in tensor_dict:
+            if field.name == "input_positions":
+                valid_attn_kwargs[field.name] = tensor_dict[field.name]
+            else:
+                valid_attn_kwargs[field.name] = tensor_dict.pop(field.name)
 
     attn_metadata = attn_backend.make_metadata(**valid_attn_kwargs)
     tensor_dict["attn_metadata"] = attn_metadata
@@ -98,57 +97,10 @@ def _init_frozen_model_input_from_tensor_dict(
         val = tensor_dict.pop(field.name, None)
         if val is not None:
             valid_tensor_kwargs[field.name] = val
+
     frozen_model_input = frozen_model_input_cls(**valid_tensor_kwargs)
     tensor_dict["frozen_model_input"] = frozen_model_input
     return tensor_dict
-
-
-def dump_input_when_exception(exclude_args: Optional[List[int]] = None,
-                              exclude_kwargs: Optional[List[str]] = None):
-    def _inner(func):
-        @wraps(func)
-        def _wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except Exception as err:
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                filename = f"/tmp/err_{func.__name__}_input_{timestamp}.pkl"
-                logger.info("Writing input of failed execution to "
-                            f"{filename}...")
-                with open(filename, "wb") as filep:
-                    dumped_inputs = {
-                        k: v
-                        for k, v in kwargs.items()
-                        if k not in (exclude_kwargs or [])
-                    }
-                    for i, arg in enumerate(args):
-                        if i not in (exclude_args or []):
-                            dumped_inputs[f"arg_{i}"] = arg
-
-                    # Only persist dtype and shape for kvcache tensors
-                    # (can be way too big otherwise)
-                    if (kv_caches := dumped_inputs.get("kv_caches")) \
-                        and isinstance(kv_caches, Iterable):
-                        dumped_inputs["kv_caches"] = [(t.dtype, t.shape)
-                                                      for t in kv_caches
-                                                      if is_tensor(t)]
-
-                    try:
-                        pickle.dump(dumped_inputs, filep)
-                    except Exception as pickle_err:
-                        logger.warning(
-                            "Failed to pickle inputs of failed execution: "
-                            f"{str(pickle_err)}")
-                        raise type(err)(f"Error in model execution: "
-                                        f"{str(err)}") from err
-                    logger.info(
-                        f"Completed writing input of failed execution to "
-                        f"{filename}.")
-                raise type(err)(
-                    f"Error in model execution (input dumped to {filename}): "
-                    f"{str(err)}") from err
-        return _wrapper
-    return _inner
 
 
 class BroadcastableModelInput(ABC):
@@ -181,6 +133,7 @@ class ModelRunnerInputBase(BroadcastableModelInput):
     device-specific data. Different worker backends may have different methods
     of converting from the global ExecuteModelRequest produced by the LLM
     engine to the worker-local ModelRunnerInputBase objects.
+
     Model runners that support multi-GPU execution should define a
     ModelRunnerInputBase subclass, add their required fields, and specify how to
     serialize/deserialize a ModelInput for broadcast between workers.
@@ -191,6 +144,11 @@ class ModelRunnerInputBase(BroadcastableModelInput):
 class ModelRunnerInputBuilderBase(ABC, Generic[T]):
     """A builder to create ModelRunnerInputBase objects.
   """
+
+    @abstractmethod
+    def prepare(self,
+                finished_requests_ids: Optional[List[str]] = None) -> None:
+        raise NotImplementedError
 
     @abstractmethod
     def add_seq_group(self, seq_group_metadata):
@@ -212,6 +170,22 @@ class ModelRunnerBase(ABC, Generic[T]):
     Each ModelRunnerBase subclass should define a corresponding
     ModelRunnerInputBase subclass.
     """
+
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+    ) -> None:
+        self.aphrodite_config = aphrodite_config
+        self.model_config = aphrodite_config.model_config
+        self.cache_config = aphrodite_config.cache_config
+        self.lora_config = aphrodite_config.lora_config
+        self.load_config = aphrodite_config.load_config
+        self.parallel_config = aphrodite_config.parallel_config
+        self.scheduler_config = aphrodite_config.scheduler_config
+        self.device_config = aphrodite_config.device_config
+        self.speculative_config = aphrodite_config.speculative_config
+        self.prompt_adapter_config = aphrodite_config.prompt_adapter_config
+        self.observability_config = aphrodite_config.observability_config
 
     # Map of request_id -> generator used for seeded random sampling
     generators: Dict[str, torch.Generator] = {}
@@ -241,13 +215,17 @@ class ModelRunnerBase(ABC, Generic[T]):
         """
         raise NotImplementedError
 
-    @current_platform.inference_mode()
+    @abstractmethod
+    def get_model(self) -> nn.Module:
+        raise NotImplementedError
+
     def execute_model(
         self,
         model_input: T,
         kv_caches: Optional[List[torch.Tensor]],
-        intermediate_tensors: Optional[IntermediateTensors],
+        intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
+        **kwargs,
     ) -> Optional[List[SamplerOutput]]:
         """
         Execute the model on the given input.
@@ -265,3 +243,36 @@ class ModelRunnerBase(ABC, Generic[T]):
                 self.generators.pop(request_id, None)
 
         return self.generators
+
+
+class ModelRunnerWrapperBase:
+    """
+    The whole point of this class is to lazily initialize the model_runner.
+    """
+
+    def __init__(
+        self,
+        model_runner: ModelRunnerBase,
+    ) -> None:
+        self.model_runner: ModelRunnerBase = model_runner
+
+    def __getattr__(self, attr):
+        return getattr(self.model_runner, attr)
+
+
+class InputProcessingError(Exception):
+    """This exception is raised when an error occurs preparing the inputs for
+    a single sequence group.
+    This allows the engine to gracefully handle errors with a single sequence
+    group without having to fail the entire batch.
+    """
+
+    def __init__(self, request_id, message):
+        """request_id is the id of the offending sequence group"""
+        self.request_id = request_id
+        self.message = message
+        super().__init__(self.message)
+
+    def __str__(self):
+        return "Failed to prepare inputs for sequence group with request id: " \
+                f"{self.request_id}, Error: {self.message}"
