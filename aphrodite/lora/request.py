@@ -26,6 +26,7 @@ class LoRARequest(
     lora_name: str
     lora_int_id: int
     lora_path: str = ""
+    scaling_factor: Optional[float] = 1.0
     lora_local_path: Optional[str] = msgspec.field(default=None)
     long_lora_max_len: Optional[int] = None
     base_model_name: Optional[str] = msgspec.field(default=None)
@@ -44,6 +45,10 @@ class LoRARequest(
 
         # Ensure lora_path is not empty
         assert self.lora_path, "lora_path cannot be empty"
+
+        # Scaling factor must be non-negative
+        assert self.scaling_factor is None or self.scaling_factor >= 0, \
+            "scaling_factor must be non-negative"
 
     @property
     def adapter_id(self):
