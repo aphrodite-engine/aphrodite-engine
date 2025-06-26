@@ -1,12 +1,13 @@
 # Default ROCm 6.1 base image
-ARG BASE_IMAGE="rocm/pytorch:rocm6.1.2_ubuntu20.04_py3.9_pytorch_staging"
+ARG BASE_IMAGE="rocm/pytorch:rocm6.4_ubuntu24.04_py3.12_pytorch_release_2.3.0"
 
 # Default ROCm ARCHes to build Aphrodite for.
 ARG PYTORCH_ROCM_ARCH="gfx908;gfx90a;gfx942;gfx1100"
 
 # Whether to install CK-based flash-attention
 # If 0, will not install flash-attention
-ARG BUILD_FA="1"
+# Set this to 0 if you're not on gfx90a;gfx942
+ARG BUILD_FA="0"
 # If `TRY_FA_WHEEL=1`, we will try installing flash-attention from `FA_WHEEL_URL`
 # If this succeeds, we use the downloaded wheel and skip building flash-attention.
 # Otherwise, ROCm flash-attention from `FA_BRANCH` will be built for the
@@ -18,10 +19,13 @@ ARG FA_BRANCH="23a2b1c2"
 
 # Whether to build triton on rocm
 ARG BUILD_TRITON="1"
-ARG TRITON_BRANCH="e0fc12c"
+ARG TRITON_BRANCH="e5be006a4"
 
 ### Base image build stage
 FROM $BASE_IMAGE AS base
+
+ARG max_jobs=2
+ENV MAX_JOBS=${max_jobs}
 
 # Import arg(s) defined before this build stage
 ARG PYTORCH_ROCM_ARCH
@@ -50,14 +54,14 @@ RUN python3 -m pip install --upgrade pip
 # Remove sccache so it doesn't interfere with ccache
 # TODO: implement sccache support across components
 RUN apt-get purge -y sccache; python3 -m pip uninstall -y sccache; rm -f "$(which sccache)"
-# Install torch == 2.5.0 on ROCm
+# Install torch on ROCm
 RUN case "$(ls /opt | grep -Po 'rocm-[0-9]\.[0-9]')" in \
-        *"rocm-6.1"*) \
+        *"rocm-6.4"*) \
             python3 -m pip uninstall -y torch torchvision \
             && python3 -m pip install --no-cache-dir --pre \
-                torch==2.5.0.dev20240726 \
-                torchvision==0.20.0.dev20240726 \
-               --index-url https://download.pytorch.org/whl/nightly/rocm6.1;; \
+                torch \
+                torchvision \
+               --index-url https://download.pytorch.org/whl/nightly/rocm6.3;; \
         *) ;; esac
 
 ENV LLVM_SYMBOLIZER_PATH=/opt/rocm/llvm/bin/llvm-symbolizer
@@ -116,6 +120,7 @@ RUN --mount=type=cache,target=${CCACHE_DIR} \
     && cd triton \
     && git checkout "${TRITON_BRANCH}" \
     && cd python \
+    && pip install ninja cmake wheel pybind11 \
     && python3 setup.py bdist_wheel --dist-dir=/install; \
     # Create an empty directory otherwise as later build stages expect one
     else mkdir -p /install; \
@@ -131,11 +136,6 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --upgrade numba scipy huggingface-hub[cli]
 
-
-# Clang needs to be patched for ROCm
-RUN chmod +x patches/amd.patch
-RUN patch -p1 < patches/amd.patch
-
 # Workaround for ray >= 2.10.0
 ENV RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES=1
 # Silences the HF Tokenizers warning
@@ -144,13 +144,6 @@ ENV TOKENIZERS_PARALLELISM=false
 RUN --mount=type=cache,target=${CCACHE_DIR} \
     --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install -Ur requirements-rocm.txt \
-    && case "$(ls /opt | grep -Po 'rocm-[0-9]\.[0-9]')" in \
-        *"rocm-6.1"*) \
-            # Bring in upgrades to HIP graph earlier than ROCm 6.2 for Aphrodite
-            wget -N https://github.com/ROCm/vllm/raw/fa78403/rocm_patch/libamdhip64.so.6 -P /opt/rocm/lib \
-            # Prevent interference if torch bundles its own HIP runtime
-            && rm -f "$(python3 -c 'import torch; print(torch.__path__[0])')"/lib/libamdhip64.so* || true;; \
-        *) ;; esac \
     && python3 setup.py clean --all \
     && python3 setup.py develop
 
