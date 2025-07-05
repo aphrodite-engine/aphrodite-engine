@@ -2,7 +2,6 @@
 
 import torch
 import torch.nn as nn
-from loguru import logger
 
 from aphrodite.v1.outputs import LogprobsTensors, SamplerOutput
 from aphrodite.v1.sample.metadata import SamplingMetadata

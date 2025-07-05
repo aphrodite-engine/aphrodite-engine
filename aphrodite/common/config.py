@@ -2832,6 +2832,11 @@ class LoRAConfig:
     trained with those scaling factors to be used at the same time. If not
     specified, only adapters trained with the base model scaling factor are
     allowed."""
+    enable_lora_modules_to_save: bool = False
+    """
+    Enable support for LoRA adapters with `modules_to_save` attribute in the
+    config. Needed for adapters with modified token embeddings and lm_head.
+    """
     bias_enabled: bool = False
     """Enable bias for LoRA adapters."""
 
@@ -2854,6 +2859,7 @@ class LoRAConfig:
         factors.append(self.lora_dtype)
         factors.append(self.lora_extra_vocab_size)
         factors.append(self.long_lora_scaling_factors)
+        factors.append(self.enable_lora_modules_to_save)
         factors.append(self.bias_enabled)
         hash_str = hashlib.md5(str(factors).encode(),
                                usedforsecurity=False).hexdigest()
