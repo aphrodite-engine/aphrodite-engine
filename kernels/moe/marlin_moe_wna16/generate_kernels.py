@@ -24,8 +24,6 @@ TEMPLATE = ("template __global__ void Marlin<"
             "{{thread_k_blocks}}, "
             "{{'true' if m_block_size_8 else 'false'}}, "
             "{{stages}}, "
-            "{{'true' if has_act_order else 'false'}}, "
-            "{{'true' if has_zp else 'false'}}, "
             "{{group_blocks}}, "
             "{{'true' if is_zp_float else 'false'}}>"
             "( MARLIN_KERNEL_PARAMS );")
@@ -61,7 +59,7 @@ def generate_new_kernels():
 
             # act order case only support gptq-int4 and gptq-int8
             if group_blocks == 0 and scalar_type not in [
-                    "aphrodite::kU4", "aphrodite::kU8B128"
+                    "aphrodite::kU4B8", "aphrodite::kU8B128"
             ]:
                 continue
             if thread_configs[2] == 256:
