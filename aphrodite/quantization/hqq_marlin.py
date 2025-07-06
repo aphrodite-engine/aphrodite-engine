@@ -298,8 +298,10 @@ class HQQMarlinMethod(LinearMethodBase):
 
         marlin_out = ops.gptq_marlin_gemm(
             x,
+            None,
             layer.marlin_qweight,
             scales,
+            None,
             zeros,
             layer.g_idx,
             layer.g_idx_sort_indices,
@@ -309,7 +311,7 @@ class HQQMarlinMethod(LinearMethodBase):
             self.output_size_per_partition,
             self.input_size_per_partition,
             True,  # is_k_full
-            True,  # has_zp
+            False,  # use atomic add
             True,  # use 32-bit reduce
             True,  # use float zp
         )

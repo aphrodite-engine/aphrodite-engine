@@ -295,6 +295,7 @@ set(APHRODITE_EXT_SRC
     "kernels/quantization/cutlass_w8a8/scaled_mm_entry.cu"
     "kernels/quantization/fp4/nvfp4_quant_entry.cu"
     "kernels/quantization/fp4/nvfp4_scaled_mm_entry.cu"
+    "kernels/quantization/fp4/nvfp4_blockwise_moe_kernel.cu"
     "kernels/sparse/cutlass/sparse_scaled_mm_entry.cu"
     "kernels/cutlass_extensions/common.cpp"
     "kernels/attention/mla/cutlass_mla_entry.cu")
@@ -308,8 +309,52 @@ set(APHRODITE_EXT_SRC
   # are not supported by Machete yet.
   cuda_archs_loose_intersection(MARLIN_ARCHS "8.0;8.6;8.7;8.9;9.0;10.0;10.1;12.0" "${CUDA_ARCHS}")
   if (MARLIN_ARCHS)
+
+    #
+    # For the Marlin kernels we automatically generate sources for various
+    # preselected input type pairs and schedules.
+    # Generate sources:
+    set(MARLIN_GEN_SCRIPT
+      ${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantization/gptq_marlin/generate_kernels.py)
+    file(MD5 ${MARLIN_GEN_SCRIPT} MARLIN_GEN_SCRIPT_HASH)
+
+    message(STATUS "Marlin generation script hash: ${MARLIN_GEN_SCRIPT_HASH}")
+    message(STATUS "Last run Marlin generate script hash: $CACHE{MARLIN_GEN_SCRIPT_HASH}")
+
+    if (NOT DEFINED CACHE{MARLIN_GEN_SCRIPT_HASH}
+        OR NOT $CACHE{MARLIN_GEN_SCRIPT_HASH} STREQUAL ${MARLIN_GEN_SCRIPT_HASH})
+      execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env
+        PYTHONPATH=$PYTHONPATH
+          ${Python_EXECUTABLE} ${MARLIN_GEN_SCRIPT}
+        RESULT_VARIABLE marlin_generation_result
+        OUTPUT_VARIABLE marlin_generation_result
+        OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/marlin_generation.log
+        ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/marlin_generation.log
+      )
+
+      if (NOT marlin_generation_result EQUAL 0)
+        message(FATAL_ERROR "Marlin generation failed."
+                            " Result: \"${marlin_generation_result}\""
+                            "\nCheck the log for details: "
+                            "${CMAKE_CURRENT_BINARY_DIR}/marlin_generation.log")
+      else()
+        set(MARLIN_GEN_SCRIPT_HASH ${MARLIN_GEN_SCRIPT_HASH}
+            CACHE STRING "Last run Marlin generate script hash" FORCE)
+        message(STATUS "Marlin generation completed successfully.")
+      endif()
+    else()
+      message(STATUS "Marlin generation script has not changed, skipping generation.")
+    endif()
+
+    file(GLOB MARLIN_TEMPLATE_KERNEL_SRC "kernels/quantization/gptq_marlin/kernel_*.cu")
+    set_gencode_flags_for_srcs(
+      SRCS "${MARLIN_TEMPLATE_KERNEL_SRC}"
+      CUDA_ARCHS "${MARLIN_ARCHS}")
+
+    list(APPEND APHRODITE_EXT_SRC ${MARLIN_TEMPLATE_KERNEL_SRC})
+  
     set(MARLIN_SRCS
-       "kernels/quantization/fp8/fp8_marlin.cu"
        "kernels/quantization/marlin/dense/marlin_cuda_kernel.cu"
        "kernels/quantization/marlin/sparse/marlin_24_cuda_kernel.cu"
        "kernels/quantization/marlin/qqq/marlin_qqq_gemm_kernel.cu"
@@ -457,7 +502,9 @@ set(APHRODITE_EXT_SRC
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.8 AND FP4_ARCHS)
     set(SRCS
       "kernels/quantization/fp4/nvfp4_quant_kernels.cu"
-      "kernels/quantization/fp4/nvfp4_scaled_mm_kernels.cu")
+      "kernels/quantization/fp4/nvfp4_experts_quant.cu"
+      "kernels/quantization/fp4/nvfp4_scaled_mm_kernels.cu"
+      "kernels/quantization/fp4/nvfp4_blockwise_moe_kernel.cu")
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
       CUDA_ARCHS "${FP4_ARCHS}")
@@ -495,7 +542,7 @@ set(APHRODITE_EXT_SRC
   # The MoE kernel cutlass_moe_mm requires CUDA 12.3 or later (and only works
   # on Hopper). get_cutlass_moe_mm_data should only be compiled if it's possible
   # to compile MoE kernels that use its output.
-  cuda_archs_loose_intersection(SCALED_MM_ARCHS "9.0a;" "${CUDA_ARCHS}")
+  cuda_archs_loose_intersection(SCALED_MM_ARCHS "9.0a;10.0a" "${CUDA_ARCHS}")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.3 AND SCALED_MM_ARCHS)
     set(SRCS "kernels/quantization/cutlass_w8a8/moe/grouped_mm_c3x.cu"
              "kernels/quantization/cutlass_w8a8/moe/moe_data.cu")
@@ -651,7 +698,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
         OR NOT $CACHE{MOE_MARLIN_GEN_SCRIPT_HASH} STREQUAL ${MOE_MARLIN_GEN_SCRIPT_HASH})
       execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
-        PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/kernels/cutlass_extensions/:${CUTLASS_DIR}/python/:${APHRODITE_PYTHON_PATH}:$PYTHONPATH
+        PYTHONPATH=$PYTHONPATH
           ${Python_EXECUTABLE} ${MOE_MARLIN_GEN_SCRIPT}
         RESULT_VARIABLE moe_marlin_generation_result
         OUTPUT_VARIABLE moe_marlin_generation_output

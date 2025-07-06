@@ -23,8 +23,8 @@ from aphrodite.quantization.utils import replace_parameter
 from aphrodite.quantization.utils.gptq_utils import get_linear_quant_method
 from aphrodite.quantization.utils.marlin_utils import (
     check_marlin_supported, check_moe_marlin_supports_layer,
-    marlin_moe_permute_scales, marlin_repeat_scales_on_all_ranks,
-    verify_marlin_supported)
+    marlin_make_workspace_new, marlin_moe_permute_scales,
+    marlin_repeat_scales_on_all_ranks, verify_marlin_supported)
 from aphrodite.scalar_type import scalar_types
 
 
@@ -196,6 +196,13 @@ class GPTQMarlinLinearMethod(LinearMethodBase):
 
     def __init__(self, quant_config: GPTQMarlinConfig) -> None:
         self.quant_config = quant_config
+        if self.quant_config.quant_type.size_bits == 4:
+            self.quant_type = scalar_types.uint4b8
+        elif self.quant_config.quant_type.size_bits == 8:
+            self.quant_type = scalar_types.uint8b128
+        else:
+            raise ValueError(
+                "GPTQMarlinMoEMethod only supports int4 and int8 now.")
 
         # Verify supported on platform.
         verify_marlin_supported(quant_type=self.quant_config.quant_type,
@@ -491,11 +498,7 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
         set_weight_attrs(w2_g_idx_sort_indices, extra_weight_attrs)
 
         device = layer.w13_qweight.device
-        sms = torch.cuda.get_device_properties(device).multi_processor_count
-        layer.workspace = torch.zeros((sms * 4, ),
-                                      dtype=torch.int,
-                                      device=device,
-                                      requires_grad=False)
+        layer.workspace = marlin_make_workspace_new(device, 4)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
 
@@ -600,9 +603,9 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
         activation: str = "silu",
     ) -> torch.Tensor:
         assert activation == "silu", "Only SiLU activation is supported."
-        if apply_router_weight_on_input is not None:
+        if apply_router_weight_on_input:
             raise NotImplementedError(
-                "Apply router weight on input is not supported for"
+                "Apply router weight on input is not supported for "
                 "fused Marlin MoE method.")
 
         topk_weights, topk_ids = FusedMoE.select_experts(
@@ -626,12 +629,12 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
             router_logits,
             topk_weights,
             topk_ids,
+            quant_type_id=self.quant_type.id,
             global_num_experts=global_num_experts,
             expert_map=expert_map,
             g_idx1=layer.w13_g_idx,
             g_idx2=layer.w2_g_idx,
             sort_indices1=layer.w13_g_idx_sort_indices,
             sort_indices2=layer.w2_g_idx_sort_indices,
-            num_bits=self.quant_config.quant_type.size_bits,
             workspace=layer.workspace,
             is_k_full=self.is_k_full)

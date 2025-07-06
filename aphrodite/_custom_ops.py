@@ -356,18 +356,19 @@ if hasattr(torch.ops._C, "gptq_marlin_24_gemm"):
 
     @register_fake("_C::gptq_marlin_gemm")
     def _gptq_marlin_gemm_fake(a: torch.Tensor,
+                               c: Optional[torch.Tensor],
                                b_q_weight: torch.Tensor,
                                b_scales: torch.Tensor,
-                               b_zeros: torch.Tensor,
-                               g_idx: torch.Tensor,
-                               perm: torch.Tensor,
+                               global_scale: Optional[torch.Tensor],
+                               b_zeros: Optional[torch.Tensor],
+                               g_idx: Optional[torch.Tensor],
+                               perm: Optional[torch.Tensor],
                                workspace: torch.Tensor,
-                               b_q_type: ScalarType,
+                               b_q_type_id: int,
                                size_m: torch.SymInt,
                                size_n: torch.SymInt,
                                size_k: torch.SymInt,
-                               is_k_full: bool,
-                               has_zp: bool = False,
+                               is_k_full: bool = True,
                                use_atomic_add: bool = False,
                                use_fp32_reduce: bool = False,
                                is_zp_float: bool = False) -> torch.Tensor:
@@ -437,14 +438,6 @@ if hasattr(torch.ops._C, "gptq_marlin_24_gemm"):
         return torch.empty((out_features, in_features),
                            dtype=codebooks.dtype,
                            device=codebooks.device)
-
-    @register_fake("_C::fp8_marlin_gemm")
-    def _fp8_marlin_gemm_fake(a: torch.Tensor, b_q_weight: torch.Tensor,
-                              b_scales: torch.Tensor, workspace: torch.Tensor,
-                              num_bits: int, size_m: torch.SymInt,
-                              size_n: torch.SymInt,
-                              size_k: torch.SymInt) -> torch.Tensor:
-        return torch.empty((size_m, size_n), dtype=a.dtype, device=a.device)
 
     @register_fake("_C::machete_mm")
     def machete_mm_fake(
@@ -794,10 +787,11 @@ def get_cutlass_moe_mm_data(
     - output_permutation: Permutation that must be used to shuffle the output
                           after executing the MMs.
     """
-    torch.ops._C.get_cutlass_moe_mm_data(topk_ids, expert_offsets,
-                                         problem_sizes1, problem_sizes2,
-                                         input_permutation, output_permutation,
-                                         num_experts, n, k)
+    return torch.ops._C.get_cutlass_moe_mm_data(topk_ids, expert_offsets,
+                                                problem_sizes1, problem_sizes2,
+                                                input_permutation,
+                                                output_permutation,
+                                                num_experts, n, k)
 
 
 def cutlass_moe_mm(out_tensors: torch.Tensor, a_tensors: torch.Tensor,
@@ -816,9 +810,40 @@ def cutlass_moe_mm(out_tensors: torch.Tensor, a_tensors: torch.Tensor,
                      MMs used in the fused MoE operation.
     - a/b/c_strides: The data strides passed to grouped matrix multiplication.
     """
-    torch.ops._C.cutlass_moe_mm(out_tensors, a_tensors, b_tensors, a_scales,
-                                b_scales, expert_offsets, problem_sizes,
-                                a_strides, b_strides, c_strides)
+    return torch.ops._C.cutlass_moe_mm(out_tensors, a_tensors, b_tensors,
+                                       a_scales, b_scales, expert_offsets,
+                                       problem_sizes, a_strides, b_strides,
+                                       c_strides)
+
+
+def cutlass_fp4_moe_mm(a_tensors: torch.Tensor, b_tensors: torch.Tensor,
+                       a_scales: torch.Tensor, b_scales: torch.Tensor,
+                       alphas: torch.Tensor, problem_sizes: torch.Tensor,
+                       expert_offsets: torch.Tensor, sf_offsets: torch.Tensor,
+                       out_dtype: torch.dtype, device: torch.device):
+    """
+    An FP4 Blockscaled Group Gemm that takes in  a_tensors, b_tensors and runs 
+    the gemms for each combination based on the specified problem sizes.
+    This is used as the MoE gemm during NVFP4 Quantized FusedMoE forward.
+    - a/b_tensors: the NVFP4 a_ptrs and b_ptrs tensors which are quantized
+                     input and expert weights.
+    - a_/b_scales: The blockscales in FP8-E4M3 precision
+    - expert_offsets/sf_offsets: Indices that mark at which token index 
+                    each expert begins its computation. The number of tokens 
+                    computed with expert E is expert_offsets[E + 1] - 
+                    expert_offsets[E] And the sf_size per expert is 
+                    sf_offset[E+1] - sf_offset[E]
+    - problem_sizes: MxNxK sizes of each expert's multiplication in two grouped
+                     MMs used in the fused MoE operation.
+    """
+    m_topk = a_tensors.shape[0]
+    n = b_tensors.shape[1]
+    c_shape = (m_topk, n)
+    c = torch.empty(c_shape, device=device, dtype=out_dtype)
+    torch.ops._C.cutlass_fp4_group_mm(c, a_tensors, b_tensors, a_scales,
+                                      b_scales, alphas, problem_sizes,
+                                      expert_offsets, sf_offsets)
+    return c.to(out_dtype)
 
 
 # aqlm
@@ -907,35 +932,28 @@ def awq_marlin_moe_repack(b_q_weight: torch.Tensor, perm: torch.Tensor,
 
 
 def gptq_marlin_gemm(a: torch.Tensor,
+                     c: Optional[torch.Tensor],
                      b_q_weight: torch.Tensor,
                      b_scales: torch.Tensor,
-                     b_zeros: torch.Tensor,
-                     g_idx: torch.Tensor,
-                     perm: torch.Tensor,
+                     global_scale: Optional[torch.Tensor],
+                     b_zeros: Optional[torch.Tensor],
+                     g_idx: Optional[torch.Tensor],
+                     perm: Optional[torch.Tensor],
                      workspace: torch.Tensor,
                      b_q_type: ScalarType,
                      size_m: int,
                      size_n: int,
                      size_k: int,
-                     is_k_full: bool,
-                     has_zp: bool = False,
+                     is_k_full: bool = True,
                      use_atomic_add: bool = False,
                      use_fp32_reduce: bool = False,
                      is_zp_float: bool = False) -> torch.Tensor:
-    return torch.ops._C.gptq_marlin_gemm(a, b_q_weight, b_scales, b_zeros,
-                                         g_idx, perm, workspace, b_q_type.id,
-                                         size_m, size_n, size_k, is_k_full,
-                                         has_zp, use_atomic_add,
-                                         use_fp32_reduce, is_zp_float)
-
-
-# fp8 marlin
-def fp8_marlin_gemm(a: torch.Tensor, b_q_weight: torch.Tensor,
-                    b_scales: torch.Tensor, workspace: torch.Tensor,
-                    num_bits: int, size_m: int, size_n: int,
-                    size_k: int) -> torch.Tensor:
-    return torch.ops._C.fp8_marlin_gemm(a, b_q_weight, b_scales, workspace,
-                                        num_bits, size_m, size_n, size_k)
+    return torch.ops._C.gptq_marlin_gemm(a, c, b_q_weight, b_scales,
+                                         global_scale, b_zeros, g_idx, perm,
+                                         workspace, b_q_type.id, size_m,
+                                         size_n, size_k, is_k_full,
+                                         use_atomic_add, use_fp32_reduce,
+                                         is_zp_float)
 
 
 # machete
@@ -1044,6 +1062,56 @@ def scaled_fp4_quant(
                                   input_global_scale)
     output_scale = output_scale.view(torch.float8_e4m3fn)
     return output, output_scale
+
+def scaled_fp4_experts_quant(
+    input_tensor: torch.Tensor,
+    input_global_scale: torch.Tensor,
+    expert_offsets: torch.Tensor,
+    blockscale_offsets: torch.Tensor,
+    topk: int,
+    expert_map: Optional[torch.Tensor] = None,
+    MAX_TOKENS_PER_EXPERT: int = 163840,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Quantize input tensor to FP4 and return quantized tensor and scale, for
+    packed MoE Inputs.
+    Args:
+        input: The input tensor to be quantized to FP4
+        expert_map: The expert map tensor
+        input_global_scale: A scalar scaling factor for the entire tensor.
+        expert_offsets: The expert offsets tensor
+        blockscale_offsets: The blockscale offsets tensor
+    Outputs:
+        output: The quantized tensor in FP4
+        output_scales: The blockscale tensor in FP8-E4M3
+    """
+    assert not current_platform.is_rocm()
+    assert input_tensor.ndim == 2, (
+        f'input.ndim needs to be == 2, but got {input_tensor.ndim}.')
+
+    input_tensor = input_tensor[
+        expert_map] if expert_map is not None else input_tensor
+    m_numtopk, k = input_tensor.shape
+    assert (m_numtopk <= MAX_TOKENS_PER_EXPERT * topk), (
+        f"m_numtopk must be less than MAX_TOKENS_PER_EXPERT * topk for"
+        f" scaled_fp4_experts_quant kernel, observed m_numtopk = {m_numtopk}")
+    scales_k = k // 16
+    padded_k = (scales_k + (4 - 1)) // 4
+
+    # output is uint8 and packed fp4 values
+    output = torch.empty(m_numtopk,
+                         k // 2,
+                         device=input_tensor.device,
+                         dtype=torch.uint8)
+    output_scales = torch.empty(MAX_TOKENS_PER_EXPERT * topk,
+                                padded_k,
+                                dtype=torch.int32,
+                                device=input_tensor.device)
+    torch.ops._C.scaled_fp4_experts_quant(output, output_scales, input_tensor,
+                                          input_global_scale, expert_offsets,
+                                          blockscale_offsets)
+    output_scales = output_scales.view(torch.float8_e4m3fn)
+    return output, output_scales
 
 
 # fp8
@@ -1378,6 +1446,7 @@ def topk_softmax(topk_weights: torch.Tensor, topk_ids: torch.Tensor,
 
 def moe_wna16_marlin_gemm(input: torch.Tensor, output: Optional[torch.Tensor],
                           b_qweight: torch.Tensor, b_scales: torch.Tensor,
+                          global_scale: Optional[torch.Tensor],
                           b_qzeros: Optional[torch.Tensor],
                           g_idx: Optional[torch.Tensor],
                           perm: Optional[torch.Tensor],
@@ -1392,11 +1461,11 @@ def moe_wna16_marlin_gemm(input: torch.Tensor, output: Optional[torch.Tensor],
                           use_fp32_reduce: bool,
                           is_zp_float: bool) -> torch.Tensor:
     return torch.ops._moe_C.moe_wna16_marlin_gemm(
-        input, output, b_qweight, b_scales, b_qzeros, g_idx, perm, workspace,
-        sorted_token_ids, expert_ids, num_tokens_past_padded, topk_weights,
-        moe_block_size, top_k, mul_topk_weights, is_ep, b_q_type.id, size_m,
-        size_n, size_k, is_k_full, use_atomic_add, use_fp32_reduce,
-        is_zp_float)
+        input, output, b_qweight, b_scales, global_scale, b_qzeros, g_idx,
+        perm, workspace, sorted_token_ids, expert_ids, num_tokens_past_padded,
+        topk_weights, moe_block_size, top_k, mul_topk_weights, is_ep,
+        b_q_type.id, size_m, size_n, size_k, is_k_full, use_atomic_add,
+        use_fp32_reduce, is_zp_float)
 
 
 if supports_moe_ops and hasattr(torch.ops._moe_C, "marlin_gemm_moe"):
