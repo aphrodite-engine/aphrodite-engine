@@ -1,4 +1,6 @@
 import logging
+import queue
+import threading
 import time
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
@@ -7,6 +9,7 @@ import numpy as np
 import prometheus_client
 from loguru import logger
 
+import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig, SupportsMetricsInfo
 from aphrodite.v1.core.kv_cache_utils import PrefixCachingMetrics
 from aphrodite.v1.engine import FinishReason
@@ -58,6 +61,27 @@ class LoggingStatLogger(StatLoggerBase):
         self.last_prompt_throughput: float = 0.0
         self.last_generation_throughput: float = 0.0
 
+        # Check if request-level metrics are enabled
+        self.request_level_metrics = envs.APHRODITE_REQUEST_LEVEL_METRICS
+        if self.request_level_metrics:
+            self.log_queue: queue.Queue = queue.Queue()
+            self.log_thread = threading.Thread(target=self._log_worker,
+                                               daemon=True)
+            self.log_thread.start()
+
+    def _log_worker(self):
+        """Worker thread that processes log messages from the queue."""
+        while True:
+            try:
+                log_msg = self.log_queue.get()
+                if log_msg is None:
+                    break
+                logger.info(log_msg)
+            except Exception as e:
+                logger.error(f"Error in logging thread: {e}")
+            finally:
+                self.log_queue.task_done()
+
     def _reset(self, now):
         self.last_log_time = now
 
@@ -80,7 +104,12 @@ class LoggingStatLogger(StatLoggerBase):
         """Log Stats to standard output."""
 
         if iteration_stats:
-            self._track_iteration_stats(iteration_stats)
+            if not self.request_level_metrics:
+                # Existing interval-based behavior
+                self._track_iteration_stats(iteration_stats)
+            else:
+                # Request-level metrics: log completed requests immediately
+                self._log_finished_requests(iteration_stats)
 
         self.prefix_caching_metrics.observe(scheduler_stats.prefix_cache_stats)
 
@@ -90,7 +119,41 @@ class LoggingStatLogger(StatLoggerBase):
 
         self.last_scheduler_stats = scheduler_stats
 
+    def _log_finished_requests(self, iteration_stats: IterationStats):
+        """Log individual finished requests for request-level metrics."""
+        if not iteration_stats.finished_requests:
+            return
+
+        for finished_request in iteration_stats.finished_requests:
+            # Calculate throughputs
+            prefill_throughput = (
+                finished_request.num_prompt_tokens / finished_request.prefill_time
+                if finished_request.prefill_time > 0 else 0
+            )
+
+            decode_throughput = (
+                finished_request.num_generation_tokens /
+                finished_request.decode_time
+                if finished_request.decode_time > 0 and
+                finished_request.num_generation_tokens > 0
+                else 0
+            )
+
+            log_msg = (
+                f"Request completed - "
+                f"E2E time: {finished_request.e2e_latency:.2f}s, "
+                f"TTFT: {finished_request.prefill_time:.2f}s, "
+                f"Prefill: {finished_request.num_prompt_tokens} tokens "
+                f"({prefill_throughput:.1f} tokens/s), "
+                f"Decode: {finished_request.num_generation_tokens} tokens "
+                f"({decode_throughput:.1f} tokens/s)"
+            )
+            self.log_queue.put(log_msg)
+
     def log(self):
+        if self.request_level_metrics:
+            return
+
         now = time.monotonic()
         prompt_throughput = self._get_throughput(self.num_prompt_tokens, now)
         generation_throughput = self._get_throughput(
@@ -135,6 +198,14 @@ class LoggingStatLogger(StatLoggerBase):
             "after num_gpu_blocks is: {}",
             self.aphrodite_config.cache_config.num_gpu_blocks)
 
+    def __del__(self):
+        """Cleanup the logging thread when the logger is destroyed."""
+        if hasattr(self, 'request_level_metrics') and self.request_level_metrics:
+            if hasattr(self, 'log_queue'):
+                self.log_queue.put(None)
+            if hasattr(self, 'log_thread'):
+                self.log_thread.join(timeout=1.0)
+
 
 class PrometheusStatLogger(StatLoggerBase):
 
@@ -144,8 +215,13 @@ class PrometheusStatLogger(StatLoggerBase):
         self.engine_index = engine_index
         # Use this flag to hide metrics that were deprecated in
         # a previous release and which will be removed future
-        self.show_hidden_metrics = \
+        self.show_hidden_metrics = (
+            aphrodite_config.observability_config is not None and
             aphrodite_config.observability_config.show_hidden_metrics
+        )
+
+        # Check if request-level metrics are enabled
+        self.request_level_metrics = envs.APHRODITE_REQUEST_LEVEL_METRICS
 
         labelnames = ["model_name", "engine"]
         labelvalues = [
@@ -353,13 +429,16 @@ class PrometheusStatLogger(StatLoggerBase):
 
     def log_metrics_info(self, type: str, config_obj: SupportsMetricsInfo):
         metrics_info = config_obj.metrics_info()
-        metrics_info["engine"] = self.engine_index
+        metrics_info["engine"] = str(self.engine_index)
 
-        name, documentation = None, None
+        name = None
+        documentation = "Unknown metrics info"
         if type == "cache_config":
             name = "aphrodite:cache_config_info"
             documentation = "Information of the LLMEngine CacheConfig"
-        assert name is not None, f"Unknown metrics info type {type}"
+        
+        if name is None:
+            raise ValueError(f"Unknown metrics info type {type}")
 
         # Info type metrics are syntactic sugar for a gauge permanently set to 1
         # Since prometheus multiprocessing mode does not support Info, emulate
@@ -390,24 +469,31 @@ class PrometheusStatLogger(StatLoggerBase):
         if iteration_stats is None:
             return
 
-        self.counter_num_preempted_reqs.inc(iteration_stats.num_preempted_reqs)
-        self.counter_prompt_tokens.inc(iteration_stats.num_prompt_tokens)
-        self.counter_generation_tokens.inc(
-            iteration_stats.num_generation_tokens)
-        self.histogram_iteration_tokens.observe(
-            iteration_stats.num_prompt_tokens + \
-            iteration_stats.num_generation_tokens)
+        # Handle request-level vs interval-based metrics
+        if self.request_level_metrics:
+            # For request-level metrics, log completed requests immediately
+            self._log_finished_requests_prometheus(iteration_stats)
+        else:
+            # Existing interval-based behavior
+            self.counter_num_preempted_reqs.inc(iteration_stats.num_preempted_reqs)
+            self.counter_prompt_tokens.inc(iteration_stats.num_prompt_tokens)
+            self.counter_generation_tokens.inc(
+                iteration_stats.num_generation_tokens)
+            self.histogram_iteration_tokens.observe(
+                iteration_stats.num_prompt_tokens + \
+                iteration_stats.num_generation_tokens)
 
-        for max_gen_tokens in iteration_stats.max_num_generation_tokens_iter:
-            self.histogram_max_num_generation_tokens_request.observe(
-                max_gen_tokens)
-        for n_param in iteration_stats.n_params_iter:
-            self.histogram_n_request.observe(n_param)
-        for ttft in iteration_stats.time_to_first_tokens_iter:
-            self.histogram_time_to_first_token.observe(ttft)
-        for tpot in iteration_stats.time_per_output_tokens_iter:
-            self.histogram_time_per_output_token.observe(tpot)
+            for max_gen_tokens in iteration_stats.max_num_generation_tokens_iter:
+                self.histogram_max_num_generation_tokens_request.observe(
+                    max_gen_tokens)
+            for n_param in iteration_stats.n_params_iter:
+                self.histogram_n_request.observe(n_param)
+            for ttft in iteration_stats.time_to_first_tokens_iter:
+                self.histogram_time_to_first_token.observe(ttft)
+            for tpot in iteration_stats.time_per_output_tokens_iter:
+                self.histogram_time_per_output_token.observe(tpot)
 
+        # Always log finished requests (both modes)
         for finished_request in iteration_stats.finished_requests:
             self.counter_request_success[finished_request.finish_reason].inc()
             self.histogram_e2e_time_request.observe(
@@ -424,8 +510,9 @@ class PrometheusStatLogger(StatLoggerBase):
                 finished_request.num_prompt_tokens)
             self.histogram_num_generation_tokens_request.observe(
                 finished_request.num_generation_tokens)
-            self.histogram_max_tokens_request.observe(
-                finished_request.max_tokens_param)
+            if finished_request.max_tokens_param is not None:
+                self.histogram_max_tokens_request.observe(
+                    finished_request.max_tokens_param)
 
         if self.gauge_lora_info is not None:
             running_lora_adapters = \
@@ -440,11 +527,25 @@ class PrometheusStatLogger(StatLoggerBase):
             self.gauge_lora_info.labels(**lora_info_labels)\
                                 .set_to_current_time()
 
+    def _log_finished_requests_prometheus(self, iteration_stats: IterationStats):
+        """Log individual finished requests for request-level Prometheus metrics."""
+        if not iteration_stats.finished_requests:
+            return
+
+        # Still increment the basic counters for request-level metrics
+        self.counter_num_preempted_reqs.inc(iteration_stats.num_preempted_reqs)
+
+        # For each finished request, increment token counters
+        for finished_request in iteration_stats.finished_requests:
+            self.counter_prompt_tokens.inc(finished_request.num_prompt_tokens)
+            self.counter_generation_tokens.inc(finished_request.num_generation_tokens)
+
     @staticmethod
     def _unregister_aphrodite_metrics():
-        # Unregister any existing Aphrodite collectors (for CI/CD
+        # Unregister any existing Aphrodite collectors (for CI/CD)
         for collector in list(prometheus_client.REGISTRY._collector_to_names):
-            if hasattr(collector, "_name") and "aphrodite" in collector._name:
+            if (hasattr(collector, "_name") and hasattr(collector, "_name") and
+                    "aphrodite" in getattr(collector, "_name", "")):
                 prometheus_client.REGISTRY.unregister(collector)
 
     def log_engine_initialized(self):
