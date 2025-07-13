@@ -290,6 +290,18 @@ def encode_video_base64(frames: npt.NDArray) -> str:
     return video_io.encode_base64(frames)
 
 
+def consecutive_placeholder_ranges(
+        num_items: int,
+        item_size: int,
+        initial_offset: int = 0) -> list[PlaceholderRange]:
+    """Returns a list of consecutive PlaceholderRanges of a fixed size"""
+
+    return [
+        PlaceholderRange(offset=initial_offset + i * item_size,
+                         length=item_size) for i in range(num_items)
+    ]
+
+
 def merge_and_sort_multimodal_metadata(
     mm_positions: "MultiModalPlaceholderDict",
     mm_hashes: Optional["MultiModalHashDict"],

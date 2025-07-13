@@ -28,6 +28,7 @@ from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
 from .llava import init_vision_tower_for_llava
 from .siglip import SiglipVisionModel
+from .siglip2 import Siglip2VisionModel
 from .utils import (AutoWeightsLoader, init_aphrodite_registered_model,
                     maybe_prefix, merge_multimodal_embeddings)
 from .vision import get_vision_encoder_info
@@ -354,7 +355,8 @@ class LlavaNextVideoForConditionalGeneration(nn.Module, SupportsMultiModal,
 
     def _video_pixels_to_features(
         self,
-        vision_tower: Union[CLIPVisionModel, SiglipVisionModel],
+        vision_tower: Union[CLIPVisionModel, SiglipVisionModel,
+                            Siglip2VisionModel],
         pixel_values: torch.Tensor,
     ) -> torch.Tensor:
 
