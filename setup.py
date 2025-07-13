@@ -370,6 +370,9 @@ def _is_xpu() -> bool:
 
 
 def _build_custom_ops() -> bool:
+    # Skip building custom ops if using precompiled binaries
+    if envs.APHRODITE_USE_PRECOMPILED:
+        return False
     return _is_cuda() or _is_hip() or _is_cpu()
 
 
@@ -547,18 +550,18 @@ def get_requirements() -> list[str]:
 
 ext_modules = []
 
-if _is_cuda() or _is_hip():
-    ext_modules.append(CMakeExtension(name="aphrodite._moe_C"))
+# Skip building extensions if using precompiled binaries
+if not envs.APHRODITE_USE_PRECOMPILED:
+    if _is_cuda() or _is_hip():
+        ext_modules.append(CMakeExtension(name="aphrodite._moe_C"))
 
-if _is_hip():
-    ext_modules.append(CMakeExtension(name="aphrodite._rocm_C"))
+    if _is_hip():
+        ext_modules.append(CMakeExtension(name="aphrodite._rocm_C"))
 
-if _is_cuda():
-    ext_modules.append(CMakeExtension(name="aphrodite._aphrodite_fa2_C"))
-    major, minor = torch.cuda.get_device_capability()
-    if envs.APHRODITE_USE_PRECOMPILED or get_nvcc_cuda_version() >= Version(
-            "12.3"):
-        if major >= 9:
+    if _is_cuda():
+        ext_modules.append(CMakeExtension(name="aphrodite._aphrodite_fa2_C"))
+        major, minor = torch.cuda.get_device_capability()
+        if get_nvcc_cuda_version() >= Version("12.3") and major >= 9:
             # FA3 requires CUDA 12.3 or later
             ext_modules.append(
                 CMakeExtension(name="aphrodite._aphrodite_fa3_C"))
@@ -566,10 +569,10 @@ if _is_cuda():
             # not targeting a hopper system
             ext_modules.append(
                 CMakeExtension(name="aphrodite._flashmla_C", optional=True))
-    ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator"))
+        ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator"))
 
-if _build_custom_ops():
-    ext_modules.append(CMakeExtension(name="aphrodite._C"))
+    if _build_custom_ops():
+        ext_modules.append(CMakeExtension(name="aphrodite._C"))
 
 package_data = {
     "aphrodite": [
