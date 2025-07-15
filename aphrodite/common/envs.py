@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     APHRODITE_PORT: Optional[int] = None
     APHRODITE_RPC_BASE_PATH: str = tempfile.gettempdir()
     APHRODITE_USE_MODELSCOPE: bool = False
+    APHRODITE_USE_CUSTOM_DOWNLOADER: bool = False
     APHRODITE_RINGBUFFER_WARNING_INTERVAL: int = 60
     APHRODITE_INSTANCE_ID: Optional[str] = None
     APHRODITE_NCCL_SO_PATH: Optional[str] = None
@@ -228,6 +229,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_USE_MODELSCOPE":
     lambda: os.environ.get(
         "APHRODITE_USE_MODELSCOPE", "False").lower() == "true",
+
+    # If 1, will use custom downloader instead of huggingface_hub for
+    # downloading models
+    # note that the value is 0 or 1
+    "APHRODITE_USE_CUSTOM_DOWNLOADER":
+    lambda: int(os.environ.get("APHRODITE_USE_CUSTOM_DOWNLOADER", "0")),
 
     # Instance id represents an instance of the APHRODITE. All processes in the
     # same instance should have the same instance id.

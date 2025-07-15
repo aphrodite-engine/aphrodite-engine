@@ -29,7 +29,8 @@ from aphrodite.attention import Attention
 from aphrodite.common.config import (AphroditeConfig, LoadConfig, LoadFormat,
                                      ModelConfig, ParallelConfig,
                                      set_current_aphrodite_config)
-from aphrodite.common.envs import APHRODITE_USE_MODELSCOPE
+from aphrodite.common.envs import (APHRODITE_USE_CUSTOM_DOWNLOADER,
+                                   APHRODITE_USE_MODELSCOPE)
 from aphrodite.common.utils import is_pin_memory_available
 from aphrodite.distributed import (get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
@@ -61,6 +62,7 @@ from aphrodite.platforms import current_platform
 from aphrodite.quantization.base_config import QuantizeMethodBase
 from aphrodite.transformers_utils.s3_utils import glob as s3_glob
 from aphrodite.transformers_utils.utils import is_s3
+import pathlib
 
 
 @contextmanager
@@ -265,6 +267,77 @@ class DefaultModelLoader(BaseModelLoader):
             return model_path
         return None
 
+    def _maybe_download_with_custom_downloader(
+            self, model: str, revision: Optional[str],
+            allow_patterns: List[str]) -> Optional[str]:
+        """
+        Download model using custom downloader if
+        APHRODITE_USE_CUSTOM_DOWNLOADER is True.
+
+        Returns the path to the downloaded model, or None if the model is not
+        downloaded with custom downloader."""
+        if APHRODITE_USE_CUSTOM_DOWNLOADER:
+            import asyncio
+
+            from aphrodite.modeling.model_loader.downloader import (
+                hf_repo_download)
+
+            # Check if model is already downloaded locally
+            if os.path.exists(model):
+                return model
+
+            # Check if model exists in cache directory
+            from huggingface_hub import constants
+            cache_dir = pathlib.Path(constants.HF_HUB_CACHE)
+            model_dir = "models--" + model.replace("/", "--")
+            cache_path = cache_dir / model_dir / "snapshots" / "default"
+
+            # Check if the cached model has the required files
+            if cache_path.exists():
+                has_required_files = False
+                for pattern in allow_patterns:
+                    if glob.glob(str(cache_path / pattern)):
+                        has_required_files = True
+                        break
+                if has_required_files:
+                    logger.debug(f"Using existing cached model at {cache_path}")
+                    return str(cache_path)
+                
+                # If the directory exists but doesn't have required files, 
+                # we should clean it up and re-download
+                logger.debug(f"Cache directory exists but missing required files, cleaning up: {cache_path}")
+                import shutil
+                shutil.rmtree(cache_path)
+
+            # Use file lock to prevent multiple processes from
+            # downloading the same model weights at the same time.
+            with get_lock(model, self.load_config.download_dir):
+                try:
+                    download_path = asyncio.run(hf_repo_download(
+                        repo_id=model,
+                        folder_name=None,
+                        revision=revision,
+                        token=None,
+                        include=allow_patterns,
+                        exclude=self.load_config.ignore_patterns if \
+                            isinstance(self.load_config.ignore_patterns,
+                                       list) else None,
+                        download_dir=self.load_config.download_dir,
+                    ))
+                    return str(download_path)
+                except Exception as e:
+                    # Only fall back for actual download failures, not for 
+                    # cases where the download was successful but directory exists
+                    if "already exists" in str(e) or "FileExistsError" in str(e):
+                        logger.debug(f"Custom downloader completed successfully, using existing path")
+                        return str(download_path)
+                    else:
+                        logger.warning(
+                            f"Custom downloader failed: {e}. "
+                            "Falling back to default downloader.")
+                        return None
+        return None
+
     def _prepare_weights(
         self,
         model_name_or_path: str,
@@ -306,7 +379,15 @@ class DefaultModelLoader(BaseModelLoader):
         if allow_patterns_overrides is not None:
             allow_patterns = allow_patterns_overrides
 
-        if not is_local:
+        # Try custom downloader first if enabled
+        custom_download_path = self._maybe_download_with_custom_downloader(
+            model_name_or_path, revision, allow_patterns)
+
+        if custom_download_path:
+            # Use the custom downloaded path
+            hf_folder = custom_download_path
+        elif not is_local:
+            # Use default huggingface_hub downloader
             hf_folder = download_weights_from_hf(
                 model_name_or_path,
                 self.load_config.download_dir,
@@ -331,7 +412,7 @@ class DefaultModelLoader(BaseModelLoader):
             # safetensors file. Using both breaks.
             # Here, we download the `model.safetensors.index.json` and filter
             # any files not found in the index.
-            if not is_local:
+            if not is_local and not custom_download_path:
                 download_safetensors_index_file_from_hf(
                     model_name_or_path,
                     index_file,
