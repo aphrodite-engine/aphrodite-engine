@@ -468,6 +468,21 @@ static void ggml_mul_mat_q3_K_q8_1_cuda(
 #define NWARPS_Q4_K 4
 #endif
 
+// Dynamic MMQ template for optimized Q4_K kernels
+template<typename scalar_t, bool need_check, int mmq_x_template>
+static __global__ void
+mul_mat_q4_K_dynamic(
+    const void * __restrict__ vx, const void * __restrict__ vy, scalar_t * __restrict__ dst,
+    const int ncols_x, const int nrows_x, const int ncols_y, const int nrows_y, const int nrows_dst) {
+    const int mmq_x  = mmq_x_template;
+    const int mmq_y  = MMQ_Y_Q4_K;
+    const int nwarps = NWARPS_Q4_K;
+
+    mul_mat_q<scalar_t, QK_K, QR4_K, QI4_K, true, block_q4_K, mmq_x, mmq_y, nwarps, allocate_tiles_q4_K<mmq_y>,
+        load_tiles_q4_K<mmq_y, nwarps, need_check>, VDR_Q4_K_Q8_1_MMQ, vec_dot_q4_K_q8_1_mul_mat>
+        (vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst);
+}
+
 template<typename scalar_t, bool need_check> static __global__ void
 #if defined(USE_ROCM)
 __launch_bounds__(WARP_SIZE_GGUF*NWARPS_Q4_K, 2)

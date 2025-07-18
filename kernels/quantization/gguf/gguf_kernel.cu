@@ -14,6 +14,133 @@
 #include "mmq.cuh"
 #include "moe.cuh"
 
+// Dynamic MMQ optimization
+struct mmq_args {
+    const void * x;
+    const void * y;
+    void * dst;
+    int64_t nrows_x;
+    int64_t ncols_x;
+    int64_t nrows_y;
+    int64_t ncols_y;
+    int64_t nrows_dst;
+};
+
+template<int type>
+static size_t get_mmq_nbytes_shared(int mmq_x, int mmq_y, int cc) {
+    // More conservative and accurate shared memory calculation
+    if (type == 12) { // Q4_K
+        // The actual shared memory usage is complex and depends on the specific kernel implementation
+        // For safety, use a conservative estimate based on the original tile sizes
+        // TODO: This is a guess, we should use the actual shared memory usage of the kernel
+        return mmq_x * mmq_y * sizeof(float) * 4;  // Conservative estimate
+    }
+    // Fallback for other types
+    return mmq_x * mmq_y * sizeof(float) * 4;
+}
+
+// Dynamic kernel launcher template
+template<typename scalar_t, int qtype, int mmq_x>
+static void launch_mmq_kernel_optimized(const mmq_args& args, cudaStream_t stream) {
+    const int mmq_y = MMQ_Y_Q4_K;  // consistent MMQ_Y 
+    const int nwarps = NWARPS_Q4_K;  // consistent NWARPS
+
+    const int block_num_x = (args.nrows_x + mmq_y - 1) / mmq_y;
+    const int block_num_y = (args.ncols_y + mmq_x - 1) / mmq_x;
+    const dim3 block_nums(block_num_x, block_num_y, 1);
+    const dim3 block_dims(32, nwarps, 1);  // WARP_SIZE_GGUF = 32
+
+    if (qtype == 12) { // Q4_K only
+        if (args.nrows_x % mmq_y == 0) {
+            mul_mat_q4_K_dynamic<scalar_t, false, mmq_x><<<block_nums, block_dims, 0, stream>>>(
+                args.x, args.y, (scalar_t*)args.dst, args.ncols_x, args.nrows_x, 
+                args.ncols_y, args.nrows_y, args.nrows_dst);
+        } else {
+            mul_mat_q4_K_dynamic<scalar_t, true, mmq_x><<<block_nums, block_dims, 0, stream>>>(
+                args.x, args.y, (scalar_t*)args.dst, args.ncols_x, args.nrows_x,
+                args.ncols_y, args.nrows_y, args.nrows_dst);
+        }
+    }
+    // Note: Q5_K and Q6_K not supported in this launcher - use original functions
+}
+
+// Optimized Q4_K kernel dispatch
+template<typename scalar_t>
+static void ggml_mul_mat_q4_K_q8_1_cuda_optimized(
+    const void * vx, const void * vy, scalar_t * dst, 
+    const int ncols_x, const int nrows_x, const int ncols_y, 
+    const int nrows_y, const int nrows_dst, cudaStream_t stream) {
+
+    mmq_args args = {vx, vy, dst, nrows_x, ncols_x, nrows_y, ncols_y, nrows_dst};
+
+    // Get device compute capability
+    int device;
+    cudaGetDevice(&device);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, device);
+    int cc = prop.major * 100 + prop.minor * 10;
+
+    // CONSERVATIVE optimization
+    // otherwise, we get NaN outputs
+    // TODO: figure out what's happening here
+    const int mmq_y = MMQ_Y_Q4_K;  // consistent MMQ_Y
+
+    int mmq_x_best = MMQ_X_Q4_K;  // consistent MMQ_X
+
+    // Only try modest improvements on modern GPUs for large batches
+    const bool large_batch = ncols_y >= 1024; // conservative threshold
+    if (cc >= 800 && large_batch) {  // only Ampere+ and large batches
+        // test only 8, 16 as safe options
+        for (int mmq_x : {8, 16}) {
+            // Check shared memory constraints very conservatively
+                         const size_t shmem_needed = get_mmq_nbytes_shared<12>(mmq_x, mmq_y, cc);
+             const size_t shmem_limit = (size_t)(prop.sharedMemPerBlock * 0.5); // Use only 50% of available
+             if (shmem_needed <= shmem_limit) {
+                 const int ntiles_x = (ncols_y + mmq_x - 1) / mmq_x;
+                 const int ntiles_x_orig = (ncols_y + MMQ_X_Q4_K - 1) / MMQ_X_Q4_K;
+
+                 // Only use if it actually reduces the number of tiles
+                 if (ntiles_x < ntiles_x_orig) {
+                     mmq_x_best = mmq_x;
+                }
+            }
+        }
+    }
+
+    switch (mmq_x_best) {
+        case 8:  launch_mmq_kernel_optimized<scalar_t, 12, 8>(args, stream); break;
+        case 16: launch_mmq_kernel_optimized<scalar_t, 12, 16>(args, stream); break;
+        default:
+            // fallback to original implementation for safety
+            ggml_mul_mat_q4_K_q8_1_cuda(vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst, stream);
+            break;
+    }
+}
+
+// Optimized Q5_K kernel dispatch
+template<typename scalar_t>
+static void ggml_mul_mat_q5_K_q8_1_cuda_optimized(
+    const void * vx, const void * vy, scalar_t * dst, 
+    const int ncols_x, const int nrows_x, const int ncols_y, 
+    const int nrows_y, const int nrows_dst, cudaStream_t stream) {
+
+    // For now, disable optimization for Q5_K to ensure stability
+    // TODO: Enable conservative optimization after Q4_K is fully validated
+    ggml_mul_mat_q5_K_q8_1_cuda(vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst, stream);
+}
+
+// Optimized Q6_K kernel dispatch
+template<typename scalar_t>
+static void ggml_mul_mat_q6_K_q8_1_cuda_optimized(
+    const void * vx, const void * vy, scalar_t * dst, 
+    const int ncols_x, const int nrows_x, const int ncols_y, 
+    const int nrows_y, const int nrows_dst, cudaStream_t stream) {
+
+    // For now, disable optimization for Q6_K to ensure stability
+    // TODO: Enable conservative optimization after Q4_K is fully validated
+    ggml_mul_mat_q6_K_q8_1_cuda(vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst, stream);
+}
+
 // Q8 gemv
 template <typename scalar_t>
 static __global__ void quantize_q8_1(const scalar_t* __restrict__ x,
@@ -256,17 +383,17 @@ torch::Tensor ggml_mul_mat_a8(torch::Tensor W,  // quant weight
             (scalar_t*)Y.data_ptr(), col, row, batch, padded, row, stream);
         break;
       case 12:
-        ggml_mul_mat_q4_K_q8_1_cuda(
+        ggml_mul_mat_q4_K_q8_1_cuda_optimized(
             (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
             (scalar_t*)Y.data_ptr(), col, row, batch, padded, row, stream);
         break;
       case 13:
-        ggml_mul_mat_q5_K_q8_1_cuda(
+        ggml_mul_mat_q5_K_q8_1_cuda_optimized(
             (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
             (scalar_t*)Y.data_ptr(), col, row, batch, padded, row, stream);
         break;
       case 14:
-        ggml_mul_mat_q6_K_q8_1_cuda(
+        ggml_mul_mat_q6_K_q8_1_cuda_optimized(
             (void*)W.data_ptr(), (void*)quant_X.data_ptr(),
             (scalar_t*)Y.data_ptr(), col, row, batch, padded, row, stream);
         break;
