@@ -1,27 +1,26 @@
-import contextlib
 import functools
 import gc
 from typing import Callable, TypeVar
 
 import pytest
-import ray
 import torch
 from typing_extensions import ParamSpec
 
-from aphrodite.distributed import (destroy_distributed_environment,
-                                   destroy_model_parallel)
+from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
+
+
+@pytest.fixture(scope="function", autouse=True)
+def use_v0_only(monkeypatch):
+    """
+    Tensorizer only tested on V0 so far.
+    """
+    monkeypatch.setenv('APHRODITE_USE_V1', '0')
 
 
 @pytest.fixture(autouse=True)
 def cleanup():
-    destroy_model_parallel()
-    destroy_distributed_environment()
-    with contextlib.suppress(AssertionError):
-        torch.distributed.destroy_process_group()
-    ray.shutdown()
-    gc.collect()
-    torch.cuda.empty_cache()
+    cleanup_dist_env_and_memory(shutdown_ray=True)
 
 
 _P = ParamSpec("_P")

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.rejection_sampler import (PLACEHOLDER_TOKEN_ID,
-                                                   RejectionSampler)
+                                              RejectionSampler)
 from aphrodite.v1.spec_decode.metadata import SpecDecodeMetadata
 
 DEVICE = "cuda"

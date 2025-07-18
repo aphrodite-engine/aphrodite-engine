@@ -6,8 +6,8 @@ import pytest
 import pytest_asyncio
 from openai import BadRequestError
 
-from aphrodite.transformers_utils.tokenizer import get_tokenizer
 from tests.utils import RemoteOpenAIServer
+from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 # any model with a chat template should work here
 MODEL_NAME = "facebook/opt-125m"
@@ -153,7 +153,7 @@ async def test_too_many_completion_logprobs(client: openai.AsyncOpenAI,
             prompt=[0, 0, 0, 0, 0],
             max_tokens=5,
             temperature=0.0,
-            # vLLM has higher default max_logprobs (20 instead of 5) to support
+            # Aphrodite has higher default max_logprobs (20 instead of 5) to support
             # both Completion API and Chat Completion API
             logprobs=21,
         )
@@ -165,7 +165,7 @@ async def test_too_many_completion_logprobs(client: openai.AsyncOpenAI,
             prompt=[0, 0, 0, 0, 0],
             max_tokens=5,
             temperature=0.0,
-            # vLLM has higher default max_logprobs (20 instead of 5) to support
+            # Aphrodite has higher default max_logprobs (20 instead of 5) to support
             # both Completion API and Chat Completion API
             logprobs=30,
             stream=True,
@@ -522,7 +522,7 @@ async def test_batch_completions(client: openai.AsyncOpenAI, model_name: str):
             max_tokens=5,
             temperature=0.0,
             extra_body=dict(
-                # NOTE: this has to be true for n > 1 in vLLM, but
+                # NOTE: this has to be true for n > 1 in Aphrodite, but
                 # not necessary for official client.
                 use_beam_search=True),
         )

@@ -4,13 +4,13 @@ from collections.abc import Generator
 import pytest
 import torch
 
-from aphrodite import SamplingParams
 from tests.v1.sample.utils import (
     BatchLogprobsComposition, BatchLogprobsSpecType,
     assert_incr_detok_str_matches_non_incr_detok_str,
     compute_correct_cumulative_logprob, get_test_batch)
+from aphrodite import SamplingParams
 
-from ...conftest import AphroditeRunner, HfRunner
+from ...conftest import HfRunner, AphroditeRunner
 
 MODEL = "meta-llama/Llama-3.2-1B-Instruct"
 DTYPE = "half"
@@ -25,8 +25,7 @@ SAMPLE_PROMPT = BatchLogprobsComposition.SAMPLE_PROMPT
     scope="module",
     # Parameterize APC
     params=[False, True])
-def aphrodite_model(aphrodite_runner,
-                    request) -> Generator[AphroditeRunner, None, None]:
+def aphrodite_model(aphrodite_runner, request) -> Generator[AphroditeRunner, None, None]:
     with aphrodite_runner(
             MODEL,
             dtype=DTYPE,
@@ -120,8 +119,8 @@ def _run_and_validate(
         # Extract request-level (prompt)logprobs config
         num_top_logprobs, num_top_prompt_logprobs = logprob_prompt_logprob
 
-        # Test whether sampled token output is consistent between vLLM and HF
-        # vLLM prompt+completion should match HF output
+        # Test whether sampled token output is consistent between Aphrodite and HF
+        # Aphrodite prompt+completion should match HF output
         if temperature == 0.0:
             assert (aphrodite_result.prompt_token_ids +
                     aphrodite_result.outputs[0].token_ids == hf_output[0])
@@ -137,9 +136,8 @@ def _run_and_validate(
             # correct
             assert aphrodite_result.outputs[0].logprobs is not None
             assert len(aphrodite_result.outputs[0].logprobs) == max_tokens
-            for logprobs, token_id in zip(
-                    aphrodite_result.outputs[0].logprobs,
-                    aphrodite_result.outputs[0].token_ids):
+            for logprobs, token_id in zip(aphrodite_result.outputs[0].logprobs,
+                                          aphrodite_result.outputs[0].token_ids):
                 assert logprobs is not None
 
                 # Confirm that the output token appears among the logprobs
@@ -174,7 +172,7 @@ def _run_and_validate(
                 "position should be the same as the output text in the "
                 "result.")
 
-            # Compare vLLM sample logprobs to HF
+            # Compare Aphrodite sample logprobs to HF
             aphrodite_sample_logprobs = aphrodite_result.outputs[0].logprobs
             for i, top_logprobs in enumerate(aphrodite_sample_logprobs):
                 for token_id, sample_logprob in top_logprobs.items():
@@ -196,8 +194,7 @@ def _run_and_validate(
             # matches the correct value, which is computed below.
             torch.testing.assert_close(
                 aphrodite_result.outputs[0].cumulative_logprob,
-                compute_correct_cumulative_logprob(
-                    aphrodite_result.outputs[0]),
+                compute_correct_cumulative_logprob(aphrodite_result.outputs[0]),
                 atol=1e-6,
                 rtol=1e-6)
         else:
@@ -241,8 +238,7 @@ def _run_and_validate(
             # The first prompt logprob is always None, so we compare it from
             # 1:.
             aphrodite_prompt_logprobs = aphrodite_result.prompt_logprobs[1:]
-            for i, aphrodite_prompt_logprob_dict in enumerate(
-                    aphrodite_prompt_logprobs):
+            for i, aphrodite_prompt_logprob_dict in enumerate(aphrodite_prompt_logprobs):
                 for token_id, logprob in aphrodite_prompt_logprob_dict.items():
                     torch.testing.assert_close(
                         logprob.logprob,
@@ -282,7 +278,7 @@ def test_get_logprobs_and_prompt_logprobs(
 
     Args:
       hf_model: HuggingFace reference model fixture
-      aphrodite_model: vLLM model fixture
+      aphrodite_model: Aphrodite model fixture
       batch_logprobs_composition: logprobs configuration for test batch
       temperature: "temperature" sampling parameter
       example_prompts: example prompt fixture
@@ -337,7 +333,7 @@ def test_get_logprobs_and_prompt_logprobs(
 
 
 def test_max_logprobs(monkeypatch: pytest.MonkeyPatch):
-    """vLLM v1 engine should fail a request with `logprobs > max_logprobs`
+    """Aphrodite v1 engine should fail a request with `logprobs > max_logprobs`
     Should also fail for `prompt_logprobs > max_logprobs`
     APC should not matter as this test checks basic request validation.
     """
@@ -345,13 +341,12 @@ def test_max_logprobs(monkeypatch: pytest.MonkeyPatch):
         m.setenv("APHRODITE_USE_V1", "1")
 
         runner = AphroditeRunner("facebook/opt-125m",
-                                 max_logprobs=1,
-                                 enable_prefix_caching=False,
-                                 max_model_len=256)
+                            max_logprobs=1,
+                            enable_prefix_caching=False,
+                            max_model_len=256)
         aphrodite_sampling_params = SamplingParams(logprobs=1)
         # should pass
-        runner.generate(["Hello world"],
-                        sampling_params=aphrodite_sampling_params)
+        runner.generate(["Hello world"], sampling_params=aphrodite_sampling_params)
 
         bad_sampling_params = SamplingParams(logprobs=2)
         with pytest.raises(ValueError):
@@ -364,7 +359,7 @@ def test_none_logprobs(aphrodite_model, example_prompts,
     """Engine should return `logprobs` and `prompt_logprobs` as `None`
 
     Args:
-      aphrodite_model: vLLM model fixture
+      aphrodite_model: Aphrodite model fixture
       example_prompts: list of example prompts (test fixture)
     """
     with monkeypatch.context() as m:
@@ -396,7 +391,7 @@ def test_zero_logprobs(aphrodite_model, example_prompts,
     """Engine should return sampled token and prompt token logprobs
 
     Args:
-      aphrodite_model: vLLM model fixture
+      aphrodite_model: Aphrodite model fixture
       example_prompts: list of example prompts (test fixture)
     """
     with monkeypatch.context() as m:

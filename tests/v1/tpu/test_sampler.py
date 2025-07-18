@@ -2,10 +2,9 @@ import random
 
 import pytest
 
-from aphrodite import LLM
-from aphrodite.common import envs
-from aphrodite.common.sampling_params import SamplingParams
+from aphrodite import LLM, envs
 from aphrodite.platforms import current_platform
+from aphrodite.common.sampling_params import SamplingParams
 
 if not envs.APHRODITE_USE_V1:
     pytest.skip(

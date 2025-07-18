@@ -4,13 +4,13 @@ import asyncio
 
 import pytest
 
+from tests.v1.shutdown.utils import SHUTDOWN_TEST_TIMEOUT_SEC
 from aphrodite import SamplingParams
-from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.inputs.data import TokensPrompt
+from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from aphrodite.v1.engine.exceptions import EngineGenerateError
-from tests.v1.shutdown.utils import SHUTDOWN_TEST_TIMEOUT_SEC
 
 MODELS = ["meta-llama/Llama-3.2-1B"]
 

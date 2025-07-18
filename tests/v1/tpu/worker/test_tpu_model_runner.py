@@ -2,11 +2,10 @@ import unittest.mock as mock
 
 import pytest
 
-from aphrodite.common.config import (AphroditeConfig, CacheConfig, ModelConfig,
-                                     SchedulerConfig)
+from aphrodite.common.config import CacheConfig, ModelConfig, SchedulerConfig, AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.v1.core.sched.output import (CachedRequestData, NewRequestData,
-                                            SchedulerOutput)
+                                       SchedulerOutput)
 from aphrodite.v1.worker.tpu_model_runner import (
     TPUModelRunner, _get_padded_num_reqs_with_upper_limit,
     _get_padded_token_len, _get_req_paddings, _get_token_paddings)

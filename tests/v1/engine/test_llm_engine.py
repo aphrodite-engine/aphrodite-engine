@@ -30,16 +30,14 @@ def _aphrodite_model(apc: bool, aphrodite_runner, monkeypatch):
     params=[False, True])
 def aphrodite_model(aphrodite_runner, request, monkeypatch):
     """AphroditeRunner test fixture parameterized by APC True/False."""
-    with _aphrodite_model(request.param, aphrodite_runner,
-                          monkeypatch) as aphrodite_model:
+    with _aphrodite_model(request.param, aphrodite_runner, monkeypatch) as aphrodite_model:
         yield aphrodite_model
 
 
 @pytest.fixture(scope="function")
 def aphrodite_model_apc(aphrodite_runner, monkeypatch):
     """AphroditeRunner test fixture with APC."""
-    with _aphrodite_model(True, aphrodite_runner,
-                          monkeypatch) as aphrodite_model:
+    with _aphrodite_model(True, aphrodite_runner, monkeypatch) as aphrodite_model:
         yield aphrodite_model
 
 

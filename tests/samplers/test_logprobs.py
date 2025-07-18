@@ -1,5 +1,3 @@
-from typing import List
-
 import pytest
 import torch
 
@@ -7,7 +5,16 @@ from aphrodite import SamplingParams
 
 from ..conftest import AphroditeRunner
 
-MODELS = ["facebook/opt-125m"]
+MODELS = ["distilbert/distilgpt2"]
+
+
+@pytest.fixture(scope="function", autouse=True)
+def use_v0_only(monkeypatch):
+    """
+    This module is V0 only since it uses dtype=float, so
+    set APHRODITE_USE_V1=0 for all tests in the module.
+    """
+    monkeypatch.setenv('APHRODITE_USE_V1', '0')
 
 
 @pytest.mark.parametrize("model", MODELS)
@@ -68,7 +75,7 @@ def test_get_prompt_logprobs(
             assert (len(logprobs) == num_top_logprobs
                     or len(logprobs) == num_top_logprobs + 1)
         output_text = result.outputs[0].text
-        output_string_from_most_likely_tokens_lst: List[str] = []
+        output_string_from_most_likely_tokens_lst: list[str] = []
         for top_logprobs in result.outputs[0].logprobs:
             top_logprob = next(iter(top_logprobs.values()))
             output_string_from_most_likely_tokens_lst.append(
@@ -98,8 +105,7 @@ def test_get_prompt_logprobs(
         # Check prompt logprobs
         # The first prompt logprob is always None, so we compare it from 1:.
         aphrodite_prompt_logprobs = aphrodite_result.prompt_logprobs[1:]
-        for i, aphrodite_prompt_logprob_dict in enumerate(
-            aphrodite_prompt_logprobs):
+        for i, aphrodite_prompt_logprob_dict in enumerate(aphrodite_prompt_logprobs):
             for token_id, logprob in aphrodite_prompt_logprob_dict.items():
                 torch.testing.assert_close(logprob.logprob,
                                            hf_logprob[0][i][token_id].item(),

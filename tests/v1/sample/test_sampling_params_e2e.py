@@ -14,8 +14,6 @@ PROMPT = "Hello my name is Robert and I"
 @pytest.fixture(scope="module")
 def model() -> LLM:
     # Disable prefix caching so that we can test prompt logprobs.
-    # TODO remove this after https://github.com/aphrodite-project/aphrodite/pull/13949
-    # is merged
     return LLM(MODEL, enforce_eager=True, enable_prefix_caching=False)
 
 

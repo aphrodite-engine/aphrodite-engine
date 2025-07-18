@@ -1,5 +1,5 @@
 import json
-from typing import Dict, List, Optional
+from typing import Optional
 
 import openai
 import pytest
@@ -17,7 +17,7 @@ async def test_tool_call_and_choice(client: openai.AsyncOpenAI):
     chat_completion = await client.chat.completions.create(
         messages=MESSAGES_ASKING_FOR_TOOLS,
         temperature=0,
-        max_tokens=100,
+        max_completion_tokens=100,
         model=model_name,
         tools=[WEATHER_TOOL, SEARCH_TOOL],
         logprobs=False)
@@ -42,7 +42,7 @@ async def test_tool_call_and_choice(client: openai.AsyncOpenAI):
 
     # make sure the arguments parse properly
     parsed_arguments = json.loads(tool_calls[0].function.arguments)
-    assert isinstance(parsed_arguments, Dict)
+    assert isinstance(parsed_arguments, dict)
     assert isinstance(parsed_arguments.get("city"), str)
     assert isinstance(parsed_arguments.get("state"), str)
     assert parsed_arguments.get("city") == "Dallas"
@@ -61,7 +61,7 @@ async def test_tool_call_and_choice(client: openai.AsyncOpenAI):
         model=model_name,
         messages=MESSAGES_ASKING_FOR_TOOLS,
         temperature=0,
-        max_tokens=100,
+        max_completion_tokens=100,
         tools=[WEATHER_TOOL, SEARCH_TOOL],
         logprobs=False,
         stream=True)
@@ -115,7 +115,7 @@ async def test_tool_call_and_choice(client: openai.AsyncOpenAI):
 
     # validate arguments
     streamed_args = json.loads(function_args_str)
-    assert isinstance(streamed_args, Dict)
+    assert isinstance(streamed_args, dict)
     assert isinstance(streamed_args.get("city"), str)
     assert isinstance(streamed_args.get("state"), str)
     assert streamed_args.get("city") == "Dallas"
@@ -126,7 +126,7 @@ async def test_tool_call_and_choice(client: openai.AsyncOpenAI):
     assert choice.message.role == role_name
     assert choice.message.tool_calls[0].function.name == function_name
 
-    # compare streamed with non-streamed args Dict-wise, not string-wise
+    # compare streamed with non-streamed args dict-wise, not string-wise
     # because character-to-character comparison might not work e.g. the tool
     # call parser adding extra spaces or something like that. we care about the
     # dicts matching not byte-wise match
@@ -142,7 +142,7 @@ async def test_tool_call_with_results(client: openai.AsyncOpenAI):
     chat_completion = await client.chat.completions.create(
         messages=MESSAGES_WITH_TOOL_RESPONSE,
         temperature=0,
-        max_tokens=100,
+        max_completion_tokens=100,
         model=model_name,
         tools=[WEATHER_TOOL, SEARCH_TOOL],
         logprobs=False)
@@ -159,13 +159,13 @@ async def test_tool_call_with_results(client: openai.AsyncOpenAI):
     stream = await client.chat.completions.create(
         messages=MESSAGES_WITH_TOOL_RESPONSE,
         temperature=0,
-        max_tokens=100,
+        max_completion_tokens=100,
         model=model_name,
         tools=[WEATHER_TOOL, SEARCH_TOOL],
         logprobs=False,
         stream=True)
 
-    chunks: List[str] = []
+    chunks: list[str] = []
     finish_reason_count = 0
     role_sent: bool = False
 

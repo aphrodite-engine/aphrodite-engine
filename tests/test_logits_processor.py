@@ -1,16 +1,14 @@
 import random
-from typing import Tuple
 from unittest.mock import patch
 
 import pytest
 import torch
 
-from aphrodite.common.sequence import (SamplingParams, SequenceData,
-                                       SequenceGroupMetadata)
-from aphrodite.common.utils import is_pin_memory_available
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_random_seed
+from aphrodite.common.sequence import SamplingParams, SequenceData, SequenceGroupMetadata
+from aphrodite.common.utils import is_pin_memory_available
 
 
 class MockLogitsProcessor(LogitsProcessor):
@@ -32,7 +30,7 @@ class MockLogitsProcessor(LogitsProcessor):
 
 def _prepare_test(
         batch_size: int
-) -> Tuple[torch.Tensor, torch.Tensor, MockLogitsProcessor]:
+) -> tuple[torch.Tensor, torch.Tensor, MockLogitsProcessor]:
     vocab_size = 32000
     input_tensor = torch.rand((batch_size, 1024), dtype=torch.float16)
     fake_logits = torch.full((batch_size, vocab_size),

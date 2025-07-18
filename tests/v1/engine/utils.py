@@ -20,7 +20,7 @@ NUM_PROMPT_LOGPROBS_UNDER_TEST = 7
 TOKENIZER_NAME = "meta-llama/Llama-3.2-1B"
 
 FULL_STRINGS = [
-    "My name is Robert from Neural Magic and I love working on vLLM so much!",
+    "My name is Robert from Neural Magic and I love working on Aphrodite so much!",
     "Red Hat is the best open source company by far across Linux, K8s, and AI.",
     "Nick is the name of my brother in addition to my colleague from Red Hat.",
 ]

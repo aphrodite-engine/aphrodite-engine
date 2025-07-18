@@ -2,6 +2,7 @@ import aphrodite
 
 
 def test_embedded_commit_defined():
-    assert aphrodite.__commit__ != "COMMIT_HASH_PLACEHOLDER"
-    # 7 characters is the length of a short commit hash
-    assert len(aphrodite.__commit__) >= 7
+    assert hasattr(aphrodite, "__version__")
+    assert hasattr(aphrodite, "__version_tuple__")
+    assert aphrodite.__version__ != "dev"
+    assert aphrodite.__version_tuple__ != (0, 0, "dev")

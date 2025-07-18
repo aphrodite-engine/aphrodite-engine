@@ -10,13 +10,21 @@ from aphrodite.modeling.utils import set_random_seed
 CUDA_DEVICES = [f"cuda:{i}" for i in range(1)]
 
 
+@pytest.fixture(scope="function", autouse=True)
+def use_v0_only(monkeypatch):
+    """
+    This file tests V0 internals, so set APHRODITE_USE_V1=0.
+    """
+    monkeypatch.setenv('APHRODITE_USE_V1', '0')
+
+
 def get_zero_temperature_prob_dist(batch_size, k, vocab_size):
     """
     Generates a fake temperature zero probability distribution.
     Returns:
         1. A fake temperature zero probability distribution of shape
            [batch_size, k, vocab_size]
-        2. Tensor of shape [batch_size, k] containing the token ids
+        2. Tensor of shape [batch_size, k] containing the token ids 
            of the probability 1.0 tokens at each position.
     """
     # Simulate temperature 0 probability distribution for target probabilities
@@ -37,7 +45,7 @@ def get_draft_token_ids(batch_size: int, k: int, vocab_size: int,
     """
     Returns a tensor of shape [batch_size, k] of fake draft token ids
     drawn randomly from a vocab of size vocab_size. We however ensure
-    that token_ids from token_ids_to_exclude are excluded at the
+    that token_ids from token_ids_to_exclude are excluded at the 
     corresponding positions.
     """
     draft_token_ids = torch.empty(batch_size, k, dtype=torch.long)
@@ -158,9 +166,9 @@ def test_raises_when_vocab_oob(above_or_below_vocab_range: str,
 def test_uniform_target_distribution_accepts_all_tokens(
         seed: int, device: str):
     """
-     Test the TypicalAcceptanceSampler with a uniform target probability
+     Test the TypicalAcceptanceSampler with a uniform target probability 
      distribution.
-
+    
     This test verifies that when provided with a uniform target probability
     distribution, the TypicalAcceptanceSampler accepts all draft tokens. The
     entropy of the uniform target distribution being high should lead to all
@@ -263,10 +271,10 @@ def test_mixed_target_distribution(seed: int, device: str):
     distribution.
 
     This test ensures that the TypicalAcceptanceSampler handles a mixed
-    target probability distribution correctly. Specifically, it uses a
+    target probability distribution correctly. Specifically, it uses a 
     zero-temperature distribution for some sequences and a uniform
     distribution for others. The test verifies that:
-
+    
     - For sequences with a zero-temperature distribution, only the token
     with a probability of 1.0 is accepted, and all other tokens are rejected.
     - For sequences with a uniform distribution, all draft tokens are
@@ -328,7 +336,7 @@ def test_accept_tokens_partially(seed: int, device: str):
     This test verifies that the TypicalAcceptanceSampler correctly accepts or
     rejects draft tokens based on a zero-temperature target probability
     distribution. Specifically, it ensures that:
-
+    
     - When all draft tokens match tokens with a probability of 1.0 in the
     target distribution, all draft tokens are accepted.
     - When only some draft tokens match tokens with a probability of 1.0 in
@@ -388,10 +396,10 @@ def test_accept_tokens_partially(seed: int, device: str):
 @torch.inference_mode()
 def test_accept_tokens_set_non_default_posteriors(seed: int, device: str):
     """
-    Test the TypicalAcceptanceSampler with custom posterior thresholds and
+    Test the TypicalAcceptanceSampler with custom posterior thresholds and 
     alpha values. This test verifies that by modifying the posterior
     thresholds and alpha values we can change the acceptance behavior of the
-    sampler.
+    sampler. 
     """
     set_random_seed(seed)
     k = 5
@@ -450,7 +458,7 @@ def test_get_recovered_token_ids(seed: int, device: str):
     Test the TypicalAcceptanceSampler's method for generating
     replacement token IDs.
 
-    This test verifies that the `_get_recovered_token_ids` method of the
+    This test verifies that the `_get_recovered_token_ids` method of the 
     TypicalAcceptanceSampler correctly identifies the token IDs to be used
     as recovered token IDs based on the target probability distribution.
     Specifically, it ensures that the method correctly identifies the

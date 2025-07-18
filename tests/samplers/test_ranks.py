@@ -2,7 +2,13 @@ import pytest
 
 from aphrodite import SamplingParams
 
-MODELS = ["facebook/opt-125m"]
+MODELS = ["distilbert/distilgpt2"]
+
+
+@pytest.fixture(autouse=True)
+def v1(run_with_both_engines):
+    """We can run both engines for this test."""
+    pass
 
 
 @pytest.mark.parametrize("model", MODELS)
@@ -36,8 +42,7 @@ def test_ranks(
                                          max_tokens=max_tokens,
                                          logprobs=num_top_logprobs,
                                          prompt_logprobs=num_prompt_logprobs)
-        res = aphrodite_model.generate_w_logprobs(example_prompts,
-                                                  sampling_params)
+        res = aphrodite_model.generate_w_logprobs(example_prompts, sampling_params)
 
     for result in aphrodite_results:
         assert result[2] is not None

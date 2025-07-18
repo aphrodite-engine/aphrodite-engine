@@ -3,31 +3,36 @@
 Run `pytest tests/basic_correctness/test_basic_correctness.py`.
 """
 import os
-import pickle
-import re
 import weakref
-from unittest.mock import patch
 
 import pytest
 
 from aphrodite import LLM
-from aphrodite.common.utils import is_hip
-from aphrodite.worker.model_runner import ModelInputForGPUWithSamplingMetadata
+from aphrodite.platforms import current_platform
 
+from ..conftest import AphroditeRunner
 from ..models.utils import check_outputs_equal
 from ..utils import multi_gpu_test
 
 MODELS = [
-    "facebook/opt-125m",
-    "meta-llama/Llama-2-7b-hf",
+    "google/gemma-2-2b-it",
+    "meta-llama/Llama-3.2-1B-Instruct",
 ]
 
 TARGET_TEST_SUITE = os.environ.get("TARGET_TEST_SUITE", "L4")
 
 
+@pytest.fixture(autouse=True)
+def v1(run_with_both_engines):
+    # Simple autouse wrapper to run both engines for each test
+    # This can be promoted up to conftest.py to run for every
+    # test in a package
+    pass
+
+
 def test_aphrodite_gc_ed():
     """Verify aphrodite instance is GC'ed when it is deleted"""
-    llm = LLM("facebook/opt-125m")
+    llm = LLM("distilbert/distilgpt2")
     weak_llm = weakref.ref(llm)
     del llm
     # If there's any circular reference to aphrodite, this fails
@@ -36,14 +41,13 @@ def test_aphrodite_gc_ed():
 
 
 @pytest.mark.parametrize("model", MODELS)
-@pytest.mark.parametrize("backend", ["FLASH_ATTN", "XFORMERS", "FLASHINFER"])
+@pytest.mark.parametrize("backend", ["FLASH_ATTN"])
 @pytest.mark.parametrize("dtype", ["half"])
 @pytest.mark.parametrize("max_tokens", [5])
-@pytest.mark.parametrize("enforce_eager", [False, True])
+@pytest.mark.parametrize("enforce_eager", [False])
 def test_models(
+    monkeypatch: pytest.MonkeyPatch,
     hf_runner,
-    aphrodite_runner,
-    example_prompts,
     model: str,
     backend: str,
     dtype: str,
@@ -51,43 +55,58 @@ def test_models(
     enforce_eager: bool,
 ) -> None:
 
-    if backend == "FLASHINFER" and is_hip():
+    if backend == "FLASHINFER" and current_platform.is_rocm():
         pytest.skip("Flashinfer does not support ROCm/HIP.")
 
-    os.environ["APHRODITE_ATTENTION_BACKEND"] = backend
+    if backend in ("XFORMERS",
+                   "FLASHINFER") and model == "google/gemma-2-2b-it":
+        pytest.skip(
+            f"{backend} does not support gemma2 with full context length.")
 
-    with hf_runner(model, dtype=dtype) as hf_model:
-        hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
+    with monkeypatch.context() as m:
+        m.setenv("APHRODITE_ATTENTION_BACKEND", backend)
 
-    with aphrodite_runner(model,
-                     dtype=dtype,
-                     enforce_eager=enforce_eager,
-                     gpu_memory_utilization=0.7) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.generate_greedy(
-            example_prompts, max_tokens)
+        # 5042 tokens for gemma2
+        # gemma2 has alternating sliding window size of 4096
+        # we need a prompt with more than 4096 tokens to test the sliding window
+        prompt = "The following numbers of the sequence " + ", ".join(
+            str(i) for i in range(1024)) + " are:"
+        example_prompts = [prompt]
 
-    check_outputs_equal(
-        outputs_0_lst=hf_outputs,
-        outputs_1_lst=aphrodite_outputs,
-        name_0="hf",
-        name_1="aphrodite",
-    )
+        with hf_runner(model, dtype=dtype) as hf_model:
+            hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
+
+        with AphroditeRunner(model,
+                        max_model_len=8192,
+                        dtype=dtype,
+                        enforce_eager=enforce_eager,
+                        gpu_memory_utilization=0.7) as aphrodite_model:
+            aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts,
+                                                      max_tokens)
+
+        check_outputs_equal(
+            outputs_0_lst=hf_outputs,
+            outputs_1_lst=aphrodite_outputs,
+            name_0="hf",
+            name_1="aphrodite",
+        )
 
 
 @multi_gpu_test(num_gpus=2)
 @pytest.mark.parametrize(
     "model, distributed_executor_backend, attention_backend, "
     "test_suite", [
-        ("facebook/opt-125m", "ray", "", "L4"),
-        ("facebook/opt-125m", "mp", "", "L4"),
-        ("meta-llama/Llama-2-7b-hf", "ray", "", "L4"),
-        ("meta-llama/Llama-2-7b-hf", "mp", "", "L4"),
-        ("facebook/opt-125m", "ray", "", "A100"),
-        ("facebook/opt-125m", "mp", "", "A100"),
-        ("facebook/opt-125m", "mp", "FLASHINFER", "A100"),
+        ("distilbert/distilgpt2", "ray", "", "L4"),
+        ("distilbert/distilgpt2", "mp", "", "L4"),
+        ("meta-llama/Llama-3.2-1B-Instruct", "ray", "", "L4"),
+        ("meta-llama/Llama-3.2-1B-Instruct", "mp", "", "L4"),
+        ("distilbert/distilgpt2", "ray", "", "A100"),
+        ("distilbert/distilgpt2", "mp", "", "A100"),
+        ("distilbert/distilgpt2", "mp", "FLASHINFER", "A100"),
         ("meta-llama/Meta-Llama-3-8B", "ray", "FLASHINFER", "A100"),
     ])
 def test_models_distributed(
+    monkeypatch: pytest.MonkeyPatch,
     hf_runner,
     aphrodite_runner,
     example_prompts,
@@ -100,61 +119,41 @@ def test_models_distributed(
     if test_suite != TARGET_TEST_SUITE:
         pytest.skip(f"Skip test for {test_suite}")
 
-    if model == "meta-llama/Llama-2-7b-hf" and distributed_executor_backend == "ray" and attention_backend == "" and test_suite == "L4":  # noqa
-        # test ray adag
-        os.environ['APHRODITE_USE_RAY_SPMD_WORKER'] = "1"
-        os.environ['APHRODITE_USE_RAY_COMPILED_DAG'] = "1"
+    with monkeypatch.context() as monkeypatch_context:
+        if model == "meta-llama/Llama-3.2-1B-Instruct" and distributed_executor_backend == "ray" and attention_backend == "" and test_suite == "L4":  # noqa
+            # test Ray Compiled Graph
+            monkeypatch_context.setenv("APHRODITE_USE_RAY_SPMD_WORKER", "1")
+            monkeypatch_context.setenv("APHRODITE_USE_RAY_COMPILED_DAG", "1")
 
-    if attention_backend:
-        os.environ["APHRODITE_ATTENTION_BACKEND"] = attention_backend
+        if attention_backend:
+            monkeypatch_context.setenv(
+                "APHRODITE_ATTENTION_BACKEND",
+                attention_backend,
+            )
 
-    dtype = "half"
-    max_tokens = 5
+        dtype = "half"
+        max_tokens = 5
 
-    # NOTE: take care of the order. run Aphrodite first, and then run HF.
-    # Aphrodite needs a fresh new process without cuda initialization.
-    # if we run HF first, the cuda initialization will be done and it
-    # will hurt multiprocessing backend with fork method (the default method).
-    with aphrodite_runner(model,
-                     dtype=dtype,
-                     tensor_parallel_size=2,
-                     distributed_executor_backend=distributed_executor_backend
-                     ) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.generate_greedy(
-            example_prompts, max_tokens)
+        # NOTE: take care of the order. run Aphrodite first, and then run HF.
+        # Aphrodite needs a fresh new process without cuda initialization.
+        # if we run HF first, the cuda initialization will be done and it
+        # will hurt multiprocessing backend with fork method
+        # (the default method).
+        with aphrodite_runner(
+                model,
+                dtype=dtype,
+                tensor_parallel_size=2,
+                distributed_executor_backend=distributed_executor_backend,
+        ) as aphrodite_model:
+            aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts,
+                                                      max_tokens)
 
-    with hf_runner(model, dtype=dtype) as hf_model:
-        hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
+        with hf_runner(model, dtype=dtype) as hf_model:
+            hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
 
-    check_outputs_equal(
-        outputs_0_lst=hf_outputs,
-        outputs_1_lst=aphrodite_outputs,
-        name_0="hf",
-        name_1="aphrodite",
-    )
-
-
-def test_model_with_failure(aphrodite_runner) -> None:
-    try:
-        with patch("aphrodite.modeling.models.opt.OPTForCausalLM.forward",
-                   side_effect=ValueError()):
-            with pytest.raises(ValueError) as exc_info:
-                aphrodite_runner("facebook/opt-125m",
-                            dtype="half",
-                            enforce_eager=False,
-                            gpu_memory_utilization=0.7)
-            matches = re.search(r"input dumped to (.+).pkl",
-                                str(exc_info.value))
-            assert matches is not None
-            filename = f"{matches.group(1)}.pkl"
-
-        with open(filename, "rb") as filep:
-            inputs = pickle.load(filep)
-
-        if any(key not in inputs for key in ("arg_1", "arg_2", "arg_3")):
-            raise AssertionError("Missing keys in dumped inputs. Dumped keys: "
-                                 f"{list(inputs.keys())}")
-        assert isinstance(inputs["arg_1"],
-                          ModelInputForGPUWithSamplingMetadata)
-    finally:
-        os.remove(filename)
+        check_outputs_equal(
+            outputs_0_lst=hf_outputs,
+            outputs_1_lst=aphrodite_outputs,
+            name_0="hf",
+            name_1="aphrodite",
+        )

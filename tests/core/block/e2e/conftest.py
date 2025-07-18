@@ -1,11 +1,11 @@
-from typing import Callable, Iterable, Optional
+from collections.abc import Iterable
+from typing import Callable, Optional
 
 import pytest
 
 from aphrodite import LLM
+from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.modeling.utils import set_random_seed
-
-from ....conftest import cleanup
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def create_llm_generator(common_llm_kwargs, per_test_common_llm_kwargs,
 
         yield llm
         del llm
-        cleanup()
+        cleanup_dist_env_and_memory()
 
     for llm in generator_inner():
         yield llm

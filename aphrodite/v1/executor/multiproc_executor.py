@@ -367,6 +367,7 @@ class WorkerProc:
 
                 except EOFError:
                     e.__suppress_context__ = True
+                    logger.error("WorkerProc failed to start. Error: {}", e)
                     raise e from None
 
                 finally:

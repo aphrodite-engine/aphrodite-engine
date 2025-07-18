@@ -4,7 +4,7 @@ import torch
 
 from aphrodite.attention.backends.abstract import AttentionType
 from aphrodite.v1.attention.backends.pallas import (PallasAttentionBackendImpl,
-                                                    PallasMetadata)
+                                               PallasMetadata)
 
 
 def test_ragged_paged_attention():

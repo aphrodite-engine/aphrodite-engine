@@ -5,7 +5,7 @@ from aphrodite.common import envs
 from aphrodite.multimodal.utils import encode_image_base64, fetch_image
 from aphrodite.platforms import current_platform
 
-from ...endpoints.openai.test_vision import TEST_IMAGE_URLS
+from ...entrypoints.openai.test_vision import TEST_IMAGE_URLS
 from ...utils import RemoteOpenAIServer
 
 if not envs.APHRODITE_USE_V1:

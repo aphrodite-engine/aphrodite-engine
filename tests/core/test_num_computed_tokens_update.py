@@ -1,10 +1,10 @@
 import pytest
 
-from aphrodite.common.sequence import SequenceGroup
-from aphrodite.engine.aphrodite_engine import AphroditeEngine
-from aphrodite.platforms import current_platform
 from tests.conftest import AphroditeRunner
 from tests.core.utils import create_dummy_prompt
+from aphrodite.engine.aphrodite_engine import AphroditeEngine
+from aphrodite.platforms import current_platform
+from aphrodite.common.sequence import SequenceGroup
 
 MODEL = "JackFram/llama-160m"
 
@@ -26,7 +26,7 @@ def test_num_computed_tokens_update(num_scheduler_steps: int,
 
     if is_multi_step_chunked_prefill and current_platform.is_rocm():
         pytest.skip("Multi-step with Chunked-Prefill does not support "
-                    "triton_flash_attn backend")
+                    "rocm_flash_attn backend")
 
     # Make a aphrodite engine
     runner = AphroditeRunner(model_name=MODEL,

@@ -8,10 +8,10 @@ import pytest
 from aphrodite import SamplingParams
 from aphrodite.assets.image import ImageAsset
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.inputs import PromptType
 from aphrodite.platforms import current_platform
+from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from aphrodite.v1.metrics.loggers import LoggingStatLogger
 
@@ -221,9 +221,7 @@ async def test_finished_flag(monkeypatch: pytest.MonkeyPatch, n: int,
 
 class MockLoggingStatLogger(LoggingStatLogger):
 
-    def __init__(self,
-                 aphrodite_config: AphroditeConfig,
-                 engine_index: int = 0):
+    def __init__(self, aphrodite_config: AphroditeConfig, engine_index: int = 0):
         super().__init__(aphrodite_config, engine_index)
         self.log = MagicMock()
 

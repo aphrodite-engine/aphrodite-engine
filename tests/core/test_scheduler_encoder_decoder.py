@@ -1,10 +1,8 @@
-from typing import List
-
 import pytest  # noqa
 
 from aphrodite.common.config import CacheConfig, SchedulerConfig
-from aphrodite.common.sequence import SequenceGroup
 from aphrodite.processing.scheduler import Scheduler
+from aphrodite.common.sequence import SequenceGroup
 
 from .utils import (append_new_token, create_dummy_prompt_encoder_decoder,
                     get_sequence_groups, schedule_and_update_computed_tokens)
@@ -36,12 +34,17 @@ def test_scheduler_schedule_simple_encoder_decoder():
     block_size = 4
     num_seq_group = 4
     max_model_len = 16
-    scheduler_config = SchedulerConfig(64, num_seq_group, max_model_len)
+    scheduler_config = SchedulerConfig(
+        "generate",
+        max_num_batched_tokens=64,
+        max_num_seqs=num_seq_group,
+        max_model_len=max_model_len,
+    )
     cache_config = CacheConfig(block_size, 1.0, 1, "auto")
     cache_config.num_cpu_blocks = 16  # enc and dec prompts per seq_group
     cache_config.num_gpu_blocks = 16  # enc and dec prompts per seq_group
     scheduler = Scheduler(scheduler_config, cache_config, None)
-    running: List[SequenceGroup] = []
+    running: list[SequenceGroup] = []
 
     # Add seq groups to scheduler.
     req_id_list = []

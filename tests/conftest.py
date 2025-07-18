@@ -15,22 +15,22 @@ from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer,
                           BatchEncoding, BatchFeature)
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
+from tests.models.utils import (TokensTextLogprobs,
+                                TokensTextLogprobsPromptLogprobs)
 from aphrodite import LLM, SamplingParams
 from aphrodite.assets.audio import AudioAsset
 from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
 from aphrodite.common.config import TaskOption, _get_and_verify_dtype
+from aphrodite.common.connections import global_http_connection
+from aphrodite.distributed import (cleanup_dist_env_and_memory,
+                              init_distributed_environment,
+                              initialize_model_parallel)
+from aphrodite.inputs import (ExplicitEncoderDecoderPrompt, TextPrompt,
+                         to_enc_dec_tuple_list, zip_enc_dec_prompts)
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams
 from aphrodite.common.utils import cuda_device_count_stateless
-from aphrodite.connections import global_http_connection
-from aphrodite.distributed import (cleanup_dist_env_and_memory,
-                                   init_distributed_environment,
-                                   initialize_model_parallel)
-from aphrodite.inputs import (ExplicitEncoderDecoderPrompt, TextPrompt,
-                              to_enc_dec_tuple_list, zip_enc_dec_prompts)
-from tests.models.utils import (TokensTextLogprobs,
-                                TokensTextLogprobsPromptLogprobs)
 
 _TEST_DIR = os.path.dirname(__file__)
 _TEST_PROMPTS = [os.path.join(_TEST_DIR, "prompts", "example.txt")]

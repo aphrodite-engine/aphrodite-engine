@@ -4,15 +4,14 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from aphrodite.common.config import (AphroditeConfig, CacheConfig,
-                                     KVTransferConfig, ModelConfig,
-                                     SchedulerConfig, SpeculativeConfig)
-from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.common.config import (CacheConfig, KVTransferConfig, ModelConfig,
+                         SchedulerConfig, SpeculativeConfig, AphroditeConfig)
 from aphrodite.multimodal.inputs import MultiModalKwargs, PlaceholderRange
+from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.core.sched.scheduler import Scheduler
 from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                             KVCacheGroupSpec)
+                                        KVCacheGroupSpec)
 from aphrodite.v1.outputs import ModelRunnerOutput
 from aphrodite.v1.request import Request, RequestStatus
 from aphrodite.v1.structured_output import StructuredOutputManager

@@ -62,14 +62,14 @@ def _stop_basic(llm_engine, is_async):
     _test_stopping(llm_engine,
                    stop=["."],
                    include_in_output=False,
-                   expected_output="VLLM is a 100% volunteer organization",
+                   expected_output="APHRODITE is a 100% volunteer organization",
                    expected_reason=".",
                    use_async_output_proc=is_async)
 
     _test_stopping(llm_engine,
                    stop=["."],
                    include_in_output=True,
-                   expected_output="VLLM is a 100% volunteer organization.",
+                   expected_output="APHRODITE is a 100% volunteer organization.",
                    expected_reason=".",
                    use_async_output_proc=is_async)
 
@@ -79,7 +79,7 @@ def _stop_multi_tokens(llm_engine, is_async):
         llm_engine,
         stop=["group of peo", "short"],
         include_in_output=False,
-        expected_output="VLLM is a 100% volunteer organization. We are a ",
+        expected_output="APHRODITE is a 100% volunteer organization. We are a ",
         expected_reason="group of peo",
         use_async_output_proc=is_async)
 
@@ -88,7 +88,7 @@ def _stop_multi_tokens(llm_engine, is_async):
         stop=["group of peo", "short"],
         include_in_output=True,
         expected_output=
-        "VLLM is a 100% volunteer organization. We are a group of peo",
+        "APHRODITE is a 100% volunteer organization. We are a group of peo",
         expected_reason="group of peo",
         use_async_output_proc=is_async)
 
@@ -97,14 +97,14 @@ def _stop_partial_token(llm_engine, is_async):
     _test_stopping(llm_engine,
                    stop=["gani"],
                    include_in_output=False,
-                   expected_output="VLLM is a 100% volunteer or",
+                   expected_output="APHRODITE is a 100% volunteer or",
                    expected_reason="gani",
                    use_async_output_proc=is_async)
 
     _test_stopping(llm_engine,
                    stop=["gani"],
                    include_in_output=True,
-                   expected_output="VLLM is a 100% volunteer organi",
+                   expected_output="APHRODITE is a 100% volunteer organi",
                    expected_reason="gani",
                    use_async_output_proc=is_async)
 
@@ -115,14 +115,14 @@ def _stop_token_id(llm_engine, is_async):
     _test_stopping(llm_engine,
                    stop_token_ids=[13013],
                    include_in_output=False,
-                   expected_output="VLLM is a 100% volunteer",
+                   expected_output="APHRODITE is a 100% volunteer",
                    expected_reason=13013,
                    use_async_output_proc=is_async)
 
     _test_stopping(llm_engine,
                    stop_token_ids=[13013],
                    include_in_output=True,
-                   expected_output="VLLM is a 100% volunteer organization",
+                   expected_output="APHRODITE is a 100% volunteer organization",
                    expected_reason=13013,
                    use_async_output_proc=is_async)
 
