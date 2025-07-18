@@ -48,7 +48,7 @@ pip install torch_xla[pallas] -f https://storage.googleapis.com/jax-releases/jax
 
 # Install other build dependencies.
 
-pip install -r requirements-tpu.txt
+pip install -r requirements/tpu.txt
 
 ```
 

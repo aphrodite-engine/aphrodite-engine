@@ -31,7 +31,7 @@ sudo apt-get install python3
 Then, install the requirements for Aphrodite:
 ```sh
 python3 -m pip install -U pip
-python3 -m pip install -r requirements-build.txt --extra-index-url https://download.pytorch.org/whl/cpu
+python3 -m pip install -r requirements/build.txt --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
 Finally, install Aphrodite:
@@ -92,7 +92,7 @@ Then, install the requirements:
 ```sh
 pip install -U pip
 pip install wheel packaging ninja "setuptools>=49.4.0" numpy
-pip install -v -r requirements-cpu.txt --extra-index-url http://download.pytorch.org/whl/cpu
+pip install -v -r requirements/cpu.txt --extra-index-url http://download.pytorch.org/whl/cpu
 ```
 
 Finally, install Aphrodite:

@@ -143,7 +143,7 @@ ENV TOKENIZERS_PARALLELISM=false
 
 RUN --mount=type=cache,target=${CCACHE_DIR} \
     --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install -Ur requirements-rocm.txt \
+    python3 -m pip install -Ur requirements/rocm.txt \
     && case "$(ls /opt | grep -Po 'rocm-[0-9]\.[0-9]')" in \
         *"rocm-6.1"*) \
             # Bring in upgrades to HIP graph earlier than ROCm 6.2 for Aphrodite

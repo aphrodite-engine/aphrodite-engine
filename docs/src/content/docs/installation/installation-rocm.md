@@ -71,6 +71,6 @@ cd aphrodite-engine
 
 chmod +x ./amdpatch.sh
 ./amdpatch.sh 
-pip install -U -r requirements-rocm.txt
+pip install -U -r requirements/rocm.txt
 python setup.py develop  #  pip install -e . won't work for now
 ```

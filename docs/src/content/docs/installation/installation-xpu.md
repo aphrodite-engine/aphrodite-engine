@@ -29,7 +29,7 @@ Second, install Python packages for Aphrodite XPU backend:
 ```sh
 source /opt/intel/oneapi/setvars.sh
 pip install -U pip
-pip install -v -r requirements-xpu.txt
+pip install -v -r requirements/xpu.txt
 ```
 
 Finally, build:

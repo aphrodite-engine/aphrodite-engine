@@ -25,13 +25,13 @@ RUN apt-get update -y && \
     wget
 
 WORKDIR /workspace/aphrodite-engine
-COPY requirements-xpu.txt /workspace/aphrodite-engine/requirements-xpu.txt
-COPY requirements-common.txt /workspace/aphrodite-engine/requirements-common.txt
+COPY requirements/xpu.txt /workspace/aphrodite-engine/requirements/xpu.txt
+COPY requirements/common.txt /workspace/aphrodite-engine/requirements/common.txt
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir \
     --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/ \
-    -r requirements-xpu.txt
+    -r requirements/xpu.txt
 COPY ./ /workspace/aphrodite-engine
 ENV APHRODITE_TARGET_DEVICE=xpu
 

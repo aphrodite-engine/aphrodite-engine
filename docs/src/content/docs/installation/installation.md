@@ -83,7 +83,7 @@ python -c 'import torch; print(torch.tensor(5).cuda() + 1, "torch cuda ok")'
 
 cd aphrodite-engine
 
-pip install nvidia-ml-py==12.555.43 protobuf==3.20.2 ninja msgspec coloredlogs portalocker pytimeparse -r requirements-common.txt
+pip install nvidia-ml-py==12.555.43 protobuf==3.20.2 ninja msgspec coloredlogs portalocker pytimeparse -r requirements/common.txt
 pip install --no-clean --no-deps --no-build-isolation -v .
 
 # if you want flash attention:

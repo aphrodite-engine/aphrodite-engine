@@ -91,6 +91,6 @@ python -m pip install --upgrade neuronx-cc==2.* --pre torch-neuronx==2.1.* torch
 ```sh
 git clone https://github.com/PygmalionAI/aphrodite-engine.git
 cd aphrodite-engine
-pip install -U -r requirements-neuron.txt
+pip install -U -r requirements/neuron.txt
 APHRODITE_TARGET_DEVICE="neuron" pip install -e .
 ```
