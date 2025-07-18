@@ -24,7 +24,7 @@ from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size,
                                    split_tensor_along_last_dim,
                                    tensor_model_parallel_all_gather)
-from aphrodite.modeling import SamplingMetadata
+from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.layers.activation import (MulAndSilu, QuickGELU,
                                                   SiluAndMul)
 from aphrodite.modeling.layers.layernorm import RMSNorm

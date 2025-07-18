@@ -8,7 +8,7 @@ from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
 from aphrodite.common.utils import make_tensor_with_pad
 from aphrodite.forward_context import set_forward_context
-from aphrodite.modeling import SamplingMetadata
+from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.multimodal import MultiModalKwargs
 from aphrodite.worker.cpu_model_runner import (

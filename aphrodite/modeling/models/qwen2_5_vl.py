@@ -40,7 +40,7 @@ from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import parallel_state
 from aphrodite.distributed import utils as dist_utils
-from aphrodite.modeling import SamplingMetadata
+from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.layers.activation import _ACTIVATION_REGISTRY
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,

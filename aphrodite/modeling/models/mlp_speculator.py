@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.modeling import SamplingMetadata
+from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.sampler import SamplerOutput, get_sampler
 from aphrodite.modeling.layers.vocab_parallel_embedding import (

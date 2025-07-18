@@ -20,7 +20,7 @@ from aphrodite.common.utils import (DeviceMemoryProfiler, GiB_bytes,
 from aphrodite.distributed import get_pp_group
 from aphrodite.forward_context import set_forward_context
 from aphrodite.inputs import INPUT_REGISTRY, InputRegistry
-from aphrodite.modeling import SamplingMetadataCache
+from aphrodite.modeling.sampling_metadata import SamplingMetadataCache
 from aphrodite.modeling.layers.sampler import SamplerOutput, get_sampler
 from aphrodite.modeling.model_loader import get_model
 from aphrodite.multimodal import (MULTIMODAL_REGISTRY, BatchedTensorInputs,

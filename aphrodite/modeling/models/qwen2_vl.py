@@ -43,7 +43,7 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import (parallel_state,
                                    tensor_model_parallel_all_gather)
 from aphrodite.distributed import utils as dist_utils
-from aphrodite.modeling import SamplingMetadata
+from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.layers.activation import QuickGELU
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)
