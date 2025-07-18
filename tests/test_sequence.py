@@ -1,8 +1,8 @@
 import pytest
 
-from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
-                                       SequenceData, SequenceOutput)
 from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.common.sequence import (CompletionSequenceGroupOutput, SequenceData,
+                           SequenceOutput)
 
 from .core.utils import create_dummy_prompt
 

@@ -1,10 +1,9 @@
 import numpy as np
 
-from aphrodite.common.config import (AphroditeConfig, ModelConfig,
-                                     SpeculativeConfig)
+from aphrodite.common.config import ModelConfig, SpeculativeConfig, AphroditeConfig
 from aphrodite.v1.spec_decode.ngram_proposer import (NgramProposer,
-                                                     _find_subarray_kmp,
-                                                     _kmp_lps_array)
+                                                _find_subarray_kmp,
+                                                _kmp_lps_array)
 
 
 def test_kmp_lps_array():
@@ -50,15 +49,15 @@ def test_ngram_proposer():
                                    dtype="auto",
                                    seed=None,
                                    trust_remote_code=False)
-        return NgramProposer(aphrodite_config=AphroditeConfig(
-            model_config=model_config,
-            speculative_config=SpeculativeConfig.from_dict(
-                {
-                    "prompt_lookup_min": min_n,
-                    "prompt_lookup_max": max_n,
-                    "num_speculative_tokens": k,
-                    "method": "ngram",
-                })))
+        return NgramProposer(
+            aphrodite_config=AphroditeConfig(model_config=model_config,
+                                   speculative_config=SpeculativeConfig.
+                                   from_dict({
+                                       "prompt_lookup_min": min_n,
+                                       "prompt_lookup_max": max_n,
+                                       "num_speculative_tokens": k,
+                                       "method": "ngram",
+                                   })))
 
     # No match.
     result = ngram_proposer(

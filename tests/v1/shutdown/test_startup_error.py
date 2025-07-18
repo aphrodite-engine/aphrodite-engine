@@ -2,15 +2,15 @@
 
 import pytest
 
-from aphrodite import LLM
-from aphrodite.common.utils import cuda_device_count_stateless
-from aphrodite.distributed import get_tensor_model_parallel_rank
-from aphrodite.engine.args_tools import AsyncEngineArgs
-from aphrodite.modeling.models.llama import LlamaForCausalLM
-from aphrodite.v1.engine.async_llm import AsyncLLM
 from tests.utils import wait_for_gpu_memory_to_clear
 from tests.v1.shutdown.utils import (SHUTDOWN_TEST_THRESHOLD_BYTES,
                                      SHUTDOWN_TEST_TIMEOUT_SEC)
+from aphrodite import LLM
+from aphrodite.distributed import get_tensor_model_parallel_rank
+from aphrodite.engine.args_tools import AsyncEngineArgs
+from aphrodite.modeling.models.llama import LlamaForCausalLM
+from aphrodite.common.utils import cuda_device_count_stateless
+from aphrodite.v1.engine.async_llm import AsyncLLM
 
 MODELS = ["meta-llama/Llama-3.2-1B"]
 

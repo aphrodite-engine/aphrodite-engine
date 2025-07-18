@@ -3,13 +3,13 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from aphrodite.common.sequence import SequenceGroupMetadata, get_all_seq_ids
 from aphrodite.modeling.layers.rejection_sampler import RejectionSampler
 from aphrodite.modeling.layers.sampler import _get_ranks
 from aphrodite.modeling.layers.typical_acceptance_sampler import (
     TypicalAcceptanceSampler)
+from aphrodite.common.sequence import SequenceGroupMetadata, get_all_seq_ids
 from aphrodite.spec_decode.util import (get_sampled_token_logprobs,
-                                        split_batch_by_proposal_len)
+                                   split_batch_by_proposal_len)
 
 
 def test_get_all_seq_ids():
@@ -115,7 +115,7 @@ def test_all_non_zero_with_zero_filter(fake_sequence_group_metadata):
 def mock_spec_decode_sampler(acceptance_sampler_method):
     """
     Returns either a RejectionSampler or TypicalAcceptanceSampler
-    object depending on whether acceptance_sampler_method is
+    object depending on whether acceptance_sampler_method is 
     'rejection_sampler' or 'typical_acceptance_sampler' respectively.
     """
     if acceptance_sampler_method == "rejection_sampler":
@@ -131,7 +131,7 @@ def mock_spec_decode_sampler(acceptance_sampler_method):
 
 
 def test_get_sampled_token_logprobs():
-    """Verify get_sampled_token_logprobs returns consistent rankings
+    """Verify get_sampled_token_logprobs returns consistent rankings 
     with regular get_ranks when probabilities match exactly.
     """
     logprob_tensor = torch.tensor(
@@ -140,6 +140,8 @@ def test_get_sampled_token_logprobs():
                                           0]])  # shape (num_steps, batch_size)
     ranks_spec_dec, _ = get_sampled_token_logprobs(logprob_tensor,
                                                    sampled_token_tensor)
+
     ranks_regular = _get_ranks(logprob_tensor.reshape((2, -1)),
                                sampled_token_tensor.reshape(-1))
+
     assert torch.equal(ranks_spec_dec.reshape(-1), ranks_regular)

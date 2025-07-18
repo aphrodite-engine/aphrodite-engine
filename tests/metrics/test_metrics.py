@@ -1,20 +1,29 @@
 import time
-from typing import List
 
 import pytest
 import ray
 from prometheus_client import REGISTRY
 
-from aphrodite import AphroditeEngine, EngineArgs
-from aphrodite.common.sampling_params import SamplingParams
+import aphrodite.common.envs as envs
+from aphrodite import EngineArgs, AphroditeEngine
+from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_aphrodite import AsyncAphrodite
 from aphrodite.engine.metrics import RayPrometheusStatLogger
+from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.common.test_utils import MODEL_WEIGHTS_S3_BUCKET
 
-from ..conftest import cleanup
+
+@pytest.fixture(scope="function", autouse=True)
+def use_v0_only(monkeypatch):
+    """
+    This module tests V0 internals, so set APHRODITE_USE_V1=0.
+    """
+    monkeypatch.setenv('APHRODITE_USE_V1', '0')
+
 
 MODELS = [
-    "facebook/opt-125m",
+    "distilbert/distilgpt2",
 ]
 
 
@@ -44,8 +53,7 @@ def test_metric_counter_prompt_tokens(
         aphrodite_prompt_token_count = sum(prompt_token_counts)
 
         _ = aphrodite_model.generate_greedy(example_prompts, max_tokens)
-        stat_logger = (
-            aphrodite_model.model.llm_engine.stat_loggers['prometheus'])
+        stat_logger = aphrodite_model.model.llm_engine.stat_loggers['prometheus']
         metric_count = stat_logger.metrics.counter_prompt_tokens.labels(
             **stat_logger.labels)._value.get()
 
@@ -68,26 +76,61 @@ def test_metric_counter_generation_tokens(
                      dtype=dtype,
                      disable_log_stats=False,
                      gpu_memory_utilization=0.4) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.generate_greedy(
-            example_prompts, max_tokens)
+        aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts, max_tokens)
         tokenizer = aphrodite_model.model.get_tokenizer()
-        stat_logger = (
-            aphrodite_model.model.llm_engine.stat_loggers['prometheus'])
+        stat_logger = aphrodite_model.model.llm_engine.stat_loggers['prometheus']
         metric_count = stat_logger.metrics.counter_generation_tokens.labels(
             **stat_logger.labels)._value.get()
         aphrodite_generation_count = 0
         for i in range(len(example_prompts)):
             aphrodite_output_ids, aphrodite_output_str = aphrodite_outputs[i]
             prompt_ids = tokenizer.encode(example_prompts[i])
-            # aphrodite_output_ids contains both prompt tokens and generation
-            # tokens. We're interested only in the count of the generation
-            # tokens.
-            aphrodite_generation_count += len(aphrodite_output_ids) - len(
-                prompt_ids)
+            # aphrodite_output_ids contains both prompt tokens and generation tokens.
+            # We're interested only in the count of the generation tokens.
+            aphrodite_generation_count += len(aphrodite_output_ids) - len(prompt_ids)
 
     assert aphrodite_generation_count == metric_count, (
         f"generation token count: {aphrodite_generation_count!r}\n"
         f"metric: {metric_count!r}")
+
+
+@pytest.mark.parametrize("model", MODELS)
+@pytest.mark.parametrize("max_tokens", [128, 129])
+@pytest.mark.parametrize("disable_async_output_proc", [True, False])
+def test_metric_counter_generation_tokens_multi_step(
+    aphrodite_runner,
+    example_prompts,
+    model: str,
+    max_tokens: int,
+    disable_async_output_proc: bool,
+) -> None:
+    num_scheduler_steps = 8
+    with aphrodite_runner(
+            model,
+            disable_log_stats=False,
+            gpu_memory_utilization=0.4,
+            num_scheduler_steps=num_scheduler_steps,
+            disable_async_output_proc=disable_async_output_proc,
+    ) as aphrodite_model:
+        aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts, max_tokens)
+        tokenizer = aphrodite_model.model.get_tokenizer()
+        stat_logger = aphrodite_model.model.llm_engine.stat_loggers['prometheus']
+        metric_count = stat_logger.metrics.counter_generation_tokens.labels(
+            **stat_logger.labels)._value.get()
+        aphrodite_generation_count = 0
+        for i in range(len(example_prompts)):
+            aphrodite_output_ids, aphrodite_output_str = aphrodite_outputs[i]
+            prompt_ids = tokenizer.encode(example_prompts[i])
+            # aphrodite_output_ids contains both prompt tokens and generation tokens.
+            # We're interested only in the count of the generation tokens.
+            aphrodite_generation_count += len(aphrodite_output_ids) - len(prompt_ids)
+
+    # The multi-step scheduling will continue to execute forward even when
+    # encountering EOS, leading to slightly imprecise metrics.
+    assert abs(aphrodite_generation_count - metric_count) <\
+        len(example_prompts) * num_scheduler_steps, \
+        (f"generation token count: {aphrodite_generation_count!r}\n"
+         f"metric: {metric_count!r}")
 
 
 @pytest.mark.parametrize("model", MODELS)
@@ -96,16 +139,17 @@ def test_metric_counter_generation_tokens(
     "served_model_name",
     [None, [], ["ModelName0"], ["ModelName0", "ModelName1", "ModelName2"]])
 def test_metric_set_tag_model_name(aphrodite_runner, model: str, dtype: str,
-                                   served_model_name: List[str]) -> None:
+                                   served_model_name: list[str]) -> None:
     with aphrodite_runner(model,
                      dtype=dtype,
                      disable_log_stats=False,
                      gpu_memory_utilization=0.3,
                      served_model_name=served_model_name) as aphrodite_model:
-        stat_logger = (
-            aphrodite_model.model.llm_engine.stat_loggers['prometheus'])
+        stat_logger = aphrodite_model.model.llm_engine.stat_loggers['prometheus']
         metrics_tag_content = stat_logger.labels["model_name"]
 
+    if envs.APHRODITE_CI_USE_S3:
+        model = f"{MODEL_WEIGHTS_S3_BUCKET}/{model}"
     if served_model_name is None or served_model_name == []:
         assert metrics_tag_content == model, (
             f"Metrics tag model_name is wrong! expect: {model!r}\n"
@@ -133,9 +177,11 @@ async def test_async_engine_log_metrics_regression(
     Regression test ensuring async engine generates metrics
     when disable_log_stats=False
     """
-    engine_args = AsyncEngineArgs(model=model,
-                                  dtype=dtype,
-                                  disable_log_stats=disable_log_stats)
+    engine_args = AsyncEngineArgs(
+        model=model,
+        dtype=dtype,
+        disable_log_stats=disable_log_stats,
+    )
     async_engine = AsyncAphrodite.from_engine_args(engine_args)
     for i, prompt in enumerate(example_prompts):
         results = async_engine.generate(
@@ -147,7 +193,7 @@ async def test_async_engine_log_metrics_regression(
         async for _ in results:
             pass
 
-    assert_metrics(async_engine.engine, disable_log_stats,
+    assert_metrics(model, async_engine.engine, disable_log_stats,
                    len(example_prompts))
 
 
@@ -162,9 +208,11 @@ def test_engine_log_metrics_regression(
     max_tokens: int,
     disable_log_stats: bool,
 ) -> None:
-    engine_args = EngineArgs(model=model,
-                             dtype=dtype,
-                             disable_log_stats=disable_log_stats)
+    engine_args = EngineArgs(
+        model=model,
+        dtype=dtype,
+        disable_log_stats=disable_log_stats,
+    )
     engine = AphroditeEngine.from_engine_args(engine_args)
     for i, prompt in enumerate(example_prompts):
         engine.add_request(
@@ -175,7 +223,9 @@ def test_engine_log_metrics_regression(
     while engine.has_unfinished_requests():
         engine.step()
 
-    assert_metrics(engine, disable_log_stats, len(example_prompts))
+    if envs.APHRODITE_CI_USE_S3:
+        model = f"{MODEL_WEIGHTS_S3_BUCKET}/{model}"
+    assert_metrics(model, engine, disable_log_stats, len(example_prompts))
 
 
 @pytest.mark.parametrize("model", MODELS)
@@ -190,17 +240,19 @@ def test_metric_spec_decode(
 ) -> None:
     k = 5
 
-    with aphrodite_runner(model,
-                     dtype=dtype,
-                     disable_log_stats=False,
-                     gpu_memory_utilization=0.4,
-                     speculative_model=model,
-                     num_speculative_tokens=k,
-                     use_v2_block_manager=True) as aphrodite_model:
+    with aphrodite_runner(
+            model,
+            dtype=dtype,
+            disable_log_stats=False,
+            gpu_memory_utilization=0.4,
+            speculative_config={
+                "model": model,
+                "num_speculative_tokens": k,
+            },
+    ) as aphrodite_model:
 
         # Force log interval to be 0 to catch all metrics.
-        stat_logger = (
-            aphrodite_model.model.llm_engine.stat_loggers['prometheus'])
+        stat_logger = aphrodite_model.model.llm_engine.stat_loggers['prometheus']
         stat_logger.local_interval = 0
 
         # Note that the purpose of this test is to verify spec decode
@@ -242,14 +294,17 @@ def test_metric_spec_decode_interval(
 ) -> None:
     k = 5
 
-    engine_args = EngineArgs(model=model,
-                             dtype=dtype,
-                             disable_log_stats=False,
-                             gpu_memory_utilization=0.4,
-                             speculative_model=model,
-                             num_speculative_tokens=k,
-                             use_v2_block_manager=True,
-                             enforce_eager=True)
+    engine_args = EngineArgs(
+        model=model,
+        dtype=dtype,
+        disable_log_stats=False,
+        gpu_memory_utilization=0.4,
+        speculative_config={
+            "model": model,
+            "num_speculative_tokens": k,
+        },
+        enforce_eager=True,
+    )
 
     engine = AphroditeEngine.from_engine_args(engine_args)
 
@@ -313,10 +368,10 @@ def test_metric_spec_decode_interval(
 
     finally:
         del engine
-        cleanup()
+        cleanup_dist_env_and_memory()
 
 
-def assert_metrics(engine: AphroditeEngine, disable_log_stats: bool,
+def assert_metrics(model: str, engine: AphroditeEngine, disable_log_stats: bool,
                    num_requests: int) -> None:
     if disable_log_stats:
         with pytest.raises(AttributeError):
@@ -327,12 +382,13 @@ def assert_metrics(engine: AphroditeEngine, disable_log_stats: bool,
         # Ensure the count bucket of request-level histogram metrics matches
         # the number of requests as a simple sanity check to ensure metrics are
         # generated
-        labels = {'model_name': engine.model_config.model}
+        labels = {'model_name': model}
         request_histogram_metrics = [
             "aphrodite:e2e_request_latency_seconds",
             "aphrodite:request_prompt_tokens",
             "aphrodite:request_generation_tokens",
             "aphrodite:request_params_n",
+            "aphrodite:request_params_max_tokens",
         ]
         for metric_name in request_histogram_metrics:
             metric_value = REGISTRY.get_sample_value(f"{metric_name}_count",
@@ -378,7 +434,7 @@ def test_engine_log_metrics_ray(
         logger = _RayPrometheusStatLogger(
             local_interval=0.5,
             labels=dict(model_name=engine.model_config.served_model_name),
-            max_model_len=engine.model_config.max_model_len)
+            aphrodite_config=engine.aphrodite_config)
         engine.add_logger("ray", logger)
         for i, prompt in enumerate(example_prompts):
             engine.add_request(

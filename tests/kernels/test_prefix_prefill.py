@@ -177,7 +177,7 @@ def test_contexted_kv_attention(
         # project the key and value tensors to the desired number of
         # heads.
         #
-        # see also: aphrodite/model_executor/layers/attention.py
+        # see also: aphrodite/modeling/layers/attention.py
         query = query.view(query.shape[0], num_kv_heads, num_queries_per_kv,
                            query.shape[-1])
         key = key[:, :, None, :].expand(key.shape[0], num_kv_heads,
@@ -250,7 +250,7 @@ def test_contexted_kv_attention_alibi(
     torch.cuda.set_device(device)
 
     def _get_alibi_slopes(total_num_heads: int) -> torch.Tensor:
-        # Fork from: aphrodite/aphrodite/model_executor/models/bloom.py#L44
+        # Fork from: aphrodite/aphrodite/modeling/models/bloom.py#L44
         closest_power_of_2 = 2**math.floor(math.log2(total_num_heads))
         base = torch.tensor(
             2**(-(2**-(math.log2(closest_power_of_2) - 3))),
@@ -421,7 +421,7 @@ def test_contexted_kv_attention_alibi(
         # project the key and value tensors to the desired number of
         # heads.
         #
-        # see also: aphrodite/model_executor/layers/attention.py
+        # see also: aphrodite/modeling/layers/attention.py
         query = query.view(query.shape[0], num_kv_heads, num_queries_per_kv,
                            query.shape[-1])
         key = key[:, :, None, :].expand(key.shape[0], num_kv_heads,

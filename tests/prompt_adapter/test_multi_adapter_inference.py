@@ -1,4 +1,4 @@
-from aphrodite import AphroditeEngine, EngineArgs, SamplingParams
+from aphrodite import EngineArgs, AphroditeEngine, SamplingParams
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 MODEL_PATH = "bigscience/bloomz-560m"

@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.platforms import current_platform
+from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 if TYPE_CHECKING:
@@ -111,12 +111,12 @@ def test_perf(
                                          min_p=0.0)
 
         with aphrodite_runner(params.model,
-                              max_num_batched_tokens=MAX_MODEL_LEN,
-                              max_model_len=MAX_MODEL_LEN,
-                              max_num_seqs=MAX_NUM_SEQS,
-                              gpu_memory_utilization=GPU_UTIL,
-                              enforce_eager=False,
-                              tensor_parallel_size=1) as aphrodite_model:
+                         max_num_batched_tokens=MAX_MODEL_LEN,
+                         max_model_len=MAX_MODEL_LEN,
+                         max_num_seqs=MAX_NUM_SEQS,
+                         gpu_memory_utilization=GPU_UTIL,
+                         enforce_eager=False,
+                         tensor_parallel_size=1) as aphrodite_model:
             print("  -- Warmup / Compile")
             for i in range(NUM_WARMUPS):
                 _ = aphrodite_model.generate(prompts, sampling_params)

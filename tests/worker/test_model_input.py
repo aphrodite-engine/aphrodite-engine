@@ -1,16 +1,16 @@
 import dataclasses
-from typing import List, Tuple, Type
 
 import torch
 
 from aphrodite.attention import AttentionMetadata, AttentionMetadataBuilder
 from aphrodite.attention.backends.abstract import AttentionBackend
-from aphrodite.modeling.pooling_metadata import PoolingMetadata
+from aphrodite.attention.backends.utils import CommonAttentionState
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.worker.embedding_model_runner import (
-    ModelInputForGPUWithPoolingMetadata)
+from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.worker.model_runner import ModelInputForGPUWithSamplingMetadata
 from aphrodite.worker.multi_step_model_runner import StatefulModelInput
+from aphrodite.worker.pooling_model_runner import (
+    ModelInputForGPUWithPoolingMetadata)
 
 
 class MockAttentionBackend(AttentionBackend):
@@ -24,12 +24,16 @@ class MockAttentionBackend(AttentionBackend):
         raise NotImplementedError
 
     @staticmethod
-    def get_metadata_cls() -> Type["AttentionMetadata"]:
+    def get_metadata_cls() -> type["AttentionMetadata"]:
         return AttentionMetadata
 
     @staticmethod
-    def get_builder_cls() -> Type["AttentionMetadataBuilder"]:
-        raise AttentionMetadataBuilder
+    def get_builder_cls() -> type["AttentionMetadataBuilder"]:
+        return AttentionMetadataBuilder
+
+    @staticmethod
+    def get_state_cls() -> type["CommonAttentionState"]:
+        return CommonAttentionState
 
     @staticmethod
     def get_kv_cache_shape(
@@ -37,7 +41,7 @@ class MockAttentionBackend(AttentionBackend):
         block_size: int,
         num_kv_heads: int,
         head_size: int,
-    ) -> Tuple[int, ...]:
+    ) -> tuple[int, ...]:
         raise NotImplementedError
 
     @staticmethod
@@ -50,7 +54,7 @@ class MockAttentionBackend(AttentionBackend):
 
     @staticmethod
     def copy_blocks(
-        kv_caches: List[torch.Tensor],
+        kv_caches: list[torch.Tensor],
         src_to_dists: torch.Tensor,
     ) -> None:
         pass
@@ -68,6 +72,8 @@ def test_model_runner_input():
         num_prefill_tokens=2,
         num_decode_tokens=3,
         slot_mapping=torch.zeros(1),
+        multi_modal_placeholder_index_maps=None,
+        enable_kv_scales_calculation=True,
     )
     model_input = ModelInputForGPUWithSamplingMetadata(
         input_tokens=torch.ones(10),
@@ -119,6 +125,8 @@ def test_embedding_model_runner_input():
         num_prefill_tokens=2,
         num_decode_tokens=3,
         slot_mapping=torch.zeros(1),
+        multi_modal_placeholder_index_maps=None,
+        enable_kv_scales_calculation=True,
     )
     model_input = ModelInputForGPUWithPoolingMetadata(
         input_tokens=torch.ones(10),
@@ -169,12 +177,15 @@ def test_multi_step_model_runner_input():
         num_prefill_tokens=2,
         num_decode_tokens=3,
         slot_mapping=torch.zeros(1),
+        multi_modal_placeholder_index_maps=None,
+        enable_kv_scales_calculation=True,
     )
     frozen_model_input = ModelInputForGPUWithSamplingMetadata(
         input_tokens=torch.ones(10),
         input_positions=torch.ones(10),
         sampling_metadata=sampling_metadata,
         attn_metadata=attn_metadata)
+
     model_input = StatefulModelInput(
         frozen_model_input=frozen_model_input,
         is_last_step=True,
@@ -188,11 +199,13 @@ def test_multi_step_model_runner_input():
     )
 
     assert isinstance(model_input, StatefulModelInput)
+
     # Test round trip serialization.
     tensor_dict = model_input.as_broadcastable_tensor_dict()
     attn_backend = MockAttentionBackend()
     received_model_input = (StatefulModelInput.from_broadcasted_tensor_dict(
         tensor_dict, attn_backend=attn_backend))
+
     receieved_frozen_input = received_model_input.frozen_model_input
 
     # Check that received copy has correct values.
@@ -215,7 +228,6 @@ def test_multi_step_model_runner_input():
     for field in dataclasses.fields(AttentionMetadata):
         assert getattr(receieved_frozen_input.attn_metadata, field.name,
                        None) == getattr(attn_metadata, field.name, None)
-
     # For sampling metadata, only selected_token_indices is copied.
     assert (receieved_frozen_input.sampling_metadata.selected_token_indices ==
             sampling_metadata.selected_token_indices)

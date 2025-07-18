@@ -1,11 +1,11 @@
 import pytest
 
+from aphrodite.processing.block.utils import (STR_NOT_IMPL_ENC_DEC_PREFIX_CACHE,
+                                   STR_NOT_IMPL_ENC_DEC_SWA)
+from aphrodite.processing.block_manager import SelfAttnBlockSpaceManager
+from aphrodite.processing.interfaces import AllocStatus
 from aphrodite.common.sequence import Logprob, SequenceStatus
 from aphrodite.common.utils import chunk_list
-from aphrodite.processing.block.utils import (
-    STR_NOT_IMPL_ENC_DEC_PREFIX_CACHE, STR_NOT_IMPL_ENC_DEC_SWA)
-from aphrodite.processing.block_manager_v2 import SelfAttnBlockSpaceManager
-from aphrodite.processing.interfaces import AllocStatus
 
 from ..utils import (create_dummy_prompt, create_seq_group,
                      create_seq_group_encoder_decoder)
@@ -117,16 +117,16 @@ def test_can_allocate_encoder_decoder_fails_with_swa(block_size: int,
     '''
     SWA short for Sliding Window Attention.
 
-    At time of writing block manager v2 does not support SWA.
+    At time of writing block manager does not support SWA.
 
-    However even when SWA is implemented for block manager v2,
+    However even when SWA is implemented for block manager,
     there will still most likely be a separate workstream required
     to enable SWA for encoder/decoder models.
 
     Therefore this test enforces that one of the following cases
     hold true:
-    1. Block manager v2 does not support SWA at all (true at time of writing)
-    2. Block manager v2 fails with NotImplementError when SWA is enabled
+    1. Block manager does not support SWA at all (true at time of writing)
+    2. Block manager fails with NotImplementError when SWA is enabled
        AND a SequenceGroup with an encoder sequence (i.e. in support of an
        encoder/decoder model) is passed into can_allocate() as an argument
 
@@ -158,7 +158,7 @@ def test_can_allocate_encoder_decoder_fails_with_swa(block_size: int,
         block_manager.can_allocate(seq_group)
 
     # Assert that either
-    # 1. Block manager v2 constructor fails with assertion that sliding window
+    # 1. Block manager constructor fails with assertion that sliding window
     #    is not yet supported (most likely near-term outcome at time of
     #    writing), or
     # 2. can_allocate() fails with NotImplementedError due to combination of
@@ -270,13 +270,14 @@ def test_swap(block_size, num_cpu_blocks, num_gpu_blocks, num_lookahead_slots,
         sequence group (not missing or extra blocks).
     """
     block_manager = SelfAttnBlockSpaceManager(block_size,
-                                        num_cpu_blocks,
-                                        num_gpu_blocks,
-                                        watermark=0,
-                                        enable_caching=enable_caching)
+                                              num_cpu_blocks,
+                                              num_gpu_blocks,
+                                              watermark=0,
+                                              enable_caching=enable_caching)
     prompt, seq_group = create_dummy_prompt("1", prompt_length=block_size - 1)
     prompt.status = SequenceStatus.WAITING
     block_manager.allocate(seq_group)
+
     # Emulate a forward pass by appending a single token.
     # The block manager then knows how many unprocessed
     # tokens will be written in the next forward pass.
@@ -322,10 +323,10 @@ def test_can_swap(block_size, num_gpu_blocks, num_lookahead_slots,
     """
     num_cpu_blocks = num_gpu_blocks
     block_manager = SelfAttnBlockSpaceManager(block_size,
-                                        num_cpu_blocks,
-                                        num_gpu_blocks,
-                                        watermark=0,
-                                        enable_caching=enable_caching)
+                                              num_cpu_blocks,
+                                              num_gpu_blocks,
+                                              watermark=0,
+                                              enable_caching=enable_caching)
     prompt, seq_group = create_dummy_prompt(
         "1", prompt_length=(num_gpu_blocks - 1) * block_size - 1)
     prompt.status = SequenceStatus.WAITING
@@ -373,7 +374,6 @@ def test_can_swap(block_size, num_gpu_blocks, num_lookahead_slots,
             seq_group, num_lookahead_slots) == AllocStatus.NEVER
 
 
-
 @pytest.mark.parametrize("num_lookahead_slots", [0, 2, 10])
 @pytest.mark.parametrize("enable_caching", [False, True])
 def test_swap_in_infeasible(num_lookahead_slots, enable_caching):
@@ -384,10 +384,10 @@ def test_swap_in_infeasible(num_lookahead_slots, enable_caching):
     num_cpu_blocks = 1
     num_gpu_blocks = 1
     block_manager = SelfAttnBlockSpaceManager(block_size,
-                                        num_cpu_blocks,
-                                        num_gpu_blocks,
-                                        watermark=0,
-                                        enable_caching=enable_caching)
+                                              num_cpu_blocks,
+                                              num_gpu_blocks,
+                                              watermark=0,
+                                              enable_caching=enable_caching)
     prompt_length = block_size - 3
     assert prompt_length > 0
     prompt, seq_group = create_dummy_prompt("1", prompt_length=prompt_length)
@@ -399,10 +399,12 @@ def test_swap_in_infeasible(num_lookahead_slots, enable_caching):
     token_id = 0
     prompt.status = SequenceStatus.RUNNING
     prompt.append_token_id(token_id, {token_id: Logprob(0.0)})
+
     # Swap seq group from GPU -> CPU.
     assert block_manager.can_swap_out(seq_group)
     block_manager.swap_out(seq_group)
     prompt.status = SequenceStatus.SWAPPED
+
     # Swap seq group from CPU -> GPU.
     # The number of unseen tokens is 1. If the number of existing
     # tokens plus the unseen ones and number of lookahead slots exceeds
@@ -418,7 +420,7 @@ def test_swap_in_infeasible(num_lookahead_slots, enable_caching):
             seq_group, num_lookahead_slots) == AllocStatus.NEVER
 
 
-# TODO: add comprehensive tests for swapping at allocator level.
+# TODO(cade/kaiyang): add comprehensive tests for swapping at allocator level.
 
 
 @pytest.mark.parametrize("block_size", [8, 16])
@@ -445,7 +447,6 @@ def test_sliding_window(block_size, prompt_len, num_slots_to_append,
         if max_n is None:
             max_n = min_n
         used = num_gpu_blocks - block_manager.get_num_free_gpu_blocks()
-        #print("check", min_n, used, max_n)
         assert min_n <= used
         assert used <= max_n
 

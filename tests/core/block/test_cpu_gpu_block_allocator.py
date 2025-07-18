@@ -1,8 +1,7 @@
 import pytest
 
+from aphrodite.processing.block.cpu_gpu_block_allocator import CpuGpuBlockAllocator
 from aphrodite.common.utils import Device, chunk_list
-from aphrodite.processing.block.cpu_gpu_block_allocator import (
-    CpuGpuBlockAllocator)
 
 
 @pytest.mark.parametrize("num_cpu_blocks", [0, 512])

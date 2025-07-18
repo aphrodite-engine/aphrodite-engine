@@ -10,9 +10,9 @@ import torch_xla
 import torch_xla.core
 import torch_xla.core.xla_model
 
+from aphrodite.common import envs
 from aphrodite.attention.layer import MultiHeadAttention
 from aphrodite.attention.selector import _cached_get_attn_backend
-from aphrodite.common import envs
 from aphrodite.platforms import current_platform
 
 if not envs.APHRODITE_USE_V1:

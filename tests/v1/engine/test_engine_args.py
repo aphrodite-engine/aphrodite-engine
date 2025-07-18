@@ -4,9 +4,9 @@ import pytest
 
 from aphrodite.common import envs
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import FlexibleArgumentParser
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.common.utils import FlexibleArgumentParser
 
 if not envs.APHRODITE_USE_V1:
     pytest.skip(
@@ -18,21 +18,18 @@ if not envs.APHRODITE_USE_V1:
 def test_prefix_caching_from_cli():
     parser = EngineArgs.add_cli_args(FlexibleArgumentParser())
     args = parser.parse_args([])
-    aphrodite_config = EngineArgs.from_cli_args(
-        args=args).create_engine_config()
+    aphrodite_config = EngineArgs.from_cli_args(args=args).create_engine_config()
     assert (aphrodite_config.cache_config.enable_prefix_caching
             ), "V1 turns on prefix caching by default."
 
     # Turn it off possible with flag.
     args = parser.parse_args(["--no-enable-prefix-caching"])
-    aphrodite_config = EngineArgs.from_cli_args(
-        args=args).create_engine_config()
+    aphrodite_config = EngineArgs.from_cli_args(args=args).create_engine_config()
     assert not aphrodite_config.cache_config.enable_prefix_caching
 
     # Turn it on with flag.
     args = parser.parse_args(["--enable-prefix-caching"])
-    aphrodite_config = EngineArgs.from_cli_args(
-        args=args).create_engine_config()
+    aphrodite_config = EngineArgs.from_cli_args(args=args).create_engine_config()
     assert aphrodite_config.cache_config.enable_prefix_caching
 
     # default hash algorithm is "builtin"
@@ -40,14 +37,12 @@ def test_prefix_caching_from_cli():
 
     # set hash algorithm to sha256
     args = parser.parse_args(["--prefix-caching-hash-algo", "sha256"])
-    aphrodite_config = EngineArgs.from_cli_args(
-        args=args).create_engine_config()
+    aphrodite_config = EngineArgs.from_cli_args(args=args).create_engine_config()
     assert aphrodite_config.cache_config.prefix_caching_hash_algo == "sha256"
 
     # set hash algorithm to builtin
     args = parser.parse_args(["--prefix-caching-hash-algo", "builtin"])
-    aphrodite_config = EngineArgs.from_cli_args(
-        args=args).create_engine_config()
+    aphrodite_config = EngineArgs.from_cli_args(args=args).create_engine_config()
     assert aphrodite_config.cache_config.prefix_caching_hash_algo == "builtin"
 
     # an invalid hash algorithm raises an error

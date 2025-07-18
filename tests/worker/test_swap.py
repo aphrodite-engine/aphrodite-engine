@@ -1,15 +1,14 @@
 import torch
 
-from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import (get_distributed_init_method, get_ip,
-                                    get_open_port)
 from aphrodite.engine.args_tools import EngineArgs
+from aphrodite.common.sequence import ExecuteModelRequest
+from aphrodite.common.utils import get_distributed_init_method, get_ip, get_open_port
 from aphrodite.worker.worker import Worker
 
 
 def test_swap() -> None:
     # Configure the engine.
-    engine_args = EngineArgs(model="facebook/opt-125m",
+    engine_args = EngineArgs(model="distilbert/distilgpt2",
                              dtype="half",
                              load_format="dummy")
     engine_config = engine_args.create_engine_config()
@@ -20,12 +19,7 @@ def test_swap() -> None:
     distributed_init_method = get_distributed_init_method(
         get_ip(), get_open_port())
     worker = Worker(
-        model_config=engine_config.model_config,
-        parallel_config=engine_config.parallel_config,
-        scheduler_config=engine_config.scheduler_config,
-        device_config=engine_config.device_config,
-        cache_config=engine_config.cache_config,
-        load_config=engine_config.load_config,
+        aphrodite_config=engine_config,
         local_rank=0,
         rank=0,
         distributed_init_method=distributed_init_method,

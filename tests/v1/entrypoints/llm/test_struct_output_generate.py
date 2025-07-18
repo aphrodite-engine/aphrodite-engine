@@ -9,11 +9,10 @@ import jsonschema
 import pytest
 from pydantic import BaseModel
 
-from aphrodite.common.outputs import RequestOutput
-from aphrodite.common.sampling_params import (GuidedDecodingParams,
-                                              SamplingParams)
 from aphrodite.endpoints.llm import LLM
+from aphrodite.common.outputs import RequestOutput
 from aphrodite.platforms import current_platform
+from aphrodite.common.sampling_params import GuidedDecodingParams, SamplingParams
 
 NGRAM_SPEC_CONFIG = {
     "model": "[ngram]",

@@ -1,13 +1,15 @@
+from collections.abc import Sequence
 from itertools import cycle
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Optional, Union
 
 import pytest
+import torch
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.common.sequence import PromptLogprobs, SampleLogprobs
+from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.modeling.utils import set_random_seed
+from aphrodite.common.sequence import PromptLogprobs, SampleLogprobs
 
-from ...conftest import cleanup
 from ...models.utils import (TokensTextLogprobs,
                              TokensTextLogprobsPromptLogprobs,
                              check_logprobs_close, check_outputs_equal)
@@ -44,7 +46,7 @@ def test_llm_generator(common_llm_kwargs, per_test_common_llm_kwargs,
         yield llm
 
         del llm
-        cleanup()
+        cleanup_dist_env_and_memory()
 
     return generate
 
@@ -52,7 +54,7 @@ def test_llm_generator(common_llm_kwargs, per_test_common_llm_kwargs,
 def maybe_assert_ngram_worker(llm):
     # Verify the proposer worker is ngram if ngram is specified.
     if (llm.llm_engine.speculative_config is not None
-            and llm.llm_engine.speculative_config.ngram_prompt_lookup_max > 0):
+            and llm.llm_engine.speculative_config.method == "ngram"):
         from aphrodite.spec_decode.ngram_worker import NGramWorker
         assert isinstance(
             llm.llm_engine.model_executor.driver_worker.proposer_worker,
@@ -61,9 +63,9 @@ def maybe_assert_ngram_worker(llm):
 
 def get_output_from_llm_generator(
         llm_generator, prompts,
-        sampling_params) -> Tuple[List[str], List[List[int]], float]:
-    tokens: List[str] = []
-    token_ids: List[List[int]] = []
+        sampling_params) -> tuple[list[str], list[list[int]], float]:
+    tokens: list[str] = []
+    token_ids: list[list[int]] = []
     acceptance_rate: float = -1.0
     for llm in llm_generator():
         maybe_assert_ngram_worker(llm)
@@ -154,6 +156,8 @@ def _check_logprobs_when_output_disabled(
          spec_pos_logprob) = next(iter(spec_pos_logprobs.items()))
         assert spec_pos_logprob.rank == -1
         assert spec_pos_logprob.logprob == 0.0
+        if isinstance(spec_pos_logprob_token_id, torch.Tensor):
+            spec_pos_logprob_token_id = spec_pos_logprob_token_id.item()
         assert spec_pos_logprob_token_id in baseline_pos_logprobs
 
 
@@ -200,8 +204,7 @@ def run_equality_correctness_test(
                                      prompt_logprobs=prompt_logprobs)
 
     with aphrodite_runner(**org_args) as aphrodite_model:
-        org_outputs = aphrodite_model.generate_w_logprobs(
-            prompts, sampling_params)
+        org_outputs = aphrodite_model.generate_w_logprobs(prompts, sampling_params)
 
     with aphrodite_runner(**sd_args) as aphrodite_model:
         if ensure_all_accepted or expected_acceptance_rate is not None:
@@ -210,8 +213,7 @@ def run_equality_correctness_test(
                 'prometheus']
             stat_logger.local_interval = -100
 
-        sd_outputs = aphrodite_model.generate_w_logprobs(
-            prompts, sampling_params)
+        sd_outputs = aphrodite_model.generate_w_logprobs(prompts, sampling_params)
 
         if ensure_all_accepted or expected_acceptance_rate is not None:
             acceptance_rate = (stat_logger.metrics.
@@ -246,7 +248,8 @@ def run_equality_correctness_test_tp(model,
                                      batch_size: int,
                                      max_output_len: int,
                                      seed: int = 0,
-                                     temperature: float = 0.0):
+                                     temperature: float = 0.0,
+                                     logprobs: Optional[int] = None):
     """Helper method that compares the outputs of both the baseline LLM and
     the test LLM. It asserts greedy equality, e.g. that the outputs are exactly
     the same when temperature is zero.
@@ -259,7 +262,6 @@ def run_equality_correctness_test_tp(model,
     results = []
 
     prompts = [prompt for prompt, _ in zip(cycle(PROMPTS), range(batch_size))]
-
     for args, env in ((arg1, env1), (arg2, env2)):
         with RemoteOpenAIServer(model,
                                 args,
@@ -271,12 +273,14 @@ def run_equality_correctness_test_tp(model,
                                                    prompt=prompts,
                                                    max_tokens=max_output_len,
                                                    seed=seed,
-                                                   temperature=temperature)
+                                                   temperature=temperature,
+                                                   logprobs=logprobs)
 
             results.append({
                 "test":
                 "seeded_sampling",
                 "text": [choice.text for choice in completion.choices],
+                "logprobs": [choice.logprobs for choice in completion.choices],
                 "finish_reason":
                 [choice.finish_reason for choice in completion.choices],
                 "usage":
@@ -286,7 +290,15 @@ def run_equality_correctness_test_tp(model,
     n = len(results) // 2
     arg1_results = results[:n]
     arg2_results = results[n:]
+    # Separate logprobs to avoid asserting exact equality.
+    arg1_logprobs = [r.pop("logprobs") for r in arg1_results]
+    arg2_logprobs = [r.pop("logprobs") for r in arg2_results]
+
     for arg1_result, arg2_result in zip(arg1_results, arg2_results):
         assert arg1_result == arg2_result, (
             f"Results for {model=} are not the same with {arg1=} and {arg2=}. "
             f"{arg1_result=} != {arg2_result=}")
+    if logprobs:
+        for logs1, logs2 in zip(arg1_logprobs, arg2_logprobs):
+            for l1, l2 in zip(logs1, logs2):
+                assert l1.tokens == l2.tokens

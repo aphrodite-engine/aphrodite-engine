@@ -25,13 +25,14 @@ import pytest
 
 from aphrodite.modeling.layers.vocab_parallel_embedding import pad_vocab_size
 
+from ..utils import maybe_enable_chunked_prefill
 from .conftest import run_equality_correctness_test
 
 # main model
 MAIN_MODEL = "JackFram/llama-160m"
 
 # speculative model
-SPEC_MODEL = "ibm-fms/llama-160m-accelerator"
+SPEC_MODEL = "ibm-ai-platform/llama-160m-accelerator"
 
 # max. number of speculative tokens: this corresponds to
 # n_predict in the config.json of the speculator model.
@@ -47,9 +48,6 @@ PRECISION = "float32"
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
 
-        # Required for spec decode.
-        "use_v2_block_manager": True,
-
         # Print spec metrics.
         "disable_log_stats": False,
 
@@ -63,20 +61,24 @@ PRECISION = "float32"
 @pytest.mark.parametrize("baseline_llm_kwargs", [{}])
 @pytest.mark.parametrize("test_llm_kwargs", [
     {
-        "speculative_model": SPEC_MODEL,
+        "speculative_config": {
+            "model": SPEC_MODEL,
+        },
     },
 ])
 @pytest.mark.parametrize("output_len", [
     128,
 ])
-@pytest.mark.parametrize("batch_size", [1, 32])
+@pytest.mark.parametrize("batch_size", [4, 32])
 @pytest.mark.parametrize("seed", [1])
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 32])
 def test_mlp_e2e_greedy_correctness(aphrodite_runner, common_llm_kwargs,
                                     per_test_common_llm_kwargs,
                                     baseline_llm_kwargs, test_llm_kwargs,
                                     batch_size: int, output_len: int,
-                                    seed: int):
+                                    seed: int, prefill_chunk_size: int):
     """Verify greedy equality with different batch size."""
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
     run_equality_correctness_test(aphrodite_runner,
                                   common_llm_kwargs,
                                   per_test_common_llm_kwargs,
@@ -94,9 +96,6 @@ def test_mlp_e2e_greedy_correctness(aphrodite_runner, common_llm_kwargs,
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
 
-        # Required for spec decode.
-        "use_v2_block_manager": True,
-
         # Print spec metrics.
         "disable_log_stats": False,
 
@@ -110,37 +109,49 @@ def test_mlp_e2e_greedy_correctness(aphrodite_runner, common_llm_kwargs,
 @pytest.mark.parametrize("baseline_llm_kwargs", [{}])
 @pytest.mark.parametrize("test_llm_kwargs", [
     {
-        "speculative_model": SPEC_MODEL,
-        "disable_logprobs_during_spec_decoding": False,
+        "speculative_config": {
+            "model": SPEC_MODEL,
+            "disable_logprobs": False,
+        },
     },
     {
-        "speculative_model": SPEC_MODEL,
-        "disable_logprobs_during_spec_decoding": True,
+        "speculative_config": {
+            "model": SPEC_MODEL,
+            "disable_logprobs": True,
+        },
     },
 ])
 @pytest.mark.parametrize("output_len", [8])
 @pytest.mark.parametrize("batch_size", [8])
 @pytest.mark.parametrize("seed", [1])
 @pytest.mark.parametrize("logprobs", [1, 6])
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 4])
 def test_mlp_e2e_greedy_logprobs(aphrodite_runner, common_llm_kwargs,
                                  per_test_common_llm_kwargs,
                                  baseline_llm_kwargs, test_llm_kwargs,
                                  batch_size: int, output_len: int, seed: int,
-                                 logprobs: int):
+                                 logprobs: int, prefill_chunk_size: int):
     """Verify greedy equality with different batch size."""
-    run_equality_correctness_test(aphrodite_runner,
-                                  common_llm_kwargs,
-                                  per_test_common_llm_kwargs,
-                                  baseline_llm_kwargs,
-                                  test_llm_kwargs,
-                                  batch_size,
-                                  max_output_len=output_len,
-                                  seed=seed,
-                                  temperature=0.0,
-                                  logprobs=logprobs,
-                                  prompt_logprobs=logprobs,
-                                  disable_logprobs=test_llm_kwargs[
-                                      'disable_logprobs_during_spec_decoding'])
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
+    # NOTE Test is sensitive enough st if we don't enable chunked prefill
+    # scheduling on baseline too, we get slightly different logprobs, ending
+    # up sampling different tokens at the tail (ie top tokens don't change).
+    # TL;DR: sd+cp == org+cp but sd+cp != org..is this expected?
+    maybe_enable_chunked_prefill(prefill_chunk_size, baseline_llm_kwargs)
+    run_equality_correctness_test(
+        aphrodite_runner,
+        common_llm_kwargs,
+        per_test_common_llm_kwargs,
+        baseline_llm_kwargs,
+        test_llm_kwargs,
+        batch_size,
+        max_output_len=output_len,
+        seed=seed,
+        temperature=0.0,
+        logprobs=logprobs,
+        prompt_logprobs=logprobs,
+        disable_logprobs=test_llm_kwargs["speculative_config"]
+        ["disable_logprobs"])
 
 
 @pytest.mark.parametrize(
@@ -149,9 +160,6 @@ def test_mlp_e2e_greedy_logprobs(aphrodite_runner, common_llm_kwargs,
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
 
-        # Required for spec decode.
-        "use_v2_block_manager": True,
-
         # Print spec metrics.
         "disable_log_stats": False,
 
@@ -165,18 +173,23 @@ def test_mlp_e2e_greedy_logprobs(aphrodite_runner, common_llm_kwargs,
 @pytest.mark.parametrize("baseline_llm_kwargs", [{}])
 @pytest.mark.parametrize("test_llm_kwargs", [
     {
-        "speculative_model": SPEC_MODEL,
+        "speculative_config": {
+            "model": SPEC_MODEL,
+        },
     },
 ])
 @pytest.mark.parametrize("output_len", [2048])
 @pytest.mark.parametrize("batch_size", [1, 32])
 @pytest.mark.parametrize("seed", [1])
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 4])
 def test_mlp_e2e_acceptance_rate(aphrodite_runner, common_llm_kwargs,
                                  per_test_common_llm_kwargs,
                                  baseline_llm_kwargs, test_llm_kwargs,
-                                 batch_size: int, output_len: int, seed: int):
+                                 batch_size: int, output_len: int,
+                                 prefill_chunk_size: int, seed: int):
     """Verify acceptance rate with different batch size and large output 
     length."""
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
     run_equality_correctness_test(aphrodite_runner,
                                   common_llm_kwargs,
                                   per_test_common_llm_kwargs,
@@ -195,9 +208,6 @@ def test_mlp_e2e_acceptance_rate(aphrodite_runner, common_llm_kwargs,
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
 
-        # Required for spec decode.
-        "use_v2_block_manager": True,
-
         # Print spec metrics.
         "disable_log_stats": False,
 
@@ -207,22 +217,28 @@ def test_mlp_e2e_acceptance_rate(aphrodite_runner, common_llm_kwargs,
         # Main model
         "model_name": MAIN_MODEL,
 
-        # Speculative model
-        "speculative_model": SPEC_MODEL,
+        # Speculative config
+        "speculative_config": {
+            "model": SPEC_MODEL,
+        },
     }])
 @pytest.mark.parametrize("per_test_common_llm_kwargs", [{}])
 @pytest.mark.parametrize("baseline_llm_kwargs", [{"seed": 1}])
 @pytest.mark.parametrize("test_llm_kwargs", [{"seed": 5}])
 @pytest.mark.parametrize("output_len", [64])
 @pytest.mark.parametrize("batch_size", [1, 32])
-@pytest.mark.parametrize("temperature", [0.1, 1.0])
+@pytest.mark.parametrize("temperature", [1.0])
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 4])
 @pytest.mark.parametrize("seed", [1])
 def test_mlp_e2e_seeded_correctness(aphrodite_runner, common_llm_kwargs,
                                     per_test_common_llm_kwargs,
                                     baseline_llm_kwargs, test_llm_kwargs,
                                     batch_size: int, output_len: int,
-                                    temperature: float, seed: int):
+                                    temperature: float,
+                                    prefill_chunk_size: int, seed: int):
     """Verify seeded runs produce the same output."""
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
+    maybe_enable_chunked_prefill(prefill_chunk_size, baseline_llm_kwargs)
     run_equality_correctness_test(aphrodite_runner,
                                   common_llm_kwargs,
                                   per_test_common_llm_kwargs,
@@ -250,16 +266,13 @@ def test_mlp_e2e_seeded_correctness(aphrodite_runner, common_llm_kwargs,
 @pytest.mark.parametrize(
     "common_llm_kwargs",
     [{
-        "block_size": 8,
+        "block_size": 16,
         # 2 for small prompt, 256//8 for generated.
         "num_gpu_blocks_override": 2 + 256 // 8,
         "max_model_len": (2 + 256 // 8) * 8,
 
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
-
-        # Required for spec decode.
-        "use_v2_block_manager": True,
 
         # Precision
         "dtype": PRECISION,
@@ -271,7 +284,9 @@ def test_mlp_e2e_seeded_correctness(aphrodite_runner, common_llm_kwargs,
 @pytest.mark.parametrize("baseline_llm_kwargs", [{}])
 @pytest.mark.parametrize("test_llm_kwargs", [
     {
-        "speculative_model": SPEC_MODEL,
+        "speculative_config": {
+            "model": SPEC_MODEL,
+        },
     },
 ])
 @pytest.mark.parametrize(
@@ -281,14 +296,16 @@ def test_mlp_e2e_seeded_correctness(aphrodite_runner, common_llm_kwargs,
         128,
     ])
 @pytest.mark.parametrize("batch_size", [4])
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 4])
 @pytest.mark.parametrize("seed", [1])
 def test_mlp_e2e_greedy_correctness_with_preemption(
         aphrodite_runner, common_llm_kwargs, per_test_common_llm_kwargs,
         baseline_llm_kwargs, test_llm_kwargs, batch_size: int, output_len: int,
-        seed: int):
+        prefill_chunk_size: int, seed: int):
     """Verify greedy equality, even when some sequences are preempted mid-
     generation.
     """
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
     run_equality_correctness_test(aphrodite_runner,
                                   common_llm_kwargs,
                                   per_test_common_llm_kwargs,
@@ -303,16 +320,13 @@ def test_mlp_e2e_greedy_correctness_with_preemption(
 @pytest.mark.parametrize(
     "common_llm_kwargs",
     [{
-        "block_size": 8,
+        "block_size": 16,
         # 2 for small prompt, 256//8 for generated.
         "num_gpu_blocks_override": 2 + 256 // 8,
         "max_model_len": (2 + 256 // 8) * 8,
 
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
-
-        # Required for spec decode.
-        "use_v2_block_manager": True,
 
         # Precision
         "dtype": PRECISION,
@@ -324,7 +338,9 @@ def test_mlp_e2e_greedy_correctness_with_preemption(
 @pytest.mark.parametrize("baseline_llm_kwargs", [{}])
 @pytest.mark.parametrize("test_llm_kwargs", [
     {
-        "speculative_model": SPEC_MODEL,
+        "speculative_config": {
+            "model": SPEC_MODEL,
+        },
     },
 ])
 @pytest.mark.parametrize(
@@ -335,12 +351,14 @@ def test_mlp_e2e_greedy_correctness_with_preemption(
     ])
 @pytest.mark.parametrize("batch_size", [4])
 @pytest.mark.parametrize("seed", [1])
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 4])
 def test_mlp_e2e_greedy_correctness_with_padding(
         aphrodite_runner, common_llm_kwargs, per_test_common_llm_kwargs,
         baseline_llm_kwargs, test_llm_kwargs, batch_size: int, output_len: int,
-        seed: int):
+        prefill_chunk_size: int, seed: int):
     """Verify greedy equality when the vocab dimension is padded
     """
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
 
     # Default pad_to is 64, test model has vocab_size of 32000
     def patched_pad_vocab_size(vocab_size, pad_to=None):
@@ -366,9 +384,6 @@ def test_mlp_e2e_greedy_correctness_with_padding(
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
 
-        # Required for spec decode.
-        "use_v2_block_manager": True,
-
         # Precision
         "dtype": PRECISION,
 
@@ -381,8 +396,10 @@ def test_mlp_e2e_greedy_correctness_with_padding(
     "test_llm_kwargs",
     [
         {
-            "speculative_model": SPEC_MODEL,
-            "num_speculative_tokens": k,
+            "speculative_config": {
+                "model": SPEC_MODEL,
+                "num_speculative_tokens": k,
+            },
         }
         # Try a range of num. speculative tokens
         for k in range(1, 1 + MAX_SPEC_TOKENS)
@@ -394,14 +411,16 @@ def test_mlp_e2e_greedy_correctness_with_padding(
         # Use smaller output len for fast test.
         32,
     ])
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 4])
 @pytest.mark.parametrize("seed", [1])
 def test_mlp_different_k(aphrodite_runner, common_llm_kwargs,
                          per_test_common_llm_kwargs, baseline_llm_kwargs,
-                         test_llm_kwargs, batch_size: int, seed: int,
-                         output_len: int):
+                         test_llm_kwargs, batch_size: int,
+                         prefill_chunk_size: int, seed: int, output_len: int):
     """Verify that mlp speculative decoding produces exact equality
     to without spec decode with different values of num_speculative_tokens.
     """
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
     run_equality_correctness_test(aphrodite_runner,
                                   common_llm_kwargs,
                                   per_test_common_llm_kwargs,
@@ -418,9 +437,6 @@ def test_mlp_different_k(aphrodite_runner, common_llm_kwargs,
     [{
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
-
-        # Required for spec decode.
-        "use_v2_block_manager": True,
 
         # Precision
         "dtype": PRECISION,
@@ -430,11 +446,12 @@ def test_mlp_different_k(aphrodite_runner, common_llm_kwargs,
     }])
 @pytest.mark.parametrize("per_test_common_llm_kwargs", [{}])
 @pytest.mark.parametrize("baseline_llm_kwargs", [{}])
-@pytest.mark.parametrize("test_llm_kwargs",
-                         [{
-                             "speculative_model": SPEC_MODEL,
-                             "speculative_disable_by_batch_size": 4
-                         }])
+@pytest.mark.parametrize("test_llm_kwargs", [{
+    "speculative_config": {
+        "model": SPEC_MODEL,
+        "disable_by_batch_size": 4,
+    },
+}])
 @pytest.mark.parametrize("batch_size", [1, 5])
 @pytest.mark.parametrize(
     "output_len",
@@ -442,15 +459,21 @@ def test_mlp_different_k(aphrodite_runner, common_llm_kwargs,
         # Use smaller output len for fast test.
         32,
     ])
+# Speculative decoding is disabled when sequences reach decoding and the batch
+# consists of single-token requests. Hence we set `max_num_seqs`
+# >= `speculative_disable_by_batch_size` to test feature interaction.
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 4])
 @pytest.mark.parametrize("seed", [1])
 def test_mlp_disable_queue(aphrodite_runner, common_llm_kwargs,
                            per_test_common_llm_kwargs, baseline_llm_kwargs,
-                           test_llm_kwargs, batch_size: int, seed: int,
+                           test_llm_kwargs, batch_size: int,
+                           prefill_chunk_size: int, seed: int,
                            output_len: int):
     """Verify that mlp speculative decoding produces exact equality
     to without spec decode when speculation is disabled for large
     batch sizes.
     """
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
     run_equality_correctness_test(aphrodite_runner,
                                   common_llm_kwargs,
                                   per_test_common_llm_kwargs,
@@ -466,18 +489,18 @@ def test_mlp_disable_queue(aphrodite_runner, common_llm_kwargs,
     "common_llm_kwargs",
     [{
         "model_name": MAIN_MODEL,
+
         # Skip cuda graph recording for fast test.
         "enforce_eager": True,
-        # Required for spec decode.
-        "use_v2_block_manager": True,
-        "speculative_model": SPEC_MODEL,
     }])
 @pytest.mark.parametrize("per_test_common_llm_kwargs", [{}])
 @pytest.mark.parametrize("baseline_llm_kwargs", [{}])
-@pytest.mark.parametrize("test_llm_kwargs",
-                         [{
-                             "speculative_disable_mqa_scorer": True,
-                         }])
+@pytest.mark.parametrize("test_llm_kwargs", [{
+    "speculative_config": {
+        "model": SPEC_MODEL,
+        "disable_mqa_scorer": True,
+    },
+}])
 @pytest.mark.parametrize("batch_size", [1, 5])
 @pytest.mark.parametrize(
     "output_len",
@@ -485,14 +508,15 @@ def test_mlp_disable_queue(aphrodite_runner, common_llm_kwargs,
         # Use smaller output len for fast test.
         32,
     ])
+@pytest.mark.parametrize("prefill_chunk_size", [-1, 4])
 @pytest.mark.parametrize("seed", [1])
-def test_mqa_scorer(aphrodite_runner, common_llm_kwargs,
-                    per_test_common_llm_kwargs, baseline_llm_kwargs,
-                    test_llm_kwargs, batch_size: int, output_len: int,
-                    seed: int):
+def test_mqa_scorer(aphrodite_runner, common_llm_kwargs, per_test_common_llm_kwargs,
+                    baseline_llm_kwargs, test_llm_kwargs, batch_size: int,
+                    output_len: int, prefill_chunk_size: int, seed: int):
     """Verify that speculative decoding generates the same output 
     with batch expansion scorer and mqa scorer.
     """
+    maybe_enable_chunked_prefill(prefill_chunk_size, test_llm_kwargs)
     run_equality_correctness_test(aphrodite_runner,
                                   common_llm_kwargs,
                                   per_test_common_llm_kwargs,

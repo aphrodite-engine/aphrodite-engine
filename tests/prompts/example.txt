@@ -1,3 +1,8 @@
-Tell me your favorite story.
-Transformers have revolutionized almost all natural language processing (NLP) tasks but suffer from memory and computational complexity that scales quadratically with sequence length. In contrast, recurrent neural networks (RNNs) exhibit linear scaling in memory and computational requirements but struggle to match the same performance as Transformers due to limitations in parallelization and scalability. We propose a novel model architecture, Receptance Weighted Key Value (RWKV), that combines the efficient parallelizable training of Transformers with the efficient inference of RNNs. Our approach leverages a linear attention mechanism and allows us to formulate the model as either a Transformer or an RNN, which parallelizes computations during training and maintains constant computational and memory complexity during inference, leading to the first non-transformer architecture to be scaled to tens of billions of parameters. Our experiments reveal that RWKV performs on par with similarly sized Transformers, suggesting that future work can leverage this architecture to create more efficient models. This work presents a significant step towards reconciling the trade-offs between computational efficiency and model performance in sequence processing tasks.
-トランスフォーマーは、ほぼすべての自然言語処理に革命をもたらしました
+Aphrodite is a high-throughput and memory-efficient inference and serving engine for LLMs.
+Briefly describe the major milestones in the development of artificial intelligence from 1950 to 2020.
+Compare and contrast artificial intelligence with human intelligence in terms of processing information.
+Describe the basic components of a neural network and how it can be trained.
+Write a short story about a robot that dreams for the first time.
+Analyze the impact of the COVID-19 pandemic on global economic structures and future business models.
+Explain the cultural significance of the Mona Lisa painting, and how its perception might vary in Western versus Eastern societies.
+Translate the following English sentence into Japanese, French, and Swahili: 'The early bird catches the worm.'

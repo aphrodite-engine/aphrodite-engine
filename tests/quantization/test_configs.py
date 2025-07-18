@@ -4,7 +4,6 @@ Run `pytest tests/quantization/test_configs.py --forked`.
 """
 
 from dataclasses import dataclass
-from typing import Tuple
 
 import pytest
 
@@ -52,12 +51,13 @@ MODEL_ARG_EXPTYPES = [
 
 
 @pytest.mark.parametrize("model_arg_exptype", MODEL_ARG_EXPTYPES)
-def test_auto_gptq(model_arg_exptype: Tuple[str, None, str]) -> None:
+def test_auto_gptq(model_arg_exptype: tuple[str, None, str]) -> None:
     model_path, quantization_arg, expected_type = model_arg_exptype
 
     try:
         model_config = ModelConfig(model_path,
-                                   model_path,
+                                   task="auto",
+                                   tokenizer=model_path,
                                    tokenizer_mode="auto",
                                    trust_remote_code=False,
                                    seed=0,

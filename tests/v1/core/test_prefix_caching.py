@@ -5,17 +5,16 @@ from typing import Optional
 import pytest
 import torch
 
-from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import sha256
 from aphrodite.distributed.kv_events import AllBlocksCleared, BlockRemoved
 from aphrodite.multimodal.inputs import MultiModalKwargs, PlaceholderRange
+from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.common.utils import sha256
 from aphrodite.v1.core.block_pool import BlockPool
 from aphrodite.v1.core.kv_cache_manager import KVCacheManager, Request
 from aphrodite.v1.core.kv_cache_utils import (BlockHashType, KVCacheBlock,
-                                              hash_block_tokens)
+                                         hash_block_tokens)
 from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                             KVCacheGroupSpec,
-                                             SlidingWindowSpec)
+                                        KVCacheGroupSpec, SlidingWindowSpec)
 
 
 def make_request(request_id,

@@ -8,9 +8,9 @@ import pytest
 import torch
 
 from aphrodite.multimodal.inputs import (MultiModalBatchedField,
-                                         MultiModalFieldElem, MultiModalKwargs,
-                                         MultiModalKwargsItem,
-                                         MultiModalSharedField, NestedTensors)
+                                    MultiModalFieldElem, MultiModalKwargs,
+                                    MultiModalKwargsItem,
+                                    MultiModalSharedField, NestedTensors)
 from aphrodite.v1.serial_utils import MsgpackDecoder, MsgpackEncoder
 
 

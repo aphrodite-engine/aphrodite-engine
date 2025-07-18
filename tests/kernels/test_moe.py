@@ -104,7 +104,7 @@ def test_mixtral_moe(dtype: torch.dtype):
 
     # Generate input batch of dimensions [batch_size, seq_len, hidden_dim]
     hf_inputs = torch.randn((1, 64, config.hidden_size)).to(dtype).to("cuda")
-    # vLLM uses 1D query [num_tokens, hidden_dim]
+    # Aphrodite uses 1D query [num_tokens, hidden_dim]
     aphrodite_inputs = hf_inputs.flatten(0, 1)
 
     # Run forward passes for both MoE blocks

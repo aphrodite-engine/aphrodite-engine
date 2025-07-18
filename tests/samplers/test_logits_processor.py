@@ -3,7 +3,15 @@ import torch
 
 from aphrodite import SamplingParams
 
-MODELS = ["facebook/opt-125m"]
+MODELS = ["distilbert/distilgpt2"]
+
+
+@pytest.fixture(scope="function", autouse=True)
+def use_v0_only(monkeypatch):
+    """
+    This file tests V0 internals, so set APHRODITE_USE_V1=0.
+    """
+    monkeypatch.setenv('APHRODITE_USE_V1', '0')
 
 
 @pytest.mark.parametrize("model", MODELS)
@@ -17,14 +25,13 @@ def test_logits_processor_force_generate(
     with aphrodite_runner(model, dtype=dtype) as aphrodite_model:
         tokenizer = aphrodite_model.model.get_tokenizer()
         repeat_times = 2
-        enforced_answers = " aphrodite"
+        enforced_answers = " Aphrodite"
         aphrodite_token_ids = tokenizer.encode(enforced_answers,
                                           add_special_tokens=False)
         max_tokens = len(aphrodite_token_ids) * repeat_times
 
         def pick_aphrodite(token_ids, logits):
-            token_id = aphrodite_token_ids[len(token_ids) %
-                                           len(aphrodite_token_ids)]
+            token_id = aphrodite_token_ids[len(token_ids) % len(aphrodite_token_ids)]
             logits[token_id] = torch.finfo(logits.dtype).max
             return logits
 

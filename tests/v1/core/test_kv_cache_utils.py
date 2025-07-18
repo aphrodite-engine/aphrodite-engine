@@ -1,25 +1,23 @@
 import pytest
 import torch
 
-from aphrodite.common.config import (AphroditeConfig, ModelConfig,
-                                     SchedulerConfig)
+from aphrodite.common.config import ModelConfig, SchedulerConfig, AphroditeConfig
+from aphrodite.multimodal.inputs import MultiModalKwargs, PlaceholderRange
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.utils import GiB_bytes, sha256
-from aphrodite.multimodal.inputs import MultiModalKwargs, PlaceholderRange
 from aphrodite.v1.core.kv_cache_manager import KVCacheManager
 # disable yapf here as it formats differently than isort such that both fail
 # yapf: disable
 from aphrodite.v1.core.kv_cache_utils import (NONE_HASH, BlockHashType,
-                                              FreeKVCacheBlockQueue,
-                                              KVCacheBlock,
-                                              PrefixCachingMetrics,
-                                              estimate_max_model_len,
-                                              generate_block_hash_extra_keys,
-                                              hash_block_tokens,
-                                              hash_request_tokens,
-                                              unify_kv_cache_configs)
+                                         FreeKVCacheBlockQueue, KVCacheBlock,
+                                         PrefixCachingMetrics,
+                                         estimate_max_model_len,
+                                         generate_block_hash_extra_keys,
+                                         hash_block_tokens,
+                                         hash_request_tokens,
+                                         unify_kv_cache_configs)
 from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                             KVCacheGroupSpec, KVCacheTensor)
+                                        KVCacheGroupSpec, KVCacheTensor)
 from aphrodite.v1.metrics.stats import PrefixCacheStats
 from aphrodite.v1.request import Request
 

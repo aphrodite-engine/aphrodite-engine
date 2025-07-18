@@ -16,7 +16,7 @@ from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.core import EngineCore
 from aphrodite.v1.engine.core_client import (AsyncMPClient, EngineCoreClient,
-                                             SyncMPClient)
+                                        SyncMPClient)
 from aphrodite.v1.executor.abstract import Executor
 
 from ...distributed.conftest import MockSubscriber

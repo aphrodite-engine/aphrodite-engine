@@ -2,6 +2,8 @@
 tensor parallelism.
 """
 
+import json
+
 import openai
 import pytest
 import torch
@@ -19,19 +21,11 @@ SPEC_MODEL = "JackFram/llama-68m"
     [[
         # Skip cuda graph recording for fast test.
         "--enforce_eager",
-
-        # Required for spec decode.
-        "--use-v2-block-manager",
         "--tensor-parallel-size",
         "4",
     ]])
 @pytest.mark.parametrize("per_test_common_llm_kwargs", [
-    [
-        "--speculative-model",
-        f"{SPEC_MODEL}",
-        "--num-speculative-tokens",
-        "5",
-    ],
+    [],
 ])
 @pytest.mark.parametrize("baseline_llm_kwargs", [[]])
 @pytest.mark.parametrize(
@@ -39,8 +33,12 @@ SPEC_MODEL = "JackFram/llama-68m"
     [
         #TODO(wooyeon): add spec_draft_dp=2 case
         [
-            "--speculative-draft-tensor-parallel-size",
-            "1",
+            "--speculative_config",
+            json.dumps({
+                "model": f"{SPEC_MODEL}",
+                "num_speculative_tokens": 5,
+                "draft_tensor_parallel_size": 1,
+            }),
         ],
     ])
 @pytest.mark.parametrize("batch_size", [2])
@@ -71,9 +69,6 @@ def test_draft_model_tp_lt_target_model_tp4(common_llm_kwargs,
 
         # Skip cuda graph recording for fast test.
         "--enforce-eager",
-
-        # Required for spec decode.
-        "--use-v2-block-manager",
         "--tensor-parallel-size",
         "4",
     ]])
@@ -83,15 +78,14 @@ def test_draft_model_tp_lt_target_model_tp4(common_llm_kwargs,
     "test_llm_kwargs",
     [
         [
-            "--speculative-model",
-            f"{SPEC_MODEL}",
-            "--num-speculative-tokens",
-            "5",
-
-            # Artificially limit the draft model max model len; this forces vLLM
+            # Artificially limit the draft model max model len; this forces Aphrodite
             # to skip speculation once the sequences grow beyond 32-k tokens.
-            "--speculative-max-model-len",
-            "32",
+            "--speculative_config",
+            json.dumps({
+                "model": f"{SPEC_MODEL}",
+                "num_speculative_tokens": 5,
+                "max_model_len": 32,
+            }),
         ],
     ])
 @pytest.mark.parametrize("batch_size", [8])
@@ -114,7 +108,8 @@ def test_skip_speculation(common_llm_kwargs, per_test_common_llm_kwargs,
 
     TODO: fix it to pass without raising Error. (#5814)
     """
-    with pytest.raises(openai.APIConnectionError):
+    with pytest.raises(
+        (openai.APIConnectionError, openai.InternalServerError)):
         run_equality_correctness_test_tp(MAIN_MODEL,
                                          common_llm_kwargs,
                                          per_test_common_llm_kwargs,

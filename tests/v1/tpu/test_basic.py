@@ -57,8 +57,8 @@ def test_basic(
                 gpu_memory_utilization=0.7,
                 max_num_seqs=max_num_seqs,
                 tensor_parallel_size=tensor_parallel_size) as aphrodite_model:
-            aphrodite_outputs = aphrodite_model.generate_greedy(
-                example_prompts, max_tokens)
+            aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts,
+                                                      max_tokens)
         output = aphrodite_outputs[0][1]
 
         assert "1024" in output or "0, 1" in output

@@ -1,6 +1,6 @@
 from huggingface_hub import snapshot_download
 
-from aphrodite import AphroditeEngine, EngineArgs, SamplingParams
+from aphrodite import EngineArgs, AphroditeEngine, SamplingParams
 from aphrodite.lora.request import LoRARequest
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 

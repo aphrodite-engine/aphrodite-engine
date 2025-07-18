@@ -1,4 +1,4 @@
-from ..endpoints.openai.test_oot_registration import (
+from ..entrypoints.openai.test_oot_registration import (
     run_and_test_dummy_opt_api_server)
 
 

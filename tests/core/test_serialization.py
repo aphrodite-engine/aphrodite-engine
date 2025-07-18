@@ -1,7 +1,7 @@
 import msgspec
 
-from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.executor.msgspec_utils import decode_hook, encode_hook
+from aphrodite.common.sequence import ExecuteModelRequest
 
 from ..spec_decode.utils import create_batch
 

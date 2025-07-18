@@ -1,10 +1,9 @@
-from typing import List, Optional
+from typing import Optional
 
 import pytest
 
 from aphrodite.processing.block.interfaces import Block, BlockAllocator
-from aphrodite.processing.block.naive_block import (NaiveBlock,
-                                                    NaiveBlockAllocator)
+from aphrodite.processing.block.naive_block import NaiveBlock, NaiveBlockAllocator
 
 
 class TestNaiveBlockAllocator:
@@ -13,7 +12,7 @@ class TestNaiveBlockAllocator:
     def create_allocate_lambda(allocate_type: str,
                                allocator: NaiveBlockAllocator,
                                prev_block: Optional[Block],
-                               token_ids: List[int]):
+                               token_ids: list[int]):
         if allocate_type == "immutable":
             allocate_block = lambda: allocator.allocate_immutable_block(
                 prev_block=prev_block, token_ids=token_ids)

@@ -6,18 +6,37 @@ prefill requests are chunked.
 
 Run `pytest tests/models/test_chunked_prefill.py`.
 """
-import os
-from contextlib import nullcontext
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import pytest
+
+from aphrodite.platforms import current_platform
+from aphrodite.common.utils import STR_BACKEND_ENV_VAR
 
 from ..models.utils import check_logprobs_close, check_outputs_equal
 from ..utils import multi_gpu_test
 
+if TYPE_CHECKING:
+    from .conftest import HfRunner, AphroditeRunner
+
 MODELS = [
     "facebook/opt-125m",
-    "meta-llama/Llama-2-7b-hf",
+    "meta-llama/Llama-3.2-1B-Instruct",
 ]
+
+
+@pytest.fixture(scope="function", autouse=True)
+def use_v0_only(monkeypatch: pytest.MonkeyPatch):
+    """
+    Since this module is V0 only, set APHRODITE_USE_V1=0 for
+    all tests in the file.
+    """
+    with monkeypatch.context() as m:
+        m.setenv('APHRODITE_USE_V1', '0')
+        yield
 
 
 @pytest.mark.parametrize("model", MODELS)
@@ -28,9 +47,10 @@ MODELS = [
 # NOTE: Increasing this in this suite will fail CI because we currently cannot
 # reset distributed env properly. Use a value > 1 just when you test.
 @pytest.mark.parametrize("tensor_parallel_size", [1])
+@pytest.mark.parametrize("attention_backend", ["FLASHINFER", "FLASH_ATTN"])
 def test_models(
-    hf_runner,
-    aphrodite_runner,
+    hf_runner: HfRunner,
+    aphrodite_runner: AphroditeRunner,
     example_prompts,
     model: str,
     dtype: str,
@@ -38,89 +58,102 @@ def test_models(
     chunked_prefill_token_size: int,
     enforce_eager: bool,
     tensor_parallel_size: int,
+    attention_backend: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    Checks exact match decode between huggingface model and aphrodite runner
-    with chunked prefill.
+    Checks exact match decode between huggingface model and aphrodite runner with
+    chunked prefill.
     """
-    max_num_seqs = chunked_prefill_token_size
-    max_num_batched_tokens = chunked_prefill_token_size
+    with monkeypatch.context() as m:
+        m.setenv(STR_BACKEND_ENV_VAR, attention_backend)
 
-    with hf_runner(model, dtype=dtype) as hf_model:
-        hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
+        max_num_seqs = chunked_prefill_token_size
+        max_num_batched_tokens = chunked_prefill_token_size
 
-    with aphrodite_runner(
-            model,
-            dtype=dtype,
-            max_num_batched_tokens=max_num_batched_tokens,
-            enable_chunked_prefill=True,
-            tensor_parallel_size=tensor_parallel_size,
-            enforce_eager=enforce_eager,
-            max_num_seqs=max_num_seqs,
-    ) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.generate_greedy(
-            example_prompts, max_tokens)
+        with hf_runner(model, dtype=dtype) as hf_model:
+            hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
 
-    check_outputs_equal(
-        outputs_0_lst=hf_outputs,
-        outputs_1_lst=aphrodite_outputs,
-        name_0="hf",
-        name_1="aphrodite",
-    )
+        with aphrodite_runner(
+                model,
+                dtype=dtype,
+                max_num_batched_tokens=max_num_batched_tokens,
+                enable_chunked_prefill=True,
+                tensor_parallel_size=tensor_parallel_size,
+                enforce_eager=enforce_eager,
+                max_num_seqs=max_num_seqs,
+        ) as aphrodite_model:
+            aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts,
+                                                      max_tokens)
+
+        check_outputs_equal(
+            outputs_0_lst=hf_outputs,
+            outputs_1_lst=aphrodite_outputs,
+            name_0="hf",
+            name_1="aphrodite",
+        )
 
 
 @multi_gpu_test(num_gpus=2)
 @pytest.mark.parametrize("distributed_executor_backend", ["ray", "mp"])
 @pytest.mark.parametrize("model", MODELS)
+@pytest.mark.parametrize("attention_backend", ["FLASHINFER", "FLASH_ATTN"])
 def test_models_distributed(
-    hf_runner,
-    aphrodite_runner,
+    hf_runner: HfRunner,
+    aphrodite_runner: AphroditeRunner,
     example_prompts,
     model: str,
     distributed_executor_backend: str,
+    attention_backend: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if (model == "meta-llama/Llama-2-7b-hf"
-            and distributed_executor_backend == "ray"):
-        # test ray adag
-        os.environ['APHRODITE_USE_RAY_SPMD_WORKER'] = "1"
-        os.environ['APHRODITE_USE_RAY_COMPILED_DAG'] = "1"
+    with monkeypatch.context() as m:
+        m.setenv(STR_BACKEND_ENV_VAR, attention_backend)
+        if (model == "meta-llama/Llama-3.2-1B-Instruct"
+                and distributed_executor_backend == "ray"):
+            # test Ray Compiled Graph
+            m.setenv("APHRODITE_USE_RAY_SPMD_WORKER", "1")
+            m.setenv("APHRODITE_USE_RAY_COMPILED_DAG", "1")
 
-    dtype = "half"
-    max_tokens = 5
-    chunked_prefill_token_size = 16
+        dtype = "half"
+        max_tokens = 5
+        chunked_prefill_token_size = 16
 
-    # Add a chunked prefill config.
-    max_num_seqs = min(chunked_prefill_token_size, 256)
-    assert chunked_prefill_token_size != -1
-    enable_chunked_prefill = True
-    max_num_batched_tokens = chunked_prefill_token_size
+        # Add a chunked prefill config.
+        max_num_seqs = min(chunked_prefill_token_size, 256)
+        assert chunked_prefill_token_size != -1
+        enable_chunked_prefill = True
+        max_num_batched_tokens = chunked_prefill_token_size
 
-    # NOTE: take care of the order. run Aphrodite first, and then run HF.
-    # Aphrodite needs a fresh new process without cuda initialization.
-    # if we run HF first, the cuda initialization will be done and it
-    # will hurt multiprocessing backend with fork method (the default method).
+        # NOTE: take care of the order. run Aphrodite first, and then run HF.
+        # Aphrodite needs a fresh new process without cuda initialization.
+        # if we run HF first, the cuda initialization will be done and it
+        # will hurt multiprocessing backend with
+        # fork method (the default method).
 
-    with aphrodite_runner(
-            model,
-            dtype=dtype,
-            tensor_parallel_size=2,
-            max_num_seqs=max_num_seqs,
-            enable_chunked_prefill=enable_chunked_prefill,
-            max_num_batched_tokens=max_num_batched_tokens,
-            distributed_executor_backend=distributed_executor_backend,
-    ) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.generate_greedy(
-            example_prompts, max_tokens)
+        with aphrodite_runner(
+                model,
+                dtype=dtype,
+                tensor_parallel_size=2,
+                max_num_seqs=max_num_seqs,
+                enable_chunked_prefill=enable_chunked_prefill,
+                max_num_batched_tokens=max_num_batched_tokens,
+                distributed_executor_backend=distributed_executor_backend,
+        ) as aphrodite_model:
+            aphrodite_outputs = aphrodite_model.generate_greedy(
+                example_prompts,
+                max_tokens,
+            )
 
-    with hf_runner(model, dtype=dtype) as hf_model:
-        hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
+        with hf_runner(model, dtype=dtype) as hf_model:
+            hf_outputs = hf_model.generate_greedy(example_prompts, max_tokens)
 
-    check_outputs_equal(
-        outputs_0_lst=hf_outputs,
-        outputs_1_lst=aphrodite_outputs,
-        name_0="hf",
-        name_1="aphrodite",
-    )
+        check_outputs_equal(
+            outputs_0_lst=hf_outputs,
+            outputs_1_lst=aphrodite_outputs,
+            name_0="hf",
+            name_1="aphrodite",
+        )
 
 
 @pytest.mark.parametrize(
@@ -138,7 +171,7 @@ def test_models_distributed(
 # the async postprocessor
 @pytest.mark.parametrize("disable_async_output_proc", [True])
 def test_models_with_fp8_kv_cache(
-    aphrodite_runner,
+    aphrodite_runner: AphroditeRunner,
     example_prompts,
     kv_cache_dtype: str,
     model: str,
@@ -196,18 +229,20 @@ def test_models_with_fp8_kv_cache(
 # NOTE: Increasing this in this suite will fail CI because we currently cannot
 # reset distributed env properly. Use a value > 1 just when you test.
 @pytest.mark.parametrize("tensor_parallel_size", [1])
+@pytest.mark.parametrize("dtype", ["half"])
 def test_with_prefix_caching(
-    aphrodite_runner,
+    aphrodite_runner: AphroditeRunner,
     max_tokens: int,
     enforce_eager: bool,
     chunk_size: int,
     tensor_parallel_size: int,
+    dtype: str,
 ) -> None:
     """
     Checks exact match decode with and without prefix caching
     with chunked prefill enabled.
     """
-    model = "meta-llama/Llama-2-7b-chat-hf"
+    model = "meta-llama/Llama-3.2-1B-Instruct"
     # The common prompt has 142 tokens with Llama-2 tokenizer.
     common_prompt = "You are a helpful AI assistant " * 20
     unique_prompts = [
@@ -219,11 +254,10 @@ def test_with_prefix_caching(
 
     max_num_batched_tokens = max_num_seqs = chunk_size
     outputs = {}  # type: ignore
-    check_result = True
     for enable in (True, False):
         with aphrodite_runner(
                 model,
-                dtype="half",
+                dtype=dtype,
                 max_num_batched_tokens=max_num_batched_tokens,
                 enable_chunked_prefill=True,
                 enable_prefix_caching=enable,
@@ -231,22 +265,74 @@ def test_with_prefix_caching(
                 enforce_eager=enforce_eager,
                 max_num_seqs=max_num_seqs,
         ) as aphrodite_model:
-            # It should fail when prefix caching is enable and chunk
-            # size is not a multiple of block size (16).
-            should_fail = chunk_size % 16 != 0 and enable
-            check_result &= not should_fail
             outputs[enable] = []
-            # Send the request one-by-one to ensure the cache is populated.
-            with pytest.raises(ValueError) if should_fail else nullcontext():
-                for prompt in full_prompts:
-                    outputs[enable] += aphrodite_model.generate_greedy([prompt],
-                                                                  max_tokens)
+            for prompt in full_prompts:
+                outputs[enable] += aphrodite_model.generate_greedy(
+                    [prompt],
+                    max_tokens,
+                )
 
-    # Check results only if we did not expect a failure.
-    if check_result:
-        check_outputs_equal(
-            outputs_0_lst=outputs[False],
-            outputs_1_lst=outputs[True],
-            name_0="w/o prefix caching",
-            name_1="with prefix caching",
-        )
+    check_outputs_equal(
+        outputs_0_lst=outputs[False],
+        outputs_1_lst=outputs[True],
+        name_0="w/o prefix caching",
+        name_1="with prefix caching",
+    )
+
+
+@pytest.mark.parametrize("model", ["facebook/opt-125m"])
+@pytest.mark.parametrize("dtype", ["bfloat16", "half"])
+@pytest.mark.parametrize("max_tokens", [32])
+@pytest.mark.parametrize("chunked_prefill_token_size", [1, 4, 16])
+@pytest.mark.parametrize("enforce_eager", [False])
+@pytest.mark.parametrize("attention_backend", ["TORCH_SDPA"])
+@pytest.mark.cpu_model
+@pytest.mark.skipif(not current_platform.is_cpu(), reason="CPU only")
+def test_models_cpu(
+    hf_runner: HfRunner,
+    aphrodite_runner: AphroditeRunner,
+    example_prompts,
+    model: str,
+    dtype: str,
+    max_tokens: int,
+    chunked_prefill_token_size: int,
+    enforce_eager: bool,
+    attention_backend: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_models(
+        hf_runner,
+        aphrodite_runner,
+        example_prompts,
+        model,
+        dtype,
+        max_tokens,
+        chunked_prefill_token_size,
+        enforce_eager,
+        1,
+        attention_backend,
+        monkeypatch,
+    )
+
+
+@pytest.mark.parametrize("max_tokens", [16])
+@pytest.mark.parametrize("enforce_eager", [False])
+@pytest.mark.parametrize("chunk_size", [30, 32])
+@pytest.mark.parametrize("dtype", ["bfloat16", "half"])
+@pytest.mark.cpu_model
+@pytest.mark.skipif(not current_platform.is_cpu(), reason="CPU only")
+def test_with_prefix_caching_cpu(
+    aphrodite_runner: AphroditeRunner,
+    max_tokens: int,
+    enforce_eager: bool,
+    chunk_size: int,
+    dtype: str,
+) -> None:
+    test_with_prefix_caching(
+        aphrodite_runner,
+        max_tokens,
+        enforce_eager,
+        chunk_size,
+        1,
+        dtype,
+    )
