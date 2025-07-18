@@ -7,18 +7,33 @@ purposes.
 import argparse
 import json
 import ssl
+from collections.abc import Sequence
+from typing import Optional, Union, get_args
 
 from aphrodite.common.utils import FlexibleArgumentParser
-from aphrodite.endpoints.openai.serving_engine import (LoRAModulePath,
+from aphrodite.endpoints.chat_utils import (ChatTemplateContentFormatOption,
+                                            validate_chat_template)
+from aphrodite.endpoints.openai.serving_models import (LoRAModulePath,
                                                        PromptAdapterPath)
 from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
-from aphrodite.engine.args_tools import AsyncEngineArgs
+from aphrodite.engine.args_tools import AsyncEngineArgs, optional_type
 
 
 class LoRAParserAction(argparse.Action):
 
-    def __call__(self, parser, namespace, values, option_string=None):
-        lora_list = []
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Optional[Union[str, Sequence[str]]],
+        option_string: Optional[str] = None,
+    ):
+        if values is None:
+            values = []
+        if isinstance(values, str):
+            raise TypeError("Expected values to be a list")
+
+        lora_list: list[LoRAModulePath] = []
         for item in values:
             if item in [None, '']:  # Skip if item is None or empty string
                 continue
@@ -40,10 +55,22 @@ class LoRAParserAction(argparse.Action):
         setattr(namespace, self.dest, lora_list)
 
 
+
 class PromptAdapterParserAction(argparse.Action):
 
-    def __call__(self, parser, namespace, values, option_string=None):
-        adapter_list = []
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Optional[Union[str, Sequence[str]]],
+        option_string: Optional[str] = None,
+    ):
+        if values is None:
+            values = []
+        if isinstance(values, str):
+            raise TypeError("Expected values to be a list")
+
+        adapter_list: list[PromptAdapterPath] = []
         for item in values:
             name, path = item.split('=')
             adapter_list.append(PromptAdapterPath(name, path))
@@ -59,6 +86,9 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
         default="info",
         choices=['debug', 'info', 'warning', 'error', 'critical', 'trace'],
         help="log level for uvicorn")
+    parser.add_argument("--disable-uvicorn-access-log",
+                        action="store_true",
+                        help="Disable uvicorn access log.")
     parser.add_argument("--allow-credentials",
                         action="store_true",
                         help="allow credentials")
@@ -110,6 +140,18 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
                         help="The file path to the chat template, "
                         "or the template in single-line form "
                         "for the specified model")
+    parser.add_argument(
+        '--chat-template-content-format',
+        type=str,
+        default="auto",
+        choices=get_args(ChatTemplateContentFormatOption),
+        help='The format to render message content within a chat template.'
+        '\n\n'
+        '* "string" will render the content as a string. '
+        'Example: ``"Hello World"``\n'
+        '* "openai" will render the content as a list of dictionaries, '
+        'similar to OpenAI schema. '
+        'Example: ``[{"type": "text", "text": "Hello world!"}]``')
     parser.add_argument("--response-role",
                         type=str,
                         default="assistant",
@@ -127,6 +169,11 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
                         type=str,
                         default=None,
                         help="The CA certificates file")
+    parser.add_argument(
+        "--enable-ssl-refresh",
+        action="store_true",
+        default=False,
+        help="Refresh SSL Context when SSL certificate files change")
     parser.add_argument(
         "--ssl-cert-reqs",
         type=int,
@@ -151,16 +198,6 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
         "If a class is provided, Aphrodite will add it to the server "
         "using app.add_middleware(). ")
     parser.add_argument(
-        "--launch-kobold-api",
-        action="store_true",
-        help="Launch the Kobold API server alongside the OpenAI server")
-    parser.add_argument("--max-log-len",
-                        type=int,
-                        default=0,
-                        help="Max number of prompt characters or prompt "
-                        "ID numbers being printed in log."
-                        "\n\nDefault: 0")
-    parser.add_argument(
         "--return-tokens-as-token-ids",
         action="store_true",
         help="When --max-logprobs is specified, represents single tokens as"
@@ -176,6 +213,11 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
         action="store_true",
         help="If specified, will allow the model to be switched inline "
         "in the same process as the OpenAI frontend server.")
+    parser.add_argument(
+        "--enable-request-id-headers",
+        action="store_true",
+        help="If specified, API server will add X-Request-Id header to "
+        "responses. Caution: this hurts performance at high QPS.")
     parser.add_argument(
         "--enable-auto-tool-choice",
         action="store_true",
@@ -204,7 +246,47 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
         "can be referenced in --tool-call-parser.")
 
     parser = AsyncEngineArgs.add_cli_args(parser)
+
+    parser.add_argument('--max-log-len',
+                        type=int,
+                        default=0,
+                        help='Max number of prompt characters or prompt '
+                        'ID numbers being printed in log.'
+                        ' The default of 0 means no logs.')
+    parser.add_argument(
+        "--disable-fastapi-docs",
+        action='store_true',
+        default=False,
+        help="Disable FastAPI's OpenAPI schema, Swagger UI, and ReDoc endpoint."
+    )
+    parser.add_argument(
+        "--enable-prompt-tokens-details",
+        action='store_true',
+        default=False,
+        help="If set to True, enable prompt_tokens_details in usage.")
+    parser.add_argument(
+        "--enable-server-load-tracking",
+        action='store_true',
+        default=False,
+        help=
+        "If set to True, enable tracking server_load_metrics in the app state."
+    )
+
     return parser
+
+
+def validate_parsed_serve_args(args: argparse.Namespace):
+    """Quick checks for model run args that raise prior to loading."""
+    if hasattr(args, "subparser") and args.subparser != "run":
+        return
+
+    # Ensure that the chat template is valid; raises if it likely isn't
+    validate_chat_template(args.chat_template)
+
+    # Enable auto tool needs a tool call parser to be valid
+    if args.enable_auto_tool_choice and not args.tool_call_parser:
+        raise TypeError("Error: --enable-auto-tool-choice requires "
+                        "--tool-call-parser")
 
 
 def create_parser_for_docs() -> FlexibleArgumentParser:

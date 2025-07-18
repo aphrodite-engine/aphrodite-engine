@@ -10,7 +10,7 @@ from ....utils import multi_gpu_test
     "llava-hf/llava-v1.6-mistral-7b-hf",
     "facebook/chameleon-7b",
 ])
-def test_models(hf_runner, vllm_runner, image_assets,
+def test_models(hf_runner, aphrodite_runner, image_assets,
                 distributed_executor_backend, model) -> None:
 
     dtype = "half"
@@ -29,7 +29,7 @@ def test_models(hf_runner, vllm_runner, image_assets,
 
     run_test(
         hf_runner,
-        vllm_runner,
+        aphrodite_runner,
         image_assets,
         model=models[0],
         # So that LLaVA-NeXT processor may return nested list

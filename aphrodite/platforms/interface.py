@@ -1,18 +1,64 @@
 import enum
 import platform
-from typing import NamedTuple, Optional, Tuple, Union
+import random
+from platform import uname
+from typing import TYPE_CHECKING, NamedTuple, Optional, Tuple, Union
 
+import numpy as np
 import torch
+from loguru import logger
+
+from aphrodite.inputs import ProcessorInputs, PromptType
+
+if TYPE_CHECKING:
+    from aphrodite.common.config import AphroditeConfig, ModelConfig
+    from aphrodite.common.pooling_params import PoolingParams
+    from aphrodite.common.sampling_params import SamplingParams
+    from aphrodite.common.utils import FlexibleArgumentParser
+    from aphrodite.lora.request import LoRARequest
+else:
+    ModelConfig = None
+    AphroditeConfig = None
+    LoRARequest = None
+    PoolingParams = None
+    SamplingParams = None
+    FlexibleArgumentParser = None
+
+
+
+def in_wsl() -> bool:
+    # Reference: https://github.com/microsoft/WSL/issues/4071
+    return "microsoft" in " ".join(uname()).lower()
+
+
+class _Backend(enum.Enum):
+    FLASH_ATTN = enum.auto()
+    FLASH_ATTN_APHRODITE_V1 = enum.auto()
+    TRITON_ATTN_APHRODITE_V1 = enum.auto()
+    XFORMERS = enum.auto()
+    ROCM_FLASH = enum.auto()
+    ROCM_AITER_MLA = enum.auto()
+    TORCH_SDPA = enum.auto()
+    FLASHINFER = enum.auto()
+    TRITON_MLA = enum.auto()  # Supported by V1
+    FLASHMLA = enum.auto()  # Supported by V1
+    HPU_ATTN = enum.auto()
+    PALLAS = enum.auto()
+    PALLAS_APHRODITE_V1 = enum.auto()
+    IPEX = enum.auto()
+    BLOCK_SPARSE_FLASH_ATTN = enum.auto()
+    NO_ATTENTION = enum.auto()
 
 
 class PlatformEnum(enum.Enum):
     CUDA = enum.auto()
     ROCM = enum.auto()
     TPU = enum.auto()
+    HPU = enum.auto()
     XPU = enum.auto()
     CPU = enum.auto()
     NEURON = enum.auto()
-    OPENVINO = enum.auto()
+    OOT = enum.auto()
     UNSPECIFIED = enum.auto()
 
 
@@ -43,6 +89,35 @@ class DeviceCapability(NamedTuple):
 
 class Platform:
     _enum: PlatformEnum
+    device_name: str
+    device_type: str
+
+    # available dispatch keys:
+    # check https://github.com/pytorch/pytorch/blob/313dac6c1ca0fa0cde32477509cce32089f8532a/torchgen/model.py#L134 # noqa
+    # use "CPU" as a fallback for platforms not registered in PyTorch
+    dispatch_key: str = "CPU"
+
+    # available ray device keys:
+    # https://github.com/ray-project/ray/blob/10ba5adadcc49c60af2c358a33bb943fb491a171/python/ray/_private/ray_constants.py#L438 # noqa
+    # empty string means the device does not support ray
+    ray_device_key: str = ""
+
+    # platform-agnostic way to specify the device control environment variable,
+    # .e.g. CUDA_VISIBLE_DEVICES for CUDA.
+    # hint: search for "get_visible_accelerator_ids_env_var" in
+    # https://github.com/ray-project/ray/tree/master/python/ray/_private/accelerators # noqa
+    device_control_env_var: str = "APHRODITE_DEVICE_CONTROL_ENV_VAR_PLACEHOLDER"
+
+    # The torch.compile backend for compiling simple and
+    # standalone functions. The default value is "inductor" to keep
+    # the same behavior as PyTorch.
+    # NOTE: for the forward part of the model, Aphrodite has another separate
+    # compilation strategy.
+    simple_compile_backend: str = "inductor"
+
+    supported_quantization: list[str] = []
+
+    additional_env_vars: list[str] = []
 
     def is_cuda(self) -> bool:
         return self._enum == PlatformEnum.CUDA
@@ -53,6 +128,9 @@ class Platform:
     def is_tpu(self) -> bool:
         return self._enum == PlatformEnum.TPU
 
+    def is_hpu(self) -> bool:
+        return self._enum == PlatformEnum.HPU
+
     def is_xpu(self) -> bool:
         return self._enum == PlatformEnum.XPU
 
@@ -62,12 +140,23 @@ class Platform:
     def is_neuron(self) -> bool:
         return self._enum == PlatformEnum.NEURON
 
-    def is_openvino(self) -> bool:
-        return self._enum == PlatformEnum.OPENVINO
+    def is_out_of_tree(self) -> bool:
+        return self._enum == PlatformEnum.OOT
 
     def is_cuda_alike(self) -> bool:
         """Stateless version of :func:`torch.cuda.is_available`."""
         return self._enum in (PlatformEnum.CUDA, PlatformEnum.ROCM)
+
+    def is_sleep_mode_available(self) -> bool:
+        return self._enum == PlatformEnum.CUDA
+
+    @classmethod
+    def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
+                             dtype: torch.dtype, kv_cache_dtype: Optional[str],
+                             block_size: int, use_v1: bool,
+                             use_mla: bool) -> str:
+        """Get the attention backend class of a device."""
+        return ""
 
     @classmethod
     def get_device_capability(
@@ -106,8 +195,20 @@ class Platform:
         raise NotImplementedError
 
     @classmethod
+    def get_device_uuid(cls, device_id: int = 0) -> str:
+        """Get the uuid of a device, e.g. the PCI bus ID."""
+        raise NotImplementedError
+
+    @classmethod
     def get_device_total_memory(cls, device_id: int = 0) -> int:
         """Get the total memory of a device in bytes."""
+        raise NotImplementedError
+
+    @classmethod
+    def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
+        """
+        Check if the current platform supports async output.
+        """
         raise NotImplementedError
 
     @classmethod
@@ -120,6 +221,70 @@ class Platform:
         """
         return torch.inference_mode(mode=True)
 
+    @classmethod
+    def seed_everything(cls, seed: Optional[int] = None) -> None:
+        """
+        Set the seed of each random module.
+        `torch.manual_seed` will set seed on all devices.
+
+        Loosely based on: https://github.com/Lightning-AI/pytorch-lightning/blob/2.4.0/src/lightning/fabric/utilities/seed.py#L20
+        """
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+
+    @classmethod
+    def pre_register_and_update(cls,
+                                parser: Optional[FlexibleArgumentParser] = None
+                                ) -> None:
+        """
+        Do some pre-registration or update action for the current platform.
+
+        This function is called before global AphroditeConfig is initialized or
+        cli arguments are parsed. It's used for out-of-tree platforms to
+        register or update the configuration.
+
+        For example, the out-of-tree quantization config can be imported and
+        registered here dynamically.
+        """
+        pass
+
+    @classmethod
+    def check_and_update_config(cls, aphrodite_config: AphroditeConfig) -> None:
+        """
+        Check and update the configuration for the current platform.
+
+        It can raise an exception if the configuration is not compatible with
+        the current platform, or it can update the configuration to make it
+        compatible with the current platform.
+
+        The config is passed by reference, so it can be modified in place.
+        """
+        pass
+
+    @classmethod
+    def verify_model_arch(cls, model_arch: str) -> None:
+        """
+        Verify whether the current platform supports the specified model
+        architecture.
+
+        - This will raise an Error or Warning based on the model support on
+        the current platform.
+        - By default all models are considered supported.
+        """
+        pass
+
+    @classmethod
+    def verify_quantization(cls, quant: str) -> None:
+        """
+        Verify whether the quantization is supported by the current platform.
+        """
+        if cls.supported_quantization and \
+            quant not in cls.supported_quantization:
+            raise ValueError(
+                f"{quant} quantization is currently not supported in "
+                f"{cls.device_name}.")
 
     @classmethod
     def get_cpu_architecture(cls) -> CpuArchEnum:
@@ -138,6 +303,123 @@ class Platform:
 
         return CpuArchEnum.OTHER if machine else CpuArchEnum.UNKNOWN
 
+    @classmethod
+    def is_pin_memory_available(cls) -> bool:
+        """Checks whether pin memory is available on the current platform."""
+        if in_wsl():
+            # Pinning memory in WSL is not supported.
+            # https://docs.nvidia.com/cuda/wsl-user-guide/index.html#known-limitations-for-linux-cuda-applications
+            logger.warning("Using 'pin_memory=False' as WSL is detected. "
+                           "This may slow down the performance.")
+            return False
+        return True
+
+    @classmethod
+    def get_current_memory_usage(cls,
+                                 device: Optional[torch.types.Device] = None
+                                 ) -> float:
+        """
+        Return the memory usage in bytes.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def get_punica_wrapper(cls) -> str:
+        """
+        Return the punica wrapper for current platform.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def get_device_communicator_cls(cls) -> str:
+        """
+        Get device specific communicator class for distributed communication.
+        """
+        return "aphrodite.distributed.device_communicators.base_device_communicator.DeviceCommunicatorBase"  # noqa
+
+    @classmethod
+    def supports_fp8(cls) -> bool:
+        """
+        Returns whether the current platform supports FP8 types.
+        """
+        return False
+
+    @classmethod
+    def is_fp8_fnuz(cls) -> bool:
+        """
+        Returns whether the preferred FP8 type is FNUZ on the current platform.
+
+        There are two representations of FP8, OCP FP8 and FNUZ FP8.
+        The OCP specification can be found at https://tinyurl.com/b7jvwpft.
+        The FNUZ specification can be found at https://tinyurl.com/5n6hwwu5.
+
+        AMD's MI300 and MI325 have native hardware support for FNUZ. All other
+        hardware has converged on the OCP FP8 standard.
+        """
+        return False
+
+    @classmethod
+    def fp8_dtype(cls) -> torch.dtype:
+        """
+        Returns the preferred FP8 type on the current platform.
+
+        See the documentation for is_fp8_fnuz for details.
+        """
+        return torch.float8_e4m3fn
+
+    @classmethod
+    def use_all_gather(cls) -> bool:
+        """
+        Whether to use allgather in LogitsProcessor to gather the logits.
+        """
+        import aphrodite.common.envs as envs
+        from aphrodite.common.config import get_current_aphrodite_config
+
+        parallel_config = get_current_aphrodite_config().parallel_config
+        return (envs.APHRODITE_USE_V1
+                or parallel_config.distributed_executor_backend
+                == "external_launcher")
+
+    @classmethod
+    def supports_v1(cls, model_config: ModelConfig) -> bool:
+        """Returns whether the current platform can support v1 for the supplied
+        model configuration.
+        """
+        return False
+
+    @classmethod
+    def use_custom_allreduce(cls) -> bool:
+        """
+        Returns if custom allreduce is supported on the current platform
+        """
+        return False
+
+    @classmethod
+    def validate_request(
+        cls,
+        prompt: PromptType,
+        params: Union[SamplingParams, PoolingParams],
+        processed_inputs: ProcessorInputs,
+    ) -> None:
+        """Raises if this request is unsupported on this platform"""
+
+    def __getattr__(self, key: str):
+        device = getattr(torch, self.device_name, None)
+        if device is not None and hasattr(device, key):
+            return getattr(device, key)
+        else:
+            logger.warning("Current platform {} does not have '{}'" \
+            " attribute.", self.device_name, key)
+            return None
+
+    @classmethod
+    def get_cu_count(cls, device_id: int = 0) -> int:
+        """
+        Returns the total number of compute units (CU) on single GPU.
+        """
+        raise NotImplementedError
+
 
 class UnspecifiedPlatform(Platform):
     _enum = PlatformEnum.UNSPECIFIED
+    device_type = ""

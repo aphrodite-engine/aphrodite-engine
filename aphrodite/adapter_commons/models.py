@@ -1,8 +1,9 @@
-from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Hashable, Optional, TypeVar
 
-from loguru import logger
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict, Optional, TypeVar
+
 from torch import nn
+from loguru import logger
 
 from aphrodite.common.utils import LRUCache
 
@@ -22,15 +23,14 @@ class AdapterModel(ABC):
 T = TypeVar('T')
 
 
-class AdapterLRUCache(LRUCache[T]):
+class AdapterLRUCache(LRUCache[int, T]):
 
-    def __init__(self, capacity: int, deactivate_fn: Callable[[Hashable],
-                                                              None]):
+    def __init__(self, capacity: int, deactivate_fn: Callable[[int], object]):
         super().__init__(capacity)
         self.deactivate_fn = deactivate_fn
 
-    def _on_remove(self, key: Hashable, value: T):
-        logger.debug(f"Removing adapter int id: {key}")
+    def _on_remove(self, key: int, value: Optional[T]):
+        logger.debug("Removing adapter int id: {}", key)
         self.deactivate_fn(key)
         return super()._on_remove(key, value)
 
@@ -57,46 +57,46 @@ class AdapterModelManager(ABC):
 
     @property
     @abstractmethod
-    def adapter_slots(self):
-        ...
+    def adapter_slots(self) -> int:
+        raise NotImplementedError
 
     @property
     @abstractmethod
-    def capacity(self):
-        ...
+    def capacity(self) -> int:
+        raise NotImplementedError
 
     @abstractmethod
     def activate_adapter(self, adapter_id: int) -> bool:
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def deactivate_adapter(self, adapter_id: int) -> bool:
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def add_adapter(self, adapter: Any) -> bool:
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def set_adapter_mapping(self, mapping: Any) -> None:
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def remove_adapter(self, adapter_id: int) -> bool:
-        ...
+        raise NotImplementedError
 
     @abstractmethod
-    def remove_all_adapters(self):
-        ...
+    def remove_all_adapters(self) -> None:
+        raise NotImplementedError
 
     @abstractmethod
     def get_adapter(self, adapter_id: int) -> Optional[Any]:
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def list_adapters(self) -> Dict[int, Any]:
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def pin_adapter(self, adapter_id: int) -> bool:
-        ...
+        raise NotImplementedError

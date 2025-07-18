@@ -1,12 +1,10 @@
-# -*- coding: utf-8 -*-
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from torch import nn
 from transformers import PretrainedConfig
 
-from aphrodite.attention import AttentionMetadata
-from aphrodite.common.config import CacheConfig
+from aphrodite.common.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.layernorm import RMSNorm
@@ -14,8 +12,6 @@ from aphrodite.modeling.models.internlm2 import (InternLM2Attention,
                                                  InternLM2ForCausalLM,
                                                  InternLM2MLP, InternLM2Model)
 from aphrodite.quantization import QuantizationConfig
-
-from .utils import make_layers
 
 
 class InternLM2VEDecoderLayer(nn.Module):
@@ -25,6 +21,7 @@ class InternLM2VEDecoderLayer(nn.Module):
         config: PretrainedConfig,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -41,18 +38,21 @@ class InternLM2VEDecoderLayer(nn.Module):
             max_position_embeddings=max_position_embeddings,
             cache_config=cache_config,
             quant_config=quant_config,
+            prefix=f"{prefix}.attention",
         )
         self.feed_forward = InternLM2MLP(
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
             quant_config=quant_config,
+            prefix=f"{prefix}.feed_forward",
         )
         self.feed_forward_ve = InternLM2MLP(
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
             quant_config=quant_config,
+            prefix=f"{prefix}.feed_forward_ve",
         )
         self.attention_norm = RMSNorm(config.hidden_size,
                                       eps=config.rms_norm_eps)
@@ -62,8 +62,6 @@ class InternLM2VEDecoderLayer(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        kv_cache: torch.Tensor,
-        attn_metadata: AttentionMetadata,
         residual: Optional[torch.Tensor],
         visual_token_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -77,8 +75,6 @@ class InternLM2VEDecoderLayer(nn.Module):
         hidden_states = self.attention(
             positions=positions,
             hidden_states=hidden_states,
-            kv_cache=kv_cache,
-            attn_metadata=attn_metadata,
         )
 
         # Fully Connected
@@ -101,26 +97,15 @@ class InternLM2VEDecoderLayer(nn.Module):
 
 class InternLM2VEModel(InternLM2Model):
 
-    def __init__(
-        self,
-        config: PretrainedConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        prefix: str = "",
-    ) -> None:
-        super().__init__(config, cache_config, quant_config)
-        self.start_layer, self.end_layer, self.layers = make_layers(
-            config.num_hidden_layers,
-            lambda prefix: InternLM2VEDecoderLayer(config, cache_config,
-                                                   quant_config),
-            prefix=f"{prefix}.layers")
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
+        super().__init__(aphrodite_config=aphrodite_config,
+                         prefix=prefix,
+                         layer_type=InternLM2VEDecoderLayer)
 
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        kv_caches: List[torch.Tensor],
-        attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
         visual_token_mask: Optional[torch.Tensor] = None,
@@ -135,13 +120,10 @@ class InternLM2VEModel(InternLM2Model):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for i in range(self.start_layer, self.end_layer):
-            layer = self.layers[i]
+        for layer in self.layers[self.start_layer:self.end_layer]:
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
-                kv_caches[i - self.start_layer],
-                attn_metadata,
                 residual,
                 visual_token_mask=visual_token_mask,
             )
@@ -156,11 +138,7 @@ class InternLM2VEModel(InternLM2Model):
 
 class InternLM2VEForCausalLM(InternLM2ForCausalLM):
 
-    def __init__(
-        self,
-        config: PretrainedConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-    ) -> None:
-        super().__init__(config, cache_config, quant_config)
-        self.model = InternLM2VEModel(config, cache_config, quant_config)
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
+        super().__init__(aphrodite_config=aphrodite_config,
+                         prefix=prefix,
+                         model_type=InternLM2VEModel)

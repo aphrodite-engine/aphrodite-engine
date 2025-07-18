@@ -105,12 +105,11 @@ class Top1Proposer(SpeculativeProposer):
             sampler_transposed=transposed,
         )
 
-        proposals = SpeculativeProposals(
-            proposal_token_ids=proposal_tokens,
-            proposal_probs=proposal_probs,
-            proposal_lens=proposal_lens,
-            no_proposals=maybe_sampler_output is None)
-
+        proposals = SpeculativeProposals(proposal_token_ids=proposal_tokens,
+                                         proposal_probs=proposal_probs,
+                                         proposal_lens=proposal_lens,
+                                         no_proposals=maybe_sampler_output
+                                         is None)
         return proposals
 
     def _split_by_proposal_len(
@@ -128,9 +127,10 @@ class Top1Proposer(SpeculativeProposer):
         nonzero_proposal_len_seqs: List[SequenceGroupMetadata] = []
         nonzero_proposal_len_indices: List[int] = []
         for i, seq_group_metadata in enumerate(seq_group_metadata_list):
-            # The speculative decoding for this request has been disabled
-            # (e.g. due to high traffic).
-            if seq_group_metadata.num_speculative_tokens == 0:
+            # The speculative decoding for this request has either been disabled
+            # (e.g. due to high traffic) or this is a prompt request.
+            if (seq_group_metadata.is_prompt
+                    or seq_group_metadata.num_speculative_tokens == 0):
                 proposal_lens.append(0)
                 continue
 

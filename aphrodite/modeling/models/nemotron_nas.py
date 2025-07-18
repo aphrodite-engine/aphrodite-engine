@@ -1,6 +1,5 @@
 # Adapted from
 # https://github.com/huggingface/transformers/blob/v4.28.0/src/transformers/models/llama/modeling_llama.py
-# Copyright 2023 The PygmalionAI team.
 # Copyright 2023 The vLLM team.
 # Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.
 #
@@ -21,19 +20,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only deci model compatible with HuggingFace weights."""
-from typing import Iterable, List, Optional, Set, Tuple, Type, Union
+from typing import Iterable, Optional, Set, Tuple, Type, Union
 
 import torch
 from torch import nn
 from transformers import LlamaConfig
 
-from aphrodite.attention import AttentionMetadata
-from aphrodite.common.config import CacheConfig, LoRAConfig
+from aphrodite.common.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import (
@@ -89,7 +87,7 @@ class DeciLMDecoderLayer(nn.Module):
         # Support internlm/internlm-7b with bias
         attention_bias = getattr(config, "attention_bias", False) or getattr(
             config, "bias", False)
-
+        bias_o_proj = attention_bias
         # support internlm/internlm3-8b with qkv_bias
         if hasattr(config, "qkv_bias"):
             attention_bias = config.qkv_bias
@@ -107,6 +105,7 @@ class DeciLMDecoderLayer(nn.Module):
                 max_position_embeddings=max_position_embeddings,
                 quant_config=quant_config,
                 bias=attention_bias,
+                bias_o_proj=bias_o_proj,
                 cache_config=cache_config,
                 prefix=f"{prefix}.self_attn",
             )
@@ -133,8 +132,6 @@ class DeciLMDecoderLayer(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        kv_cache: torch.Tensor,
-        attn_metadata: AttentionMetadata,
         residual: Optional[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
@@ -151,8 +148,6 @@ class DeciLMDecoderLayer(nn.Module):
             hidden_states = self.self_attn(
                 positions=positions,
                 hidden_states=hidden_states,
-                kv_cache=kv_cache,
-                attn_metadata=attn_metadata,
             )
 
         # Fully Connected
@@ -163,21 +158,22 @@ class DeciLMDecoderLayer(nn.Module):
         return hidden_states, residual
 
 
+@support_torch_compile
 class DeciModel(nn.Module):
 
     def __init__(
         self,
         *,
-        config: LlamaConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        lora_config: Optional[LoRAConfig] = None,
+        aphrodite_config: AphroditeConfig,
         prefix: str = "",
         layer_type: Type[DeciLMDecoderLayer] = DeciLMDecoderLayer,
     ):
         super().__init__()
 
-        self.config = config
+        config = aphrodite_config.model_config.hf_config
+        cache_config = aphrodite_config.cache_config
+        quant_config = aphrodite_config.quant_config
+        lora_config = aphrodite_config.lora_config
 
         self.config = config
         self.quant_config = quant_config
@@ -228,8 +224,6 @@ class DeciModel(nn.Module):
         self,
         input_ids: Optional[torch.Tensor],
         positions: torch.Tensor,
-        kv_caches: List[torch.Tensor],
-        attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors],
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
@@ -248,20 +242,12 @@ class DeciModel(nn.Module):
         for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
             if not layer._is_no_op_attention:
-                hidden_states, residual = layer(
-                    positions,
-                    hidden_states,
-                    kv_caches[i - self.start_layer],
-                    attn_metadata,
-                    residual)
+                hidden_states, residual = layer(positions, hidden_states,
+                                                residual)
                 kv_cache_index += 1
             else:
-                hidden_states, residual = layer(
-                    positions,
-                    hidden_states,
-                    kv_caches[i - self.start_layer],
-                    attn_metadata,
-                    residual)
+                hidden_states, residual = layer(positions, hidden_states,
+                                                residual)
 
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
@@ -291,6 +277,17 @@ class DeciModel(nn.Module):
                     or "rotary_emb.sin_cached" in name):
                 # Models trained using ColossalAI may include these tensors in
                 # the checkpoint. Skip them.
+                continue
+            if self.quant_config is not None and (
+                    scale_name := self.quant_config.get_cache_scale(name)):
+                # Loading kv cache quantization scales
+                param = params_dict[scale_name]
+                weight_loader = getattr(param, "weight_loader",
+                                        default_weight_loader)
+                loaded_weight = (loaded_weight if loaded_weight.dim() == 0 else
+                                 loaded_weight[0])
+                weight_loader(param, loaded_weight)
+                loaded_params.add(scale_name)
                 continue
             if "scale" in name:
                 # Remapping the name of FP8 kv-scale.
@@ -369,24 +366,16 @@ class DeciLMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, HasNoOps):
         "norm": "model.norm",
     }
 
-    def __init__(
-        self,
-        config: LlamaConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        lora_config: Optional[LoRAConfig] = None,
-        prefix: str = "",
-    ) -> None:
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
-
+        config = aphrodite_config.model_config.hf_config
+        quant_config = aphrodite_config.quant_config
+        lora_config = aphrodite_config.lora_config
         self.config = config
         self.lora_config = lora_config
 
-        self.model = self._init_model(config,
-                                      cache_config,
-                                      quant_config,
-                                      lora_config=lora_config,
-                                      prefix="model")
+        self.model = self._init_model(aphrodite_config=aphrodite_config,
+                                      prefix=maybe_prefix(prefix, "model"))
 
         if get_pp_group().is_last_rank:
             self.unpadded_vocab_size = config.vocab_size
@@ -416,26 +405,11 @@ class DeciLMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, HasNoOps):
         else:
             self.lm_head = PPMissingLayer()
 
-        self.sampler = Sampler()
-
         self.make_empty_intermediate_tensors = (
             self.model.make_empty_intermediate_tensors)
 
-    def _init_model(
-        self,
-        config: LlamaConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        lora_config: Optional[LoRAConfig] = None,
-        prefix: str = ""):
-        self.config = config
-
-        return DeciModel(
-            config=config,
-            cache_config=cache_config,
-            quant_config=quant_config,
-            lora_config=lora_config,
-            prefix=prefix)
+    def _init_model(self, aphrodite_config: AphroditeConfig, prefix: str = ""):
+        return DeciModel(aphrodite_config=aphrodite_config, prefix=prefix)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -444,13 +418,10 @@ class DeciLMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, HasNoOps):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        kv_caches: List[torch.Tensor],
-        attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
-        model_output = self.model(input_ids, positions, kv_caches,
-                                  attn_metadata, intermediate_tensors,
+        model_output = self.model(input_ids, positions, intermediate_tensors,
                                   inputs_embeds)
         return model_output
 
@@ -462,11 +433,6 @@ class DeciLMForCausalLM(nn.Module, SupportsLoRA, SupportsPP, HasNoOps):
         logits = self.logits_processor(self.lm_head, hidden_states,
                                        sampling_metadata)
         return logits
-
-    def sample(self, logits: torch.Tensor,
-               sampling_metadata: SamplingMetadata) -> Optional[SamplerOutput]:
-        next_tokens = self.sampler(logits, sampling_metadata)
-        return next_tokens
 
     def load_weights(self, weights: Iterable[Tuple[str,
                                                    torch.Tensor]]) -> Set[str]:

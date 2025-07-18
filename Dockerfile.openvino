@@ -10,9 +10,9 @@ RUN apt-get update -y && \
 WORKDIR /workspace
 
 # copy requirements
-COPY requirements-build.txt /workspace/aphrodite-engine/
-COPY requirements-common.txt /workspace/aphrodite-engine/
-COPY requirements-openvino.txt /workspace/aphrodite-engine/
+COPY requirements/build.txt /workspace/aphrodite-engine/
+COPY requirements/common.txt /workspace/aphrodite-engine/
+COPY requirements/openvino.txt /workspace/aphrodite-engine/
 
 COPY aphrodite/ /workspace/aphrodite-engine/aphrodite
 COPY kernels/core /workspace/aphrodite-engine/kernels/core
@@ -21,7 +21,7 @@ COPY CMakeLists.txt /workspace/aphrodite-engine/
 COPY setup.py /workspace/aphrodite-engine/
 
 # install build requirements
-RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" python3 -m pip install -r /workspace/aphrodite-engine/requirements-build.txt
+RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" python3 -m pip install -r /workspace/aphrodite-engine/requirements/build.txt
 # build Aphrodite with OpenVINO backend
 RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" APHRODITE_TARGET_DEVICE="openvino" python3 -m pip install /workspace/aphrodite-engine/
 

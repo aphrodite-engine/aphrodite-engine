@@ -10,7 +10,7 @@ For development, you will need to build the engine from source.
 
 ```sh
 pip install -e .
-pip install -r requirements-dev.txt
+pip install -r requirements/dev.txt
 ```
 
 Make sure you build in editable mode with `-e`.

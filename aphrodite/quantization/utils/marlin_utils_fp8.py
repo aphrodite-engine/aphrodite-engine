@@ -3,15 +3,14 @@ from typing import Optional
 import torch
 
 import aphrodite._custom_ops as ops
-from aphrodite.common.utils import print_warning_once
+from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 
 from .marlin_utils import marlin_make_workspace, marlin_permute_scales
 
 
 def is_fp8_marlin_supported():
-    capability = current_platform.get_device_capability()
-    return capability[0] >= 8
+    return current_platform.has_device_capability(80)
 
 
 def apply_fp8_marlin_linear(
@@ -48,7 +47,8 @@ def apply_fp8_marlin_linear(
 
 def prepare_fp8_layer_for_marlin(layer: torch.nn.Module,
                                  strategy: str = "tensor") -> None:
-    print_warning_once(
+    log_once(
+        "WARNING",
         "Your GPU does not have native support for FP8 computation but "
         "FP8 quantization is being used. Weight-only FP8 compression will "
         "be used leveraging the Marlin kernel. This may degrade "

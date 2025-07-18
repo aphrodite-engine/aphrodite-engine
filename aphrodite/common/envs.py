@@ -1,6 +1,8 @@
+import hashlib
 import os
+import sys
 import tempfile
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     APHRODITE_HOST_IP: str = ""
@@ -25,6 +27,8 @@ if TYPE_CHECKING:
     APHRODITE_CONFIGURE_LOGGING: int = 1
     APHRODITE_LOGGING_LEVEL: str = "INFO"
     APHRODITE_LOGGING_CONFIG_PATH: Optional[str] = None
+    APHRODITE_LOGITS_PROCESSOR_THREADS: Optional[int] = None
+    APHRODITE_FLASH_ATTN_VERSION: Optional[int] = None
     APHRODITE_TRACE_FUNCTION: int = 0
     APHRODITE_ATTENTION_BACKEND: Optional[str] = None
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
@@ -44,6 +48,7 @@ if TYPE_CHECKING:
     APHRODITE_ASSETS_CACHE: str = os.path.join(APHRODITE_CACHE_ROOT, "assets")
     APHRODITE_IMAGE_FETCH_TIMEOUT: int = 5
     APHRODITE_AUDIO_FETCH_TIMEOUT: int = 5
+    APHRODITE_MM_INPUT_CACHE_GIB: int = 8
     APHRODITE_TARGET_DEVICE: str = "cuda"
     MAX_JOBS: Optional[str] = None
     NVCC_THREADS: Optional[str] = None
@@ -54,7 +59,8 @@ if TYPE_CHECKING:
     VERBOSE: bool = False
     APHRODITE_DYNAMIC_ROPE_SCALING: bool = False
     APHRODITE_TEST_FORCE_FP8_MARLIN: bool = False
-    APHRODITE_PLUGINS: Optional[List[str]] = None
+    APHRODITE_PLUGINS: Optional[list[str]] = None
+    APHRODITE_TORCH_PROFILER_DIR: Optional[str] = None
     APHRODITE_RPC_TIMEOUT: int = 20000
     APHRODITE_FORCE_SINGLE_USER_PREFIX_CACHE: bool = False
     APHRODITE_TEST_DYNAMO_GRAPH_CAPTURE: int = 0
@@ -66,10 +72,52 @@ if TYPE_CHECKING:
     APHRODITE_TEST_ENABLE_ARTIFICIAL_PREEMPT: bool = False
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
     APHRODITE_TORCH_COMPILE_LEVEL: int = 0
-    APHRODITE_CUSTOM_OPS: List[str] = []
-    APHRODITE_DISABLED_KERNELS: List[str] = []
+    APHRODITE_CUSTOM_OPS: list[str] = []
+    APHRODITE_DISABLED_KERNELS: list[str] = []
+    APHRODITE_SKIP_P2P_CHECK: bool = False
     APHRODITE_FLASHINFER_FORCE_TENSOR_CORES: bool = False
     APHRODITE_USE_V1: bool = False
+    APHRODITE_ROCM_USE_AITER: bool = False
+    APHRODITE_ROCM_USE_AITER_PAGED_ATTN: bool = False
+    APHRODITE_ROCM_USE_AITER_LINEAR: bool = True
+    APHRODITE_ROCM_USE_AITER_MOE: bool = True
+    APHRODITE_ROCM_USE_AITER_RMSNORM: bool = True
+    APHRODITE_ROCM_USE_AITER_MLA: bool = True
+    APHRODITE_ROCM_USE_SKINNY_GEMM: bool = True
+    APHRODITE_ROCM_FP8_PADDING: bool = True
+    APHRODITE_ROCM_MOE_PADDING: bool = True
+    APHRODITE_ROCM_CUSTOM_PAGED_ATTN: bool = True
+    APHRODITE_ENABLE_V1_MULTIPROCESSING: bool = True
+    APHRODITE_LOG_BATCHSIZE_INTERVAL: float = -1
+    APHRODITE_DISABLE_COMPILE_CACHE: bool = False
+    Q_SCALE_CONSTANT: int = 200
+    K_SCALE_CONSTANT: int = 200
+    V_SCALE_CONSTANT: int = 100
+    APHRODITE_SERVER_DEV_MODE: bool = False
+    APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE: int = 128
+    APHRODITE_MLA_DISABLE: bool = False
+    APHRODITE_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON: bool = False
+    APHRODITE_RAY_PER_WORKER_GPUS: float = 1.0
+    APHRODITE_RAY_BUNDLE_INDICES: str = ""
+    APHRODITE_CUDART_SO_PATH: Optional[str] = None
+    APHRODITE_USE_HPU_CONTIGUOUS_CACHE_FETCH: bool = True
+    APHRODITE_HPU_USE_DELAYED_SAMPLING: bool = False
+    APHRODITE_DP_RANK: int = 0
+    APHRODITE_DP_RANK_LOCAL: int = -1
+    APHRODITE_DP_SIZE: int = 1
+    APHRODITE_DP_MASTER_IP: str = ""
+    APHRODITE_DP_MASTER_PORT: int = 0
+    APHRODITE_MARLIN_USE_ATOMIC_ADD: bool = False
+    APHRODITE_V0_USE_OUTLINES_CACHE: bool = False
+    APHRODITE_TPU_BUCKET_PADDING_GAP: int = 0
+    APHRODITE_USE_DEEP_GEMM: bool = False
+    APHRODITE_XGRAMMAR_CACHE_MB: int = 0
+    APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD: int = 256
+    APHRODITE_USAGE_STATS_SERVER: str = ""
+    APHRODITE_NO_USAGE_STATS: bool = True
+    APHRODITE_DO_NOT_TRACK: bool = True
+    APHRODITE_USAGE_SOURCE: str = ""
+    APHRODITE_ALLOW_RUNTIME_LORA_UPDATING: bool = False
 
 
 def get_default_cache_root():
@@ -86,12 +134,18 @@ def get_default_config_root():
     )
 
 
+def maybe_convert_int(value: Optional[str]) -> Optional[int]:
+    if value is None:
+        return None
+    return int(value)
+
+
 # The begin-* and end* here are used by the documentation generator
 # to extract the used env vars.
 
 # begin-env-vars-definition
 
-environment_variables: Dict[str, Callable[[], Any]] = {
+environment_variables: dict[str, Callable[[], Any]] = {
 
     # ================== Installation Time Env Vars ==================
 
@@ -204,6 +258,12 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: (os.environ.get(
         "APHRODITE_USE_TRITON_FLASH_ATTN", "True").lower() in ("true", "1")),
 
+    # Force aphrodite to use a specific flash-attention version (2 or 3), only
+    # valid when using the flash-attention backend.
+    "APHRODITE_FLASH_ATTN_VERSION":
+    lambda: maybe_convert_int(os.environ.get("APHRODITE_FLASH_ATTN_VERSION",
+                                             None)),
+
     # Internal flag to enable Dynamo fullgraph capture
     "APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE":
     lambda: bool(
@@ -266,6 +326,14 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # this is used for configuring the default logging level
     "APHRODITE_LOGGING_LEVEL":
     lambda: os.getenv("APHRODITE_LOGGING_LEVEL", "INFO"),
+
+    # if set, aphrodite will call logits processors in a thread pool with this
+    # many threads. This is useful when using custom logits processors that
+    # either (a) launch additional CUDA kernels or (b) do significant
+    # CPU-bound work while not holding the python GIL, or both.
+    "APHRODITE_LOGITS_PROCESSOR_THREADS":
+    lambda: int(os.getenv("APHRODITE_LOGITS_PROCESSOR_THREADS", "0"))
+    if "APHRODITE_LOGITS_PROCESSOR_THREADS" in os.environ else None,
 
     # Trace function calls
     # If set to 1, aphrodite will trace function calls
@@ -366,6 +434,12 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     "APHRODITE_AUDIO_FETCH_TIMEOUT":
     lambda: int(os.getenv("APHRODITE_AUDIO_FETCH_TIMEOUT", "5")),
 
+
+    # Cache size (in GiB) for multimodal input cache
+    # Default is 4 GiB
+    "APHRODITE_MM_INPUT_CACHE_GIB":
+    lambda: int(os.getenv("APHRODITE_MM_INPUT_CACHE_GIB", "4")),
+
     # Path to the XLA persistent cache directory.
     # Only used for XLA devices such as TPUs.
     "APHRODITE_XLA_CACHE_PATH":
@@ -415,6 +489,14 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: None if "APHRODITE_PLUGINS" not in os.environ else os.environ[
         "APHRODITE_PLUGINS"].split(","),
 
+    # Enables torch profiler if set. Path to the directory where torch profiler
+    # traces are saved. Note that it must be an absolute path.
+    "APHRODITE_TORCH_PROFILER_DIR":
+    lambda: (None if os.getenv("APHRODITE_TORCH_PROFILER_DIR",
+             None) is None else
+             os.path.expanduser(
+             os.getenv("APHRODITE_TORCH_PROFILER_DIR", "."))),
+
     # If set, forces prefix cache in single user mode
     "APHRODITE_FORCE_SINGLE_USER_PREFIX_CACHE":
     lambda: bool(int(os.getenv("APHRODITE_FORCE_SINGLE_USER_PREFIX_CACHE",
@@ -443,7 +525,7 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     "APHRODITE_REQUEST_LEVEL_METRICS":
     lambda: bool(int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "0"))),
 
-    # List of quantization kernels that should be disabled, used for testing
+    # list of quantization kernels that should be disabled, used for testing
     # and performance comparisons. Currently only affects MPLinearKernel
     # selection
     # (kernels: MacheteLinearKernel, MarlinLinearKernel, ExllamaLinearKernel)
@@ -451,6 +533,13 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     lambda: [
     ] if "APHRODITE_DISABLED_KERNELS" not in os.environ else os.environ[
         "APHRODITE_DISABLED_KERNELS"].split(","),
+
+    # By default, Aphrodite will check the peer-to-peer capability itself,
+    # in case of broken drivers.
+    # If this env var is set to 1, Aphrodite will skip the peer-to-peer check,
+    # and trust the driver's peer-to-peer capability report.
+    "APHRODITE_SKIP_P2P_CHECK":
+    lambda: os.getenv("APHRODITE_SKIP_P2P_CHECK", "0") == "1",
 
     # If set, Aphrodite will force flashinfer to use tensor cores;
     # otherwise will use heuristic based on model architecture.
@@ -461,6 +550,233 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # If set, use the V1 code path.
     "APHRODITE_USE_V1":
     lambda: bool(int(os.getenv("APHRODITE_USE_V1", "0"))),
+
+    # Disable aiter ops unless specifically enabled.
+    # Acts as a parent switch to enable the rest of the other operations.
+    "APHRODITE_ROCM_USE_AITER":
+    lambda: (os.getenv("APHRODITE_ROCM_USE_AITER", "False").lower() in
+             ("true", "1")),
+
+    # Whether to use aiter paged attention.
+    # By default is disabled.
+    "APHRODITE_ROCM_USE_AITER_PAGED_ATTN":
+    lambda: (os.getenv(
+             "APHRODITE_ROCM_USE_AITER_PAGED_ATTN", "False").lower() in
+             ("true", "1")),
+
+    # use aiter linear op if aiter ops are enabled
+    # The following list of related ops
+    # - scaled_mm (per-tensor / rowwise)
+    "APHRODITE_ROCM_USE_AITER_LINEAR":
+    lambda: (os.getenv("APHRODITE_ROCM_USE_AITER_LINEAR", "True").lower() in
+             ("true", "1")),
+
+    # Whether to use aiter moe ops.
+    # By default is enabled.
+    "APHRODITE_ROCM_USE_AITER_MOE":
+    lambda: (os.getenv("APHRODITE_ROCM_USE_AITER_MOE", "True").lower() in
+             ("true", "1")),
+
+    # use aiter rms norm op if aiter ops are enabled.
+    "APHRODITE_ROCM_USE_AITER_RMSNORM":
+    lambda: (os.getenv("APHRODITE_ROCM_USE_AITER_RMSNORM", "True").lower() in
+             ("true", "1")),
+
+    # Whether to use aiter mla ops.
+    # By default is enabled.
+    "APHRODITE_ROCM_USE_AITER_MLA":
+    lambda: (os.getenv("APHRODITE_ROCM_USE_AITER_MLA", "True").lower() in
+             ("true", "1")),
+    # use rocm skinny gemms
+    "APHRODITE_ROCM_USE_SKINNY_GEMM":
+    lambda: (os.getenv("APHRODITE_ROCM_USE_SKINNY_GEMM", "True").lower() in
+             ("true", "1")),
+
+    # Pad the fp8 weights to 256 bytes for ROCm
+    "APHRODITE_ROCM_FP8_PADDING":
+    lambda: bool(int(os.getenv("APHRODITE_ROCM_FP8_PADDING", "1"))),
+
+    # Pad the weights for the moe kernel
+    "APHRODITE_ROCM_MOE_PADDING":
+    lambda: bool(int(os.getenv("APHRODITE_ROCM_MOE_PADDING", "1"))),
+
+    # custom paged attention kernel for MI3* cards
+    "APHRODITE_ROCM_CUSTOM_PAGED_ATTN":
+    lambda: (os.getenv("APHRODITE_ROCM_CUSTOM_PAGED_ATTN", "True").lower() in
+             ("true", "1")),
+
+    # Divisor for dynamic query scale factor calculation for FP8 KV Cache
+    "Q_SCALE_CONSTANT":
+    lambda: int(os.getenv("Q_SCALE_CONSTANT", "200")),
+    # Divisor for dynamic key scale factor calculation for FP8 KV Cache
+    "K_SCALE_CONSTANT":
+    lambda: int(os.getenv("K_SCALE_CONSTANT", "200")),
+    # Divisor for dynamic value scale factor calculation for FP8 KV Cache
+    "V_SCALE_CONSTANT":
+    lambda: int(os.getenv("V_SCALE_CONSTANT", "100")),
+
+    # If set, enable multiprocessing in LLM for the V1 code path.
+    "APHRODITE_ENABLE_V1_MULTIPROCESSING":
+    lambda: bool(int(os.getenv("APHRODITE_ENABLE_V1_MULTIPROCESSING", "1"))),
+    "APHRODITE_LOG_BATCHSIZE_INTERVAL":
+    lambda: float(os.getenv("APHRODITE_LOG_BATCHSIZE_INTERVAL", "-1")),
+    "APHRODITE_DISABLE_COMPILE_CACHE":
+    lambda: bool(int(os.getenv("APHRODITE_DISABLE_COMPILE_CACHE", "0"))),
+
+    # If set, Aphrodite will run in development mode, which will enable
+    # some additional endpoints for developing and debugging,
+    # e.g. `/reset_prefix_cache`
+    "APHRODITE_SERVER_DEV_MODE":
+    lambda: bool(int(os.getenv("APHRODITE_SERVER_DEV_MODE", "0"))),
+
+    # Controls the maximum number of requests to handle in a
+    # single asyncio task when processing per-token outputs in the
+    # V1 AsyncLLM interface. It is applicable when handling a high
+    # concurrency of streaming requests.
+    # Setting this too high can result in a higher variance of
+    # inter-message latencies. Setting it too low can negatively impact
+    # TTFT and overall throughput.
+    "APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE":
+    lambda: int(os.getenv("APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE", "128")),
+
+    # If set, Aphrodite will disable the MLA attention optimizations.
+    "APHRODITE_MLA_DISABLE":
+    lambda: bool(int(os.getenv("APHRODITE_MLA_DISABLE", "0"))),
+
+    # If set, Aphrodite will use the Triton implementation of
+    # moe_align_block_size, i.e. moe_align_block_size_triton in fused_moe.py.
+    "APHRODITE_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON":
+    lambda: bool(int(os.getenv("APHRODITE_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON",
+                               "0"))),
+
+    # Number of GPUs per worker in Ray, if it is set to be a fraction,
+    # it allows ray to schedule multiple actors on a single GPU,
+    # so that users can colocate other actors on the same GPUs as Aphrodite.
+    "APHRODITE_RAY_PER_WORKER_GPUS":
+    lambda: float(os.getenv("APHRODITE_RAY_PER_WORKER_GPUS", "1.0")),
+
+    # Bundle indices for Ray, if it is set, it can control precisely
+    # which indices are used for the Ray bundle, for every worker.
+    # Format: comma-separated list of integers, e.g. "0,1,2,3"
+    "APHRODITE_RAY_BUNDLE_INDICES":
+    lambda: os.getenv("APHRODITE_RAY_BUNDLE_INDICES", ""),
+
+    # In some system, find_loaded_library() may not work. So we allow users to
+    # specify the path through environment variable APHRODITE_CUDART_SO_PATH.
+    "APHRODITE_CUDART_SO_PATH":
+    lambda: os.getenv("APHRODITE_CUDART_SO_PATH", None),
+
+    # Contiguous cache fetching to avoid using costly gather operation on
+    # Gaudi3. This is only applicable to HPU contiguous cache. If set to true,
+    # contiguous cache fetch will be used.
+    "APHRODITE_USE_HPU_CONTIGUOUS_CACHE_FETCH":
+    lambda: os.environ.get("APHRODITE_CONTIGUOUS_PA", "true").lower() in
+    ("1", "true"),
+
+    # Use delayed sampling for HPU to reduce host cpu overhead
+    # between each step.
+    "APHRODITE_HPU_USE_DELAYED_SAMPLING":
+    lambda: os.environ.get("APHRODITE_DELAYED_SAMPLING", "false").lower() in
+    ("1", "true"),
+
+    # Rank of the process in the data parallel setting
+    "APHRODITE_DP_RANK":
+    lambda: int(os.getenv("APHRODITE_DP_RANK", "0")),
+
+    # Rank of the process in the data parallel setting.
+    # Defaults to APHRODITE_DP_RANK when not set.
+    "APHRODITE_DP_RANK_LOCAL":
+    lambda: int(
+        os.getenv("APHRODITE_DP_RANK_LOCAL",
+        sys.modules[__name__].APHRODITE_DP_RANK)),
+
+    # World size of the data parallel setting
+    "APHRODITE_DP_SIZE":
+    lambda: int(os.getenv("APHRODITE_DP_SIZE", "1")),
+
+    # IP address of the master node in the data parallel setting
+    "APHRODITE_DP_MASTER_IP":
+    lambda: os.getenv("APHRODITE_DP_MASTER_IP", "127.0.0.1"),
+
+    # Port of the master node in the data parallel setting
+    "APHRODITE_DP_MASTER_PORT":
+    lambda: int(os.getenv("APHRODITE_DP_MASTER_PORT", "0")),
+
+    # Whether to use S3 path for model loading in CI via RunAI Streamer
+    "APHRODITE_CI_USE_S3":
+    lambda: os.environ.get("APHRODITE_CI_USE_S3", "0") == "1",
+
+    # Use model_redirect to redirect the model name to a local folder.
+    # `model_redirect` can be a json file mapping the model between
+    # repo_id and local folder:
+    # {"meta-llama/Llama-3.2-1B": "/tmp/Llama-3.2-1B"}
+    # or a space separated values table file:
+    # meta-llama/Llama-3.2-1B   /tmp/Llama-3.2-1B
+    "APHRODITE_MODEL_REDIRECT_PATH":
+    lambda: os.environ.get("APHRODITE_MODEL_REDIRECT_PATH", None),
+
+    # Whether to use atomicAdd reduce in gptq/awq marlin kernel.
+    "APHRODITE_MARLIN_USE_ATOMIC_ADD":
+    lambda: os.environ.get("APHRODITE_MARLIN_USE_ATOMIC_ADD", "0") == "1",
+
+    # Whether to turn on the outlines cache for V0
+    # This cache is unbounded and on disk, so it's not safe to use in
+    # an environment with potentially malicious users.
+    "APHRODITE_V0_USE_OUTLINES_CACHE":
+    lambda: os.environ.get("APHRODITE_V0_USE_OUTLINES_CACHE", "0") == "1",
+
+    # Gap between padding buckets for the forward pass. So we have
+    # 8, we will run forward pass with [16, 24, 32, ...].
+    "APHRODITE_TPU_BUCKET_PADDING_GAP":
+    lambda: int(os.environ["APHRODITE_TPU_BUCKET_PADDING_GAP"])
+    if "APHRODITE_TPU_BUCKET_PADDING_GAP" in os.environ else 0,
+
+    # Allow use of DeepGemm kernels for fused moe ops.
+    "APHRODITE_USE_DEEP_GEMM":
+    lambda: bool(int(os.getenv("APHRODITE_USE_DEEP_GEMM", "0"))),
+
+    # Control the cache sized used by the xgrammar compiler. The default
+    # of 512 MB should be enough for roughly 1000 JSON schemas.
+    # It can be changed with this variable if needed for some reason.
+    "APHRODITE_XGRAMMAR_CACHE_MB":
+    lambda: int(os.getenv("APHRODITE_XGRAMMAR_CACHE_MB", "512")),
+
+    # Control the threshold for msgspec to use 'zero copy' for
+    # serialization/deserialization of tensors. Tensors below
+    # this limit will be encoded into the msgpack buffer, and
+    # tensors above will instead be sent via a separate message.
+    # While the sending side still actually copies the tensor
+    # in all cases, on the receiving side, tensors above this
+    # limit will actually be zero-copy decoded.
+    "APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD":
+    lambda: int(os.getenv("APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD", "256")),
+
+    # Usage stats collection
+    "APHRODITE_USAGE_STATS_SERVER":
+    lambda: os.environ.get("APHRODITE_USAGE_STATS_SERVER", ""),
+    "APHRODITE_NO_USAGE_STATS": 
+    lambda: os.environ.get("APHRODITE_NO_USAGE_STATS", "1") == "1",
+    "APHRODITE_DO_NOT_TRACK":
+    lambda: (os.environ.get("APHRODITE_DO_NOT_TRACK", "1") or os.environ.get(
+        "DO_NOT_TRACK", "1") or "1") == "1",
+    "APHRODITE_USAGE_SOURCE":
+    lambda: os.environ.get("APHRODITE_USAGE_SOURCE", ""),
+
+    # If set, allow loading or unloading lora adapters in runtime,
+    "APHRODITE_ALLOW_RUNTIME_LORA_UPDATING":
+    lambda:
+    (os.environ.get("APHRODITE_ALLOW_RUNTIME_LORA_UPDATING",
+                    "0").strip().lower() in
+     ("1", "true")),
+
+    # Whether to log responses from API Server for debugging
+    "APHRODITE_DEBUG_LOG_API_SERVER_RESPONSE":
+    lambda: os.environ.get("APHRODITE_DEBUG_LOG_API_SERVER_RESPONSE", "False").
+    lower() == "true",
+
+    # If set, enables the KoboldAI API routes in the API server
+    "APHRODITE_KOBOLD_API":
+    lambda: bool(int(os.getenv("APHRODITE_KOBOLD_API", "0"))),
 }
 
 # end-env-vars-definition
@@ -475,3 +791,59 @@ def __getattr__(name: str):
 
 def __dir__():
     return list(environment_variables.keys())
+
+def is_set(name: str):
+    """Check if an environment variable is explicitly set."""
+    if name in environment_variables:
+        return name in os.environ
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def set_aphrodite_use_v1(use_v1: bool):
+    if is_set("APHRODITE_USE_V1"):
+        raise ValueError(
+            "Should not call set_aphrodite_use_v1() if APHRODITE_USE_V1 is set "
+            "explicitly by the user. Please raise this as a Github "
+            "Issue and explicitly set APHRODITE_USE_V1=0 or 1.")
+    os.environ["APHRODITE_USE_V1"] = "1" if use_v1 else "0"
+
+
+def compute_hash() -> str:
+    """
+    WARNING: Whenever a new key is added to this environment
+    variables, ensure that it is included in the factors list if
+    it affects the computation graph. For example, different values
+    of APHRODITE_PP_LAYER_PARTITION will generate different computation
+    graphs, so it is included in the factors list. The env vars that
+    affect the choice of different kernels or attention backends should
+    also be included in the factors list.
+    """
+    factors: list[Any] = []
+
+    # summarize environment variables
+    def factorize(name: str):
+        if __getattr__(name):
+            factors.append(__getattr__(name))
+        else:
+            factors.append("None")
+
+    # The values of envs may affects the computation graph.
+    # TODO(DefTruth): hash all environment variables?
+    # for key in environment_variables:
+    #     factorize(key)
+    environment_variables_to_hash = [
+        "APHRODITE_PP_LAYER_PARTITION",
+        "APHRODITE_MLA_DISABLE",
+        "APHRODITE_USE_TRITON_FLASH_ATTN",
+        "APHRODITE_USE_TRITON_AWQ",
+        "APHRODITE_DP_RANK",
+        "APHRODITE_DP_SIZE",
+    ]
+    for key in environment_variables_to_hash:
+        if key in environment_variables:
+            factorize(key)
+
+    hash_str = hashlib.md5(str(factors).encode(),
+                           usedforsecurity=False).hexdigest()
+
+    return hash_str

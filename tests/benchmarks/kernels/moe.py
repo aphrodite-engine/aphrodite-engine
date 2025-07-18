@@ -119,7 +119,7 @@ def benchmark_config(
 
 def get_configs_compute_bound() -> List[Dict[str, int]]:
     # Reduced search space for faster tuning.
-    # TODO(woosuk): Increase the search space and use a performance model to
+    # TODO: Increase the search space and use a performance model to
     # prune the search space.
     configs: List[BenchmarkConfig] = []
     for num_stages in [2, 3, 4, 5]:
@@ -160,7 +160,7 @@ class BenchmarkWorker:
         torch.cuda.manual_seed_all(self.seed)
 
         dtype_str = "float8" if use_fp8 else None
-        # NOTE(woosuk): The current naming convention uses w2.shape[2], which
+        # NOTE: The current naming convention uses w2.shape[2], which
         # is the intermediate size after silu_and_mul.
         op_config = get_moe_configs(num_experts, shard_intermediate_size // 2,
                                     dtype_str)
@@ -234,7 +234,7 @@ def save_configs(
     use_fp8: bool,
 ) -> None:
     dtype_str = "float8" if use_fp8 else None
-    # NOTE(woosuk): The current naming convention uses w2.shape[2], which
+    # NOTE: The current naming convention uses w2.shape[2], which
     # is the intermediate size after silu_and_mul.
     filename = get_config_file_name(num_experts, shard_intermediate_size // 2,
                                     dtype_str)

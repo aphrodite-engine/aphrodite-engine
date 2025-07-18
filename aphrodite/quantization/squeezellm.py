@@ -9,6 +9,7 @@ from aphrodite.modeling.layers.linear import LinearBase
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
+from aphrodite.quantization import QuantizationMethods
 
 
 class SqueezeLLMConfig(QuantizationConfig):
@@ -21,6 +22,7 @@ class SqueezeLLMConfig(QuantizationConfig):
         self,
         weight_bits: int,
     ) -> None:
+        super().__init__()
         self.weight_bits = weight_bits
 
         if self.weight_bits != 4:
@@ -33,7 +35,7 @@ class SqueezeLLMConfig(QuantizationConfig):
     def __repr__(self) -> str:
         return f"SqueezeLLMConfig(weight_bits={self.weight_bits})"
 
-    def get_name(self) -> str:
+    def get_name(self) -> QuantizationMethods:
         return "squeezellm"
 
     def get_supported_act_dtypes(self) -> List[torch.dtype]:

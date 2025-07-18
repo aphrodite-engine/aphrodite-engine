@@ -4,49 +4,63 @@ import copy
 import dataclasses
 import fnmatch
 import glob
-import json
+import inspect
+import itertools
 import math
 import os
+import time
+import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from typing import (Any, Dict, Generator, Iterable, List, Optional, Tuple,
-                    Type, cast)
+from typing import (Any, Callable, Dict, Generator, Iterable, List, Optional,
+                    Tuple, cast)
 
 import gguf
 import huggingface_hub
 import numpy as np
 import torch
-from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub import HfApi
 from loguru import logger
-from rich.progress import (BarColumn, Progress, SpinnerColumn,
-                           TaskProgressColumn, TextColumn)
 from torch import nn
-from transformers import AutoModelForCausalLM, PretrainedConfig
+from transformers import AutoModelForCausalLM
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
 
-from aphrodite.common.config import (APHRODITE_USE_MODELSCOPE, CacheConfig,
-                                     DeviceConfig, LoadConfig, LoadFormat,
-                                     LoRAConfig, ModelConfig, MultiModalConfig,
-                                     ParallelConfig, SchedulerConfig)
-from aphrodite.common.utils import is_pin_memory_available, tensor_progress_bar
+from aphrodite.attention import Attention
+from aphrodite.common.config import (AphroditeConfig, LoadConfig, LoadFormat,
+                                     ModelConfig, ParallelConfig,
+                                     set_current_aphrodite_config)
+from aphrodite.common.envs import APHRODITE_USE_MODELSCOPE
+from aphrodite.common.utils import is_pin_memory_available
 from aphrodite.distributed import (get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
+# yapf conflicts with isort for this block
+# yapf: disable
+from aphrodite.modeling.layers.linear import (LinearBase,
+                                              MergedColumnParallelLinear,
+                                              QKVCrossParallelLinear,
+                                              QKVParallelLinear,
+                                              ReplicatedLinear,
+                                              RowParallelLinear)
 from aphrodite.modeling.model_loader.tensorizer import (
     TensorizerConfig, is_aphrodite_tensorized, load_with_tensorizer,
     serialize_aphrodite_model, tensorizer_weights_iterator)
-from aphrodite.modeling.model_loader.utils import (get_model_architecture,
+from aphrodite.modeling.model_loader.utils import (ParamMapping,
+                                                   configure_quant_config,
+                                                   get_model_architecture,
                                                    set_default_torch_dtype)
 from aphrodite.modeling.model_loader.weight_utils import (
     download_safetensors_index_file_from_hf, download_weights_from_hf,
-    filter_duplicate_safetensors_files, filter_files_not_needed_for_inference,
-    get_gguf_extra_tensor_names, get_quant_config, gguf_quant_weights_iterator,
-    initialize_dummy_weights, np_cache_weights_iterator, pt_weights_iterator,
-    safetensors_weights_iterator)
-from aphrodite.modeling.models import (has_inner_state, supports_lora,
-                                       supports_multimodal)
+    fastsafetensors_weights_iterator, filter_duplicate_safetensors_files,
+    filter_files_not_needed_for_inference, get_gguf_extra_tensor_names,
+    get_lock, gguf_quant_weights_iterator, initialize_dummy_weights,
+    np_cache_weights_iterator, pt_weights_iterator,
+    runai_safetensors_weights_iterator, safetensors_weights_iterator)
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
-from aphrodite.quantization import QuantizationConfig
+# yapf: enable
+from aphrodite.quantization.base_config import QuantizeMethodBase
+from aphrodite.transformers_utils.s3_utils import glob as s3_glob
+from aphrodite.transformers_utils.utils import is_s3
 
 
 @contextmanager
@@ -77,12 +91,14 @@ def device_loading_context(module: torch.nn.Module,
                 original_device: torch.device = original_device_states[name]
                 if original_device.type == "cpu":
                     # `torch.empty_like` does not support `pin_memory` argument
-                    cpu_data = torch.empty_strided(size=p.data.size(),
-                                                   stride=p.data.stride(),
-                                                   dtype=p.data.dtype,
-                                                   layout=p.data.layout,
-                                                   device="cpu",
-                                                   pin_memory=pin_memory)
+                    cpu_data = torch.empty_strided(
+                        size=p.data.size(),
+                        stride=p.data.stride(),
+                        dtype=p.data.dtype,
+                        layout=p.data.layout,
+                        device="cpu",
+                        pin_memory=pin_memory,
+                    )
                     cpu_data.copy_(p.data)
                     p.data = cpu_data
                 else:
@@ -90,94 +106,85 @@ def device_loading_context(module: torch.nn.Module,
         # New parameters or parameters already on target device are untouched
 
 
-def _get_quantization_config(
-        model_config: ModelConfig,
-        load_config: LoadConfig) -> Optional[QuantizationConfig]:
-    """Get the quantization config."""
-    if model_config.quantization is not None:
-        quant_config = get_quant_config(model_config, load_config)
-        capability = current_platform.get_device_capability()  # type: ignore
-        if capability is not None:
-            capability = capability[0] * 10 + capability[1]
-            if capability < quant_config.get_min_capability():
-                raise ValueError(
-                    f"The quantization method {model_config.quantization} "
-                    "is not supported for the current GPU. "
-                    f"Minimum capability: {quant_config.get_min_capability()}. "
-                    f"Current capability: {capability}.")
-        supported_dtypes = quant_config.get_supported_act_dtypes()
-        if model_config.dtype not in supported_dtypes:
-            raise ValueError(
-                f"{model_config.dtype} is not supported for quantization "
-                f"method {model_config.quantization}. Supported dtypes: "
-                f"{supported_dtypes}")
-        return quant_config
-    return None
-
-
-def _get_model_initialization_kwargs(
-        model_class: Type[nn.Module],
-        lora_config: Optional[LoRAConfig],
-        multimodal_config: Optional[MultiModalConfig],
-        scheduler_config: Optional[SchedulerConfig] = None) -> Dict[str, Any]:
-    """Get extra kwargs for model initialization."""
-    extra_kwargs: Dict[str, Any] = {}
-
-    if supports_lora(model_class):
-        # lora_config=None is used to disable LoRA
-        extra_kwargs["lora_config"] = lora_config
-    elif lora_config:
-        raise ValueError(
-            f"Model {model_class.__name__} does not support LoRA, "
-            "but LoRA is enabled. Support for this model may "
-            "be added in the future. If this is important to you, "
-            "please open an issue on github.")
-
-    if supports_multimodal(model_class):
-        assert multimodal_config is not None
-
-        extra_kwargs["multimodal_config"] = multimodal_config
-
-    if has_inner_state(model_class) and scheduler_config:
-        extra_kwargs["scheduler_config"] = scheduler_config
-
-    return extra_kwargs
-
-
-def build_model(model_class: Type[nn.Module], hf_config: PretrainedConfig,
-                cache_config: Optional[CacheConfig],
-                quant_config: Optional[QuantizationConfig], *,
-                lora_config: Optional[LoRAConfig],
-                multimodal_config: Optional[MultiModalConfig],
-                scheduler_config: Optional[SchedulerConfig]) -> nn.Module:
-    extra_kwargs = _get_model_initialization_kwargs(model_class, lora_config,
-                                                    multimodal_config,
-                                                    scheduler_config)
-
-    return model_class(config=hf_config,
-                       cache_config=cache_config,
-                       quant_config=quant_config,
-                       **extra_kwargs)
-
-
 def _initialize_model(
-        model_config: ModelConfig,
-        load_config: LoadConfig,
-        lora_config: Optional[LoRAConfig],
-        cache_config: CacheConfig,
-        scheduler_config: Optional[SchedulerConfig] = None) -> nn.Module:
+    aphrodite_config: AphroditeConfig,
+    *,
+    prefix: str = "",
+    model_class: Optional[type[nn.Module]] = None,
+) -> nn.Module:
     """Initialize a model with the given configurations."""
-    model_class, _ = get_model_architecture(model_config)
+    model_config = aphrodite_config.model_config
+    if model_class is None:
+        model_class, _ = get_model_architecture(model_config)
 
-    return build_model(
-        model_class,
-        model_config.hf_config,
-        cache_config=cache_config,
-        quant_config=_get_quantization_config(model_config, load_config),
-        lora_config=lora_config,
-        multimodal_config=model_config.multimodal_config,
-        scheduler_config=scheduler_config,
+    if aphrodite_config.quant_config is not None:
+        configure_quant_config(aphrodite_config.quant_config, model_class)
+
+    signatures = inspect.signature(model_class.__init__)
+    all_params = [param.name for param in signatures.parameters.values()]
+    if "aphrodite_config" in all_params and "prefix" in all_params:
+        # new-style model class
+        with set_current_aphrodite_config(aphrodite_config,
+                                          check_compile=True):
+            return model_class(aphrodite_config=aphrodite_config,
+                               prefix=prefix)
+
+    msg = (
+        "Aphrodite model class should accept `aphrodite_config` and `prefix` "
+        "as input arguments. Possibly you have an old-style model class "
+        "registered from out of tree and it is used for new Aphrodite version."
     )
+    warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+    logger.warning(
+        "Trying to guess the arguments for old-style model class {}",
+        model_class,
+    )
+    # try to be compatible with old-style model class
+    kwargs = {}
+    if "prefix" in all_params:
+        kwargs["prefix"] = prefix
+    if "config" in all_params:
+        kwargs["config"] = model_config.hf_config
+    if "cache_config" in all_params:
+        kwargs["cache_config"] = aphrodite_config.cache_config
+    if "quant_config" in all_params:
+        kwargs["quant_config"] = aphrodite_config.quant_config
+    if "lora_config" in all_params:
+        kwargs["lora_config"] = aphrodite_config.lora_config
+    if "scheduler_config" in all_params:
+        kwargs["scheduler_config"] = aphrodite_config.scheduler_config
+    with set_current_aphrodite_config(aphrodite_config, check_compile=True):
+        return model_class(**kwargs)
+
+
+def _process_weights_after_loading(model: nn.Module, model_config: ModelConfig,
+                                   target_device: torch.device) -> None:
+    for _, module in model.named_modules():
+        if isinstance(module, QKVCrossParallelLinear):
+            # NOTE: special case for cross QKV layer because
+            # q and kv proj aren't registered as submodules intentionally
+            module.process_weights_after_loading()
+            continue
+        quant_method = getattr(module, "quant_method", None)
+        if isinstance(quant_method, QuantizeMethodBase):
+            # When quant methods need to process weights after loading
+            # (for repacking, quantizing, etc), they expect parameters
+            # to be on the global target device. This scope is for the
+            # case where cpu offloading is used, where we will move the
+            # parameters onto device for processing and back off after.
+            with device_loading_context(module, target_device):
+                quant_method.process_weights_after_loading(module)
+
+    # Currently only used by MLA.
+    # NOTE: This intentionally happens after other modules so we can easily
+    # decompress the weights for MLA.
+    for _, module in model.named_modules():
+        if isinstance(module, Attention) and \
+            hasattr(module, "process_weights_after_loading"):
+            # TODO(lucas): see if there is a way to unify the signatures
+            # of process_weights_after_loading
+            module.process_weights_after_loading(model_config.dtype)
 
 
 class BaseModelLoader(ABC):
@@ -192,12 +199,7 @@ class BaseModelLoader(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def load_model(self, *, model_config: ModelConfig,
-                   device_config: DeviceConfig,
-                   lora_config: Optional[LoRAConfig],
-                   parallel_config: ParallelConfig,
-                   scheduler_config: SchedulerConfig,
-                   cache_config: CacheConfig) -> nn.Module:
+    def load_model(self, *, aphrodite_config: AphroditeConfig) -> nn.Module:
         """Load a model with the given configurations."""
         raise NotImplementedError
 
@@ -208,14 +210,24 @@ class DefaultModelLoader(BaseModelLoader):
     @dataclasses.dataclass
     class Source:
         """A source for weights."""
+
         model_or_path: str
         """The model ID or path."""
+
         revision: Optional[str]
         """The optional model revision."""
+
         prefix: str = ""
         """A prefix to prepend to all weights."""
+
         fall_back_to_pt: bool = True
         """Whether .pt weights can be used."""
+
+        allow_patterns_overrides: Optional[list[str]] = None
+        """If defined, weights will load exclusively using these patterns."""
+
+    counter_before_loading_weights: float = 0.0
+    counter_after_loading_weights: float = 0.0
 
     def __init__(self, load_config: LoadConfig):
         super().__init__(load_config)
@@ -226,7 +238,8 @@ class DefaultModelLoader(BaseModelLoader):
     def _maybe_download_from_modelscope(
             self, model: str, revision: Optional[str]) -> Optional[str]:
         """Download model from ModelScope hub if APHRODITE_USE_MODELSCOPE is
-        True.
+           True.
+
         Returns the path to the downloaded model, or None if the model is not
         downloaded from ModelScope."""
         if APHRODITE_USE_MODELSCOPE:
@@ -236,26 +249,34 @@ class DefaultModelLoader(BaseModelLoader):
             from modelscope.hub.snapshot_download import snapshot_download
 
             if not os.path.exists(model):
-                model_path = snapshot_download(
-                    model_id=model,
-                    cache_dir=self.load_config.download_dir,
-                    local_files_only=huggingface_hub.constants.HF_HUB_OFFLINE,
-                    revision=revision,
-                    ignore_file_pattern=self.load_config.ignore_patterns,
-                )
+                # Use file lock to prevent multiple processes from
+                # downloading the same model weights at the same time.
+                with get_lock(model, self.load_config.download_dir):
+                    model_path = snapshot_download(
+                        model_id=model,
+                        cache_dir=self.load_config.download_dir,
+                        local_files_only=huggingface_hub.constants.
+                        HF_HUB_OFFLINE,
+                        revision=revision,
+                        ignore_file_pattern=self.load_config.ignore_patterns,
+                    )
             else:
                 model_path = model
             return model_path
         return None
 
-    def _prepare_weights(self, model_name_or_path: str,
-                         revision: Optional[str],
-                         fall_back_to_pt: bool) -> Tuple[str, List[str], bool]:
+    def _prepare_weights(
+        self,
+        model_name_or_path: str,
+        revision: Optional[str],
+        fall_back_to_pt: bool,
+        allow_patterns_overrides: Optional[list[str]],
+    ) -> Tuple[str, List[str], bool]:
         """Prepare weights for the model.
 
         If the model is not local, it will be downloaded."""
-        model_name_or_path = self._maybe_download_from_modelscope(
-            model_name_or_path, revision) or model_name_or_path
+        model_name_or_path = (self._maybe_download_from_modelscope(
+            model_name_or_path, revision) or model_name_or_path)
 
         is_local = os.path.isdir(model_name_or_path)
         load_format = self.load_config.load_format
@@ -264,7 +285,8 @@ class DefaultModelLoader(BaseModelLoader):
         # Some quantized models use .pt files for storing the weights.
         if load_format == LoadFormat.AUTO:
             allow_patterns = ["*.safetensors", "*.bin"]
-        elif load_format == LoadFormat.SAFETENSORS:
+        elif (load_format == LoadFormat.SAFETENSORS
+              or load_format == LoadFormat.FASTSAFETENSORS):
             use_safetensors = True
             allow_patterns = ["*.safetensors"]
         elif load_format == LoadFormat.MISTRAL:
@@ -280,6 +302,9 @@ class DefaultModelLoader(BaseModelLoader):
 
         if fall_back_to_pt:
             allow_patterns += ["*.pt"]
+
+        if allow_patterns_overrides is not None:
+            allow_patterns = allow_patterns_overrides
 
         if not is_local:
             hf_folder = download_weights_from_hf(
@@ -308,8 +333,11 @@ class DefaultModelLoader(BaseModelLoader):
             # any files not found in the index.
             if not is_local:
                 download_safetensors_index_file_from_hf(
-                    model_name_or_path, index_file,
-                    self.load_config.download_dir, revision)
+                    model_name_or_path,
+                    index_file,
+                    self.load_config.download_dir,
+                    revision,
+                )
             hf_weights_files = filter_duplicate_safetensors_files(
                 hf_weights_files, hf_folder, index_file)
         else:
@@ -323,23 +351,39 @@ class DefaultModelLoader(BaseModelLoader):
         return hf_folder, hf_weights_files, use_safetensors
 
     def _get_weights_iterator(
-        self, source: "Source"
-    ) -> Tuple[Generator[Tuple[str, torch.Tensor], None, None], int]:
+            self, source: "Source"
+    ) -> Generator[Tuple[str, torch.Tensor], None, None]:
         """Get an iterator for the model weights based on the load format."""
         hf_folder, hf_weights_files, use_safetensors = self._prepare_weights(
-            source.model_or_path, source.revision, source.fall_back_to_pt)
-        est_weight_bytes = sum(os.path.getsize(f) for f in hf_weights_files)
-
+            source.model_or_path, source.revision, source.fall_back_to_pt,
+            source.allow_patterns_overrides)
         if self.load_config.load_format == LoadFormat.NPCACHE:
             # Currently np_cache only support *.bin checkpoints
             assert use_safetensors is False
             weights_iterator = np_cache_weights_iterator(
-                source.model_or_path, self.load_config.download_dir, hf_folder,
-                hf_weights_files)
+                source.model_or_path,
+                self.load_config.download_dir,
+                hf_folder,
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
+            )
         elif use_safetensors:
-            weights_iterator = safetensors_weights_iterator(hf_weights_files)
+            if self.load_config.load_format == LoadFormat.FASTSAFETENSORS:
+                weights_iterator = fastsafetensors_weights_iterator(
+                    hf_weights_files,
+                    self.load_config.use_tqdm_on_load,
+                )
+            else:
+                weights_iterator = safetensors_weights_iterator(
+                    hf_weights_files,
+                    self.load_config.use_tqdm_on_load,
+                )
         else:
-            weights_iterator = pt_weights_iterator(hf_weights_files)
+            weights_iterator = pt_weights_iterator(
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
+                self.load_config.pt_load_map_location,
+            )
 
         if current_platform.is_tpu():
             # In PyTorch XLA, we should call `xm.mark_step` frequently so that
@@ -353,33 +397,123 @@ class DefaultModelLoader(BaseModelLoader):
 
             weights_iterator = _xla_weights_iterator(weights_iterator)
 
-        # Apply the prefix
-        return ((source.prefix + name, tensor)
-                for (name, tensor) in weights_iterator), est_weight_bytes
+        elif current_platform.is_hpu():
+            import habana_frameworks.torch.core as htcore
 
-    def _get_all_weights(
+            def _hpu_weights_iterator(iterator: Generator):
+                for weights in iterator:
+                    yield weights
+                    htcore.mark_step()
+
+            weights_iterator = _hpu_weights_iterator(weights_iterator)
+
+        if self.counter_before_loading_weights == 0.0:
+            self.counter_before_loading_weights = time.perf_counter()
+        # Apply the prefix.
+        return ((source.prefix + name, tensor)
+                for (name, tensor) in weights_iterator)
+
+    def _get_weights_iterator_with_size(
+        self, source: "Source"
+    ) -> Tuple[Generator[Tuple[str, torch.Tensor], None, None], int]:
+        """Get an iterator for the model weights and calculate total size."""
+        hf_folder, hf_weights_files, use_safetensors = self._prepare_weights(
+            source.model_or_path, source.revision, source.fall_back_to_pt,
+            source.allow_patterns_overrides)
+
+        # Calculate total size by iterating through files
+        total_bytes = 0
+        for file_path in hf_weights_files:
+            if os.path.exists(file_path):
+                total_bytes += os.path.getsize(file_path)
+
+        if self.load_config.load_format == LoadFormat.NPCACHE:
+            # Currently np_cache only support *.bin checkpoints
+            assert use_safetensors is False
+            weights_iterator = np_cache_weights_iterator(
+                source.model_or_path,
+                self.load_config.download_dir,
+                hf_folder,
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
+            )
+        elif use_safetensors:
+            if self.load_config.load_format == LoadFormat.FASTSAFETENSORS:
+                weights_iterator = fastsafetensors_weights_iterator(
+                    hf_weights_files,
+                    self.load_config.use_tqdm_on_load,
+                )
+            else:
+                weights_iterator = safetensors_weights_iterator(
+                    hf_weights_files,
+                    self.load_config.use_tqdm_on_load,
+                )
+        else:
+            weights_iterator = pt_weights_iterator(
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
+                self.load_config.pt_load_map_location,
+            )
+
+        if current_platform.is_tpu():
+            # In PyTorch XLA, we should call `xm.mark_step` frequently so that
+            # not too many ops are accumulated in the XLA program.
+            import torch_xla.core.xla_model as xm
+
+            def _xla_weights_iterator(iterator: Generator):
+                for weights in iterator:
+                    yield weights
+                    xm.mark_step()
+
+            weights_iterator = _xla_weights_iterator(weights_iterator)
+
+        elif current_platform.is_hpu():
+            import habana_frameworks.torch.core as htcore
+
+            def _hpu_weights_iterator(iterator: Generator):
+                for weights in iterator:
+                    yield weights
+                    htcore.mark_step()
+
+            weights_iterator = _hpu_weights_iterator(weights_iterator)
+
+        if self.counter_before_loading_weights == 0.0:
+            self.counter_before_loading_weights = time.perf_counter()
+        # Apply the prefix.
+        return ((source.prefix + name, tensor)
+                for (name, tensor) in weights_iterator), total_bytes
+
+    def get_all_weights(
         self,
         model_config: ModelConfig,
         model: nn.Module,
-    ) -> Tuple[Generator[Tuple[str, torch.Tensor], None, None], int]:
-        """Get all weights including primary and secondary sources."""
+    ) -> Tuple[Iterable[Tuple[str, torch.Tensor]], int]:
+        """
+        Get all weights including primary and secondary sources with total size.
+        """
         primary_weights = DefaultModelLoader.Source(
             model_config.model,
             model_config.revision,
             prefix="",
-            fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load", True))
+            fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load",
+                                    True),
+            allow_patterns_overrides=getattr(model, "allow_patterns_overrides",
+                                             None),
+        )
 
-        primary_iterator, primary_bytes = self._get_weights_iterator(
+        primary_iterator, primary_bytes = self._get_weights_iterator_with_size(
             primary_weights)
         total_bytes = primary_bytes
 
         # Collect all weight iterators and their sizes
         iterators = [primary_iterator]
 
-        secondary_weights = cast(Iterable[DefaultModelLoader.Source],
-                                 getattr(model, "secondary_weights", ()))
+        secondary_weights = cast(
+            Iterable[DefaultModelLoader.Source],
+            getattr(model, "secondary_weights", ()),
+        )
         for source in secondary_weights:
-            iterator, bytes_size = self._get_weights_iterator(source)
+            iterator, bytes_size = self._get_weights_iterator_with_size(source)
             iterators.append(iterator)
             total_bytes += bytes_size
 
@@ -390,36 +524,44 @@ class DefaultModelLoader(BaseModelLoader):
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(model_config.model,
                               model_config.revision,
-                              fall_back_to_pt=True)
+                              fall_back_to_pt=True,
+                              allow_patterns_overrides=None)
 
-    def load_model(self, *, model_config: ModelConfig,
-                   device_config: DeviceConfig,
-                   lora_config: Optional[LoRAConfig],
-                   parallel_config: ParallelConfig,
-                   scheduler_config: SchedulerConfig,
-                   cache_config: CacheConfig) -> nn.Module:
+    def load_model(self, aphrodite_config: AphroditeConfig) -> nn.Module:
+        device_config = aphrodite_config.device_config
+        model_config = aphrodite_config.model_config
         target_device = torch.device(device_config.device)
         with set_default_torch_dtype(model_config.dtype):
             with target_device:
-                model = _initialize_model(model_config, self.load_config,
-                                          lora_config, cache_config,
-                                          scheduler_config)
+                model = _initialize_model(aphrodite_config=aphrodite_config)
 
-            weights_iter, total_bytes = self._get_all_weights(
+            weights_to_load = {name for name, _ in model.named_parameters()}
+            weights_iter, total_bytes = self.get_all_weights(
                 model_config, model)
-            model.load_weights(tensor_progress_bar(weights_iter, total_bytes,
-                                                   "Loading model weights..."))
 
-            for _, module in model.named_modules():
-                quant_method = getattr(module, "quant_method", None)
-                if quant_method is not None:
-                    # When quant methods need to process weights after loading
-                    # (for repacking, quantizing, etc), they expect parameters
-                    # to be on the global target device. This scope is for the
-                    # case where cpu offloading is used, where we will move the
-                    # parameters onto device for processing and back off after.
-                    with device_loading_context(module, target_device):
-                        quant_method.process_weights_after_loading(module)
+            # Import tensor_progress_bar here to avoid circular imports
+            from aphrodite.common.utils import tensor_progress_bar
+
+            loaded_weights = model.load_weights(
+                tensor_progress_bar(weights_iter, total_bytes,
+                                    "Loading model weights"))
+            self.counter_after_loading_weights = time.perf_counter()
+            if get_tensor_model_parallel_rank() == 0:
+                logger.debug(
+                    "Loading weights took {:.2f} seconds",
+                    self.counter_after_loading_weights -
+                    self.counter_before_loading_weights)
+            # We only enable strict check for non-quantized models
+            # that have loaded weights tracking currently.
+            if model_config.quantization is None and loaded_weights is not None:
+                weights_not_loaded = weights_to_load - loaded_weights
+                if weights_not_loaded:
+                    raise ValueError(
+                        "Following weights were not initialized from "
+                        f"checkpoint: {weights_not_loaded}")
+
+            _process_weights_after_loading(model, model_config, target_device)
+
         return model.eval()
 
 
@@ -435,32 +577,18 @@ class DummyModelLoader(BaseModelLoader):
     def download_model(self, model_config: ModelConfig) -> None:
         pass  # Nothing to download
 
-    def load_model(self, *, model_config: ModelConfig,
-                   device_config: DeviceConfig,
-                   lora_config: Optional[LoRAConfig],
-                   parallel_config: ParallelConfig,
-                   scheduler_config: SchedulerConfig,
-                   cache_config: CacheConfig) -> nn.Module:
+    def load_model(self, aphrodite_config: AphroditeConfig) -> nn.Module:
+        device_config = aphrodite_config.device_config
+        model_config = aphrodite_config.model_config
+        target_device = torch.device(device_config.device)
         with set_default_torch_dtype(model_config.dtype):
-            with torch.device(device_config.device):
-                model = _initialize_model(model_config, self.load_config,
-                                          lora_config, cache_config,
-                                          scheduler_config)
+            with target_device:
+                model = _initialize_model(aphrodite_config=aphrodite_config)
             # NOTE: For accurate performance evaluation, we assign
             # random values to the weights.
             initialize_dummy_weights(model)
 
-            for _, module in model.named_modules():
-                quant_method = getattr(module, "quant_method", None)
-                if quant_method is not None:
-                    # When quant methods need to process weights after loading
-                    # (for repacking, quantizing, etc), they expect parameters
-                    # to be on the global target device. This scope is for the
-                    # case where cpu offloading is used, where we will move the
-                    # parameters onto device for processing and back off after.
-                    with device_loading_context(
-                            module, torch.device(device_config.device)):
-                        quant_method.process_weights_after_loading(module)
+            _process_weights_after_loading(model, model_config, target_device)
         return model.eval()
 
 
@@ -481,86 +609,79 @@ class TensorizerLoader(BaseModelLoader):
         self.tensorizer_config.verify_with_parallel_config(parallel_config)
 
     def _get_weights_iterator(
-            self) -> Generator[Tuple[str, torch.Tensor], None, None]:
+        self, ) -> Generator[Tuple[str, torch.Tensor], None, None]:
         tensorizer_args = self.tensorizer_config._construct_tensorizer_args()
         return tensorizer_weights_iterator(tensorizer_args)
 
     def _load_model_serialized_cpu(
         self,
-        model_config: ModelConfig,
-        device_config: DeviceConfig,
-        lora_config: Optional[LoRAConfig],
-        cache_config: CacheConfig,
+        aphrodite_config: AphroditeConfig,
     ) -> nn.Module:
         """Load a serialized model with tensorizer to the CPU.
 
         This is only necessary when the model isn't Aphrodite-tensorized (see
-        examples/tensorize_aphrodite_model.py) This should still be faster than
-        default HuggingFace loading, but will be slower than loading a
-        Aphrodite-tensorized model.
+        examples/other/tensorize_aphrodite_model.py) This should still
+        be faster than default HuggingFace loading, but will be slower than
+        loading a Aphrodite-tensorized model.
         """
+        device_config = aphrodite_config.device_config
+        model_config = aphrodite_config.model_config
         with set_default_torch_dtype(model_config.dtype):
             with torch.device(device_config.device):
-                model = _initialize_model(model_config, self.load_config,
-                                          lora_config, cache_config)
+                model = _initialize_model(aphrodite_config=aphrodite_config)
 
             model.load_weights(self._get_weights_iterator())
         return model.eval()
 
     def _load_model_serialized(
         self,
-        model_config: ModelConfig,
-        device_config: DeviceConfig,
-        lora_config: Optional[LoRAConfig],
-        cache_config: CacheConfig,
+        aphrodite_config: AphroditeConfig,
     ) -> nn.Module:
         """Load a serialized model with tensorizer.
 
         Expects a Aphrodite-tensorized model. See the
-        examples/tensorize_aphrodite_model.py example script
+        examples/other/tensorize_aphrodite_model.py example script
         for serializing Aphrodite models."""
+
+        device_config = aphrodite_config.device_config
+        model_config = aphrodite_config.model_config
+
         with set_default_torch_dtype(model_config.dtype):
             with torch.device(device_config.device):
                 model_class = get_model_architecture(model_config)[0]
-                quant_config = _get_quantization_config(
-                    model_config, self.load_config)
-                extra_kwargs = _get_model_initialization_kwargs(
-                    model_class, lora_config, model_config.multimodal_config)
-                extra_kwargs["quant_config"] = quant_config
-                extra_kwargs["cache_config"] = cache_config
 
                 tensorizer_config = copy.copy(self.tensorizer_config)
                 tensorizer_config.model_class = model_class
                 tensorizer_config.hf_config = model_config.hf_config
                 tensorizer_config.dtype = model_config.dtype
 
-                model = load_with_tensorizer(tensorizer_config, **extra_kwargs)
+                model = load_with_tensorizer(tensorizer_config,
+                                             aphrodite_config=aphrodite_config)
         return model.eval()
 
     def download_model(self, model_config: ModelConfig) -> None:
         self.tensorizer_config.verify_with_model_config(model_config)
+
         with self.tensorizer_config.open_stream():
             pass
 
-    def load_model(self, *, model_config: ModelConfig,
-                   device_config: DeviceConfig,
-                   lora_config: Optional[LoRAConfig],
-                   parallel_config: ParallelConfig,
-                   scheduler_config: SchedulerConfig,
-                   cache_config: CacheConfig) -> nn.Module:
+    def load_model(self, aphrodite_config: AphroditeConfig) -> nn.Module:
+        model_config = aphrodite_config.model_config
+        parallel_config = aphrodite_config.parallel_config
         self._verify_config(model_config, parallel_config)
 
         if parallel_config.tensor_parallel_size > 1:
             from aphrodite.distributed import get_tensor_model_parallel_rank
-            self.tensorizer_config.tensorizer_uri = \
-                self.tensorizer_config.tensorizer_uri \
-                    % get_tensor_model_parallel_rank()
+
+            self.tensorizer_config.tensorizer_uri = (
+                self.tensorizer_config.tensorizer_uri %
+                get_tensor_model_parallel_rank())
 
         if is_aphrodite_tensorized(self.tensorizer_config):
-            return self._load_model_serialized(model_config, device_config,
-                                               lora_config, cache_config)
-        return self._load_model_serialized_cpu(model_config, device_config,
-                                               lora_config, cache_config)
+            return self._load_model_serialized(
+                aphrodite_config=aphrodite_config)
+        return self._load_model_serialized_cpu(
+            aphrodite_config=aphrodite_config)
 
     @staticmethod
     def save_model(
@@ -578,13 +699,18 @@ class ShardedStateLoader(BaseModelLoader):
     Model loader that directly loads each worker's model state dict, which
     enables a fast load path for large tensor-parallel models where each worker
     only needs to read its own shard rather than the entire checkpoint. See
-    `examples/save_sharded_state.py` for creating a sharded checkpoint.
+    `examples/offline_inference/save_sharded_state.py` for creating a sharded
+    checkpoint.
     """
 
     DEFAULT_PATTERN = "model-rank-{rank}-part-{part}.safetensors"
 
-    def __init__(self, load_config: LoadConfig):
+    def __init__(self,
+                 load_config: LoadConfig,
+                 runai_model_streamer: bool = False):
         super().__init__(load_config)
+
+        self.runai_model_streamer = runai_model_streamer
         extra_config = ({} if load_config.model_loader_extra_config is None
                         else load_config.model_loader_extra_config.copy())
         self.pattern = extra_config.pop("pattern", self.DEFAULT_PATTERN)
@@ -595,13 +721,13 @@ class ShardedStateLoader(BaseModelLoader):
 
     @staticmethod
     def _filter_subtensors(
-            tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        tensors: Dict[str, torch.Tensor], ) -> Dict[str, torch.Tensor]:
         """
         Filter out all tensors that share the same memory or a subset of the
         memory of another tensor.
         """
-        same_storage_groups: Dict[Any, List[Tuple[
-            str, torch.Tensor]]] = collections.defaultdict(list)
+        same_storage_groups: Dict[Any, List[Tuple[str, torch.Tensor]]] = (
+            collections.defaultdict(list))
         for key, tensor in tensors.items():
             if tensor.numel():
                 ptr = tensor.untyped_storage().data_ptr()
@@ -631,7 +757,7 @@ class ShardedStateLoader(BaseModelLoader):
 
     def _prepare_weights(self, model_name_or_path: str,
                          revision: Optional[str]):
-        if os.path.isdir(model_name_or_path):
+        if is_s3(model_name_or_path) or os.path.isdir(model_name_or_path):
             return model_name_or_path
         else:
             allow_patterns = ["*.safetensors"]
@@ -646,61 +772,77 @@ class ShardedStateLoader(BaseModelLoader):
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(model_config.model, model_config.revision)
 
-    def load_model(self, *, model_config: ModelConfig,
-                   device_config: DeviceConfig,
-                   lora_config: Optional[LoRAConfig],
-                   parallel_config: ParallelConfig,
-                   scheduler_config: SchedulerConfig,
-                   cache_config: CacheConfig) -> nn.Module:
-        from safetensors.torch import safe_open
+    def load_model(self, aphrodite_config: AphroditeConfig) -> nn.Module:
+        device_config = aphrodite_config.device_config
+        model_config = aphrodite_config.model_config
+        target_device = torch.device(device_config.device)
 
         from aphrodite.distributed import get_tensor_model_parallel_rank
 
-        local_model_path = self._prepare_weights(model_config.model,
-                                                 model_config.revision)
+        model_weights = model_config.model
+        if hasattr(model_config, "model_weights"):
+            model_weights = model_config.model_weights
+        local_model_path = model_weights
 
         with set_default_torch_dtype(model_config.dtype):
-            with torch.device(device_config.device):
-                model = _initialize_model(model_config, self.load_config,
-                                          lora_config, cache_config)
-                for _, module in model.named_modules():
-                    quant_method = getattr(module, "quant_method", None)
-                    if quant_method is not None:
-                        quant_method.process_weights_after_loading(module)
+            with target_device:
+                model = _initialize_model(aphrodite_config=aphrodite_config)
+                _process_weights_after_loading(model, model_config,
+                                               target_device)
             rank = get_tensor_model_parallel_rank()
             pattern = os.path.join(
                 local_model_path,
                 self.pattern.format(rank=rank, part="*"),
             )
-            filepaths = glob.glob(pattern)
+
+            filepaths = []
+            if is_s3(local_model_path):
+                file_pattern = f"*{self.pattern.format(rank=rank, part=' * ')}"
+                filepaths = s3_glob(path=local_model_path,
+                                    allow_pattern=[file_pattern])
+            else:
+                filepaths = glob.glob(pattern)
             if not filepaths:
                 # TODO: support un-sharded checkpoints too
                 raise ValueError(
                     f"Could not find checkpoint files '{pattern}', only "
                     f"pre-sharded checkpoints are currently supported!")
             state_dict = self._filter_subtensors(model.state_dict())
-            for path in filepaths:
-                with safe_open(path, framework="pt") as f:
-                    for key in f.keys():  # noqa: SIM118
-                        tensor = f.get_tensor(key)
-                        # If loading with LoRA enabled, additional padding may
-                        # be added to certain parameters. We only load into a
-                        # narrowed view of the parameter data.
-                        param_data = state_dict[key].data
-                        param_shape = state_dict[key].shape
-                        for dim, size in enumerate(tensor.shape):
-                            if size < param_shape[dim]:
-                                param_data = param_data.narrow(dim, 0, size)
-                        if tensor.shape != param_shape:
-                            logger.warning("loading tensor of shape "
-                                           f"{tensor.shape} into parameter "
-                                           f"'{key}' of shape {param_shape}")
-                        param_data.copy_(tensor)
-                        state_dict.pop(key)
+            for key, tensor in self.iterate_over_files(filepaths):
+                # If loading with LoRA enabled, additional padding may
+                # be added to certain parameters. We only load into a
+                # narrowed view of the parameter data.
+                param_data = state_dict[key].data
+                param_shape = state_dict[key].shape
+                for dim, size in enumerate(tensor.shape):
+                    if size < param_shape[dim]:
+                        param_data = param_data.narrow(dim, 0, size)
+                if tensor.shape != param_shape:
+                    logger.warning(
+                        "loading tensor of shape {} into "
+                        "parameter '{}' of shape {}",
+                        tensor.shape,
+                        key,
+                        param_shape,
+                    )
+                param_data.copy_(tensor)
+                state_dict.pop(key)
             if state_dict:
                 raise ValueError(
                     f"Missing keys {tuple(state_dict)} in loaded state!")
         return model.eval()
+
+    def iterate_over_files(
+            self, paths) -> Generator[Tuple[str, torch.Tensor], None, None]:
+        if self.runai_model_streamer:
+            yield from runai_safetensors_weights_iterator(paths, True)
+        else:
+            from safetensors.torch import safe_open
+            for path in paths:
+                with safe_open(path, framework="pt") as f:
+                    for key in f.keys():  # noqa: SIM118
+                        tensor = f.get_tensor(key)
+                        yield key, tensor
 
     @staticmethod
     def save_model(
@@ -712,6 +854,7 @@ class ShardedStateLoader(BaseModelLoader):
         from safetensors.torch import save_file
 
         from aphrodite.distributed import get_tensor_model_parallel_rank
+
         if pattern is None:
             pattern = ShardedStateLoader.DEFAULT_PATTERN
         rank = get_tensor_model_parallel_rank()
@@ -745,73 +888,25 @@ class BitsAndBytesModelLoader(BaseModelLoader):
 
     possible_config_file_names = ["adapter_config.json"]
 
-    default_target_modules = [
-        ".gate_proj.",
-        ".down_proj.",
-        ".up_proj.",
-        ".q_proj.",
-        ".k_proj.",
-        ".v_proj.",
-        ".o_proj.",
-        '.fc1.',
-        '.fc2.',
-        '.dense.',
-        '.query_key_value.',
-        '.qkv_proj.',
-        '.dense_h_to_4h.',
-        '.dense_4h_to_h.',
-        '.out_proj.',
-    ]
-
     def __init__(self, load_config: LoadConfig):
         super().__init__(load_config)
 
-        # we don't need to quantize the whole model, only the target modules
-        # that are specified in the adapter config file. If the adapter config
-        # file is not provided, we will quantize the default modules.
-        if (not load_config.model_loader_extra_config
-                or "qlora_adapter_name_or_path"
-                not in load_config.model_loader_extra_config):
-            self.target_modules = []
-            return
-
-        qlora_adapter = load_config.model_loader_extra_config[
-            "qlora_adapter_name_or_path"]
-
-        config_file_path = self._get_config_file(qlora_adapter)
-
-        with open(config_file_path, "r") as f:
-            config = json.load(f)
-            self.target_modules = config["target_modules"]
-
-    def _get_config_file(self, qlora_adapter: str) -> str:
-        is_local = os.path.isdir(qlora_adapter)
-        config_file_path = None
-        if is_local:
-            for file in self.possible_config_file_names:
-                config_file_path = os.path.join(qlora_adapter, file)
-                if os.path.exists(config_file_path):
-                    break
-        else:
-            hf_api = HfApi()
-            repo_files = hf_api.list_repo_files(repo_id=qlora_adapter)
-            for file in self.possible_config_file_names:
-                if file in repo_files:
-                    config_file_path = hf_hub_download(repo_id=qlora_adapter,
-                                                       filename=file)
-                    break
-
-        if not config_file_path:
-            raise ValueError(
-                f"Cannot find adapter config file in {qlora_adapter}")
-
-        return config_file_path
+        # Save the module names without sharding.
+        self.unsharded_weights_modules: List[str] = []
+        # Save the module names that are sharded by column.
+        self.column_sharded_weights_modules: List[str] = []
+        # Store all module names (from transformers) that support
+        # BNB quantization.
+        self.target_modules: List[str] = []
+        # mapping weight names from transformers to aphrodite.
+        self.weight_mapper: Callable = lambda name: name
 
     def _get_weight_files(
-            self,
-            model_name_or_path: str,
-            allowed_patterns: List[str],
-            revision: Optional[str] = None) -> Tuple[List[str], str]:
+        self,
+        model_name_or_path: str,
+        allowed_patterns: List[str],
+        revision: Optional[str] = None,
+    ) -> Tuple[str, List[str], str]:
         """Retrieve weight files. Download the files if necessary.
 
         Return the weight files and the file pattern."""
@@ -822,7 +917,7 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                 weight_files = glob.glob(
                     os.path.join(model_name_or_path, pattern))
                 if weight_files:
-                    return weight_files, pattern
+                    return model_name_or_path, weight_files, pattern
         else:
             hf_api = HfApi()
             repo_files = hf_api.list_repo_files(repo_id=model_name_or_path)
@@ -836,7 +931,8 @@ class BitsAndBytesModelLoader(BaseModelLoader):
                         revision,
                         ignore_patterns=self.load_config.ignore_patterns,
                     )
-                    return glob.glob(os.path.join(hf_folder, pattern)), pattern
+                    return hf_folder, glob.glob(
+                        os.path.join(hf_folder, pattern)), pattern
 
         raise RuntimeError(
             f"No model weights found in: `{model_name_or_path}`")
@@ -847,10 +943,28 @@ class BitsAndBytesModelLoader(BaseModelLoader):
 
         allowed_patterns = ["*.safetensors", "*.bin", "*.pt"]
 
-        hf_weights_files, matched_pattern = self._get_weight_files(
+        hf_folder, hf_weights_files, matched_pattern = self._get_weight_files(
             model_name_or_path, allowed_patterns, revision)
 
-        if matched_pattern != "*.safetensors":
+        use_safetensors = matched_pattern == "*.safetensors"
+        is_local = os.path.isdir(model_name_or_path)
+        index_file = SAFE_WEIGHTS_INDEX_NAME
+        if use_safetensors:
+            # For models like Mistral-7B-Instruct-v0.3
+            # there are both sharded safetensors files and a consolidated
+            # safetensors file. Using both breaks.
+            # Here, we download the `model.safetensors.index.json` and filter
+            # any files not found in the index.
+            if not is_local:
+                download_safetensors_index_file_from_hf(
+                    model_name_or_path,
+                    index_file,
+                    self.load_config.download_dir,
+                    revision,
+                )
+            hf_weights_files = filter_duplicate_safetensors_files(
+                hf_weights_files, hf_folder, index_file)
+        else:
             hf_weights_files = filter_files_not_needed_for_inference(
                 hf_weights_files)
 
@@ -858,13 +972,25 @@ class BitsAndBytesModelLoader(BaseModelLoader):
             raise RuntimeError(
                 f"Cannot find any model weights with `{model_name_or_path}`")
 
-        return hf_weights_files, matched_pattern == "*.safetensors"
+        return hf_weights_files, use_safetensors
 
     def _hf_weight_iter(self, hf_weights_files, use_safetensors: bool):
         if use_safetensors:
-            return safetensors_weights_iterator(hf_weights_files)
+            iterator = safetensors_weights_iterator(
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
+            )
         else:
-            return pt_weights_iterator(hf_weights_files)
+            iterator = pt_weights_iterator(
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
+                self.load_config.pt_load_map_location,
+            )
+        for org_name, param in iterator:
+            # mapping weight names from transformers to aphrodite while
+            # preserving original names.
+            mapped_name = self.weight_mapper(org_name)
+            yield org_name, mapped_name, param
 
     def _get_quantized_weights_iterator(
         self,
@@ -880,12 +1006,13 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         # only load the bitsandbytes module when needed
         try:
             import bitsandbytes
-            if bitsandbytes.__version__ < "0.45.1":
+
+            if bitsandbytes.__version__ < "0.45.3":
                 raise ImportError("bitsandbytes version is wrong. Please "
-                                  "install bitsandbytes>=0.45.1.")
+                                  "install bitsandbytes>=0.45.3.")
         except ImportError as err:
-            raise ImportError("Please install bitsandbytes>=0.45.1 via "
-                              "`pip install bitsandbytes>=0.45.1` to use "
+            raise ImportError("Please install bitsandbytes>=0.45.3 via "
+                              "`pip install bitsandbytes>=0.45.3` to use "
                               "bitsandbytes quantizer.") from err
 
         hf_weights_files, use_safetensors = self._prepare_weights(
@@ -906,24 +1033,48 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         return self._unquantized_generator(hf_weights_files, use_safetensors,
                                            quant_state_dict), quant_state_dict
 
+    def _is_8bit_weight_name(self, weight_name: str):
+        quantized_suffix = {".scb", ".weight_format"}
+        return any(weight_name.lower().endswith(suffix)
+                   for suffix in quantized_suffix)
+
+    def _is_4bit_weight_name(self, weight_name: str):
+        quantized_suffix = {
+            "absmax",
+            "quant_map",
+            "nested_absmax",
+            "nested_quant_map",
+            "bitsandbytes",
+        }
+        suffix = weight_name.split(".")[-1]
+        return any(q_suffix in suffix for q_suffix in quantized_suffix)
+
     def _quantized_8bit_generator(self, hf_weights_files, use_safetensors,
                                   quant_state_dict) -> Generator:
-        for weight_name, weight_tensor in self._hf_weight_iter(
-                hf_weights_files, use_safetensors):
-            if not weight_name.lower().endswith(".scb"):
+        for (
+                org_weight_name,
+                mapped_weight_name,
+                weight_tensor,
+        ) in self._hf_weight_iter(hf_weights_files, use_safetensors):
+            if not mapped_weight_name.lower().endswith(".scb"):
                 continue
-            weight_key = weight_name.lower().replace(".scb", ".qweight")
+
+            weight_key = mapped_weight_name.lower().replace(".scb", ".weight")
             quant_state_dict[weight_key] = weight_tensor
-        for weight_name, weight_tensor in self._hf_weight_iter(
-                hf_weights_files, use_safetensors):
-            if not weight_name.endswith((".weight", ".bias")):
+
+        for (
+                org_weight_name,
+                mapped_weight_name,
+                weight_tensor,
+        ) in self._hf_weight_iter(hf_weights_files, use_safetensors):
+            if self._is_8bit_weight_name(mapped_weight_name):
                 continue
-            qweight_name = weight_name.replace(".weight", ".qweight")
-            if qweight_name in quant_state_dict:
+
+            if mapped_weight_name in quant_state_dict:
                 set_weight_attrs(weight_tensor, {"load_in_8bit": True})
-                yield qweight_name, weight_tensor
+                yield org_weight_name, weight_tensor
             else:
-                yield weight_name, weight_tensor
+                yield org_weight_name, weight_tensor
 
     def _quantized_4bit_generator(self, hf_weights_files, use_safetensors,
                                   quant_state_dict) -> Generator:
@@ -933,15 +1084,19 @@ class BitsAndBytesModelLoader(BaseModelLoader):
         weight_iterator = self._hf_weight_iter(hf_weights_files,
                                                use_safetensors)
         temp_state_dict = {}
-        for weight_name, weight_tensor in weight_iterator:
-            if weight_name.endswith((".weight", ".bias")):
+        for (
+                org_weight_name,
+                mapped_weight_name,
+                weight_tensor,
+        ) in weight_iterator:
+            if not self._is_4bit_weight_name(mapped_weight_name):
                 continue
             # bitsandbytes library requires
             # weight.quant_state.bitsandbytes__* in CPU
-            if "quant_state.bitsandbytes" in weight_name:
-                temp_state_dict[weight_name] = weight_tensor.cpu().data
+            if "quant_state.bitsandbytes" in mapped_weight_name:
+                temp_state_dict[mapped_weight_name] = weight_tensor.cpu().data
             else:
-                temp_state_dict[weight_name] = weight_tensor
+                temp_state_dict[mapped_weight_name] = weight_tensor
 
         # Closure to parse quant_state for each prequant weight
         def _parse_quant_state(param_name: str,
@@ -950,142 +1105,265 @@ class BitsAndBytesModelLoader(BaseModelLoader):
             for k in temp_state_dict:
                 if param_name + "." in k:
                     quant_state[k] = temp_state_dict[k]
-            return QuantState.from_dict(quant_state, device="cuda")
+
+            return QuantState.from_dict(quant_state,
+                                        device=current_platform.device_type)
+
         # Second iterate over all prequant and normal weights
         # pre quantized weights would have a quant_state
-        for weight_name, weight_tensor in self._hf_weight_iter(
-                hf_weights_files, use_safetensors):
-            if not weight_name.endswith((".weight", ".bias")):
+        for (
+                org_weight_name,
+                mapped_weight_name,
+                weight_tensor,
+        ) in self._hf_weight_iter(hf_weights_files, use_safetensors):
+            if self._is_4bit_weight_name(mapped_weight_name):
                 continue
-            if (f"{weight_name}.quant_state.bitsandbytes__nf4" \
-                    in temp_state_dict) or \
-            (f"{weight_name}.quant_state.bitsandbytes__fp4" \
-                    in temp_state_dict):
-                quant_state = _parse_quant_state(weight_name, temp_state_dict)
-                weight_name = weight_name.replace(".weight", ".qweight")
-                quant_state_dict[weight_name] = quant_state
-                yield weight_name.replace(".weight", ".qweight"), weight_tensor
+
+            if (f"{mapped_weight_name}.quant_state.bitsandbytes__nf4"
+                    in temp_state_dict) or (
+                        f"{mapped_weight_name}.quant_state.bitsandbytes__fp4"
+                        in temp_state_dict):
+                quant_state = _parse_quant_state(mapped_weight_name,
+                                                 temp_state_dict)
+                quant_state_dict[mapped_weight_name] = quant_state
+                yield org_weight_name, weight_tensor
             else:
-                yield weight_name, weight_tensor
+                yield org_weight_name, weight_tensor
 
     def _unquantized_generator(self, hf_weights_files, use_safetensors,
                                quant_state_dict) -> Generator:
         from bitsandbytes.functional import quantize_4bit
+
         tp_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
-        for weight_name, weight_tensor in self._hf_weight_iter(
-                hf_weights_files, use_safetensors):
-            if any(target_module in weight_name for target_module in
-                   self.target_modules) and weight_name.endswith(".weight"):
-                weight_name = weight_name.replace(".weight", ".qweight")
-                if any(module in weight_name
-                       for module in self.column_parallel_weights_modules):
+
+        for (
+                org_weight_name,
+                mapped_weight_name,
+                weight_tensor,
+        ) in self._hf_weight_iter(hf_weights_files, use_safetensors):
+            if any(target_module in mapped_weight_name
+                   for target_module in self.target_modules
+                   ) and mapped_weight_name.endswith(".weight"):
+                # Without sharding
+                if any(
+                        mapped_weight_name.startswith(module)
+                        for module in self.unsharded_weights_modules):
+                    weight_sub_tensor = weight_tensor
+                # Shard by column
+                elif any(
+                        mapped_weight_name.startswith(module)
+                        for module in self.column_sharded_weights_modules):
                     total_size = weight_tensor.size(-1)
                     start_index = total_size // tp_size * tp_rank
                     end_index = total_size // tp_size * (tp_rank + 1)
                     weight_sub_tensor = weight_tensor[...,
                                                       start_index:end_index]
+                # Weights have fused on disk. In this case, we assume that the
+                # weight and module use same name.
+                elif any(
+                        mapped_weight_name.startswith(module)
+                        for module in self.maybe_fused_weights_modules):
+                    # special case for fused weights
+                    # get the size of each shard weight tensor
+                    total_shard_sizes = next(
+                        (sizes for module, sizes in
+                         self.maybe_fused_weights_modules.items()
+                         if mapped_weight_name.startswith(module)))
+                    total_size = weight_tensor.size(0)
+                    assert total_size == sum(total_shard_sizes)
+                    # get the start/end index of each shard weight tensor
+                    total_start_index = list(
+                        itertools.accumulate([0] + total_shard_sizes))[:-1]
+                    shard_weights_index = [(
+                        idx + size // tp_size * tp_rank,
+                        idx + size // tp_size * (tp_rank + 1),
+                    ) for idx, size in zip(total_start_index,
+                                           total_shard_sizes)]
+                    # slice and reorder the weight tensor
+                    weight_tensor = [
+                        weight_tensor[start_index:end_index, ...]
+                        for start_index, end_index in shard_weights_index
+                    ]
+                    weight_sub_tensor = torch.cat(weight_tensor, dim=0)
+                # Shard by row
                 else:
                     total_size = weight_tensor.size(0)
                     start_index = total_size // tp_size * tp_rank
                     end_index = total_size // tp_size * (tp_rank + 1)
                     weight_sub_tensor = weight_tensor[start_index:end_index,
                                                       ...]
+
                 # bitsandbytes requires data in GPU
                 if weight_sub_tensor.is_cuda:
                     loaded_weight = weight_sub_tensor
                 else:
                     loaded_weight = weight_sub_tensor.cuda()
+
                 # remove the following after the issue is fixed:
                 # https://github.com/bitsandbytes-foundation/bitsandbytes/issues/1342
                 if loaded_weight.is_contiguous() is False:
                     loaded_weight = loaded_weight.contiguous()
+
                 with set_default_torch_dtype(torch.float32):
                     processed_weight, quant_state = quantize_4bit(
                         loaded_weight,
                         compress_statistics=True,
-                        quant_type="nf4")
-                quant_state_dict[weight_name] = quant_state
+                        quant_type="nf4",
+                    )
+
+                quant_state_dict[mapped_weight_name] = quant_state
             else:
                 processed_weight = weight_tensor
-            yield weight_name, processed_weight
+            yield org_weight_name, processed_weight
+
+    def _get_bnb_target_modules(self, model: nn.Module) -> None:
+
+        for name, module in model.named_modules():
+            if isinstance(module, (LinearBase, )):
+                if modules_info := self.modules_mapping.get_sub_modules(name):
+                    # Map aphrodite's names to transformers's names.
+                    rep_name, sub_modules = modules_info
+                    for sub_name in sub_modules:
+                        self.target_modules.append(
+                            name.replace(rep_name, sub_name))
+                # Add original module name even if the module has stacked map,
+                # in case model has a mixture of disk-merged and disk-splitted
+                # weights with same last name.
+                self.target_modules.append(name)
+
+        assert (self.target_modules
+                ), "aphrodite currently does not support BNB quantization for"
+        f" {type(model).__name__}"
 
     def _load_weights(self, model_config: ModelConfig,
                       model: nn.Module) -> None:
-        if not hasattr(model, 'load_weights'):
+        if not hasattr(model, "load_weights"):
             raise AttributeError(
                 "The required method 'load_weights' is not defined in class"
-                f" {type(self).__name__}.")
+                f" {type(model).__name__}.")
 
-        if not hasattr(model, 'bitsandbytes_stacked_params_mapping'):
+        if not hasattr(model, "packed_modules_mapping"):
             raise AttributeError(
-                f"Model {type(self).__name__} does not support BitsAndBytes "
-                "quantization yet.")
+                f"Model {type(model).__name__} does not support BitsAndBytes "
+                "quantization yet. No 'packed_modules_mapping' found.")
 
-        if len(self.target_modules) == 0:
-            if hasattr(model, 'default_bitsandbytes_target_modules'):
-                self.target_modules = model.default_bitsandbytes_target_modules
-            else:
-                self.target_modules = self.default_target_modules
+        self.modules_mapping = ParamMapping(
+            copy.deepcopy(model.packed_modules_mapping))
 
-        if hasattr(model, 'column_parallel_weights_modules'):
-            self.column_parallel_weights_modules = \
-                model.column_parallel_weights_modules
-        else:
-            self.column_parallel_weights_modules = []
+        # For some models like Molmo, we need to use hf_to_aphrodite_mapper
+        # to ensure correct loading of weights.
+        if hf_to_aphrodite_mapper := getattr(model, "hf_to_aphrodite_mapper",
+                                             None):
+            self.weight_mapper = lambda name: hf_to_aphrodite_mapper._map_name(
+                name)  # noqa: E501
+
+        # Modules whose weights might have fused on disk
+        # we need their output_sizes to make shard in flight correctly with TP
+        self.maybe_fused_weights_modules: Dict[str, List[int]] = {}
+        self._get_bnb_target_modules(model)
+        for name, module in model.named_modules():
+            # Some modules like `ReplicatedLinear` should not have their weights
+            # sharded. The reason for implementing it this way is to avoid new
+            # static variable in the model implementation.
+            if isinstance(module, (ReplicatedLinear, )):
+                self.unsharded_weights_modules.append(name)
+            # `QKVParallelLinear` and `MergedColumnParallelLinear` might have
+            # fused weights on disk. We need to use the output sizes of these
+            # modules to shard the weights correctly.
+            elif isinstance(module,
+                            (QKVParallelLinear, MergedColumnParallelLinear)):
+                self.maybe_fused_weights_modules[name] = module.output_sizes
+            # In TP, these weights are partitioned along the column
+            # dimension (dim=-1)
+            elif isinstance(module, (RowParallelLinear, )):
+                self.column_sharded_weights_modules.append(name)
 
         self.model_type = type(model).__name__
 
         logger.info("Loading weights with BitsAndBytes quantization. "
-                    "This may take a while ...")
+                    "May take a while ...")
 
         quant_config = getattr(model_config.hf_config, "quantization_config",
                                None)
+
         pre_quant = False
         if quant_config is not None:
-            quant_method = quant_config.get('quant_method')
+            quant_method = quant_config.get("quant_method")
             if quant_method == "bitsandbytes":
                 pre_quant = True
             else:
                 raise ValueError(
                     f"BitsAndBytes loader does not support {quant_method} "
                     "quantization")
+
         # The quant_states in pre_quantized models cannot work with a split
         # weight tensor. So TP does not work with pre_quantized bnb models.
         if pre_quant and get_tensor_model_parallel_world_size() > 1:
             raise ValueError(
-                "Prequant BitsAndBytes models with TP is not supported."
-                "Please try with PP.")
+                "Prequant BitsAndBytes models with tensor parallelism is not "
+                "supported. Please try with pipeline parallelism.")
+
         load_8bit = False
         if pre_quant:
-            load_8bit = quant_config.get('load_in_8bit', False)
+            load_8bit = quant_config.get("load_in_8bit", False)
 
-        qweight_iterator, quant_state_dict = \
-            self._get_quantized_weights_iterator(
-            model_config.model, model_config.revision, pre_quant, load_8bit)
+        qweight_iterator, quant_state_dict = (
+            self._get_quantized_weights_iterator(model_config.model,
+                                                 model_config.revision,
+                                                 pre_quant, load_8bit))
 
-        model.load_weights(qweight_iterator)
+        weights_to_load = {name for name, _ in model.named_parameters()}
+        loaded_weights = model.load_weights(qweight_iterator)
+        # Some models may have weights loading tracker unimplemented.
+        if loaded_weights is not None:
+            weights_not_loaded = weights_to_load - loaded_weights
+            if weights_not_loaded:
+                raise ValueError("Following weights were not initialized from "
+                                 f"checkpoint: {weights_not_loaded}")
 
         torch.cuda.empty_cache()
 
         param_dict = dict(model.named_parameters())
         stacked_quant_state_dict: Dict[str, Dict[int, Any]] = {}
+        # TODO: Change this lazy import to normal import
+        # after the checks are updated to run on a new version
+        from aphrodite.modeling.models.utils import is_pp_missing_parameter
+
         for quant_param_name in quant_state_dict:
+            if is_pp_missing_parameter(quant_param_name, model):
+                continue
+
             non_stacked_param_name = quant_param_name
 
             shard_index = 0
             for shard_name, (
-                    weight_name, index
-            ) in model.bitsandbytes_stacked_params_mapping.items():
-                if shard_name in quant_param_name:
+                    weight_name,
+                    index,
+            ) in self.modules_mapping.inverse_packed_mapping.items():
+                # Some models, such as MiniCPM V2.5/2.6, contain both
+                # module names 'kv_proj' and 'qkv_proj'. To prevent 'kv_proj'
+                # from being incorrectly identified as being present in
+                # 'vpm.encoder.layers.0.self_attn.qkv_proj.weight
+                shard_pos = quant_param_name.find(shard_name)
+                can_correct_rename = (shard_pos
+                                      > 0) and (quant_param_name[shard_pos - 1]
+                                                == ".")
+                # If the quant_param_name is packed, it won't occur in the
+                # param_dict before renaming.
+                new_quant_param_name = quant_param_name.replace(
+                    shard_name, weight_name)
+                need_rename = (quant_param_name not in param_dict) \
+                              and (new_quant_param_name in param_dict)
+                if can_correct_rename and need_rename:
                     shard_index = index
-                    quant_param_name = quant_param_name.replace(
-                        shard_name, weight_name)
+                    quant_param_name = new_quant_param_name
                     break
 
+            # Models like Clip/Siglip may skip some layers in initialization,
+            # causing unused quant_param_name in state_dict.
             if quant_param_name not in param_dict:
-                raise ValueError(
-                    f"Parameter {quant_param_name} not found in the model.")
+                continue
 
             if quant_param_name not in stacked_quant_state_dict:
                 stacked_quant_state_dict[quant_param_name] = {}
@@ -1106,10 +1384,12 @@ class BitsAndBytesModelLoader(BaseModelLoader):
 
                 num_elements = [0] * len(quant_states)
                 for seq, quant_state in quant_states.items():
-                    num_elements[seq] = math.prod(
-                        quant_state.shape) // pack_ratio
+                    num_elements[seq] = (math.prod(quant_state.shape) //
+                                         pack_ratio)
 
                 offsets = np.concatenate(([0], np.cumsum(num_elements)))
+                # Make torch infer_schema happy
+                offsets = torch.tensor(offsets).cpu()
                 set_weight_attrs(param, {"bnb_shard_offsets": offsets})
 
                 if load_8bit:
@@ -1119,16 +1399,12 @@ class BitsAndBytesModelLoader(BaseModelLoader):
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(model_config.model, model_config.revision)
 
-    def load_model(self, *, model_config: ModelConfig,
-                   device_config: DeviceConfig,
-                   lora_config: Optional[LoRAConfig],
-                   parallel_config: ParallelConfig,
-                   scheduler_config: SchedulerConfig,
-                   cache_config: CacheConfig) -> nn.Module:
+    def load_model(self, aphrodite_config: AphroditeConfig) -> nn.Module:
+        device_config = aphrodite_config.device_config
+        model_config = aphrodite_config.model_config
         with set_default_torch_dtype(model_config.dtype):
             with torch.device(device_config.device):
-                model = _initialize_model(model_config, self.load_config,
-                                          lora_config, cache_config)
+                model = _initialize_model(aphrodite_config=aphrodite_config)
 
                 self._load_weights(model_config, model)
 
@@ -1165,9 +1441,24 @@ class GGUFModelLoader(BaseModelLoader):
         """
         config = model_config.hf_config
         model_type = config.model_type
+        gguf_to_hf_name_map = {}
         # hack: ggufs have a different name than transformers
         if model_type == "cohere":
             model_type = "command-r"
+        if model_type in ("deepseek_v3", "deepseek_v2"):
+            model_type = "deepseek2"
+            # GGUF layer map assumes that we will have a merged expert weights
+            # so we need to map them manually
+            for idx in range(config.num_hidden_layers):
+                gguf_to_hf_name_map[f"blk.{idx}.exp_probs_b.bias"] = \
+                        f"model.layers.{idx}.mlp.gate.e_score_correction_bias"
+                gguf_to_hf_name_map[f"blk.{idx}.ffn_down_exps.weight"] = \
+                        f"model.layers.{idx}.mlp.experts.0.down_proj.weight"
+                gguf_to_hf_name_map[f"blk.{idx}.ffn_gate_exps.weight"] = \
+                        f"model.layers.{idx}.mlp.experts.0.gate_proj.weight"
+                gguf_to_hf_name_map[f"blk.{idx}.ffn_up_exps.weight"] = \
+                        f"model.layers.{idx}.mlp.experts.0.up_proj.weight"
+
         arch = None
         for key, value in gguf.MODEL_ARCH_NAMES.items():
             if value == model_type:
@@ -1177,25 +1468,15 @@ class GGUFModelLoader(BaseModelLoader):
             raise RuntimeError(f"Unknown gguf model_type: {model_type}")
         num_layers = config.num_hidden_layers
         name_map = gguf.get_tensor_name_map(arch, num_layers)
+        with torch.device("meta"):
+            dummy_model = AutoModelForCausalLM.from_config(
+                config, trust_remote_code=model_config.trust_remote_code)
+        state_dict = dummy_model.state_dict()
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-        ) as progress:
-            task = progress.add_task("Creating tensor name mapping...", total=1)
-            with torch.device("meta"):
-                dummy_model = AutoModelForCausalLM.from_config(config)
-            state_dict = dummy_model.state_dict()
-
-            gguf_to_hf_name_map = {}
-            for hf_name in state_dict:
-                name, suffix = hf_name.rsplit(".", 1)
-                gguf_name = name_map.get_name(name)
-                gguf_to_hf_name_map[f"{gguf_name}.{suffix}"] = hf_name
-            progress.update(task, advance=1)
-            
+        for hf_name in state_dict:
+            name, suffix = hf_name.rsplit(".", 1)
+            gguf_name = name_map.get_name(name)
+            gguf_to_hf_name_map[f"{gguf_name}.{suffix}"] = hf_name
         return gguf_to_hf_name_map
 
     def _get_weights_iterator(
@@ -1207,13 +1488,9 @@ class GGUFModelLoader(BaseModelLoader):
     def download_model(self, model_config: ModelConfig) -> None:
         self._prepare_weights(model_config.model)
 
-    def load_model(self, *, model_config: ModelConfig,
-                   device_config: DeviceConfig,
-                   lora_config: Optional[LoRAConfig],
-                   parallel_config: ParallelConfig,
-                   scheduler_config: SchedulerConfig,
-                   cache_config: CacheConfig) -> nn.Module:
-
+    def load_model(self, aphrodite_config: AphroditeConfig) -> nn.Module:
+        device_config = aphrodite_config.device_config
+        model_config = aphrodite_config.model_config
         local_model_path = self._prepare_weights(model_config.model)
         gguf_weights_map = self._get_gguf_weights_map(model_config)
         # we can only know if tie word embeddings after mapping weights
@@ -1221,18 +1498,120 @@ class GGUFModelLoader(BaseModelLoader):
                 local_model_path, gguf_weights_map):
             model_config.hf_config.update({"tie_word_embeddings": True})
 
+        target_device = torch.device(device_config.device)
         with set_default_torch_dtype(model_config.dtype):
-            with torch.device(device_config.device):
-                model = _initialize_model(model_config, self.load_config,
-                                          lora_config, cache_config)
+            with target_device:
+                model = _initialize_model(aphrodite_config=aphrodite_config)
             model.load_weights(
                 self._get_weights_iterator(local_model_path, gguf_weights_map))
+
+            _process_weights_after_loading(model, model_config, target_device)
         return model
+
+
+class RunaiModelStreamerLoader(BaseModelLoader):
+    """
+        Model loader that can load safetensors
+        files from local FS or S3 bucket.
+    """
+
+    def __init__(self, load_config: LoadConfig):
+        super().__init__(load_config)
+        if load_config.model_loader_extra_config:
+            extra_config = load_config.model_loader_extra_config
+
+            if ("concurrency" in extra_config
+                    and isinstance(extra_config.get("concurrency"), int)):
+                os.environ["RUNAI_STREAMER_CONCURRENCY"] = str(
+                    extra_config.get("concurrency"))
+
+            if ("memory_limit" in extra_config
+                    and isinstance(extra_config.get("memory_limit"), int)):
+                os.environ["RUNAI_STREAMER_MEMORY_LIMIT"] = str(
+                    extra_config.get("memory_limit"))
+
+            runai_streamer_s3_endpoint = os.getenv(
+                'RUNAI_STREAMER_S3_ENDPOINT')
+            aws_endpoint_url = os.getenv('AWS_ENDPOINT_URL')
+            if (runai_streamer_s3_endpoint is None
+                    and aws_endpoint_url is not None):
+                os.environ["RUNAI_STREAMER_S3_ENDPOINT"] = aws_endpoint_url
+
+    def _prepare_weights(self, model_name_or_path: str,
+                         revision: Optional[str]) -> List[str]:
+        """Prepare weights for the model.
+
+        If the model is not local, it will be downloaded."""
+
+        is_s3_path = is_s3(model_name_or_path)
+        is_local = os.path.isdir(model_name_or_path)
+        safetensors_pattern = "*.safetensors"
+        index_file = SAFE_WEIGHTS_INDEX_NAME
+
+        hf_folder = (model_name_or_path if
+                     (is_local or is_s3_path) else download_weights_from_hf(
+                         model_name_or_path,
+                         self.load_config.download_dir,
+                         [safetensors_pattern],
+                         revision,
+                         ignore_patterns=self.load_config.ignore_patterns,
+                     ))
+        if is_s3_path:
+            hf_weights_files = s3_glob(path=hf_folder,
+                                       allow_pattern=[safetensors_pattern])
+        else:
+            hf_weights_files = glob.glob(
+                os.path.join(hf_folder, safetensors_pattern))
+
+        if not is_local and not is_s3_path:
+            download_safetensors_index_file_from_hf(
+                model_name_or_path, index_file, self.load_config.download_dir,
+                revision)
+
+        if not hf_weights_files:
+            raise RuntimeError(
+                f"Cannot find any safetensors model weights with "
+                f"`{model_name_or_path}`")
+
+        return hf_weights_files
+
+    def _get_weights_iterator(
+            self, model_or_path: str,
+            revision: str) -> Generator[Tuple[str, torch.Tensor], None, None]:
+        """Get an iterator for the model weights based on the load format."""
+        hf_weights_files = self._prepare_weights(model_or_path, revision)
+        return runai_safetensors_weights_iterator(
+            hf_weights_files,
+            self.load_config.use_tqdm_on_load,
+        )
+
+    def download_model(self, model_config: ModelConfig) -> None:
+        """Download model if necessary"""
+        self._prepare_weights(model_config.model, model_config.revision)
+
+    def load_model(self, aphrodite_config: AphroditeConfig) -> nn.Module:
+        """Perform streaming of the model to destination"""
+        device_config = aphrodite_config.device_config
+        model_config = aphrodite_config.model_config
+
+        target_device = torch.device(device_config.device)
+        with set_default_torch_dtype(model_config.dtype):
+            with target_device:
+                model = _initialize_model(aphrodite_config=aphrodite_config)
+
+            model_weights = model_config.model
+            if hasattr(model_config, "model_weights"):
+                model_weights = model_config.model_weights
+            model.load_weights(
+                self._get_weights_iterator(model_weights,
+                                           model_config.revision))
+
+            _process_weights_after_loading(model, model_config, target_device)
+        return model.eval()
 
 
 def get_model_loader(load_config: LoadConfig) -> BaseModelLoader:
     """Get a model loader based on the load format."""
-
     if isinstance(load_config.load_format, type):
         return load_config.load_format(load_config)
 
@@ -1250,5 +1629,11 @@ def get_model_loader(load_config: LoadConfig) -> BaseModelLoader:
 
     if load_config.load_format == LoadFormat.GGUF:
         return GGUFModelLoader(load_config)
+
+    if load_config.load_format == LoadFormat.RUNAI_STREAMER:
+        return RunaiModelStreamerLoader(load_config)
+
+    if load_config.load_format == LoadFormat.RUNAI_STREAMER_SHARDED:
+        return ShardedStateLoader(load_config, runai_model_streamer=True)
 
     return DefaultModelLoader(load_config)

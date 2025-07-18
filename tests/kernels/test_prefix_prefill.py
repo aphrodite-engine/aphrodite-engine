@@ -393,7 +393,7 @@ def test_contexted_kv_attention_alibi(
     print(f"triton Time: {(end_time - start_time)*1000:.2f} ms")
     scale = float(1.0 / (head_size**0.5))
 
-    # NOTE(DefTruth): In order to reuse _make_alibi_bias function,
+    # NOTE: In order to reuse _make_alibi_bias function,
     # we have to pad query tensor before MQA/GQA expanding.
     if query.shape[0] != key.shape[0]:
         query_pad = torch.empty(sum(seq_lens),

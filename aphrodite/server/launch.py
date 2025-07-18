@@ -1,46 +1,63 @@
 import asyncio
 import signal
+import socket
 from http import HTTPStatus
-from typing import Any
+from typing import Any, Optional
 
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from loguru import logger
 
-import aphrodite.common.envs as envs
-from aphrodite.common.utils import find_process_using_port, in_windows
+from aphrodite.common import envs
+from aphrodite.common.utils import find_process_using_port
+from aphrodite.endpoints.ssl import SSLCertRefresher
 from aphrodite.engine.async_aphrodite import AsyncEngineDeadError
 from aphrodite.engine.multiprocessing import MQEngineDeadError
+from aphrodite.engine.protocol import EngineClient
+from aphrodite.v1.engine.exceptions import EngineDeadError, EngineGenerateError
 
-APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH = (
-    envs.APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH)
 
+async def serve_http(app: FastAPI,
+                     sock: Optional[socket.socket],
+                     enable_ssl_refresh: bool = False,
+                     **uvicorn_kwargs: Any):
+    for route in app.routes:
+        methods = getattr(route, "methods", None)
+        path = getattr(route, "path", None)
 
-async def serve_http(app: FastAPI, **uvicorn_kwargs: Any):
+        if methods is None or path is None:
+            continue
 
     config = uvicorn.Config(app, **uvicorn_kwargs)
+    config.load()
     server = uvicorn.Server(config)
     _add_shutdown_handlers(app, server)
 
     loop = asyncio.get_running_loop()
 
-    server_task = loop.create_task(server.serve())
+    watchdog_task = loop.create_task(
+        watchdog_loop(server, app.state.engine_client))
+    server_task = loop.create_task(
+        server.serve(sockets=[sock] if sock else None))
+
+    ssl_cert_refresher = None if not enable_ssl_refresh else SSLCertRefresher(
+        ssl_context=config.ssl,
+        key_path=config.ssl_keyfile,
+        cert_path=config.ssl_certfile,
+        ca_path=config.ssl_ca_certs)
 
     def signal_handler() -> None:
         # prevents the uvicorn signal handler to exit early
         server_task.cancel()
+        watchdog_task.cancel()
+        if ssl_cert_refresher:
+            ssl_cert_refresher.stop()
 
     async def dummy_shutdown() -> None:
         pass
 
-    if in_windows():
-        # Windows - use signal.signal() directly
-        signal.signal(signal.SIGINT, lambda signum, frame: signal_handler())
-        signal.signal(signal.SIGTERM, lambda signum, frame: signal_handler())
-    else:
-        # Unix - use asyncio's add_signal_handler
-        loop.add_signal_handler(signal.SIGINT, signal_handler)
-        loop.add_signal_handler(signal.SIGTERM, signal_handler)
+    loop.add_signal_handler(signal.SIGINT, signal_handler)
+    loop.add_signal_handler(signal.SIGTERM, signal_handler)
 
     try:
         await server_task
@@ -49,53 +66,74 @@ async def serve_http(app: FastAPI, **uvicorn_kwargs: Any):
         port = uvicorn_kwargs["port"]
         process = find_process_using_port(port)
         if process is not None:
-            logger.info(
-                f"port {port} is used by process {process} launched with "
-                f"command:\n{' '.join(process.cmdline())}")
+            logger.debug(
+                "port {} is used by process {} launched with command:\n{}",
+                port, process, " ".join(process.cmdline()))
         logger.info("Shutting down FastAPI HTTP server.")
         return server.shutdown()
+    finally:
+        watchdog_task.cancel()
+
+
+async def watchdog_loop(server: uvicorn.Server, engine: EngineClient):
+    """
+    # Watchdog task that runs in the background, checking
+    # for error state in the engine. Needed to trigger shutdown
+    # if an exception arises is StreamingResponse() generator.
+    """
+    APHRODITE_WATCHDOG_TIME_S = 5.0
+    while True:
+        await asyncio.sleep(APHRODITE_WATCHDOG_TIME_S)
+        terminate_if_errored(server, engine)
+
+
+def terminate_if_errored(server: uvicorn.Server, engine: EngineClient):
+    """
+    See discussions here on shutting down a uvicorn server
+    https://github.com/encode/uvicorn/discussions/1103
+    In this case we cannot await the server shutdown here
+    because handler must first return to close the connection
+    for this request.
+    """
+    engine_errored = engine.errored and not engine.is_running
+    if not envs.APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH and engine_errored:
+        server.should_exit = True
 
 
 def _add_shutdown_handlers(app: FastAPI, server: uvicorn.Server) -> None:
-    """Adds handlers for fatal errors that should crash the server"""
+    """
+    APHRODITE V1 AsyncLLM catches exceptions and returns
+    only two types: EngineGenerateError and EngineDeadError.
+    
+    EngineGenerateError is raised by the per request generate()
+    method. This error could be request specific (and therefore
+    recoverable - e.g. if there is an error in input processing).
+    
+    EngineDeadError is raised by the background output_handler
+    method. This error is global and therefore not recoverable.
+    
+    We register these @app.exception_handlers to return nice
+    responses to the end user if they occur and shut down if needed.
+    See https://fastapi.tiangolo.com/tutorial/handling-errors/
+    for more details on how exception handlers work.
+
+    If an exception is encountered in a StreamingResponse
+    generator, the exception is not raised, since we already sent
+    a 200 status. Rather, we send an error message as the next chunk.
+    Since the exception is not raised, this means that the server
+    will not automatically shut down. Instead, we use the watchdog
+    background task for check for errored state.
+    """
 
     @app.exception_handler(RuntimeError)
-    async def runtime_error_handler(request: Request, __):
-        """On generic runtime error, check to see if the engine has died.
-        It probably has, in which case the server will no longer be able to
-        handle requests. Trigger a graceful shutdown with a SIGTERM."""
-        engine = request.app.state.engine_client
-        if (not APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH and engine.errored
-                and not engine.is_running):
-            logger.error("AsyncAphrodite has failed, terminating server "
-                         "process")
-            # See discussions here on shutting down a uvicorn server
-            # https://github.com/encode/uvicorn/discussions/1103
-            # In this case we cannot await the server shutdown here because
-            # this handler must first return to close the connection for
-            # this request.
-            server.should_exit = True
-
-        return Response(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
-
     @app.exception_handler(AsyncEngineDeadError)
-    async def async_engine_dead_handler(_, __):
-        """Kill the server if the async engine is already dead. It will
-        not handle any further requests."""
-        if not APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH:
-            logger.error("AsyncAphrodite is already dead, terminating server "
-                         "process")
-            server.should_exit = True
-
-        return Response(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
-
-
     @app.exception_handler(MQEngineDeadError)
-    async def mq_engine_dead_handler(_, __):
-        """Kill the server if the mq engine is already dead. It will
-        not handle any further requests."""
-        if not envs.APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH:
-            logger.error("MQLLMEngine is already dead, terminating server "
-                         "process")
-            server.should_exit = True
+    @app.exception_handler(EngineDeadError)
+    @app.exception_handler(EngineGenerateError)
+    async def runtime_exception_handler(request: Request, __):
+        terminate_if_errored(
+            server=server,
+            engine=request.app.state.engine_client,
+        )
+
         return Response(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)

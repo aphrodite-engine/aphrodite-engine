@@ -30,7 +30,7 @@ COPY . /app/aphrodite-engine
 RUN cd /app/aphrodite-engine \
     && python3 -m pip install -U \
         cmake>=3.26 ninja packaging setuptools-scm>=8 wheel jinja2 \
-        -r requirements-neuron.txt
+        -r requirements/neuron.txt
 
 ENV APHRODITE_TARGET_DEVICE neuron
 RUN --mount=type=bind,source=.git,target=.git \

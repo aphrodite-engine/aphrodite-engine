@@ -62,7 +62,7 @@ def test_rotary_embedding(
                         dtype=dtype)
     key = torch.randn_like(query)
 
-    # NOTE(woosuk): The reference implementation should be executed first
+    # NOTE: The reference implementation should be executed first
     # because the custom kernel is in-place.
     ref_query, ref_key = rope.forward_native(positions, query, key)
     out_query, out_key = rope.forward(positions, query, key)

@@ -1,6 +1,7 @@
 from typing import List, Optional, Set, Tuple
 
 import torch
+import torch.nn as nn
 from loguru import logger
 
 from aphrodite.common.sequence import ExecuteModelRequest
@@ -8,9 +9,14 @@ from aphrodite.distributed.parallel_state import (get_tp_group,
                                                   init_model_parallel_group,
                                                   patch_tensor_parallel_group)
 from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.spec_decode.interfaces import SpeculativeProposals
 from aphrodite.spec_decode.multi_step_worker import MultiStepWorker
 from aphrodite.spec_decode.proposer_worker_base import ProposerWorkerBase
+
+
+class _DummyModel(nn.Module):
+    pass
 
 
 class SmallerTpProposerWorker(ProposerWorkerBase):
@@ -35,7 +41,7 @@ class SmallerTpProposerWorker(ProposerWorkerBase):
         # gpu ranks that will generate draft tokens together
         draft_ranks = list(range(draft_tensor_parallel_size))
 
-        logger.info(f"Wrapping {type(worker)} in {cls}")
+        logger.info("Wrapping {{}} in {{}}", type(worker), cls)
         return cls(worker, draft_ranks)
 
     def __init__(self, worker: MultiStepWorker, draft_ranks: List[int]):
@@ -137,6 +143,13 @@ class SmallerTpProposerWorker(ProposerWorkerBase):
             return self._worker.get_spec_proposals(
                 execute_model_req, seq_ids_with_bonus_token_in_last_step)
 
+    def get_model(self) -> nn.Module:
+        if self._is_dummy:
+            return _DummyModel()
+
+        with self._patch_tensor_parallel_group():
+            return self._worker.get_model()
+
     def execute_model(
         self,
         execute_model_req: Optional[ExecuteModelRequest] = None
@@ -157,3 +170,21 @@ class SmallerTpProposerWorker(ProposerWorkerBase):
     @property
     def vocab_size(self) -> int:
         return self._worker.vocab_size
+
+    def maybe_load_lm_head_weight(
+        self,
+        lm_head_weight: torch.Tensor,
+    ) -> None:
+        if self._is_dummy:
+            return
+
+        with self._patch_tensor_parallel_group():
+            weight_loader = getattr(
+                self._worker.worker.model_runner.model_runner.model.\
+                    lm_head.weight,
+                "weight_loader",
+                default_weight_loader)
+            weight_loader(
+                self._worker.worker.model_runner.model_runner.model.\
+                    lm_head.weight,
+                lm_head_weight)

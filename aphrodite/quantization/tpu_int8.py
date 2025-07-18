@@ -6,6 +6,7 @@ from torch.nn.parameter import Parameter
 
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.parameter import ModelWeightParameter
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
 ACTIVATION_SCHEMES = ["none"]
@@ -18,12 +19,13 @@ class Int8TpuConfig(QuantizationConfig):
         self,
         activation_scheme: str = "none",
     ) -> None:
+        super().__init__()
         if activation_scheme not in ACTIVATION_SCHEMES:
             raise ValueError(
                 f"Unsupported activation scheme {activation_scheme}")
         self.activation_scheme = activation_scheme
 
-    def get_name(self) -> str:
+    def get_name(self) -> QuantizationMethods:
         return "tpu_int8"
 
     def get_supported_act_dtypes(self) -> List[torch.dtype]:
@@ -48,9 +50,6 @@ class Int8TpuConfig(QuantizationConfig):
         if isinstance(layer, LinearBase):
             return TPUInt8LinearMethod(self)
         return None
-
-    def get_scaled_act_names(self) -> List[str]:
-        return []
 
 
 class TPUInt8LinearMethod(LinearMethodBase):
@@ -108,8 +107,8 @@ class TPUInt8LinearMethod(LinearMethodBase):
         except ImportError as err:
             raise ImportError(
                 "Please install torch_xla by following the instructions at "
-                "https://aphrodite.pygmalion.chat/pages/installation/installation-tpu.html "  # noqa: E501
-                "to run Aphrodite on TPU.") from err
+                "https://docs.aphrodite.ai/en/latest/getting_started/tpu-installation.html "  # noqa: E501
+                "to run vLLM on TPU.") from err
         weight = layer.weight
         scale = layer.scale
         out = torch.ops.xla.quantized_matmul(x, weight, scale)

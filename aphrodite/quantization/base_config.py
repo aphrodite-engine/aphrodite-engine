@@ -1,9 +1,14 @@
 import inspect
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type
 
 import torch
 from torch import nn
+
+if TYPE_CHECKING:
+    from aphrodite.quantization import QuantizationMethods
+else:
+    QuantizationMethods = str
 
 
 class QuantizeMethodBase(ABC):
@@ -13,12 +18,14 @@ class QuantizeMethodBase(ABC):
     def create_weights(self, layer: torch.nn.Module, *weight_args,
                        **extra_weight_attrs):
         """Create weights for a layer.
+
         The weights will be set as attributes of the layer."""
         raise NotImplementedError
 
     @abstractmethod
     def apply(self, layer: torch.nn.Module, *args, **kwargs) -> torch.Tensor:
         """Apply the weights in layer to the input tensor.
+
         Expects create_weights to have been called before on the layer."""
         raise NotImplementedError
 
@@ -26,11 +33,13 @@ class QuantizeMethodBase(ABC):
     def embedding(self, layer: torch.nn.Module, *args,
                   **kwargs) -> torch.Tensor:
         """Gather embeddings in the layer based on indices in the input tensor.
+
         Expects create_weights to have been called before on the layer."""
         raise NotImplementedError
 
     def process_weights_after_loading(self, layer: nn.Module) -> None:
         """Process the weight after loading.
+
         This can be used for example, to transpose weights for computation.
         """
         return
@@ -54,8 +63,13 @@ def method_has_implemented_embedding(
 class QuantizationConfig(ABC):
     """Base class for quantization configs."""
 
+    def __init__(self):
+        super().__init__()
+        # mapping is updated by models as they initialize
+        self.packed_modules_mapping: Dict[str, List[str]] = dict()
+
     @abstractmethod
-    def get_name(self) -> str:
+    def get_name(self) -> QuantizationMethods:
         """Name of the quantization method."""
         raise NotImplementedError
 
@@ -88,12 +102,12 @@ class QuantizationConfig(ABC):
         raise NotImplementedError
 
     @classmethod
-    def override_quantization_method(cls, hf_quant_cfg,
-                                     user_quant) -> Optional[str]:
+    def override_quantization_method(
+            cls, hf_quant_cfg, user_quant) -> Optional[QuantizationMethods]:
         """
            Detects if this quantization method can support a given checkpoint
-           format by overriding the user specified quantization method --
-           this method should only be overwritten by subclasses in exceptional
+           format by overriding the user specified quantization method -- 
+           this method should only be overwritten by subclasses in exceptional 
            circumstances
         """
         return None
@@ -118,14 +132,17 @@ class QuantizationConfig(ABC):
 
     @abstractmethod
     def get_quant_method(self, layer: torch.nn.Module,
-                         prefix: str) -> QuantizeMethodBase:
-        """Get the quantize method to use for the quantized layer."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_scaled_act_names(self) -> List[str]:
-        """Returns the activation function names that should be post-scaled.
-
-        For now, this is only used by AWQ.
+                         prefix: str) -> Optional[QuantizeMethodBase]:
+        """Get the quantize method to use for the quantized layer.
+        
+        Args:
+            layer: The layer for the quant method.
+            prefix: The full name of the layer in the state dict
+        Returns:
+            The quantize method. None if the given layer doesn't support quant
+            method.
         """
         raise NotImplementedError
+
+    def get_cache_scale(self, name: str) -> Optional[str]:
+        return None

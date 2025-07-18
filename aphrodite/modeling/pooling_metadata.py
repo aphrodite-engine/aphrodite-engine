@@ -9,8 +9,10 @@ from aphrodite.common.utils import is_pin_memory_available
 
 class PoolingMetadata:
     """Metadata for pooling operations in the Pooler layer.
+
     This class holds the necessary information for pooling operations,
     providing context for how to perform pooling and other related operations.
+
     Attributes:
         seq_groups: List of (seq_ids, pooling_params).
         seq_data: A mapping of sequence ID to additional sequence data.
@@ -48,6 +50,7 @@ class PoolingTensors:
     ) -> "PoolingTensors":
         """
         Create PoolingTensors from PoolingMetadata.
+
         Args:
             pooling_metadata: PoolingMetadata instance to convert.
             device: Device to store the tensors.

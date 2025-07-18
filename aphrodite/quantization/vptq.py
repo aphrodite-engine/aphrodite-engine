@@ -11,6 +11,7 @@ from aphrodite import _custom_ops as ops
 from aphrodite.distributed import get_tensor_model_parallel_rank
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
 
@@ -291,6 +292,7 @@ class VPTQConfig(QuantizationConfig):
         config_for_layers: Dict[str, Dict[str, Any]],
         shared_layer_config: Dict[str, Dict[str, Any]],
     ) -> None:
+        super().__init__()
         self.config_for_layers = config_for_layers
         self.shared_layer_config = shared_layer_config
 
@@ -299,7 +301,7 @@ class VPTQConfig(QuantizationConfig):
                 f"shared_layer_config={self.shared_layer_config})")
 
     @classmethod
-    def get_name(cls) -> str:
+    def get_name(cls) -> QuantizationMethods:
         return "vptq"
 
     @classmethod

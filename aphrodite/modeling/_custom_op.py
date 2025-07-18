@@ -1,13 +1,10 @@
-from functools import lru_cache
 from typing import Dict, Type
 
 import torch.nn as nn
 from loguru import logger
 
-import aphrodite.common.envs as envs
-from aphrodite.common.utils import (is_cpu, is_hip, is_triton, is_xpu,
-                                    print_warning_once)
-from aphrodite.compilation.levels import CompilationLevel
+from aphrodite.common.config import get_current_aphrodite_config
+from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 
 
@@ -40,7 +37,9 @@ class CustomOp(nn.Module):
         return self.forward_cuda(*args, **kwargs)
 
     def forward_xpu(self, *args, **kwargs):
-        raise NotImplementedError
+        # By default, we assume that XPU ops are compatible with the
+        # PyTorch-native implementation.
+        return self.forward_native(*args, **kwargs)
 
     def forward_cpu(self, *args, **kwargs):
         # By default, we assume that CPU ops are compatible with CUDA ops.
@@ -52,65 +51,85 @@ class CustomOp(nn.Module):
         # NOTE: This is a placeholder for future extensions.
         return self.forward_native(*args, **kwargs)
 
-    def forward_gaudi(self, *args, **kwargs):
+    def forward_hpu(self, *args, **kwargs):
         # By default, we assume that Gaudi ops are compatible with the
         # PyTorch-native implementation.
-        # NOTE: This is a placeholder for future extensions.
         return self.forward_native(*args, **kwargs)
 
-    def forward_triton(self, *args, **kwargs):
-        raise NotImplementedError
+    def forward_neuron(self, *args, **kwargs):
+        # By default, we assume that Neuron ops are compatible with the
+        # PyTorch-native implementation.
+        return self.forward_native(*args, **kwargs)
+
+    def forward_oot(self, *args, **kwargs):
+        # By default, we assume that OOT ops are compatible with the
+        # PyTorch-native implementation.
+        return self.forward_native(*args, **kwargs)
 
     def dispatch_forward(self):
         # NOTE: Here we assume that Aphrodite was built for only one
         # specific backend. Currently, we do not support dynamic dispatching.
+        compilation_config = get_current_aphrodite_config().compilation_config
         enabled = self.enabled()
-        logger.debug("custom op {} {}", self.__class__.name,
-                     "enabled" if enabled else "disabled")
+        if enabled:
+            compilation_config.enabled_custom_ops.update([self.__class__.name])
+        else:
+            compilation_config.disabled_custom_ops.update(
+                [self.__class__.name])
 
         if not enabled:
             return self.forward_native
-        if is_hip():
+
+        if current_platform.is_rocm():
             return self.forward_hip
-        elif is_cpu():
+        elif current_platform.is_cpu():
             return self.forward_cpu
+        elif current_platform.is_hpu():
+            return self.forward_hpu
         elif current_platform.is_tpu():
             return self.forward_tpu
-        elif is_xpu():
+        elif current_platform.is_xpu():
             return self.forward_xpu
-        elif is_triton():
-            return self.forward_triton
+        elif current_platform.is_neuron():
+            return self.forward_neuron
+        elif current_platform.is_out_of_tree():
+            return self.forward_oot
         else:
             return self.forward_cuda
-
 
     @classmethod
     def enabled(cls) -> bool:
         # if no name, then it was not registered
+        compilation_config = get_current_aphrodite_config().compilation_config
+        custom_ops = compilation_config.custom_ops
         if not hasattr(cls, "name"):
-            print_warning_once(
-                f"Custom op {cls.__name__} was not registered, "
-                f"which means it won't appear in the op registry. "
-                f"It will be enabled/disabled based on the global settings.")
+            log_once(
+                "WARNING",
+                "Custom op {} was not registered, which means it won't appear in the op registry. It will be enabled/disabled based on the global settings.",  # noqa: E501
+                cls.__name__,
+            )
             return CustomOp.default_on()
 
-        enabled = f"+{cls.name}" in envs.APHRODITE_CUSTOM_OPS
-        disabled = f"-{cls.name}" in envs.APHRODITE_CUSTOM_OPS
+        enabled = f"+{cls.name}" in custom_ops
+        disabled = f"-{cls.name}" in custom_ops
         assert not (enabled
                     and disabled), f"Cannot enable and disable {cls.name}"
 
         return (CustomOp.default_on() or enabled) and not disabled
 
-    # On by default if APHRODITE_TORCH_COMPILE_LEVEL < CompilationLevel.INDUCTOR
-    # Specifying 'all' or 'none' in APHRODITE_CUSTOM_OPS takes precedence.
     @staticmethod
-    @lru_cache()
     def default_on() -> bool:
-        count_none = envs.APHRODITE_CUSTOM_OPS.count("none")
-        count_all = envs.APHRODITE_CUSTOM_OPS.count("all")
-        assert count_none + count_all <= 1, "Can only specify 'none' or 'all'"
-        return envs.APHRODITE_TORCH_COMPILE_LEVEL < CompilationLevel.INDUCTOR \
-            and not count_none > 0 or count_all > 0
+        """
+        On by default if level < CompilationLevel.PIECEWISE
+        Specifying 'all' or 'none' in custom_op takes precedence.
+        """
+        from aphrodite.common.config import CompilationLevel
+        compilation_config = get_current_aphrodite_config().compilation_config
+        custom_ops = compilation_config.custom_ops
+        count_none = custom_ops.count("none")
+        count_all = custom_ops.count("all")
+        return compilation_config.level < CompilationLevel.PIECEWISE and \
+            not count_none > 0 or count_all > 0
 
     # Dictionary of all custom ops (classes, indexed by registered name).
     # To check if an op with a name is enabled, call .enabled() on the class.

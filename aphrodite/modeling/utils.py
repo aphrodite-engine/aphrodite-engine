@@ -1,19 +1,12 @@
 """Utils for model executor."""
-import random
 from typing import Any, Dict, Optional
 
-import numpy as np
 import torch
-
-from aphrodite.platforms import current_platform
 
 
 def set_random_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    from aphrodite.platforms import current_platform
+    current_platform.seed_everything(seed)
 
 
 def set_weight_attrs(
@@ -44,6 +37,7 @@ def set_weight_attrs(
         # This sometimes causes OOM errors during model loading. To avoid this,
         # we sync the param tensor after its weight loader is called.
         # TODO: Remove this hack once we have a better solution.
+        from aphrodite.platforms import current_platform
         if current_platform.is_tpu() and key == "weight_loader":
             value = _make_synced_weight_loader(value)
         setattr(weight, key, value)

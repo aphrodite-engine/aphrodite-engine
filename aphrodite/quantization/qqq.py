@@ -9,6 +9,7 @@ from aphrodite.modeling.parameter import (BaseAphroditeParameter,
                                           ChannelQuantScaleParameter,
                                           GroupQuantScaleParameter,
                                           PackedAphroditeParameter)
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
 MARLIN_QQQ_TILE = 16
@@ -23,7 +24,7 @@ MARLIN_QQQ_SUPPORTED_SYM = [True]
 
 class QQQConfig(QuantizationConfig):
     """Config class for QQQ
-
+    
     Reference: https://arxiv.org/pdf/2406.09904
     """
 
@@ -33,6 +34,7 @@ class QQQConfig(QuantizationConfig):
         group_size: int,
         is_sym: bool = True,
     ) -> None:
+        super().__init__()
         self.weight_bits = weight_bits
         self.group_size = group_size
         self.is_sym = is_sym
@@ -77,7 +79,7 @@ class QQQConfig(QuantizationConfig):
             self.weight_bits, self.group_size)
 
     @classmethod
-    def get_name(cls) -> str:
+    def get_name(cls) -> QuantizationMethods:
         return "qqq"
 
     @classmethod
@@ -108,12 +110,10 @@ class QQQConfig(QuantizationConfig):
             return QQQLinearMethod(self)
         return None
 
-    def get_scaled_act_names(self) -> List[str]:
-        return []
-
 
 class QQQLinearMethod(LinearMethodBase):
     """Linear method for QQQ.
+
     Args:
         quant_config: The QQQ quantization config.
     """
@@ -183,6 +183,7 @@ class QQQLinearMethod(LinearMethodBase):
             packed_factor=self.quant_config.pack_factor,
             marlin_tile_size=self.quant_config.tile_size,
             weight_loader=weight_loader)
+
         s_channel = ChannelQuantScaleParameter(data=torch.empty(
             1,
             output_size_per_partition,
@@ -207,6 +208,7 @@ class QQQLinearMethod(LinearMethodBase):
             )
 
         s_group_attr = {"data": s_group_data, "weight_loader": weight_loader}
+
         if self.quant_config.group_size == -1:
             s_group = BaseAphroditeParameter(**s_group_attr)
         else:
@@ -218,6 +220,7 @@ class QQQLinearMethod(LinearMethodBase):
         max_workspace_size = (
             output_size_per_partition //
             self.quant_config.min_n_threads) * self.quant_config.max_parallel
+
         workspace = BaseAphroditeParameter(data=torch.zeros(max_workspace_size,
                                                        device="cuda",
                                                        dtype=torch.int),

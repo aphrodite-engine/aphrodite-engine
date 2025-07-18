@@ -2,17 +2,15 @@ import math
 
 import torch
 
-from aphrodite.attention.ops.blocksparse_attention.utils import (
-    dense_to_crow_col, get_head_sliding_step, get_sparse_attn_mask)
-from aphrodite.common.utils import is_cpu, is_hip
 from aphrodite.platforms import current_platform
 
-IS_COMPUTE_8_OR_ABOVE = (torch.cuda.is_available()
-                         and current_platform.get_device_capability()[0] >= 8)
+from .utils import (dense_to_crow_col, get_head_sliding_step,
+                    get_sparse_attn_mask)
+
+IS_COMPUTE_8_OR_ABOVE = current_platform.has_device_capability(80)
 
 if IS_COMPUTE_8_OR_ABOVE:
-    from aphrodite.attention.ops.blocksparse_attention.blocksparse_attention_kernel import (  # noqa: E501
-        blocksparse_flash_attn_varlen_fwd)
+    from .blocksparse_attention_kernel import blocksparse_flash_attn_varlen_fwd
 
 
 class LocalStridedBlockSparseAttn(torch.nn.Module):
@@ -33,12 +31,13 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
     ):
         super().__init__()
         if use_spda is None:
-            use_spda = is_hip() or is_cpu() or not \
-                       IS_COMPUTE_8_OR_ABOVE
+            use_spda = current_platform.is_rocm() or \
+                        current_platform.is_cpu() or not \
+                        IS_COMPUTE_8_OR_ABOVE
         device = device or (torch.cuda.current_device()
-                            if torch.cuda.is_available() else "cpu")
+                            if current_platform.is_cuda_alike() else "cpu")
         device = torch.device(device)
-        # NOTE: aphrodite CPU backend support BF16 instead of FP16.
+        # NOTE: Aphrodite CPU backend supports BF16 instead of FP16.
         dtype = dtype or (torch.bfloat16 if IS_COMPUTE_8_OR_ABOVE
                           or device.type == "cpu" else torch.half)
 
@@ -119,6 +118,7 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
         The only case you need to specify is when q is a mix of
         prefilling and decoding.
         sm_scale: softmax scale, default to 1/sqrt(head_size).
+
         return: tensor of shape as q.
         """
         assert (
@@ -192,10 +192,8 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
         attn_mask = self.dense_attn_mask[None, :, :maxlen, :maxlen]
 
         q2 = self.transpose_and_pad(q, cu_seqlens, maxlen, 1)
-        k2, v2 = [
-            self.transpose_and_pad(x, cu_seqlens, maxlen, q_k_ratio)
-            for x in [k, v]
-        ]
+        k2, v2 = (self.transpose_and_pad(x, cu_seqlens, maxlen, q_k_ratio)
+                  for x in [k, v])
         spda_output = torch.nn.functional.scaled_dot_product_attention(
             q2, k2, v2, attn_mask=attn_mask, scale=sm_scale)
         return self.transpose_and_unpad(spda_output, cu_seqlens)
@@ -204,6 +202,7 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
         """Dispatch to `varlen_attn` (Ampere or newer) or
         `self.spda`(cpu, Volta, Turing or older)based on
         the type of device used and cuda compute capability.
+
         q, k, v: shape = (num_tokens, num_heads_q/kv, head_size).
                 Support grouped attention, with `q[:, i*r:(i*r + r)]`
                 is correspondent to `k[:, i]`, where `r` is the q/k ratio.
@@ -216,6 +215,7 @@ class LocalStridedBlockSparseAttn(torch.nn.Module):
                     is when q is a mix of prefilling
                     and decoding.
         sm_scale: softmax scale, default to 1/sqrt(head_size).
+
         return: tensor of shape as q.
         """
         assert k.dim() == 3

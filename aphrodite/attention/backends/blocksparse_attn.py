@@ -5,6 +5,7 @@ import torch
 
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionImpl,
+                                                   AttentionLayer,
                                                    AttentionMetadata,
                                                    AttentionType)
 from aphrodite.attention.backends.utils import (CommonAttentionState,
@@ -37,11 +38,11 @@ class BlocksparseParams:
     # Controlling the sparsity
     vert_stride: int
     """
-    If to use the same vertical stride offset for all heads,
+    If to use the same vertical stride offset for all heads, 
     i.e., attend to the same block of tokens on all heads.
-    By default, it is False, i.e., attention on the non-local
+    By default, it is False, i.e., attention on the non-local 
     blocks depends on the `head_idx`, that is on
-    blocks satisfying
+    blocks satisfying 
     `(block_idx + head_idx * head_sliding_step + 1) % vert_stride == 0`
     where `head_sliding_step=max(1, int(vert_stride / num_total_heads))`,
             `block_idx = position_id // sparse_block_size`.
@@ -90,6 +91,10 @@ class BlocksparseParams:
 class BlocksparseFlashAttentionBackend(AttentionBackend):
 
     @staticmethod
+    def get_name() -> str:
+        return "BLOCK_SPARSE_FLASH_ATTN"
+
+    @staticmethod
     def get_impl_cls() -> Type["BlocksparseFlashAttentionImpl"]:
         return BlocksparseFlashAttentionImpl
 
@@ -135,6 +140,7 @@ class BlocksparseFlashAttentionBackend(AttentionBackend):
 class BlocksparseFlashAttentionMetadata(AttentionMetadata):
     """A copy of Metadata for FlashAttentionBackend,
     to avoid having to install flash_attn.
+
     NOTE: Any python object stored here is not updated when it is
     cuda-graph replayed. If you have values that need to be changed
     dynamically, it should be stored in tensor. The tensor has to be
@@ -146,7 +152,7 @@ class BlocksparseFlashAttentionMetadata(AttentionMetadata):
     # seq_lens stored as a tensor.
     seq_lens_tensor: Optional[torch.Tensor]
 
-    # NOTE(sang): Definition of context_len, query_len, and seq_len.
+    # NOTE: Definition of context_len, query_len, and seq_len.
     # |---------- N-1 iteration --------|
     # |---------------- N iteration ---------------------|
     # |- tokenA -|......................|-- newTokens ---|
@@ -216,6 +222,9 @@ class BlocksparseFlashAttentionMetadata(AttentionMetadata):
             num_prefill_tokens=self.num_prefill_tokens,
             num_decode_tokens=0,
             slot_mapping=self.slot_mapping[:self.num_prefill_tokens],
+            multi_modal_placeholder_index_maps=self.
+            multi_modal_placeholder_index_maps,
+            enable_kv_scales_calculation=self.enable_kv_scales_calculation,
             seq_lens=self.seq_lens[:self.num_prefills],
             seq_lens_tensor=self.seq_lens_tensor[:self.num_prefills],
             max_query_len=self.max_query_len,
@@ -244,6 +253,8 @@ class BlocksparseFlashAttentionMetadata(AttentionMetadata):
             num_prefill_tokens=0,
             num_decode_tokens=self.num_decode_tokens,
             slot_mapping=self.slot_mapping[self.num_prefill_tokens:],
+            multi_modal_placeholder_index_maps=None,
+            enable_kv_scales_calculation=False,
             seq_lens=None,
             seq_lens_tensor=self.seq_lens_tensor[self.num_prefills:],
             max_query_len=None,
@@ -269,13 +280,17 @@ class BlocksparseFlashAttentionImpl(AttentionImpl):
     If the input tensors contain prompt tokens, the layout is as follows:
     |<--------------- num_prompt_tokens -------------->|
     |<--prompt_0-->|<--prompt_1-->|...|<--prompt_N-1-->|
+
     Otherwise, the layout is as follows:
     |<------------------ num_generation_tokens (M) ----------------->|
     |<--generation_0-->|..........|<--generation_M-1-->|<--padding-->|
+
     Generation tokens can contain padding when cuda-graph is used.
     Currently, prompt tokens don't contain any padding.
+
     The prompts might have different lengths, while the generation tokens
     always have length 1.
+
     """
 
     def __init__(
@@ -289,6 +304,7 @@ class BlocksparseFlashAttentionImpl(AttentionImpl):
         kv_cache_dtype: str,
         blocksparse_params: Optional[Dict[str, Any]] = None,
         logits_soft_cap: Optional[float] = None,
+        attn_type: str = AttentionType.DECODER,
     ) -> None:
         assert blocksparse_params is not None
         assert alibi_slopes is None, ValueError(
@@ -319,11 +335,11 @@ class BlocksparseFlashAttentionImpl(AttentionImpl):
         self.sparse_block_size = self.blocksparse_params.block_size
         self.head_sliding_step = self.blocksparse_params.head_sliding_step
 
-        suppored_head_sizes = PagedAttention.get_supported_head_sizes()
-        if head_size not in suppored_head_sizes:
+        supported_head_sizes = PagedAttention.get_supported_head_sizes()
+        if head_size not in supported_head_sizes:
             raise ValueError(
                 f"Head size {head_size} is not supported by PagedAttention. "
-                f"Supported head sizes are: {suppored_head_sizes}.")
+                f"Supported head sizes are: {supported_head_sizes}.")
 
         self.tp_size = get_tensor_model_parallel_world_size()
         self.tp_rank = get_tensor_model_parallel_rank()
@@ -339,18 +355,24 @@ class BlocksparseFlashAttentionImpl(AttentionImpl):
             active_head_range=self.blocksparse_params.active_head_range,
         )
 
+        if attn_type != AttentionType.DECODER:
+            raise NotImplementedError("Encoder self-attention and "
+                                      "encoder/decoder cross-attention "
+                                      "are not implemented for "
+                                      "BlocksparseFlashAttentionImpl")
+
     def forward(
         self,
+        layer: AttentionLayer,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
         attn_metadata: BlocksparseFlashAttentionMetadata,
-        k_scale: float = 1.0,
-        v_scale: float = 1.0,
-        attn_type: AttentionType = AttentionType.DECODER,
+        output: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass with FlashAttention and PagedAttention.
+
         Args:
             query: shape = [num_tokens, num_heads * head_size]
             key: shape = [num_tokens, num_kv_heads * head_size]
@@ -362,11 +384,6 @@ class BlocksparseFlashAttentionImpl(AttentionImpl):
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
-        if attn_type != AttentionType.DECODER:
-            raise NotImplementedError("Encoder self-attention and "
-                                      "encoder/decoder cross-attention "
-                                      "are not implemented for "
-                                      "BlocksparseFlashAttentionImpl")
         num_tokens, hidden_size = query.shape
         # Reshape the query, key, and value tensors.
         query = query.view(-1, self.num_heads, self.head_size)
@@ -388,8 +405,8 @@ class BlocksparseFlashAttentionImpl(AttentionImpl):
                 value_cache,
                 attn_metadata.slot_mapping,
                 self.kv_cache_dtype,
-                k_scale,
-                v_scale,
+                layer._k_scale,
+                layer._v_scale,
             )
 
         if prefill_meta := attn_metadata.prefill_metadata:
@@ -426,8 +443,8 @@ class BlocksparseFlashAttentionImpl(AttentionImpl):
                 self.num_kv_heads,
                 self.scale,
                 self.alibi_slopes,
-                k_scale,
-                v_scale,
+                layer._k_scale,
+                layer._v_scale,
                 tp_rank=self.tp_rank,
                 blocksparse_local_blocks=self.local_blocks,
                 blocksparse_vert_stride=self.vert_stride,
@@ -435,5 +452,6 @@ class BlocksparseFlashAttentionImpl(AttentionImpl):
                 blocksparse_head_sliding_step=self.head_sliding_step,
             )
 
+        assert output is not None
         # Reshape the output tensor.
         return output.view(num_tokens, hidden_size)

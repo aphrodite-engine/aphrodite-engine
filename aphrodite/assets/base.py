@@ -1,27 +1,17 @@
-"""Assets for testing. vLLM conveniently has a bucket of public assets
-we can use."""
-import os
+
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 import aphrodite.common.envs as envs
-from aphrodite.connections import global_http_connection
+from aphrodite.common.connections import global_http_connection
 
+VLLM_S3_BUCKET_URL = "https://vllm-public-assets.s3.us-west-2.amazonaws.com"
 
-def get_default_cache_root():
-    return os.getenv(
-        "XDG_CACHE_HOME",
-        os.path.join(os.path.expanduser("~"), ".cache"),
-    )
-
-vLLM_S3_BUCKET_URL = "https://vllm-public-assets.s3.us-west-2.amazonaws.com"
-APHRODITE_ASSETS_CACHE = envs.APHRODITE_ASSETS_CACHE
-APHRODITE_IMAGE_FETCH_TIMEOUT = envs.APHRODITE_IMAGE_FETCH_TIMEOUT
 
 def get_cache_dir() -> Path:
     """Get the path to the cache for storing downloaded assets."""
-    path = Path(APHRODITE_ASSETS_CACHE)
+    path = Path(envs.APHRODITE_ASSETS_CACHE)
     path.mkdir(parents=True, exist_ok=True)
 
     return path
@@ -42,8 +32,8 @@ def get_vllm_public_assets(filename: str,
         if s3_prefix is not None:
             filename = s3_prefix + "/" + filename
         global_http_connection.download_file(
-            f"{vLLM_S3_BUCKET_URL}/{filename}",
+            f"{VLLM_S3_BUCKET_URL}/{filename}",
             asset_path,
-            timeout=APHRODITE_IMAGE_FETCH_TIMEOUT)
+            timeout=envs.APHRODITE_IMAGE_FETCH_TIMEOUT)
 
     return asset_path

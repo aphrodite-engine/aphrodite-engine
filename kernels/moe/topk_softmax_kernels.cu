@@ -252,7 +252,7 @@ __launch_bounds__(WARPS_PER_CTA* WARP_SIZE) __global__
 
   // Determine the pointer type to use to read in the data depending on the
   // BYTES_PER_LDG template param. In theory, this can support all powers of 2
-  // up to 16. NOTE(woosuk): The original implementation uses CUTLASS aligned
+  // up to 16. NOTE: The original implementation uses CUTLASS aligned
   // array here. We defined our own aligned array and use it here to avoid the
   // dependency on CUTLASS.
   using AccessType = AlignedArray<float, ELTS_PER_LDG>;

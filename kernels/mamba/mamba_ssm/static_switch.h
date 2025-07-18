@@ -2,6 +2,8 @@
 // https://github.com/NVIDIA/DALI/blob/main/include/dali/core/static_switch.h
 // and https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/Dispatch.h
 
+// clang-format off
+// adapted from https://github.com/state-spaces/mamba/blob/main/csrc/selective_scan/static_switch.h
 #pragma once
 
 /// @param COND       - a boolean expression to switch by
@@ -14,13 +16,13 @@
 ///     some_function<BoolConst>(...);
 /// });
 /// ```
-#define BOOL_SWITCH(COND, CONST_NAME, ...)      \
-  [&] {                                         \
-    if (COND) {                                 \
-      static constexpr bool CONST_NAME = true;  \
-      return __VA_ARGS__();                     \
-    } else {                                    \
-      static constexpr bool CONST_NAME = false; \
-      return __VA_ARGS__();                     \
-    }                                           \
+#define BOOL_SWITCH(COND, CONST_NAME, ...) \
+  [&] {                                    \
+    if (COND) {                            \
+      constexpr bool CONST_NAME = true;    \
+      return __VA_ARGS__();                \
+    } else {                               \
+      constexpr bool CONST_NAME = false;   \
+      return __VA_ARGS__();                \
+    }                                      \
   }()

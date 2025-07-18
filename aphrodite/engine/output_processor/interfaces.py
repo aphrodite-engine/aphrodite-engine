@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Callable, List
 
-from transformers import PreTrainedTokenizer
-
 from aphrodite.common.config import SchedulerConfig
 from aphrodite.common.sequence import (Sequence, SequenceGroup,
                                        SequenceGroupOutput)
@@ -10,6 +8,7 @@ from aphrodite.common.utils import Counter
 from aphrodite.engine.output_processor.stop_checker import StopChecker
 from aphrodite.processing.scheduler import Scheduler
 from aphrodite.transformers_utils.detokenizer import Detokenizer
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 
 class SequenceGroupOutputProcessor(ABC):
@@ -30,7 +29,7 @@ class SequenceGroupOutputProcessor(ABC):
         detokenizer: Detokenizer,
         scheduler: List[Scheduler],
         seq_counter: Counter,
-        get_tokenizer_for_seq: Callable[[Sequence], PreTrainedTokenizer],
+        get_tokenizer_for_seq: Callable[[Sequence], AnyTokenizer],
         stop_checker: "StopChecker",
     ):
         """Create an output processor.

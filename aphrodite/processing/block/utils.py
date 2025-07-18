@@ -9,8 +9,11 @@ def check_no_caching_or_swa_for_blockmgr_encdec(
     '''
     Enforce that prefix caching & sliding-window attention (SWA)
     are currently unsupported *specifically* for encoder/decoder models.
+
     Raises NotImplementedError if unsupported scenario is detected.
+
     Arguments:
+
     * block_mgr: BlockSpaceManager instance
     * seq_group: SequenceGroup passed to block_mgr
     '''

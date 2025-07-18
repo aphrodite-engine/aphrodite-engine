@@ -4,10 +4,10 @@ from typing import List, Optional, Set, Tuple
 from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.spec_decode.interfaces import SpeculativeProposer
-from aphrodite.worker.worker_base import LoraNotSupportedWorkerBase
+from aphrodite.worker.worker_base import LoRANotSupportedWorkerBase
 
 
-class ProposerWorkerBase(LoraNotSupportedWorkerBase, SpeculativeProposer):
+class ProposerWorkerBase(LoRANotSupportedWorkerBase, SpeculativeProposer):
     """Interface for proposer workers"""
 
     @abstractmethod

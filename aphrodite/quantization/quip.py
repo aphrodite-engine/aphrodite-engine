@@ -6,6 +6,7 @@ from torch.nn.parameter import Parameter
 from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 from aphrodite.quantization.quip_utils import (get_hadK, get_packed_abs_grid,
                                                matmul_hadU_cuda,
@@ -19,6 +20,7 @@ class QuipConfig(QuantizationConfig):
     """
 
     def __init__(self, codebook: int, use_rand: bool) -> None:
+        super().__init__()
         self.codebook = codebook
         self.use_rand = use_rand
 
@@ -31,7 +33,7 @@ class QuipConfig(QuantizationConfig):
                 f"rescale_WH={self.rescale_WH})")
 
     @classmethod
-    def get_name(cls) -> str:
+    def get_name(cls) -> QuantizationMethods:
         return "quip"
 
     @classmethod

@@ -11,6 +11,7 @@ from torch.nn.parameter import Parameter
 from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
 
@@ -166,6 +167,7 @@ class AQLMConfig(QuantizationConfig):
         num_codebooks: int,
         out_group_size: int,
     ) -> None:
+        super().__init__()
         self.in_group_size = in_group_size
         self.nbits_per_codebook = nbits_per_codebook
         self.num_codebooks = num_codebooks
@@ -182,7 +184,7 @@ class AQLMConfig(QuantizationConfig):
                 f"out_group_size={self.out_group_size})")
 
     @classmethod
-    def get_name(cls) -> str:
+    def get_name(cls) -> QuantizationMethods:
         return "aqlm"
 
     @classmethod
@@ -211,9 +213,6 @@ class AQLMConfig(QuantizationConfig):
         if isinstance(layer, LinearBase):
             return AQLMLinearMethod(self)
         return None
-
-    def get_scaled_act_names(self) -> List[str]:
-        return []
 
 
 class AQLMLinearMethod(LinearMethodBase):

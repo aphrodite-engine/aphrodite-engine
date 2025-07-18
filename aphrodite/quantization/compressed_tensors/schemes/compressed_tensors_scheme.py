@@ -38,7 +38,7 @@ class CompressedTensorsScheme(ABC):
         :param layer: torch.nn.Module with the registered weights and
             other parameters relevant to the particular scheme.
         :param x: input to the layer
-        :param bias: bias parameter for the layer
+        :param bias: bias parameter
 
         """
         raise NotImplementedError

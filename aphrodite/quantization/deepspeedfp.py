@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
 
@@ -22,14 +23,14 @@ class DeepSpeedFPConfig(QuantizationConfig):
         weight_bits: int = 8,
         group_size: int = 512,
     ) -> None:
+        super().__init__()
         self.weight_bits = weight_bits
         self.group_size = group_size
         self.valid_types = [torch.bfloat16, torch.float16]
 
-        if self.weight_bits not in (4, 6, 8, 12):
+        if self.weight_bits not in (6, 8):
             raise ValueError(
-                "Currently, only 4-bit, 6-bit, 8-bit, and 12-bit weight"
-                " quantization are "
+                "Currently, only 6-bit or 8-bit weight quantization are "
                 f"supported for DeepSpeed FP quantizaiton, but got "
                 f"{self.weight_bits} bits.")
 
@@ -38,8 +39,8 @@ class DeepSpeedFPConfig(QuantizationConfig):
                 f"group_size={self.group_size}")
 
     @classmethod
-    def get_name(cls) -> str:
-        return "DeepSpeedFP"
+    def get_name(cls) -> QuantizationMethods:
+        return "deepspeedfp"
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "DeepSpeedFPConfig":
@@ -49,9 +50,6 @@ class DeepSpeedFPConfig(QuantizationConfig):
 
     def get_linear_method(self) -> "DeepSpeedFPLinearMethod":
         return DeepSpeedFPLinearMethod(self)
-
-    def get_scaled_act_names(self) -> List[str]:
-        return []
 
     @classmethod
     def get_supported_act_dtypes(cls) -> List[torch.dtype]:
@@ -78,6 +76,7 @@ class DeepSpeedFPConfig(QuantizationConfig):
 
 class DeepSpeedFPLinearMethod(LinearMethodBase):
     """Linear method for DeepSpeedFP quantizer.
+
     Args:
         quant_config: the DeepSpeedFP quantization config.
     """

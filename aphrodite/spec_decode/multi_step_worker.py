@@ -7,15 +7,20 @@ import torch
 from aphrodite.common.sequence import (ExecuteModelRequest, HiddenStates,
                                        SequenceData, SequenceGroupMetadata)
 from aphrodite.modeling.layers.sampler import SamplerOutput
-from aphrodite.spec_decode.draft_model_runner import TP1DraftModelRunner
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
+from aphrodite.platforms import current_platform
+
+if current_platform.is_cuda_alike():
+    from aphrodite.spec_decode.draft_model_runner import TP1DraftModelRunner
+
 from aphrodite.spec_decode.interfaces import (SpeculativeProposals,
                                               SpeculativeProposer)
 from aphrodite.spec_decode.proposer_worker_base import ProposerWorkerBase
 from aphrodite.spec_decode.top1_proposer import Top1Proposer
-from aphrodite.worker.worker import Worker
+from aphrodite.worker.worker_base import DelegateWorkerBase
 
 
-class MultiStepWorker(Worker, ProposerWorkerBase):
+class MultiStepWorker(ProposerWorkerBase, DelegateWorkerBase):
     """The MultiStepWorker is equivalent to a Worker except that it allows
     multiple forward passes in a single call, assuming the scheduler has
     allocated enough space to store the additional KV. This reduces overhead
@@ -28,14 +33,12 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
+        DelegateWorkerBase.__init__(self, *args, **kwargs)
         # Lazy initialization list.
         self._proposer: SpeculativeProposer
 
     def init_device(self) -> None:
-        super().init_device()
-
+        self.worker.init_device()
         self._proposer = Top1Proposer(
             weakref.proxy(self),  # type: ignore[arg-type]
             self.device,
@@ -45,11 +48,15 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
 
     def set_include_gpu_probs_tensor(self) -> None:
         # Need include_gpu_probs_tensor for MultiStepWorker
-        self.model_runner.model.sampler.include_gpu_probs_tensor = True
+        self.model_runner.sampler.include_gpu_probs_tensor = True
+        if hasattr(self.model_runner.model, "sampler"):
+            (self.model_runner.model.sampler.include_gpu_probs_tensor) = True
 
     def set_should_modify_greedy_probs_inplace(self) -> None:
-        self.model_runner.model.sampler.should_modify_greedy_probs_inplace = (
-            True)
+        self.model_runner.sampler.should_modify_greedy_probs_inplace = True
+        if hasattr(self.model_runner.model, "sampler"):
+            (self.model_runner.model.sampler.should_modify_greedy_probs_inplace
+             ) = True
 
     @torch.inference_mode()
     def sampler_output(
@@ -75,12 +82,14 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
 
         # Run model sample_len times.
         model_outputs: List[SamplerOutput] = []
-        if isinstance(
+        if current_platform.is_cuda_alike() and isinstance(
                 self.model_runner, TP1DraftModelRunner
         ) and self.model_runner.supports_gpu_multi_step(expanded_request):
             # Here we run the draft_model_runner with multi-step prepare
             # on the GPU directly
             expanded_request.num_steps = sample_len
+            self.model_runner.set_indices_of_seq_with_bonus_tokens(
+                indices_of_seq_with_bonus_tokens)
             model_outputs = self.execute_model(
                 execute_model_req=expanded_request)
         else:
@@ -89,20 +98,41 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
             # TODO: Remove this branch once DraftModelRunner supports TP>1
             # and other restrictions that are part of DraftModelRunner's
             # supports_gpu_multi_step(..)
+            if expanded_request.previous_hidden_states is not None:
+                self.worker.model_runner.return_hidden_states = True
             for _ in range(sample_len):
-                model_output: List[SamplerOutput] = super().execute_model(
+                model_output: List[SamplerOutput] = self.worker.execute_model(
                     execute_model_req=expanded_request)
                 assert (len(model_output) == 1
                         ), "composing multistep workers not supported"
                 model_output = model_output[0]
+                self._maybe_update_previous_hidden_states(
+                    model_output, expanded_request)
 
                 self._append_new_tokens(
-                    model_output, expanded_request.seq_group_metadata_list)
+                    model_output, expanded_request.seq_group_metadata_list,
+                    indices_of_seq_with_bonus_tokens)
                 model_outputs.append(model_output)
 
+        # move indices to device to avoid stream sync
+        indices_of_seq_with_bonus_tokens = torch.tensor(
+            indices_of_seq_with_bonus_tokens, device=self.device)
         filtered_model_outputs = self._filter_model_output(
             model_outputs, indices_of_seq_with_bonus_tokens)
         return filtered_model_outputs, True
+
+    @staticmethod
+    def _maybe_update_previous_hidden_states(
+            model_output: SamplerOutput,
+            expanded_request: ExecuteModelRequest) -> None:
+        """
+        Updates the previous hidden states in an expanded request
+        in-place with the hidden states from the model output. 
+        """
+        if expanded_request.previous_hidden_states is not None:
+            expanded_request.previous_hidden_states = HiddenStates(
+                model_output.hidden_states,
+                expanded_request.seq_group_metadata_list)
 
     @staticmethod
     def _expand_execute_model_request(
@@ -121,7 +151,7 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
         Args:
             execute_model_req (ExecuteModelRequest): The original execute
             model request.
-            seq_with_bonus_token_in_last_step (set): Set of sequence IDs that
+            seq_with_bonus_token_in_last_step (set): Set of sequence IDs that 
             contain bonus tokens.
 
         Returns:
@@ -169,7 +199,7 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
     @staticmethod
     def _filter_model_output(
             expanded_batch_outputs: List[SamplerOutput],
-            output_indices_to_retain: List[int]) -> List[SamplerOutput]:
+            output_indices_to_retain: torch.Tensor) -> List[SamplerOutput]:
         """
         Filters the model output to include only the specified sequence
         outputs. This method contracts the expanded batch output from the
@@ -179,11 +209,11 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
         Args:
             expanded_batch_output (List[SamplerOutput]): The expanded output
                 batch from the model.
-            output_indices_to_retain (List[int]): Indices of the model outputs
-                to retain.
+            output_indices_to_retain (torch.Tensor): Indices of the model
+                outputs to retain.
 
         Returns:
-            List[SamplerOutput]: A list containing the filtered model
+            List[SamplerOutput]: A list containing the filtered model 
             outputs for the specified indices.
         """
         return [
@@ -221,13 +251,15 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
     @staticmethod
     def _append_new_tokens(
             model_output: List[SamplerOutput],
-            seq_group_metadata_list: List[SequenceGroupMetadata]) -> None:
+            seq_group_metadata_list: List[SequenceGroupMetadata],
+            indices_of_seq_with_bonus_tokens: List[int]) -> None:
         """Given model output from a single run, append the tokens to the
         sequences. This is normally done outside of the worker, but it is
         required if the worker is to perform multiple forward passes.
         """
-        for seq_group_metadata, sequence_group_outputs in zip(
-                seq_group_metadata_list, model_output):
+        count = 0
+        for index, (seq_group_metadata, sequence_group_outputs) in enumerate(
+                zip(seq_group_metadata_list, model_output)):
             seq_group_metadata.is_prompt = False
 
             for seq_output in sequence_group_outputs.samples:
@@ -237,8 +269,19 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
 
                 token_id = seq_output.output_token
                 token_logprob = seq_output.logprobs[token_id]
+                # Determine the actual token ID to be generated,
+                # considering bonus tokens
+                if index != indices_of_seq_with_bonus_tokens[count]:
+                    bonus_seq_metadata = seq_group_metadata_list[
+                        indices_of_seq_with_bonus_tokens[count]]
+                    _, bonus_token_seq_data = next(
+                        iter(bonus_seq_metadata.seq_data.items()))
+                    token_id = bonus_token_seq_data.output_token_ids[-1]
+                else:
+                    count += 1
 
-                seq.append_token_id(token_id, token_logprob.logprob)
+                seq.append_token_id(token_id, token_logprob.logprob,
+                                    seq_output.output_embed)
                 seq.update_num_computed_tokens(1)
 
     @staticmethod
@@ -247,9 +290,9 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
         """Copy input data structures to remove side-effects when input data
         structures are shared with other modules.
 
-        Helpful when the Aphrodite scheduler runs in the same process as
-        the worker. The alternative is deep-copying (or other form of deep
-        copy); this has performance downsides.
+        Helpful when the vLLM scheduler runs in the same process as the worker.
+        The alternative is deep-copying (or other form of deep copy); this has
+        performance downsides.
         """
         # Shallow-copy the SequenceGroupMetadata. This allows us to
         # append tokens and change is_prompt without external side-effects.
@@ -276,13 +319,13 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
         only the sequence IDs specified in seq_ids_to_copy. For each of these
         sequence IDs, all output_token_ids except the last one are copied.
         Sequence IDs not in seq_ids_to_copy are excluded from the copy.
-
+        
         Parameters:
         seq_group_metadata (SequenceGroupMetadata): The original sequence
             group metadata.
         seq_ids_to_copy (Set[int]): The set of sequence IDs to include in the
             copy.
-
+        
         Returns:
         SequenceGroupMetadata: A shallow copy of the sequence group metadata
             with the specified modifications.
@@ -324,8 +367,8 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
             # plus one token per step.
             final_seq_len = seq.get_len() + num_steps
 
-            # We will have final_seq_len - 1 KV because Aphrodite saves KV for
-            # a token in the iteration after the token was generated.
+            # We will have final_seq_len - 1 KV because vLLM saves KV for a
+            # token in the iteration after the token was generated.
             required_num_kv_slots = final_seq_len - 1
 
             # The allocated number of kv slots is the number of allocated blocks
@@ -364,3 +407,14 @@ class MultiStepWorker(Worker, ProposerWorkerBase):
                 execute_model_req.seq_group_metadata_list):
             raise NotImplementedError(
                 "MultiStepWorker does not support beam search.")
+
+    def maybe_load_lm_head_weight(
+        self,
+        lm_head_weight: torch.Tensor,
+    ) -> None:
+        weight_loader = getattr(
+            self.worker.model_runner.model_runner.model.lm_head.weight,
+            "weight_loader", default_weight_loader)
+        weight_loader(
+            self.worker.model_runner.model_runner.model.lm_head.weight,
+            lm_head_weight)

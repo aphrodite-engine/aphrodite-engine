@@ -64,7 +64,7 @@ def _log_formatter(record: dict):
     message = unwrap(record.get("message"), "")
 
     # Replace once loguru allows for turning off str.format
-    message = message.replace("{", "{{").replace("}", "}}").replace("<", "\<")
+    message = message.replace("{", "{{").replace("}", "}}").replace("<", r"\<")
 
     # Escape markup tags from Rich
     message = escape(message)

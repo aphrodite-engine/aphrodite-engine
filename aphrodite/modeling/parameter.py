@@ -1,16 +1,17 @@
 from fractions import Fraction
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, Optional, Union
 
 import torch
+from loguru import logger
 from torch.nn import Parameter
 
 from aphrodite.distributed import get_tensor_model_parallel_rank
+from aphrodite.modeling.utils import _make_synced_weight_loader
 
 __all__ = [
-    "BaseAphroditeParameter", "PackedAphroditeParameter",
-    "PerTensorScaleParameter", "ModelWeightParameter",
-    "ChannelQuantScaleParameter", "GroupQuantScaleParameter",
-    "PackedColumnParameter", "RowAphroditeParameter"
+    "BaseAphroditeParameter", "PackedAphroditeParameter", "PerTensorScaleParameter",
+    "ModelWeightParameter", "ChannelQuantScaleParameter",
+    "GroupQuantScaleParameter", "PackedColumnParameter", "RowAphroditeParameter"
 ]
 
 
@@ -36,14 +37,32 @@ class BaseAphroditeParameter(Parameter):
         :returns: a torch.nn.parameter
         """
 
+        # During weight loading, we often do something like:
+        # narrowed_tensor = param.data.narrow(0, offset, len)
+        # narrowed_tensor.copy_(real_weight)
+        # expecting narrowed_tensor and param.data to share the same storage.
+        # However, on TPUs, narrowed_tensor will lazily propagate to the base
+        # tensor, which is param.data, leading to the redundant memory usage.
+        # This sometimes causes OOM errors during model loading. To avoid this,
+        # we sync the param tensor after its weight loader is called.
+        from aphrodite.platforms import current_platform
+        if current_platform.is_tpu():
+            weight_loader = _make_synced_weight_loader(weight_loader)
+
         self._weight_loader = weight_loader
 
     @property
     def weight_loader(self):
         return self._weight_loader
 
+    def _is_1d_and_scalar(self, loaded_weight: torch.Tensor):
+        cond1 = self.data.ndim == 1 and self.data.numel() == 1
+        cond2 = loaded_weight.ndim == 0 and loaded_weight.numel() == 1
+        return (cond1 and cond2)
+
     def _assert_and_load(self, loaded_weight: torch.Tensor):
-        assert self.data.shape == loaded_weight.shape
+        assert (self.data.shape == loaded_weight.shape
+                or self._is_1d_and_scalar(loaded_weight))
         self.data.copy_(loaded_weight)
 
     def load_column_parallel_weight(self, loaded_weight: torch.Tensor):
@@ -261,10 +280,12 @@ class PackedColumnParameter(_ColumnAphroditeParameter):
                  packed_factor: Union[int, Fraction],
                  packed_dim: int,
                  marlin_tile_size: Optional[int] = None,
+                 bitblas_tile_size: Optional[int] = None,
                  **kwargs):
         self._packed_factor = packed_factor
         self._packed_dim = packed_dim
         self._marlin_tile_size = marlin_tile_size
+        self._bitblas_tile_size = bitblas_tile_size
         super().__init__(**kwargs)
 
     @property
@@ -279,12 +300,17 @@ class PackedColumnParameter(_ColumnAphroditeParameter):
     def marlin_tile_size(self):
         return self._marlin_tile_size
 
+    @property
+    def bitblas_tile_size(self):
+        return self._bitblas_tile_size
+
     def adjust_shard_indexes_for_packing(self, shard_size, shard_offset):
         return _adjust_shard_indexes_for_packing(
             shard_size=shard_size,
             shard_offset=shard_offset,
             packed_factor=self.packed_factor,
-            marlin_tile_size=self.marlin_tile_size)
+            marlin_tile_size=self.marlin_tile_size,
+            bitblas_tile_size=self.bitblas_tile_size)
 
 
 class PackedAphroditeParameter(ModelWeightParameter):
@@ -302,10 +328,12 @@ class PackedAphroditeParameter(ModelWeightParameter):
                  packed_factor: Union[int, Fraction],
                  packed_dim: int,
                  marlin_tile_size: Optional[int] = None,
+                 bitblas_tile_size: Optional[int] = None,
                  **kwargs):
         self._packed_factor = packed_factor
         self._packed_dim = packed_dim
         self._marlin_tile_size = marlin_tile_size
+        self._bitblas_tile_size = bitblas_tile_size
         super().__init__(**kwargs)
 
     @property
@@ -320,24 +348,39 @@ class PackedAphroditeParameter(ModelWeightParameter):
     def marlin_tile_size(self):
         return self._marlin_tile_size
 
+    @property
+    def bitblas_tile_size(self):
+        return self._bitblas_tile_size
+
     def adjust_shard_indexes_for_packing(self, shard_size, shard_offset):
         return _adjust_shard_indexes_for_packing(
             shard_size=shard_size,
             shard_offset=shard_offset,
             packed_factor=self.packed_factor,
-            marlin_tile_size=self.marlin_tile_size)
+            marlin_tile_size=self.marlin_tile_size,
+            bitblas_tile_size=self.bitblas_tile_size)
+
+
+class BlockQuantScaleParameter(_ColumnAphroditeParameter,
+                               RowAphroditeParameter):
+    """
+    Parameter class for weight scales loaded for weights with
+    block-wise quantization. Uses both column and row parallelism.
+    """
+
+    pass
 
 
 def permute_param_layout_(param: BaseAphroditeParameter, input_dim: int,
                           output_dim: int, **kwargs) -> BaseAphroditeParameter:
     """
-    Permute a parameter's layout to the specified input and output dimensions,
+    Permute a parameter's layout to the specified input and output dimensions, 
     useful for forcing the parameter into a known layout, for example, if I need
-    a packed (quantized) weight matrix to be in the layout
+    a packed (quantized) weight matrix to be in the layout 
         {input_dim = 0, output_dim = 1, packed_dim = 0}
     then I can call:
         permute_param_layout_(x, input_dim=0, output_dim=1, packed_dim=0)
-    to ensure x is in the correct layout (permuting it to the correct layout if
+    to ensure x is in the correct layout (permuting it to the correct layout if 
     required, asserting if it cannot get it to the correct layout)
     """
 
@@ -385,13 +428,19 @@ def permute_param_layout_(param: BaseAphroditeParameter, input_dim: int,
 
     return param
 
+
 def _adjust_shard_indexes_for_marlin(shard_size, shard_offset,
                                      marlin_tile_size):
     return shard_size * marlin_tile_size, shard_offset * marlin_tile_size
 
 
+def _adjust_shard_indexes_for_bitblas(shard_size, shard_offset,
+                                      bitblas_tile_size):
+    return shard_size // bitblas_tile_size, shard_offset // bitblas_tile_size
+
+
 def _adjust_shard_indexes_for_packing(shard_size, shard_offset, packed_factor,
-                                      marlin_tile_size):
+                                      marlin_tile_size, bitblas_tile_size):
     shard_size = shard_size // packed_factor
     shard_offset = shard_offset // packed_factor
     if marlin_tile_size is not None:
@@ -399,58 +448,10 @@ def _adjust_shard_indexes_for_packing(shard_size, shard_offset, packed_factor,
             shard_size=shard_size,
             shard_offset=shard_offset,
             marlin_tile_size=marlin_tile_size)
+    elif bitblas_tile_size is not None:
+        return _adjust_shard_indexes_for_bitblas(
+            shard_size=shard_size,
+            shard_offset=shard_offset,
+            bitblas_tile_size=bitblas_tile_size)
+
     return shard_size, shard_offset
-
-# Qweights in HQQ need to be reshaped such that the shape of the stored tensors
-# is the actual shape used in weight multiplication. This is needed to correctly
-# repack to Marlin. We also store shard size and offsets in order to be able to
-# correctly unpack (shard by shard) from 4-bit to 8-bit.
-class HQQQweightParameter(PackedAphroditeParameter):
-
-    def __init__(self, packed_factor: int, packed_dim: int, **kwargs):
-        super().__init__(packed_factor, packed_dim, None, **kwargs)
-        self.shard_offsets: List[Tuple[int, int]] = []
-        self.pack_factor = packed_factor
-
-    def load_merged_column_weight(self, loaded_weight: torch.Tensor, **kwargs):
-        shard_offset = kwargs.get("shard_offset")
-        shard_size = kwargs.get("shard_size")
-        shard_size, shard_offset = self.adjust_shard_indexes_for_packing(
-            shard_offset=shard_offset, shard_size=shard_size)
-        self.shard_offsets.append((shard_offset, shard_size))
-
-        loaded_weight = loaded_weight.reshape(-1, self.shape[1])
-        super().load_merged_column_weight(loaded_weight, **kwargs)
-
-    def load_row_parallel_weight(self, loaded_weight: torch.Tensor):
-        self.shard_offsets.append((0, self.shape[self.output_dim]))
-
-        loaded_weight = loaded_weight.reshape(-1, self.shape[1])
-        super().load_row_parallel_weight(loaded_weight)
-
-    def load_qkv_weight(self, loaded_weight: torch.Tensor, **kwargs):
-        shard_offset = kwargs.get("shard_offset")
-        shard_size = kwargs.get("shard_size")
-        shard_size, shard_offset = self.adjust_shard_indexes_for_packing(
-            shard_offset=shard_offset, shard_size=shard_size)
-        self.shard_offsets.append((shard_offset, shard_size))
-
-        loaded_weight = loaded_weight.reshape(-1, self.shape[1])
-        super().load_qkv_weight(loaded_weight, **kwargs)
-
-
-# Zero points and scales in HQQ must also be reshaped to their actual shapes.
-class HQQZeroScaleParameter(GroupQuantScaleParameter):
-
-    def load_merged_column_weight(self, loaded_weight: torch.Tensor, **kwargs):
-        loaded_weight = loaded_weight.reshape(-1, self.shape[1])
-        super().load_merged_column_weight(loaded_weight, **kwargs)
-
-    def load_row_parallel_weight(self, loaded_weight: torch.Tensor):
-        loaded_weight = loaded_weight.reshape(-1, self.shape[1])
-        super().load_row_parallel_weight(loaded_weight)
-
-    def load_qkv_weight(self, loaded_weight: torch.Tensor, **kwargs):
-        loaded_weight = loaded_weight.reshape(-1, self.shape[1])
-        super().load_qkv_weight(loaded_weight, **kwargs)
-

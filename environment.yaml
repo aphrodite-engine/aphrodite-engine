@@ -16,3 +16,4 @@ dependencies:
   - pip
   - git=2.35.1
   - ninja
+  - ccache

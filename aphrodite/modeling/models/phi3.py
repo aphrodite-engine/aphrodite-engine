@@ -1,10 +1,11 @@
-# coding=utf-8
 # Adapted from llama.py
 """Inference-only Phi3 model code inherit from Llama.py"""
+
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 
 
 class Phi3ForCausalLM(LlamaForCausalLM):
+
     packed_modules_mapping = {
         "qkv_proj": [
             "qkv_proj",

@@ -2,33 +2,52 @@ import asyncio
 import copy
 import pickle
 from contextlib import contextmanager, suppress
-from typing import Any, AsyncGenerator, Dict, Iterator, Optional, Union
+from typing import (Any, AsyncGenerator, Dict, Iterator, List, Mapping,
+                    Optional, Union, cast, overload)
 
 import cloudpickle
+import psutil
 import zmq
 import zmq.asyncio
 from loguru import logger
+from typing_extensions import deprecated
 from zmq import Frame  # type: ignore[attr-defined]
 from zmq.asyncio import Socket
 
 from aphrodite import PoolingParams
-from aphrodite.common.config import DecodingConfig, EngineConfig, ModelConfig
+from aphrodite.common.config import (AphroditeConfig, DecodingConfig,
+                                     ModelConfig)
+# yapf: enable
 from aphrodite.common.envs import APHRODITE_RPC_TIMEOUT
-from aphrodite.common.outputs import EmbeddingRequestOutput, RequestOutput
+from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.engine.args_tools import AsyncEngineArgs
+from aphrodite.common.utils import Device, deprecate_kwargs
+# yapf conflicts with isort for this block
+# yapf: disable
 from aphrodite.engine.async_aphrodite import (
     build_guided_decoding_logits_processor_async)
 from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,
                                               ENGINE_DEAD_ERROR, IPC_DATA_EXT,
                                               IPC_HEALTH_EXT, IPC_INPUT_EXT,
                                               IPC_OUTPUT_EXT, RPC_REQUEST_T,
-                                              RPCAbortRequest, RPCError,
+                                              RPCAbortRequest,
+                                              RPCAdapterLoadedResponse,
+                                              RPCError, RPCIsSleepingRequest,
+                                              RPCIsSleepingResponse,
+                                              RPCLoadAdapterRequest,
                                               RPCProcessRequest,
+                                              RPCResetPrefixCacheRequest,
+                                              RPCSleepRequest,
                                               RPCStartupRequest,
-                                              RPCStartupResponse)
+                                              RPCStartupResponse,
+                                              RPCUProfileRequest,
+                                              RPCWakeUpRequest)
+from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs import PromptType
+from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
+from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.processing.scheduler import SchedulerOutputs
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.transformers_utils.tokenizer_group import (
     init_tokenizer_from_configs)
@@ -45,12 +64,12 @@ class MQClientClosedError(Exception):
     """
 
 
-class MQAphroditeEngineClient:
+class MQAphroditeEngineClient(EngineClient):
     """A client wrapper for MQAphroditeEngine that conforms to the
     EngineClient protocol.
 
-    MQAphroditeEngine and MQAphroditeEngineClient are intended to run in
-    separate processes communicating via zeromq ipc sockets.
+    MQAphroditeEngine and MQAphroditeEngineClient are intended to run in separate
+    processes communicating via zeromq ipc sockets.
 
     The entrypoint to MQAphroditeEngineClient is through the generate()
     method. On generate() MQAphroditeEngine does three things:
@@ -69,11 +88,13 @@ class MQAphroditeEngineClient:
             every N seconds, confirming the engine is healthy
     """
 
-    def __init__(self, ipc_path: str, engine_config: EngineConfig):
+    def __init__(self, ipc_path: str, engine_config: AphroditeConfig,
+                 engine_pid: int):
         self.context = zmq.asyncio.Context()
         self._errored_with: Optional[BaseException] = None
 
         # Get the configs.
+        self.aphrodite_config = engine_config
         self.model_config = engine_config.model_config
         self.decoding_config = engine_config.decoding_config
 
@@ -81,9 +102,9 @@ class MQAphroditeEngineClient:
         self.tokenizer = init_tokenizer_from_configs(
             model_config=self.model_config,
             scheduler_config=engine_config.scheduler_config,
-            parallel_config=engine_config.parallel_config,
-            enable_lora=bool(engine_config.lora_config),
-        )
+            lora_config=engine_config.lora_config)
+        self.input_preprocessor = InputPreprocessor(self.model_config,
+                                                    self.tokenizer)
 
         # Send RPCGenerateRequest to the MQAphroditeEngine.
         self.input_socket: Socket = self.context.socket(zmq.constants.PUSH)
@@ -102,16 +123,21 @@ class MQAphroditeEngineClient:
 
         # Stream for each individual request.
         self.output_queues: Dict[str, asyncio.Queue] = {}
-        self.output_loop = asyncio.create_task(self.run_output_handler_loop())
+
+        # Loop to handle output of the AphroditeEngine periodically.
+        # Started after the MQAphroditeEngine is ready so that we can
+        # build the Client in an executor to enable clean shutdown.
+        self.output_loop: Optional[asyncio.Task] = None
 
         # Loop to check health of the AphroditeEngine periodically.
         # Started after the MQAphroditeEngine is ready.
         self.health_loop: Optional[asyncio.Task] = None
+        self._engine_process = psutil.Process(engine_pid)
 
     @staticmethod
-    def is_unsupported_config(engine_args: AsyncEngineArgs):
+    def is_unsupported_config(aphrodite_config: AphroditeConfig):
         # Pipeline parallel not yet supported
-        return engine_args.pipeline_parallel_size > 1
+        return aphrodite_config.parallel_config.pipeline_parallel_size > 1
 
     @contextmanager
     def get_data_socket(self) -> Iterator[Socket]:
@@ -123,20 +149,22 @@ class MQAphroditeEngineClient:
             socket.close(linger=0)
 
     async def run_heartbeat_loop(self, timeout: int):
-        """Background loop that continually listens to the RPCServer for
-        heartbeats.
+        """Background loop that continually checks to ensure the engine process
+        is still alive.
         """
         try:
             while True:
-                if await self.heartbeat_socket.poll(timeout=timeout) == 0:
-                    # No heartbeat was received. Set error and exit the loop
+                # Check if the engine process is running:
+                if not self._engine_process.is_running() or (
+                        self._engine_process.status() == psutil.STATUS_ZOMBIE):
+                    # NB: is_running() returns True for zombies
                     self._set_errored(
-                        TimeoutError("No heartbeat received "
-                                     "from MQLLMEngine"))
-                    logger.debug("Shutting down MQLLMEngineClient check "
-                                 "health loop due to timeout")
+                        RuntimeError(
+                            f"Engine process (pid {self._engine_process.pid}) "
+                            "died."))
                     break
-                else:
+
+                if await self.heartbeat_socket.poll(timeout=timeout):
                     # Heartbeat received- check the message
                     await self._check_success(
                         error_message="Heartbeat failed.",
@@ -145,7 +173,12 @@ class MQAphroditeEngineClient:
                 logger.debug("Heartbeat successful.")
 
         except asyncio.CancelledError:
-            logger.debug("Shutting down MQLLMEngineClient check health loop.")
+            logger.debug("Shutting down MQAphroditeEngineClient check health loop.")
+
+        except psutil.NoSuchProcess:
+            self._set_errored(
+                RuntimeError(
+                    f"Engine process (pid {self._engine_process.pid}) died."))
 
         except Exception as e:
             self._set_errored(e)
@@ -156,9 +189,8 @@ class MQAphroditeEngineClient:
         try:
             while True:
                 # Poll, checking for ENGINE_DEAD
-                while await self.output_socket.poll(
-                    timeout=APHRODITE_RPC_TIMEOUT
-                ) == 0:
+                while await self.output_socket.poll(timeout=APHRODITE_RPC_TIMEOUT
+                                                    ) == 0:
                     logger.debug("Waiting for output from MQAphroditeEngine.")
 
                     # If errored, alert all running requests.
@@ -186,8 +218,8 @@ class MQAphroditeEngineClient:
                         # should shut down the server.
                         error: BaseException = request_outputs
                         logger.error(
-                            f"Received Exception {error} rather than RPCError "
-                            "from MPAphroditeEngine. This should never happen.")
+                            "Received Exception {} rather than RPCError from "
+                            "MPAphroditeEngine. This should never happen.", error)
                         request_id = None
                         exception = error
                         is_engine_errored = True
@@ -216,20 +248,37 @@ class MQAphroditeEngineClient:
                         queue = self.output_queues.get(request_id)
                         if queue is not None:
                             queue.put_nowait(exception)
+                # Put each output into the appropriate queue.
+                elif isinstance(
+                        request_outputs,
+                    (RPCAdapterLoadedResponse, RPCIsSleepingResponse)):
+                    self._add_output(request_outputs)
                 else:
-                    # Put each output into the appropriate steam.
                     for request_output in request_outputs:
-                        queue = self.output_queues.get(
-                            request_output.request_id)
-                        if queue is not None:
-                            queue.put_nowait(request_output)
+                        self._add_output(request_output)
 
         except asyncio.CancelledError:
-            logger.debug(
-                "Shutting down MQAphroditeEngineClient output handler.")
+            logger.debug("Shutting down MQAphroditeEngineClient output handler.")
+
+    def _add_output(self, request_output: Union[RequestOutput,
+                                                RPCAdapterLoadedResponse,
+                                                RPCIsSleepingResponse]):
+        queue = self.output_queues.get(request_output.request_id)
+        if queue is not None:
+            queue.put_nowait(request_output)
 
     async def setup(self):
         """Setup the client before it starts sending server requests."""
+
+        # Start output_loop
+        if self.output_loop is None:
+            # only generate once to avoid multiple concurrent output_loops
+            # this will lead to race conditions and wrong orders of tokens
+            # returned by the engine
+            # setup will be called multiple times during the startup of
+            # the engine
+            self.output_loop = asyncio.create_task(
+                self.run_output_handler_loop())
 
         with self.get_data_socket() as socket:
             # Wait until server is ready.
@@ -238,8 +287,9 @@ class MQAphroditeEngineClient:
             self.tracing_flag = response.tracing_enabled
 
             # Start health_loop.
-            self.health_loop = asyncio.create_task(
-                self.run_heartbeat_loop(timeout=APHRODITE_RPC_TIMEOUT))
+            if self.health_loop is None:
+                self.health_loop = asyncio.create_task(
+                    self.run_heartbeat_loop(timeout=APHRODITE_RPC_TIMEOUT))
 
     def close(self):
         """Destroy the ZeroMQ Context."""
@@ -249,7 +299,8 @@ class MQAphroditeEngineClient:
         # Cancel background tasks.
         if self.health_loop is not None:
             self.health_loop.cancel()
-        self.output_loop.cancel()
+        if self.output_loop is not None:
+            self.output_loop.cancel()
 
     def _set_errored(self, e: BaseException):
         logger.exception(repr(e))
@@ -321,8 +372,14 @@ class MQAphroditeEngineClient:
               or response != APHRODITE_RPC_SUCCESS_STR):
             raise ValueError(error_message)
 
-    async def get_tokenizer(self, lora_request: LoRARequest):
+    async def get_input_preprocessor(self) -> InputPreprocessor:
+        return self.input_preprocessor
+
+    async def get_tokenizer(self, lora_request: Optional[LoRARequest] = None):
         return await self.tokenizer.get_lora_tokenizer_async(lora_request)
+
+    async def get_aphrodite_config(self) -> AphroditeConfig:
+        return self.aphrodite_config
 
     async def get_decoding_config(self) -> DecodingConfig:
         return self.decoding_config
@@ -349,8 +406,14 @@ class MQAphroditeEngineClient:
             await self._send_one_way_rpc_request(
                 request=RPCAbortRequest(request_id), socket=self.input_socket)
 
-    async def do_log_stats(self):
-        """Ignore do_log_stats (handled on MQAphroditeEngine polling)"""
+    async def do_log_stats(
+        self,
+        scheduler_outputs: Optional[SchedulerOutputs] = None,
+        model_output: Optional[List[SamplerOutput]] = None,
+    ) -> None:
+        """
+        Ignore do_log_stats (handled on MQAphroditeEngine polling)
+        """
         pass
 
     async def check_health(self):
@@ -378,61 +441,150 @@ class MQAphroditeEngineClient:
     def dead_error(self) -> BaseException:
         return ENGINE_DEAD_ERROR(self._errored_with)
 
+    @overload
     def generate(
         self,
         prompt: PromptType,
         sampling_params: SamplingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Mapping[str, str]] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
     ) -> AsyncGenerator[RequestOutput, None]:
+        ...
+
+    @overload
+    @deprecated("'inputs' will be renamed to 'prompt")
+    def generate(
+        self,
+        *,
+        inputs: PromptType,
+        sampling_params: SamplingParams,
+        request_id: str,
+        lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Mapping[str, str]] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
+    ) -> AsyncGenerator[RequestOutput, None]:
+        ...
+
+    @deprecate_kwargs(
+        "inputs",
+        additional_message="Please use the 'prompt' parameter instead.",
+    )
+    def generate(
+        self,
+        prompt: Optional[PromptType] = None,
+        sampling_params: Optional[SamplingParams] = None,
+        request_id: Optional[str] = None,
+        lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Mapping[str, str]] = None,
+        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
+        priority: int = 0,
+        *,
+        inputs: Optional[PromptType] = None  # DEPRECATED
+    ) -> AsyncGenerator[RequestOutput, None]:
         """Generate outputs for a request.
+
         Generate outputs for a request. This method is a coroutine. It adds the
-        request into the waiting queue of the AphroditeEngine and streams the
-        outputs from the AphroditeEngine to the caller.
+        request into the waiting queue of the AphroditeEngine and streams the outputs
+        from the AphroditeEngine to the caller.
+
         Args:
-            prompt: The prompt to the LLM. See
-                :class:`~aphrodite.inputs.PromptType`
+            prompt: The prompt to the LLM. See :class:`~aphrodite.inputs.PromptType`
                 for more details about the format of each input.
             sampling_params: The sampling parameters of the request.
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
+            trace_headers: OpenTelemetry trace headers.
             prompt_adapter_request: Prompt Adapter request to use
                                             for generation, if any.
             priority: Priority of the request (lower means earlier handling).
                 Any priority other than 0 will lead to an error if the
                 scheduling policy is not "priority".
         """
-        return self._process_request(prompt, sampling_params, request_id,
-                                     lora_request, prompt_adapter_request,
-                                     priority)
+        if inputs is not None:
+            prompt = inputs
+        assert (prompt is not None and sampling_params is not None
+                and request_id is not None)
 
+        return self._process_request(prompt, sampling_params, request_id,
+                                     lora_request, trace_headers,
+                                     prompt_adapter_request, priority)
+
+    @overload
     def encode(
         self,
         prompt: PromptType,
         pooling_params: PoolingParams,
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Mapping[str, str]] = None,
         priority: int = 0,
-    ) -> AsyncGenerator[EmbeddingRequestOutput, None]:
-        """Generate outputs for a request from an embedding model.
+    ) -> AsyncGenerator[PoolingRequestOutput, None]:
+        ...
+
+    @overload
+    @deprecated("'inputs' will be renamed to 'prompt")
+    def encode(
+        self,
+        *,
+        inputs: PromptType,
+        pooling_params: PoolingParams,
+        request_id: str,
+        lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Mapping[str, str]] = None,
+        priority: int = 0,
+    ) -> AsyncGenerator[PoolingRequestOutput, None]:
+        ...
+
+    @deprecate_kwargs(
+        "inputs",
+        additional_message="Please use the 'prompt' parameter instead.",
+    )
+    def encode(
+        self,
+        prompt: Optional[PromptType] = None,
+        pooling_params: Optional[PoolingParams] = None,
+        request_id: Optional[str] = None,
+        lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Mapping[str, str]] = None,
+        priority: int = 0,
+        *,
+        inputs: Optional[PromptType] = None  # DEPRECATED
+    ) -> AsyncGenerator[PoolingRequestOutput, None]:
+        """Generate outputs for a request from a pooling model.
+
         Generate outputs for a request. This method is a coroutine. It adds the
-        request into the waiting queue of the AphroditeEngine and streams the
-        outputs from the AphroditeEngine to the caller.
+        request into the waiting queue of the AphroditeEngine and streams the outputs
+        from the AphroditeEngine to the caller.
+
         Args:
-            prompt: The prompt to the LLM. See
-                :class:`~aphrodite.inputs.PromptType`
+            prompt: The prompt to the LLM. See :class:`~aphrodite.inputs.PromptType`
                 for more details about the format of each input.
             pooling_params: The pooling parameters of the request.
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
+            trace_headers: OpenTelemetry trace headers.
+
         Yields:
-            The output `EmbeddingRequestOutput` objects from the AphroditeEngine
+            The output `PoolingRequestOutput` objects from the AphroditeEngine
             for the request.
         """
-        return self._process_request(prompt, pooling_params, request_id,
-                                     lora_request, None, priority)
+        if inputs is not None:
+            prompt = inputs
+        assert (prompt is not None and pooling_params is not None
+                and request_id is not None)
+
+        return cast(
+            AsyncGenerator[PoolingRequestOutput, None],
+            self._process_request(prompt,
+                                  pooling_params,
+                                  request_id,
+                                  lora_request,
+                                  trace_headers,
+                                  priority=priority))
 
     async def _process_request(
         self,
@@ -440,15 +592,20 @@ class MQAphroditeEngineClient:
         params: Union[SamplingParams, PoolingParams],
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
+        trace_headers: Optional[Mapping[str, str]] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
     ) -> Union[AsyncGenerator[RequestOutput, None], AsyncGenerator[
-            EmbeddingRequestOutput, None]]:
+            PoolingRequestOutput, None]]:
         """Send an RPCGenerateRequest to the RPCServer and stream responses."""
 
         # If already dead, error out.
         if self._errored_with is not None:
             raise ENGINE_DEAD_ERROR(self._errored_with)
+
+        # Ensure the request id is unique among running requests
+        if request_id in self.output_queues:
+            raise ValueError(f"Request {request_id} already exists")
 
         # Constructing guided decoding logits processors is expensive, so we do
         # it here to avoid contending with cpu resources and the GIL on the
@@ -459,10 +616,13 @@ class MQAphroditeEngineClient:
                 build_guided_decoding_logits_processor_async(
                     sampling_params=params,
                     tokenizer=await self.get_tokenizer(lora_request),
-                    default_guided_backend=self.decoding_config.guided_decoding_backend,
-                    model_config=self.model_config
+                    default_guided_backend=(self.decoding_config.backend
+                        if self.decoding_config
+                        else DecodingConfig.backend),
+                    model_config=self.model_config,
+                    reasoning_backend=self.decoding_config.reasoning_backend,
                 )
-    
+
         # 1) Create output queue for this requests.
         queue: asyncio.Queue[Union[RequestOutput,
                                    BaseException]] = asyncio.Queue()
@@ -486,8 +646,10 @@ class MQAphroditeEngineClient:
                     params=params,
                     request_id=request_id,
                     lora_request=lora_request,
+                    trace_headers=trace_headers,
                     prompt_adapter_request=prompt_adapter_request,
-                    priority=priority))
+                    priority=priority,
+                ))
 
             # 3) Send the RPCGenerateRequest to the MQAphroditeEngine.
             parts = (request_bytes,
@@ -513,3 +675,72 @@ class MQAphroditeEngineClient:
                     await self.abort(request_id)
         finally:
             self.output_queues.pop(request_id)
+
+    async def start_profile(self) -> None:
+        """Start profiling the engine"""
+
+        await self._send_one_way_rpc_request(
+            request=RPCUProfileRequest.START_PROFILE, socket=self.input_socket)
+
+    async def stop_profile(self) -> None:
+        """Stop profiling the engine"""
+
+        await self._send_one_way_rpc_request(
+            request=RPCUProfileRequest.STOP_PROFILE, socket=self.input_socket)
+
+    async def reset_prefix_cache(self,
+                                 device: Optional[Device] = None) -> None:
+        """Reset the prefix cache"""
+
+        await self._send_one_way_rpc_request(
+            request=RPCResetPrefixCacheRequest(device),
+            socket=self.input_socket)
+
+    async def sleep(self, level: int = 1) -> None:
+        """Sleep the engine for a given level"""
+        return await self._send_one_way_rpc_request(
+            request=RPCSleepRequest(level), socket=self.input_socket)
+
+    async def wake_up(self, tags: Optional[list[str]] = None) -> None:
+        """Wake up the engine"""
+        return await self._send_one_way_rpc_request(
+            request=RPCWakeUpRequest(tags), socket=self.input_socket)
+
+    async def is_sleeping(self) -> bool:
+        """Check whether the engine is sleeping"""
+        request = RPCIsSleepingRequest()
+
+        queue: asyncio.Queue[Union[BaseException,
+                                   RPCIsSleepingResponse]] = asyncio.Queue()
+        self.output_queues[request.request_id] = queue
+
+        request_bytes = pickle.dumps(request)
+        await self.input_socket.send_multipart((request_bytes, ), copy=False)
+
+        request_output = await queue.get()
+        self.output_queues.pop(request.request_id)
+
+        if isinstance(request_output, BaseException):
+            raise request_output
+        return request_output.is_sleeping
+
+    async def add_lora(self, lora_request: LoRARequest) -> None:
+        """Load a new LoRA adapter into the engine for future requests."""
+        # Uses the same I/O as generate requests
+        request = RPCLoadAdapterRequest(lora_request)
+
+        # Create output queue for this requests.
+        queue: asyncio.Queue[Union[None, BaseException]] = asyncio.Queue()
+        self.output_queues[request.request_id] = queue
+
+        # Send the request
+        request_bytes = pickle.dumps(request)
+        await self.input_socket.send_multipart((request_bytes, ), copy=False)
+
+        # Wait for the response
+        request_output = await queue.get()
+        self.output_queues.pop(request.request_id)
+
+        # Raise on error, otherwise happily return None
+        if isinstance(request_output, BaseException):
+            raise request_output

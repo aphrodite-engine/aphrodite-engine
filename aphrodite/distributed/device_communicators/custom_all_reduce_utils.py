@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 from itertools import product
-from typing import Dict, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -95,7 +95,7 @@ def consumer(batch_tgt: Sequence[int],
 def can_actually_p2p(
     batch_src: Sequence[int],
     batch_tgt: Sequence[int],
-):
+) -> Sequence[bool]:
     """
     Usually, checking if P2P access is enabled can be done by
     `torch.cuda.can_device_access_peer(src, tgt)`. However, sometimes
@@ -145,13 +145,15 @@ def can_actually_p2p(
     p_tgt.start()
     p_src.join()
     p_tgt.join()
-    result = []
+    assert p_src.exitcode == 0 and p_tgt.exitcode == 0
+    result: List[bool] = []
     for src, tgt in zip(batch_src, batch_tgt):
         a = result_queue.get()
         b = result_queue.get()
         if a != b:
-            logger.warning("Two processes do not agree on the P2P access"
-                           f" status on {src} -> {tgt}, treat as disabled.")
+            logger.warning(
+                "Two processes do not agree on the P2P access"
+                " status on {} -> {}, treat as disabled.", src, tgt)
             result.append(False)
         else:
             result.append(a)
@@ -198,8 +200,8 @@ def gpu_p2p_access_check(src: int, tgt: int) -> bool:
             and (not os.path.exists(path))):
         # only the local master process (with local_rank == 0) can
         #  enter this block to calculate the cache
-        logger.info(f"generating GPU P2P access cache in {path}")
-        cache = {}
+        logger.debug("generating GPU P2P access cache in {}", path)
+        cache: Dict[str, bool] = {}
         ids = list(range(num_dev))
         # batch of all pairs of GPUs
         batch_src, batch_tgt = zip(*list(product(ids, ids)))
@@ -209,6 +211,7 @@ def gpu_p2p_access_check(src: int, tgt: int) -> bool:
         # However, `can_actually_p2p` requires spawn method.
         # The fix is, we use `subprocess` to call the function,
         # where we have `if __name__ == "__main__":` in this file.
+
         # use a temporary file to store the result
         # we don't use the output of the subprocess directly,
         # because the subprocess might produce logging output
@@ -235,8 +238,8 @@ def gpu_p2p_access_check(src: int, tgt: int) -> bool:
             json.dump(cache, f, indent=4)
     if is_distributed:
         get_world_group().barrier()
-    logger.debug(f"reading GPU P2P access cache from {path}")
-    with open(path, "r") as f:
+    logger.debug("reading GPU P2P access cache from {}", path)
+    with open(path) as f:
         cache = json.load(f)
     _gpu_p2p_access_cache = cache
     return _gpu_p2p_access_cache[f"{src}->{tgt}"]

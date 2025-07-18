@@ -4,33 +4,77 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
 
+import aphrodite.common.envs as envs
 from aphrodite.modeling._custom_op import CustomOp
+from aphrodite.platforms import current_platform
 
 
-@CustomOp.register("layernorm")
-class LayerNorm(nn.LayerNorm):
+def is_rocm_aiter_rmsnorm_enabled() -> bool:
+    return current_platform.is_rocm() \
+        and envs.APHRODITE_ROCM_USE_AITER_RMSNORM \
+        and envs.APHRODITE_ROCM_USE_AITER
 
-    def __init__(
-        self,
-        hidden_size: int,
-        eps: float = 1e-6,
-    ) -> None:
-        super().__init__(hidden_size, eps=eps)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        """normalization."""
-        if residual is not None:
-            x = x + residual
-            residual = x
-        x = super().forward(x)
-        if residual is None:
-            return x
-        else:
-            return x, residual
+def rms_norm(x: torch.Tensor, weight: torch.Tensor,
+             variance_epsilon: float) -> torch.Tensor:
+    from aphrodite import _custom_ops as ops
+    out = torch.empty_like(x)
+    ops.rms_norm(
+        out,
+        x,
+        weight,
+        variance_epsilon,
+    )
+    return out
+
+
+def fused_add_rms_norm(
+        x: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor,
+        variance_epsilon: float) -> Tuple[torch.Tensor, torch.Tensor]:
+    from aphrodite import _custom_ops as ops
+    ops.fused_add_rms_norm(
+        x,
+        residual,
+        weight,
+        variance_epsilon,
+    )
+    return x, residual
+
+
+def rocm_aiter_rms_norm(x: torch.Tensor, weight: torch.Tensor,
+                        variance_epsilon: float) -> torch.Tensor:
+
+    import aiter as rocm_aiter
+    return rocm_aiter.rms_norm(x, weight, variance_epsilon)
+
+
+def rocm_aiter_fused_add_rms_norm(
+        x: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor,
+        variance_epsilon: float) -> Tuple[torch.Tensor, torch.Tensor]:
+
+    import aiter as rocm_aiter
+
+    # Assuming the correct signature for rmsnorm2d_fwd_with_add
+    rocm_aiter.rmsnorm2d_fwd_with_add(
+        x,  # output
+        x,  # input
+        residual,  # residual input
+        residual,  # residual output
+        weight,
+        variance_epsilon,
+    )
+    return x, residual
+
+
+def dispatch_cuda_rmsnorm_func(add_residual: bool):
+    if add_residual:
+        if is_rocm_aiter_rmsnorm_enabled():
+            return rocm_aiter_fused_add_rms_norm
+        return fused_add_rms_norm
+
+    if is_rocm_aiter_rmsnorm_enabled():
+        return rocm_aiter_rms_norm
+    return rms_norm
 
 
 @CustomOp.register("rms_norm")
@@ -46,13 +90,22 @@ class RMSNorm(CustomOp):
         hidden_size: int,
         eps: float = 1e-6,
         var_hidden_size: Optional[int] = None,
+        has_weight: bool = True,
+        dtype: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__()
+
         self.hidden_size = hidden_size
         self.variance_epsilon = eps
         self.variance_size_override = (None if var_hidden_size == hidden_size
                                        else var_hidden_size)
-        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.has_weight = has_weight
+        if dtype is not None:
+            self.weight = torch.ones(hidden_size, dtype=dtype)
+        else:
+            self.weight = torch.ones(hidden_size)
+        if self.has_weight:
+            self.weight = nn.Parameter(self.weight)
 
     def forward_native(
         self,
@@ -70,6 +123,7 @@ class RMSNorm(CustomOp):
         if hidden_size != self.hidden_size:
             raise ValueError("Expected hidden_size to be "
                              f"{self.hidden_size}, but found: {hidden_size}")
+
         if self.variance_size_override is None:
             x_var = x
         else:
@@ -81,8 +135,11 @@ class RMSNorm(CustomOp):
             x_var = x[:, :, :self.variance_size_override]
 
         variance = x_var.pow(2).mean(dim=-1, keepdim=True)
+
         x = x * torch.rsqrt(variance + self.variance_epsilon)
-        x = x.to(orig_dtype) * self.weight
+        x = x.to(orig_dtype)
+        if self.has_weight:
+            x = x * self.weight
         if residual is None:
             return x
         else:
@@ -95,23 +152,35 @@ class RMSNorm(CustomOp):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         if self.variance_size_override is not None:
             return self.forward_native(x, residual)
-        from aphrodite import _custom_ops as ops
+
+        add_residual = residual is not None
+        norm_func = dispatch_cuda_rmsnorm_func(add_residual)
+
+        if add_residual:
+            return norm_func(x, residual, self.weight.data,
+                             self.variance_epsilon)
+        else:
+            return norm_func(x, self.weight.data, self.variance_epsilon)
+
+    def forward_hpu(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        from aphrodite.hpu_extension.kernels import rms_norm
+        HPUFusedRMSNorm = rms_norm()
+        if HPUFusedRMSNorm is None:
+            return self.forward_native(x, residual)
         if residual is not None:
-            ops.fused_add_rms_norm(
-                x,
-                residual,
-                self.weight.data,
-                self.variance_epsilon,
-            )
-            return x, residual
-        out = torch.empty_like(x)
-        ops.rms_norm(
-            out,
-            x,
-            self.weight.data,
-            self.variance_epsilon,
-        )
-        return out
+            orig_shape = x.shape
+            residual += x.view(residual.shape)
+            # Note: HPUFusedRMSNorm requires 3D tensors as inputs
+            x = HPUFusedRMSNorm.apply(residual, self.weight,
+                                      self.variance_epsilon)
+            return x.view(orig_shape), residual
+
+        x = HPUFusedRMSNorm.apply(x, self.weight, self.variance_epsilon)
+        return x
 
     def forward_xpu(
         self,
@@ -120,6 +189,7 @@ class RMSNorm(CustomOp):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         if self.variance_size_override is not None:
             return self.forward_native(x, residual)
+
         from aphrodite._ipex_ops import ipex_ops as ops
 
         if residual is not None:
@@ -136,18 +206,6 @@ class RMSNorm(CustomOp):
             self.variance_epsilon,
         )
 
-    def forward_triton(
-            self,
-            x: torch.Tensor,
-            residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        from aphrodite.modeling.layers.ops.layernorm import fast_rms_layernorm
-
-        if residual is not None:
-            x = x + residual
-            return fast_rms_layernorm(self, x, gemma=False), x
-        return fast_rms_layernorm(self, x, gemma=False)
-
     def extra_repr(self) -> str:
         s = f"hidden_size={self.weight.data.size(0)}"
         s += f", eps={self.variance_epsilon}"
@@ -157,6 +215,7 @@ class RMSNorm(CustomOp):
 @CustomOp.register("gemma_rms_norm")
 class GemmaRMSNorm(CustomOp):
     """RMS normalization for Gemma.
+
     Two differences from the above RMSNorm:
         1. x * (1 + w) instead of x * w.
         2. (x * w).to(orig_dtype) instead of x.to(orig_dtype) * w.
@@ -181,7 +240,10 @@ class GemmaRMSNorm(CustomOp):
         """PyTorch-native implementation equivalent to forward()."""
         orig_dtype = x.dtype
         if residual is not None:
-            x = x + residual
+            if orig_dtype == torch.float16:
+                x = x + residual.float()
+            else:
+                x = x + residual
             residual = x
 
         x = x.float()
@@ -209,20 +271,9 @@ class GemmaRMSNorm(CustomOp):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         if torch.compiler.is_compiling():
             return self.forward_native(x, residual)
+
         if not getattr(self, "_is_compiled", False):
             self.forward_static = torch.compile(  # type: ignore
                 self.forward_static)
             self._is_compiled = True
         return self.forward_native(x, residual)
-
-    def forward_triton(
-        self,
-        x: torch.Tensor,
-        residual: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        from aphrodite.modeling.layers.ops.layernorm import fast_rms_layernorm
-
-        if residual is not None:
-            x = x + residual
-            return fast_rms_layernorm(self, x, gemma=True), x
-        return fast_rms_layernorm(self, x, gemma=True)

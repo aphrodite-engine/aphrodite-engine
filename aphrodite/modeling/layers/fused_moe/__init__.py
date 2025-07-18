@@ -20,6 +20,7 @@ def override_config(config):
 def get_config() -> Optional[Dict[str, Any]]:
     return _config
 
+
 __all__ = [
     "FusedMoE",
     "FusedMoEMethodBase",
@@ -29,8 +30,10 @@ __all__ = [
 ]
 
 if HAS_TRITON:
+    # import to register the custom ops
     import aphrodite.modeling.layers.fused_moe.fused_marlin_moe  # noqa
     import aphrodite.modeling.layers.fused_moe.fused_moe  # noqa
+    from aphrodite.modeling.layers.fused_moe.cutlass_moe import cutlass_moe_fp8
     from aphrodite.modeling.layers.fused_moe.fused_moe import (
         fused_experts, fused_moe, fused_topk, get_config_file_name,
         grouped_topk)
@@ -41,4 +44,5 @@ if HAS_TRITON:
         "fused_experts",
         "get_config_file_name",
         "grouped_topk",
+        "cutlass_moe_fp8",
     ]

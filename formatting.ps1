@@ -30,10 +30,10 @@ function Test-ToolVersion {
 }
 
 # Get required versions from requirements file
-$REQUIRED_RUFF = (Get-Content requirements-lint.txt | Select-String "ruff==").ToString().Split("==")[2]
-$REQUIRED_ISORT = (Get-Content requirements-lint.txt | Select-String "isort").ToString().Split("==")[2]
-$REQUIRED_CODESPELL = (Get-Content requirements-lint.txt | Select-String "codespell").ToString().Split("==")[2]
-$REQUIRED_CLANGFORMAT = (Get-Content requirements-lint.txt | Select-String "clang-format").ToString().Split("==")[2]
+$REQUIRED_RUFF = (Get-Content requirements/lint.txt | Select-String "ruff==").ToString().Split("==")[2]
+$REQUIRED_ISORT = (Get-Content requirements/lint.txt | Select-String "isort").ToString().Split("==")[2]
+$REQUIRED_CODESPELL = (Get-Content requirements/lint.txt | Select-String "codespell").ToString().Split("==")[2]
+$REQUIRED_CLANGFORMAT = (Get-Content requirements/lint.txt | Select-String "clang-format").ToString().Split("==")[2]
 
 # Check versions
 Test-ToolVersion "ruff" $RUFF_VERSION $REQUIRED_RUFF

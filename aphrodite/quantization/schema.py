@@ -5,6 +5,7 @@ parameters are loaded in the form of a JSON alongside the model weights
 and augment the model with additional information needed for use of that
 technique. The format of this JSON should be specified by one or more
 schemas contained here.
+
 For example, when the KV cache is quantized to FP8-E4M3 (currently only
 possible on ROCm), the model can be optionally augmented with KV cache
 scaling factors.
@@ -45,8 +46,8 @@ class KVCacheQuantSchema(BaseModel):
                     f"Expected {num_hidden_layers} layers, got "
                     f"{len(layer_maps)}.")
             for i in range(tp_size):
-                assert (i in self.scaling_factor
-                        ), f"KV cache scales map for TP rank {i} not found."
+                assert i in self.scaling_factor, (
+                    f"KV cache scales map for TP rank {i} not found.")
         return self
 
     @model_validator(mode="after")

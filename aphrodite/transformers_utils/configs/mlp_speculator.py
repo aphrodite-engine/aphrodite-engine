@@ -22,6 +22,7 @@ class MLPSpeculatorConfig(PretrainedConfig):
                  **kwargs):
         """
         Initialize an MLPSpeculatorConfig
+
         Args:
             vocab_size: int
                 the model vocab size
@@ -60,4 +61,5 @@ class MLPSpeculatorConfig(PretrainedConfig):
         self.num_lookahead_tokens = n_predict
         self.tie_weights = tie_weights
         self.scale_input = scale_input
+
         super().__init__(**kwargs)

@@ -281,6 +281,7 @@ def _fwd_kernel_batch_inference(
     sbid: storage block id
     pbid: position block id
     offs_m, offs_n: storage offsets of m-dim(q, row) and n-dim(k, col)
+
     TODO:
     Optimize grouped-attn
     """

@@ -7,8 +7,10 @@
 
 from typing import Any, Optional
 
-from loguru import logger
 from transformers.configuration_utils import PretrainedConfig
+from transformers.utils import logging
+
+logger = logging.get_logger(__name__)
 
 DBRX_PRETRAINED_CONFIG_ARCHIVE_MAP = {} # type: ignore
 
@@ -70,9 +72,10 @@ class DbrxAttentionConfig(PretrainedConfig):
             and config_dict["model_type"] != cls.model_type
         ):
             logger.warning(
-                f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
-                + f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
-            )
+                "You are using a model of type {} to instantiate a model of "
+                "type {}. This is not supported for all configurations of "
+                "models and can yield errors.",
+                config_dict["model_type"], cls.model_type)
 
         return cls.from_dict(config_dict, **kwargs)
 
@@ -149,9 +152,9 @@ class DbrxFFNConfig(PretrainedConfig):
             and config_dict["model_type"] != cls.model_type
         ):
             logger.warning(
-                f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
-                + f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
-            )
+                "You are using a model of type {} to instantiate a model of "
+                "type {}. This is not supported for all "
+                "configurations of models and can yield errors.", config_dict["model_type"], cls.model_type)
 
         return cls.from_dict(config_dict, **kwargs)
 

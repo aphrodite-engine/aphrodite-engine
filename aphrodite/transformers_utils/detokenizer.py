@@ -1,24 +1,21 @@
 from typing import Dict, List, Optional
 
-from transformers import PreTrainedTokenizer
-
 from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID, Logprob,
                                        SamplingParams, Sequence, SequenceGroup)
-from aphrodite.transformers_utils.tokenizer_group.base_tokenizer_group import (
-    BaseTokenizerGroup)
 
 from .detokenizer_utils import (convert_prompt_ids_to_tokens,
                                 detokenize_incrementally)
+from .tokenizer import AnyTokenizer
+from .tokenizer_group import TokenizerGroup
 
 
 class Detokenizer:
     """Provides methods to decode the output of a model into text."""
 
-    def __init__(self, tokenizer_group: BaseTokenizerGroup):
+    def __init__(self, tokenizer_group: TokenizerGroup):
         self.tokenizer_group = tokenizer_group
 
-    def get_tokenizer_for_seq(self,
-                              sequence: Sequence) -> "PreTrainedTokenizer":
+    def get_tokenizer_for_seq(self, sequence: Sequence) -> AnyTokenizer:
         """Returns the HF tokenizer to use for a given sequence."""
         return self.tokenizer_group.get_lora_tokenizer(sequence.lora_request)
 
@@ -31,13 +28,15 @@ class Detokenizer:
         Args:
             seq_group: The sequence group to decode.
             prompt_logprobs: The logprobs to decode.
-            position_offset: Offset of the first index of the logprobs
+            position_offset: Offset of the first index of the logprobs 
                 relative to the start of the sequence (for chunked prefill).
-
+        
         Returns:
             The prompt logprobs with the decoded tokens.
         """
         prms = seq_group.sampling_params
+        assert prms is not None
+
         # We can pick any sequence for the prompt.
         seq = seq_group.get_seqs()[0]
         # Only prompt, without the generated token.
@@ -48,7 +47,7 @@ class Detokenizer:
         read_offset = 0
         next_iter_prefix_offset = 0
         next_iter_read_offset = 0
-        next_iter_tokens = []
+        next_iter_tokens: List[str] = []
         prev_tokens = None
 
         for token_position_in_logprob, prompt_logprobs_for_token in enumerate(

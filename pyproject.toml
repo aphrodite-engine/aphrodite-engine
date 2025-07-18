@@ -1,13 +1,50 @@
 [build-system]
+# Should be mirrored in requirements/build.txt
 requires = [
-    "cmake>=3.30",
+    "cmake>=3.26",
     "ninja",
-    "packaging",
-    "setuptools >= 49.4.0",
-    "torch == 2.6.0",
+    "packaging>=24.2",
+    "setuptools>=77.0.3,<80.0.0",
+    "setuptools-scm>=8.0",
+    "torch == 2.7.0",
     "wheel",
+    "jinja2",
 ]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "aphrodite-engine"
+authors = [{name = "PygmalionAI"}]
+license = { file = "LICENSE" }
+readme = "README.md"
+description = "Serving LLMs at Scale"
+classifiers = [
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+requires-python = ">=3.9,<3.13"
+dynamic = [ "version", "dependencies", "optional-dependencies"]
+
+[project.urls]
+Homepage="https://github.com/aphrodite-engine/aphrodite-engine"
+Documentation="https://aphrodite.pygmalion.chat"
+
+[project.scripts]
+aphrodite = "aphrodite.endpoints.cli.main:main"
+
+[tool.setuptools_scm]
+# no extra settings needed, presence enables setuptools-scm
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aphrodite*"]
 
 
 [tool.ruff]
@@ -15,7 +52,10 @@ build-backend = "setuptools.build_meta"
 line-length = 80
 exclude = [
     "examples/fp8/quantizer/quantize.py",
-    "kernels/hadamard/generator.py"
+    "kernels/hadamard/generator.py",
+    "kernels/flash_attention/**",
+    "aphrodite/aphrodite_flash_attn/**",
+    "aphrodite/distributed/kv_transfer/**"
 ]
 
 [tool.ruff.lint]
@@ -46,7 +86,7 @@ ignore = [
 ]
 
 [tool.codespell]
-ignore-words-list = "dout, te, indicies, ist, subtile, wit, whit, beseige, devlop, serie, vor, holliday, discus, tennant, carin, parma, mor, slac, revered, chanel, sammon, nast, shepard, insead, bloc, clea, appy, ser, fter, trough"
+ignore-words-list = "dout, te, indicies, ist, subtile, wit, whit, beseige, devlop, serie, vor, holliday, discus, tennant, carin, parma, mor, slac, revered, chanel, sammon, nast, shepard, insead, bloc, clea, appy, ser, fter, trough, incase"
 skip = "./tests/,./aphrodite/endpoints/kobold/klite.embd,./kernels/,./tests/benchmarks/sonnet.txt,./docs/,./tests/lora/data/long_context_test_data.py,./tests/models/fixtures/"
 
 [tool.isort]

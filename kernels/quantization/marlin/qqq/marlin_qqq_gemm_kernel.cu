@@ -29,11 +29,11 @@
 
 #include <iostream>
 
-#include "../dense/common/base.cuh"
+#include "../dense/common/base.h"
 #include "core/registration.h"
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
-  #include "../dense/common/mem.cuh"
+  #include "../dense/common/mem.h"
 #endif
 
 template <typename T>
@@ -57,7 +57,7 @@ using FragS_CHANNEL =
     Vec<float, 2>;  // weight per-channel quantization scales or activaton
                     // per-token quantization scales
 
-// NOTE: cp.async.cg only support BYTES = 16, however,
+// NOTE(HandH1998): cp.async.cg only support BYTES = 16, however,
 // cp.async.ca can support BYTES = 4, 8, 16;
 // as s_tok's shape is equal to prob_m, we need set s_tok to float type,
 // and cp_size = 1 float, i.e., 4 BYTES
@@ -99,7 +99,7 @@ __device__ inline void ldsm4(FragA& frag_a, const void* smem_ptr) {
 
 inline __device__ half2 float2_to_half2(float2 f) {
   uint32_t res;
-  // NOTE: h0,h1 should be uint16_t, not half
+  // NOTE(HandH1998): h0,h1 should be uint16_t, not half
   uint16_t h0, h1;
   asm volatile("cvt.rn.f16.f32 %0, %1;\n" : "=h"(h0) : "f"(f.x));
   asm volatile("cvt.rn.f16.f32 %0, %1;\n" : "=h"(h1) : "f"(f.y));
@@ -345,7 +345,7 @@ __global__ void Marlin(
   int a_sh_wr = a_sh_stride * (threadIdx.x / a_gl_rd_delta_o) +
                 (threadIdx.x % a_gl_rd_delta_o);
   // Shared read index.
-  // NOTE: int8 input a only need 16 threads to load 16x16 matrix
+  // NOTE(HandH1998): int8 input a only need 16 threads to load 16x16 matrix
   int a_sh_rd = a_sh_stride * ((threadIdx.x % 32) % 16);
   a_sh_rd += 1 * ((threadIdx.x / 32) / (thread_n_blocks / 4));
 
@@ -353,11 +353,11 @@ __global__ void Marlin(
       b_gl_stride * (threadIdx.x / b_sh_stride) + (threadIdx.x % b_sh_stride);
   b_gl_rd += b_sh_stride * slice_col;
   b_gl_rd += b_gl_rd_delta_o * slice_row;
-  int b_sh_wr = threadIdx.x;
-  int b_sh_rd = threadIdx.x;
+  auto b_sh_wr = threadIdx.x;
+  auto b_sh_rd = threadIdx.x;
 
-  int s_tok_gl_rd = threadIdx.x;
-  // NOTE: activation scale s_tok need shuffle to [0, 8, 1, 9, 2, 10,
+  auto s_tok_gl_rd = threadIdx.x;
+  // NOTE(HandH1998): activation scale s_tok need shuffle to [0, 8, 1, 9, 2, 10,
   // 3, 11, 4, 12, 5, 13, 6, 14, 7, 15] for example, 0, 8 row scales serve for
   // thread 0, 1, 2, 3. For more details, refer to mma operand A layout as
   // s_tok's size is not fixed, we can not shuffle before inference we shuffle
@@ -368,8 +368,8 @@ __global__ void Marlin(
   int s_tok_sh_rd = (threadIdx.x % 32) / 4;
   bool s_tok_sh_wr_pred = threadIdx.x < prob_m;
 
-  int s_ch_gl_rd = s_ch_sh_stride * slice_col + threadIdx.x;
-  int s_ch_sh_wr = threadIdx.x;
+  auto s_ch_gl_rd = s_ch_sh_stride * slice_col + threadIdx.x;
+  auto s_ch_sh_wr = threadIdx.x;
   int s_ch_sh_rd = 16 * ((threadIdx.x / 32) % (thread_n_blocks / 4)) +
                    2 * ((threadIdx.x % 32) % 4);
   bool s_ch_sh_wr_pred = threadIdx.x < s_ch_sh_stride;
@@ -381,7 +381,7 @@ __global__ void Marlin(
         s_group_gl_stride * ((thread_k_blocks * slice_row) / group_blocks) +
         s_group_sh_stride * slice_col + threadIdx.x;
     s_group_sh_wr = threadIdx.x;
-    // NOTE: s_group_sh_rd is related to mma output C
+    // NOTE(HandH1998): s_group_sh_rd is related to mma output C
     s_group_sh_rd = 8 * ((threadIdx.x / 32) % (thread_n_blocks / 4)) +
                     (threadIdx.x % 32) / 4;
     s_group_sh_wr_pred = threadIdx.x < s_group_sh_stride;
@@ -432,7 +432,7 @@ __global__ void Marlin(
 
   extern __shared__ int4 sh[];
   // Shared memory storage for global fetch pipelines.
-  // NOTE: stages need >= 4, otherwise, sh_s_tok = sh + max(stages *
+  // NOTE(HandH1998): stages need >= 4, otherwise, sh_s_tok = sh + max(stages *
   // a_sh_stage + stages * b_sh_stage, 4 * stages * a_sh_stage)
   int4* sh_a = sh;
   int4* sh_b = sh_a + (stages * a_sh_stage);
@@ -558,7 +558,7 @@ __global__ void Marlin(
   auto thread_block_reduce = [&]() {
     constexpr int red_off = threads / b_sh_stride / 2;
     if (red_off >= 1) {
-      int red_idx = threadIdx.x / b_sh_stride;
+      auto red_idx = threadIdx.x / b_sh_stride;
       constexpr int red_sh_stride = b_sh_stride * 4 * 2;
       constexpr int red_sh_delta = b_sh_stride;
       int red_sh_rd = red_sh_stride * (threadIdx.x / b_sh_stride) +
@@ -628,7 +628,7 @@ __global__ void Marlin(
                     8 * (threadIdx.x / 32) + (threadIdx.x % 4) * 2;
       c_gl_wr += (4 * thread_n_blocks) * slice_col;
       constexpr int c_sh_wr_delta = active_threads * 2;
-      int c_sh_wr = 2 * threadIdx.x;
+      auto c_sh_wr = 2 * threadIdx.x;
 
       int row = (threadIdx.x % 32) / 4;
 

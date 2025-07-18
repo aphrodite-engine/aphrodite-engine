@@ -11,8 +11,8 @@ from aphrodite.distributed.communication_op import (
 from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank
 from aphrodite.lora.layers import (ColumnParallelLinearWithLoRA,
                                    MergedColumnParallelLinearWithLoRA,
-                                   MergedQKVParallelLinearWithLora,
-                                   QKVParallelLinearWithLora,
+                                   MergedQKVParallelLinearWithLoRA,
+                                   QKVParallelLinearWithLoRA,
                                    RowParallelLinearWithLoRA)
 
 if TYPE_CHECKING:
@@ -165,9 +165,9 @@ class MergedColumnParallelLinearWithShardedLoRA(
         )
 
 
-class QKVParallelLinearWithShardedLora(QKVParallelLinearWithLora):
+class QKVParallelLinearWithShardedLoRA(QKVParallelLinearWithLoRA):
     """
-    Differs from QKVParallelLinearWithLora by slicing the
+    Differs from QKVParallelLinearWithLoRA by slicing the
     LoRA A's also.
 
     Based on S-LoRA, slicing happens along the rank dim.
@@ -200,9 +200,9 @@ class QKVParallelLinearWithShardedLora(QKVParallelLinearWithLora):
         )
 
 
-class MergedQKVParallelLinearWithShardedLora(MergedQKVParallelLinearWithLora):
+class MergedQKVParallelLinearWithShardedLoRA(MergedQKVParallelLinearWithLoRA):
     """
-    Differs from MergedQKVParallelLinearWithLora by slicing the 
+    Differs from MergedQKVParallelLinearWithLoRA by slicing the 
     LoRA A's also.
 
     Based on S-LoRA, slicing happens along the rank dim.

@@ -1,39 +1,95 @@
 import dataclasses
-import importlib
 import os
-from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
+import time
+from abc import abstractmethod
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
+import cloudpickle
 import torch
+import torch.nn as nn
 from loguru import logger
 
+from aphrodite.common.config import (AphroditeConfig, ObservabilityConfig,
+                                     set_current_aphrodite_config)
 from aphrodite.common.sequence import ExecuteModelRequest, IntermediateTensors
 from aphrodite.common.utils import (enable_trace_function_call_for_thread,
-                                    update_environment_variables)
+                                    resolve_obj_by_qualname, run_method,
+                                    update_environment_variables,
+                                    warn_for_unimplemented_methods)
 from aphrodite.distributed import (broadcast_tensor_dict, get_pp_group,
                                    get_tp_group)
 from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
-from aphrodite.platforms import current_platform
 from aphrodite.worker.model_runner_base import (BroadcastableModelInput,
                                                 ModelRunnerBase,
                                                 ModelRunnerInputBase)
 
 
-class WorkerBase(ABC):
+@warn_for_unimplemented_methods
+class WorkerBase:
     """Worker interface that allows Aphrodite to cleanly separate
-    implementations for different hardware. Also abstracts control plane
-    communication, e.g., to communicate request metadata to other workers.
+    implementations for different hardware. Also abstracts control
+    plane communication, e.g., to communicate request metadata to
+    other workers.
     """
 
-    @abstractmethod
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+    ) -> None:
+        self.aphrodite_config = aphrodite_config
+        self.model_config = aphrodite_config.model_config
+        self.cache_config = aphrodite_config.cache_config
+        self.lora_config = aphrodite_config.lora_config
+        self.load_config = aphrodite_config.load_config
+        self.parallel_config = aphrodite_config.parallel_config
+        self.scheduler_config = aphrodite_config.scheduler_config
+        self.device_config = aphrodite_config.device_config
+        self.speculative_config = aphrodite_config.speculative_config
+        self.prompt_adapter_config = aphrodite_config.prompt_adapter_config
+        self.observability_config = aphrodite_config.observability_config
+        self.kv_transfer_config = aphrodite_config.kv_transfer_config
+        self.compilation_config = aphrodite_config.compilation_config
+        from aphrodite.platforms import current_platform
+        self.current_platform = current_platform
+
     def init_device(self) -> None:
         """Initialize device state, such as loading the model or other on-device
         memory allocations.
         """
         raise NotImplementedError
 
-    @abstractmethod
+    def initialize_cache(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        """Initialize the KV cache with the given size in blocks.
+        """
+        raise NotImplementedError
+
+    def get_model(self) -> nn.Module:
+        raise NotImplementedError
+
+    def load_model(self) -> None:
+        """Load model onto target device."""
+        raise NotImplementedError
+
+    def execute_model(
+        self,
+        execute_model_req: Optional[ExecuteModelRequest] = None
+    ) -> Optional[List[SamplerOutput]]:
+        raise NotImplementedError
+
+    def start_worker_execution_loop(self) -> None:
+        """Execute model loop in parallel worker.
+
+        You can stop the loop by executing a driver worker with an empty output.
+        See `stop_remote_worker_execution_loop` for more details.
+        """
+        with self.current_platform.inference_mode():
+            while True:
+                output = self.execute_model(execute_model_req=None)
+                if output is None:
+                    return None
+
     def determine_num_available_blocks(self) -> Tuple[int, int]:
         """Determine the number of available blocks for the GPU KV cache and
         swappable CPU KV cache.
@@ -48,57 +104,91 @@ class WorkerBase(ABC):
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def initialize_cache(self, num_gpu_blocks: int,
-                         num_cpu_blocks: int) -> None:
-        """Initialize the KV cache with the given size in blocks.
-        """
-        raise NotImplementedError
-
-    @current_platform.inference_mode()
-    def start_worker_execution_loop(self) -> None:
-        """Execute model loop in parallel worker.
-
-        You can stop the loop by executing a driver worker with an empty output.
-        See `stop_remote_worker_execution_loop` for more details.
-        """
-        while True:
-            output = self.execute_model(execute_model_req=None)
-            if output is None:
-                return None
-
-    @abstractmethod
-    def execute_model(
-        self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
-    ) -> Optional[List[SamplerOutput]]:
-        raise NotImplementedError
-
-    @abstractmethod
     def get_cache_block_size_bytes(self) -> int:
         """Return the size of a single cache block, in bytes. Used in
         speculative decoding.
         """
         raise NotImplementedError
 
-    @abstractmethod
     def add_lora(self, lora_request: LoRARequest) -> bool:
         raise NotImplementedError
 
-    @abstractmethod
     def remove_lora(self, lora_id: int) -> bool:
         raise NotImplementedError
 
-    @abstractmethod
     def pin_lora(self, lora_id: int) -> bool:
         raise NotImplementedError
 
-    @abstractmethod
     def list_loras(self) -> Set[int]:
         raise NotImplementedError
 
+    @property
+    def vocab_size(self) -> int:
+        """Get vocabulary size from model configuration."""
+        return self.model_config.get_vocab_size()
 
-class LoraNotSupportedWorkerBase(WorkerBase):
+
+class DelegateWorkerBase(WorkerBase):
+    """
+    A class that delegates all methods to another WorkerBase instance. This is
+    useful for creating a WorkerBase that wraps another WorkerBase instance,
+    e.g. speculative decoding.
+    """
+    worker: WorkerBase
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ) -> None:
+        aphrodite_config: AphroditeConfig = kwargs.get("aphrodite_config")
+        cls = resolve_obj_by_qualname(
+            aphrodite_config.parallel_config.worker_cls)
+        self.worker = cls(*args, **kwargs)
+
+    def init_device(self) -> None:
+        self.worker.init_device()
+
+    def determine_num_available_blocks(self) -> Tuple[int, int]:
+        return self.worker.determine_num_available_blocks()
+
+    def initialize_cache(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        self.worker.initialize_cache(num_gpu_blocks, num_cpu_blocks)
+
+    def load_model(self) -> None:
+        """Load model onto target device."""
+        self.worker.load_model()
+
+    def get_model(self) -> nn.Module:
+        return self.worker.get_model()
+
+    def execute_model(
+        self,
+        execute_model_req: Optional[ExecuteModelRequest] = None
+    ) -> Optional[List[SamplerOutput]]:
+        return self.worker.execute_model(execute_model_req)
+
+    def get_cache_block_size_bytes(self) -> int:
+        return self.worker.get_cache_block_size_bytes()
+
+    def add_lora(self, lora_request: LoRARequest) -> bool:
+        return self.worker.add_lora(lora_request)
+
+    def remove_lora(self, lora_id: int) -> bool:
+        return self.worker.remove_lora(lora_id)
+
+    def pin_lora(self, lora_id: int) -> bool:
+        return self.worker.pin_lora(lora_id)
+
+    def list_loras(self) -> Set[int]:
+        return self.worker.list_loras()
+
+    def __getattr__(self, attr):
+        return getattr(self.worker, attr)
+
+
+class LoRANotSupportedWorkerBase(WorkerBase):
     """Partial implementation of WorkerBase that raises exceptions when LoRA
     methods are invoked.
     """
@@ -176,6 +266,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     """
     is_driver_worker: bool
     model_runner: ModelRunnerBase
+    observability_config: Optional[ObservabilityConfig] = None
 
     @property
     @abstractmethod
@@ -234,8 +325,8 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                 broadcast_data))
 
         kwargs = extract_previous_hidden_states(broadcast_data)
-        return model_input, worker_input, kwargs
 
+        return model_input, worker_input, kwargs
 
     def _get_driver_input_and_broadcast(
         self, execute_model_req: ExecuteModelRequest
@@ -288,12 +379,16 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         else:
             return self._get_worker_input_from_broadcast()
 
+    def get_model(self) -> nn.Module:
+        return self.model_runner.get_model()
+
     def execute_model(
         self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
+        execute_model_req: Optional[ExecuteModelRequest] = None,
     ) -> Optional[List[SamplerOutput]]:
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
+        start_time = time.perf_counter()
 
         inputs = self.prepare_input(execute_model_req)
         if inputs is None:
@@ -301,16 +396,25 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         model_input, worker_input, kwargs = inputs
         num_steps = worker_input.num_steps
+        if (execute_model_req is not None and execute_model_req.spec_step_idx):
+            kwargs["spec_step_idx"] = execute_model_req.spec_step_idx
+
         self.execute_worker(worker_input)
+
         # If there is no input, we don't need to execute the model.
         if worker_input.num_seq_groups == 0:
             return []
 
         intermediate_tensors = None
+        orig_model_execute_time = 0.0
         if not get_pp_group().is_first_rank:
             intermediate_tensors = IntermediateTensors(
                 get_pp_group().recv_tensor_dict(
                     all_gather_group=get_tp_group()))
+            if (self.observability_config is not None
+                    and self.observability_config.collect_model_execute_time):
+                orig_model_execute_time = intermediate_tensors.tensors.get(
+                    "model_execute_time", torch.tensor(0)).item()
 
         output = self.model_runner.execute_model(
             model_input=model_input,
@@ -321,11 +425,23 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             **kwargs,
         )
 
+        model_execute_time = time.perf_counter() - start_time
         if not get_pp_group().is_last_rank:
             # output is IntermediateTensors
+            assert isinstance(output, IntermediateTensors)
+            if (self.observability_config is not None
+                    and self.observability_config.collect_model_execute_time):
+                output.tensors["model_execute_time"] = torch.tensor(
+                    model_execute_time + orig_model_execute_time)
             get_pp_group().send_tensor_dict(output.tensors,
                                             all_gather_group=get_tp_group())
             return [None]
+        if (self.observability_config is not None
+                and self.observability_config.collect_model_execute_time
+                and output is not None):
+            for o in output:
+                o.model_execute_time = (orig_model_execute_time +
+                                        model_execute_time)
 
         # output is List[SamplerOutput]
         return output
@@ -356,6 +472,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             return []
 
         kwargs = extract_previous_hidden_states(execute_model_req)
+
         return self.model_runner.execute_model(
             model_input=model_input,
             kv_caches=self.kv_cache[worker_input.virtual_engine]
@@ -367,35 +484,55 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
 class WorkerWrapperBase:
     """
-    The whole point of this class is to lazily initialize the worker.
+    This class represents one process in an executor/engine. It is responsible
+    for lazily initializing the worker and handling the worker's lifecycle.
     We first instantiate the WorkerWrapper, which remembers the worker module
     and class name. Then, when we call `update_environment_variables`, and the
     real initialization happens in `init_worker`.
-
-    If worker_class_fn is specified, it will be executed to get the worker
-    class.
-    Otherwise, the worker class will be obtained by dynamically importing it
-    using worker_module_name and worker_class_name.
     """
 
     def __init__(
         self,
-        worker_module_name: str,
-        worker_class_name: str,
-        trust_remote_code: bool = False,
-        worker_class_fn: Optional[Callable[[],
-                                           Type[WorkerBase]]] = None) -> None:
-        self.worker_module_name = worker_module_name
-        self.worker_class_name = worker_class_name
-        self.worker_class_fn = worker_class_fn
+        aphrodite_config: AphroditeConfig,
+        rpc_rank: int = 0,
+    ) -> None:
+        """
+        Initialize the worker wrapper with the given aphrodite_config and
+        rpc_rank.
+        Note: rpc_rank is the rank of the worker in the executor. In most cases,
+        it is also the rank of the worker in the distributed group. However,
+        when multiple executors work together, they can be different.
+        e.g. in the case of SPMD-style offline inference with TP=2,
+        users can launch 2 engines/executors, each with only 1 worker.
+        All workers have rpc_rank=0, but they have different ranks in the TP
+        group.
+        """
+        self.rpc_rank = rpc_rank
         self.worker: Optional[WorkerBase] = None
-        if trust_remote_code:
-            # note: lazy import to avoid importing torch before initializing
-            from aphrodite.common.utils import init_cached_hf_modules
-            init_cached_hf_modules()
+        # do not store this `aphrodite_config`, `init_worker` will set the final
+        # one. TODO: investigate if we can remove this field in
+        # `WorkerWrapperBase`, `init_cached_hf_modules` should be
+        # unnecessary now.
+        if aphrodite_config.model_config is not None:
+            # it can be None in tests
+            trust_remote_code = aphrodite_config.model_config.trust_remote_code
+            if trust_remote_code:
+                # note: lazy import to avoid importing torch before initializing
+                from aphrodite.common.utils import init_cached_hf_modules
+                init_cached_hf_modules()
 
-    @staticmethod
-    def update_environment_variables(envs: Dict[str, str]) -> None:
+    def adjust_rank(self, rank_mapping: Dict[int, int]) -> None:
+        """
+        Adjust the rpc_rank based on the given mapping.
+        It is only used during the initialization of the executor,
+        to adjust the rpc_rank of workers after we create all workers.
+        """
+        if self.rpc_rank in rank_mapping:
+            self.rpc_rank = rank_mapping[self.rpc_rank]
+
+    def update_environment_variables(self, envs_list: List[Dict[str,
+                                                                str]]) -> None:
+        envs = envs_list[self.rpc_rank]
         key = 'CUDA_VISIBLE_DEVICES'
         if key in envs and key in os.environ:
             # overwriting CUDA_VISIBLE_DEVICES is desired behavior
@@ -403,49 +540,97 @@ class WorkerWrapperBase:
             del os.environ[key]
         update_environment_variables(envs)
 
-    def init_worker(self, *args, **kwargs):
+    def init_worker(self, all_kwargs: List[Dict[str, Any]]) -> None:
         """
         Here we inject some common logic before initializing the worker.
         Arguments are passed to the worker class constructor.
         """
-        enable_trace_function_call_for_thread()
-
-        # see https://github.com/NVIDIA/nccl/issues/1234
-        os.environ['NCCL_CUMEM_ENABLE'] = '0'
+        kwargs = all_kwargs[self.rpc_rank]
+        self.aphrodite_config = kwargs.get("aphrodite_config", None)
+        assert self.aphrodite_config is not None, (
+            "aphrodite_config is required to initialize the worker")
+        enable_trace_function_call_for_thread(self.aphrodite_config)
 
         from aphrodite.plugins import load_general_plugins
         load_general_plugins()
 
-        if self.worker_class_fn:
-            worker_class = self.worker_class_fn()
+        if isinstance(self.aphrodite_config.parallel_config.worker_cls, str):
+            worker_class = resolve_obj_by_qualname(
+                self.aphrodite_config.parallel_config.worker_cls)
         else:
-            mod = importlib.import_module(self.worker_module_name)
-            worker_class = getattr(mod, self.worker_class_name)
+            logger.warning(
+                "passing worker_cls as a class object is strongly deprecated,"
+                " as the serialization of class objects can be tricky and"
+                " error-prone. To be safe, please keep the class in a separate"
+                " module and pass the qualified name of the class as a string."
+            )
+            assert isinstance(self.aphrodite_config.parallel_config.worker_cls,
+                              bytes)
+            worker_class = cloudpickle.loads(
+                self.aphrodite_config.parallel_config.worker_cls)
+        if self.aphrodite_config.parallel_config.worker_extension_cls:
+            worker_extension_cls = resolve_obj_by_qualname(
+                self.aphrodite_config.parallel_config.worker_extension_cls)
+            extended_calls = []
+            if worker_extension_cls not in worker_class.__bases__:
+                # check any conflicts between worker and worker_extension_cls
+                for attr in dir(worker_extension_cls):
+                    if attr.startswith("__"):
+                        continue
+                    assert not hasattr(worker_class, attr), (
+                        f"Worker class {worker_class} already has an attribute"
+                        f" {attr}, which conflicts with the worker"
+                        f" extension class {worker_extension_cls}.")
+                    if callable(getattr(worker_extension_cls, attr)):
+                        extended_calls.append(attr)
+                # dynamically inherit the worker extension class
+                worker_class.__bases__ = worker_class.__bases__ + (
+                    worker_extension_cls, )
+                logger.info(
+                    "Injected {} into {} for extended collective_rpc calls {}",
+                    worker_extension_cls, worker_class, extended_calls)
+        with set_current_aphrodite_config(self.aphrodite_config):
+            # To make Aphrodite config available during worker initialization
+            self.worker = worker_class(**kwargs)
+            assert self.worker is not None
 
-        self.worker = worker_class(*args, **kwargs)
-        assert self.worker is not None
+    def initialize_from_config(self, kv_cache_configs: List[Any]) -> None:
+        kv_cache_config = kv_cache_configs[self.rpc_rank]
+        self.worker.initialize_from_config(kv_cache_config)  # type: ignore
 
-    def execute_method(self, method, *args, **kwargs):
+    def init_device(self):
+        with set_current_aphrodite_config(self.aphrodite_config):
+            # To make Aphrodite config available during device initialization
+            self.worker.init_device()  # type: ignore
+
+    def execute_method(self, method: Union[str, bytes], *args, **kwargs):
         try:
-            target = self if self.worker is None else self.worker
-            executor = getattr(target, method)
-            return executor(*args, **kwargs)
+            # method resolution order:
+            # if a method is defined in this class, it will be called directly.
+            # otherwise, since we define `__getattr__` and redirect attribute
+            # query to `self.worker`, the method will be called on the worker.
+            return run_method(self, method, args, kwargs)
         except Exception as e:
             # if the driver worker also execute methods,
             # exceptions in the rest worker may cause deadlock in rpc like ray
             # print the error and inform the user to solve the error
-            msg = (f"Error executing method {method}. "
+            msg = (f"Error executing method {method!r}. "
                    "This might cause deadlock in distributed execution.")
             logger.exception(msg)
             raise e
+
+    def __getattr__(self, attr):
+        return getattr(self.worker, attr)
+
 
 def extract_previous_hidden_states(
         data: Union[ExecuteModelRequest, Dict[str, torch.Tensor]]) -> \
             Dict[str, torch.Tensor]:
     """If data contains previous_hidden_states, extract it. This returns a dict
-    which can be used directly as additional kwargs in any following
+    which can be used directly as additional kwargs in any following 
     execute_model calls. This is used in draft models like EAGLE."""
     output = {}
+
     # When called from non-driver worker, data is dict but when called from
     # driver worker, data is ExecuteModelRequest.
     if isinstance(data, dict):
@@ -454,4 +639,5 @@ def extract_previous_hidden_states(
     elif data.previous_hidden_states is not None:
         output["previous_hidden_states"] = data.previous_hidden_states\
             .hidden_states
+
     return output

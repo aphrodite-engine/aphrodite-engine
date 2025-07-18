@@ -1,34 +1,49 @@
 #ifndef DNNL_HELPER_HPP
 #define DNNL_HELPER_HPP
+
 #include <c10/util/BFloat16.h>
+#include <c10/util/Half.h>
+
 #include "oneapi/dnnl/dnnl.hpp"
+
 namespace {
 template <typename T>
 struct DNNLType {
   static constexpr dnnl::memory::data_type type =
       dnnl::memory::data_type::undef;
 };
+
 template <>
 struct DNNLType<int8_t> {
   static constexpr dnnl::memory::data_type type = dnnl::memory::data_type::s8;
 };
+
 template <>
 struct DNNLType<int32_t> {
   static constexpr dnnl::memory::data_type type = dnnl::memory::data_type::s32;
 };
+
 template <>
 struct DNNLType<float> {
   static constexpr dnnl::memory::data_type type = dnnl::memory::data_type::f32;
 };
+
 template <>
 struct DNNLType<c10::BFloat16> {
   static constexpr dnnl::memory::data_type type = dnnl::memory::data_type::bf16;
 };
+
+template <>
+struct DNNLType<c10::Half> {
+  static constexpr dnnl::memory::data_type type = dnnl::memory::data_type::f16;
+};
+
 template <typename T>
 constexpr inline dnnl::memory::data_type get_dnnl_type() {
   return DNNLType<std::decay_t<T>>::type;
 }
 };  // namespace
+
 template <bool InputNoScale>
 class DNNLPrimitiveHelper {
  public:
@@ -50,9 +65,11 @@ class DNNLPrimitiveHelper {
                             dnnl_dim_t NS) {
     auto&& OutputType = get_dnnl_type<OutputT>();
     auto&& BiasType = get_dnnl_type<BiasT>();
+
     dnnl::memory::desc a_md({M, K}, dnnl::memory::data_type::s8, {K, 1});
     dnnl::memory::desc b_md({K, N}, dnnl::memory::data_type::s8, {1, K});
     dnnl::memory::desc c_md({M, N}, OutputType, {N, 1});
+
     dnnl::primitive_attr attr;
     if constexpr (!InputNoScale) {
       if (MS == 1) {
@@ -63,6 +80,7 @@ class DNNLPrimitiveHelper {
         TORCH_CHECK(false, "per-token quantization is unsupported.");
       }
     }
+
     if (NS == 1) {
       // per-tensor
       attr.set_scales_mask(DNNL_ARG_WEIGHTS, 0);
@@ -70,6 +88,7 @@ class DNNLPrimitiveHelper {
       // per-channel
       attr.set_scales_mask(DNNL_ARG_WEIGHTS, 2);
     }
+
     dnnl::matmul::primitive_desc matmul_pd;
     if (bias) {
       dnnl::memory::desc bias_md({1, N}, BiasType, {N, 1});
@@ -80,7 +99,9 @@ class DNNLPrimitiveHelper {
                                                c_md, attr);
     }
     dnnl::matmul matmul(matmul_pd);
+
     auto& engine = default_engine();
+
     dnnl::memory a_m(a_md, engine, (void*)a);
     dnnl::memory b_m(b_md, engine, (void*)b);
     dnnl::memory c_m(c_md, engine, (void*)c);
@@ -88,6 +109,7 @@ class DNNLPrimitiveHelper {
                             (void*)a_scales);
     dnnl::memory b_scales_m({{NS}, dnnl::memory::data_type::f32, {1}}, engine,
                             (void*)b_scales);
+
     auto& stream = default_stream();
     if constexpr (InputNoScale) {
       if (bias) {
@@ -136,14 +158,17 @@ class DNNLPrimitiveHelper {
     }
     stream.wait();
   }
+
  private:
   static dnnl::engine& default_engine() {
     static dnnl::engine engine(dnnl::engine::kind::cpu, 0);
     return engine;
   }
+
   static dnnl::stream& default_stream() {
     static dnnl::stream stream(default_engine());
     return stream;
   }
 };
+
 #endif

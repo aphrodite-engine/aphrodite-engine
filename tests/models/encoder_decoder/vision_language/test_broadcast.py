@@ -8,7 +8,7 @@ from ....utils import multi_gpu_test
 @pytest.mark.parametrize("model", [
     "meta-llama/Llama-3.2-11B-Vision-Instruct",
 ])
-def test_models(hf_runner, vllm_runner, image_assets,
+def test_models(hf_runner, aphrodite_runner, image_assets,
                 distributed_executor_backend, model) -> None:
 
     dtype = "half"
@@ -23,7 +23,7 @@ def test_models(hf_runner, vllm_runner, image_assets,
 
     run_test(
         hf_runner,
-        vllm_runner,
+        aphrodite_runner,
         image_assets,
         model=models[0],
         size_factors=[0.25, 0.5, 1.0],

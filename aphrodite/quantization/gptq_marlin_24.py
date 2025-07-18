@@ -10,6 +10,7 @@ from aphrodite.modeling.parameter import (BaseAphroditeParameter,
                                           ChannelQuantScaleParameter,
                                           GroupQuantScaleParameter,
                                           PackedAphroditeParameter)
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 from aphrodite.scalar_type import scalar_types
 
@@ -33,6 +34,7 @@ class GPTQMarlin24Config(QuantizationConfig):
         weight_bits: int,
         group_size: int,
     ) -> None:
+        super().__init__()
         quant_type = {
             4: scalar_types.uint4b8,
             8: scalar_types.uint8b128,
@@ -79,7 +81,7 @@ class GPTQMarlin24Config(QuantizationConfig):
             self.quant_type, self.group_size)
 
     @classmethod
-    def get_name(cls) -> str:
+    def get_name(cls) -> QuantizationMethods:
         return "gptq_marlin_24"
 
     @classmethod
@@ -102,8 +104,8 @@ class GPTQMarlin24Config(QuantizationConfig):
         return cls(weight_bits, group_size)
 
     @classmethod
-    def override_quantization_method(cls, hf_quant_cfg,
-                                     user_quant) -> Optional[str]:
+    def override_quantization_method(
+            cls, hf_quant_cfg, user_quant) -> Optional[QuantizationMethods]:
         is_marlin_24_format = (
             hf_quant_cfg.get("checkpoint_format") == "marlin_24")
 
@@ -123,9 +125,6 @@ class GPTQMarlin24Config(QuantizationConfig):
         if isinstance(layer, LinearBase):
             return GPTQMarlin24LinearMethod(self)
         return None
-
-    def get_scaled_act_names(self) -> List[str]:
-        return []
 
 
 class GPTQMarlin24LinearMethod(LinearMethodBase):
@@ -150,7 +149,6 @@ class GPTQMarlin24LinearMethod(LinearMethodBase):
     ):
         del output_size  # Unused.
         weight_loader = extra_weight_attrs["weight_loader"]
-
         if params_dtype != torch.float16:
             raise ValueError(
                 f"The params dtype must be float16, but got {params_dtype}")
@@ -245,6 +243,7 @@ class GPTQMarlin24LinearMethod(LinearMethodBase):
         max_workspace_size = (
             output_size_per_partition //
             self.quant_config.min_n_threads) * self.quant_config.max_parallel
+
         workspace = BaseAphroditeParameter(data=torch.zeros(max_workspace_size,
                                                        device="cuda",
                                                        dtype=torch.int),

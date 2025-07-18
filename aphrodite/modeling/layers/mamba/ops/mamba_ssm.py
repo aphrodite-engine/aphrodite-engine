@@ -1,5 +1,5 @@
 # Copyright (c) 2024, Tri Dao, Albert Gu.
-# Adapted from https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/triton/selective_state_update.py
+# Adapted from https://github.com/state-spaces/mamba/blob/v2.2.4/mamba_ssm/ops/triton/selective_state_update.py
 
 import torch
 import triton
@@ -8,8 +8,10 @@ from packaging import version
 
 from aphrodite import _custom_ops as ops
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
+from aphrodite.triton_utils import HAS_TRITON
 
-TRITON3 = version.parse(triton.__version__) >= version.parse("3.0.0")
+TRITON3 = HAS_TRITON and (version.parse(triton.__version__)
+                          >= version.parse("3.0.0"))
 
 if TRITON3:
 
@@ -178,6 +180,7 @@ def _selective_scan_update_kernel(
 
     dB = B[None, :] * dt[:, None] if not TIE_HDIM else B * dt
     state = state * dA + dB * x[:, None]
+
     mask = (offs_m[:, None] < dim) & (offs_n[None, :] < dstate)
     if HAS_STATE_BATCH_INDICES:
         mask &= (state_batch_idx != pad_slot_id)
@@ -375,7 +378,6 @@ def selective_scan_fn(u,
         that will not be processed, 
         for example: cache_indices = [pad_slot_id, 1 ,20 ,pad_slot_id] 
         in this case, the kernel will not process entries at indices 0 and 3
-
     returns
         output: (dim, total_length) for varlen or (batch, dim, seqlen) 
                 supports inplace replacement

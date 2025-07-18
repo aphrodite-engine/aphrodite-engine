@@ -6,6 +6,7 @@ from torch.nn.parameter import Parameter
 
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
 HAS_EETQ = False
@@ -24,6 +25,7 @@ class EETQConfig(QuantizationConfig):
         weight_bits: int,
         zero_point: bool,
     ) -> None:
+        super().__init__()
         self.weight_bits = weight_bits
         self.zero_point = zero_point
         if self.weight_bits != 8:
@@ -35,7 +37,7 @@ class EETQConfig(QuantizationConfig):
         return (f"EETQConfig(weight_bits={self.weight_bits}, "
                 f"zero_point={self.zero_point})")
 
-    def get_name(self) -> str:
+    def get_name(self) -> QuantizationMethods:
         return "eetq"
 
     def get_supported_act_dtypes(self) -> List[torch.dtype]:
@@ -64,9 +66,6 @@ class EETQConfig(QuantizationConfig):
         if isinstance(layer, LinearBase):
             return EETQLinearMethod(self)
         return None
-
-    def get_scaled_act_names(self) -> List[str]:
-        return []
 
 
 class EETQLinearMethod(LinearMethodBase):

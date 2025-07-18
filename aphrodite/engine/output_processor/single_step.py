@@ -1,7 +1,8 @@
 from typing import List
 
 from aphrodite.common.config import SchedulerConfig
-from aphrodite.common.sequence import SequenceGroup, SequenceGroupOutput
+from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
+                                       SequenceGroup, SequenceGroupOutput)
 from aphrodite.common.utils import Counter
 from aphrodite.engine.output_processor.interfaces import (
     SequenceGroupOutputProcessor)
@@ -12,12 +13,14 @@ from aphrodite.transformers_utils.detokenizer import Detokenizer
 
 def single_step_process_prompt_logprob(
         sg_output_proc: SequenceGroupOutputProcessor, seq_group: SequenceGroup,
-        output: SequenceGroupOutput) -> None:
+        output: CompletionSequenceGroupOutput) -> None:
     """Process prompt logprobs associated with the :class:`SequenceGroupOutput`
     for a given step.
-    Do nothing if the output has no prompt logprobs.
-    Account for the fact that transformers do not compute first-token logprobs.
 
+    Do nothing if the output has no prompt logprobs.
+
+    Account for the fact that transformers do not compute first-token logprobs.
+    
     Args:
       sg_output_proc: :class:`SequenceGroupOutputProcessor` instance
       seq_group: the output is associated with this :class:`SequenceGroup`
@@ -77,8 +80,9 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
 
         Invokes detokenizer to detokenize new tokens, and also marks sequences
         as finished if they meet stop conditions.
-        is_async - Indicates whether this postprocessor runs in
-            parallel with the GPU forward pass and is processing
+        
+        is_async - Indicates whether this postprocessor runs in 
+            parallel with the GPU forward pass and is processing 
             tokens from the previous step. If this is true, then
             no tokens need to be appended since it is already done
             externally (before the next schedule() call)
@@ -92,23 +96,26 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
                                outputs: List[SequenceGroupOutput]) -> None:
         """Process prompt logprobs associated with one step of a single-step-
         scheduled computation.
-
+        
         Args:
           seq_group: the output is associated with this :class:`SequenceGroup`
-          output: the :class:`SequenceGroupOutput` for a single scheduler step
+          outputs: the :class:`SequenceGroupOutput` for a single scheduler step
         """
-        assert len(outputs) == 1, ("Single step should only has 1 output.")
+        assert len(outputs) == 1, "Single step should only have 1 output."
         output = outputs[0]
+        assert isinstance(output, CompletionSequenceGroupOutput)
         single_step_process_prompt_logprob(self, seq_group, output)
 
     def _process_sequence_group_outputs(self, seq_group: SequenceGroup,
                                         outputs: SequenceGroupOutput,
                                         is_async: bool) -> None:
         sampling_params = seq_group.sampling_params
+
         sample = outputs.samples[0]
         seq = seq_group.first_seq
         if not is_async:
-            seq.append_token_id(sample.output_token, sample.logprobs)
+            seq.append_token_id(sample.output_token, sample.logprobs,
+                                sample.output_embed)
         if sampling_params.detokenize and self.detokenizer:
             new_char_count = self.detokenizer.decode_sequence_inplace(
                 seq, sampling_params)

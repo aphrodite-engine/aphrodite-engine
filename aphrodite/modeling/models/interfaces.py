@@ -3,14 +3,26 @@ from typing import (TYPE_CHECKING, ClassVar, Dict, List, Literal, Optional,
 
 import torch
 from loguru import logger
-from typing_extensions import TypeIs
+from torch import Tensor
+from typing_extensions import Self, TypeIs
 
 from aphrodite.common.utils import supports_kw
+from aphrodite.quantization.base_config import QuantizationConfig
+
+from .interfaces_base import is_pooling_model
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import (LoRAConfig, MultiModalConfig,
-                                         SchedulerConfig)
+    from aphrodite.attention import AttentionMetadata
     from aphrodite.common.sequence import IntermediateTensors
+
+MultiModalEmbeddings = Union[list[Tensor], Tensor, tuple[Tensor, ...]]
+"""
+The output embeddings must be one of the following formats:
+
+- A list or tuple of 2D tensors, where each tensor corresponds to
+    each input multimodal data item (e.g, image).
+- A single 3D tensor, with the batch dimension grouping the 2D tensors.
+"""
 
 
 @runtime_checkable
@@ -26,7 +38,53 @@ class SupportsMultiModal(Protocol):
         MRO of your model class.
     """
 
-    def __init__(self, *, multimodal_config: "MultiModalConfig") -> None:
+    def get_multimodal_embeddings(
+            self, **kwargs: object) -> Optional[MultiModalEmbeddings]:
+        """
+        Returns multimodal embeddings generated from multimodal kwargs 
+        to be merged with text embeddings.
+
+        Note:
+            The returned multimodal embeddings must be in the same order as
+            the appearances of their corresponding multimodal data item in the
+            input prompt.
+        """
+        ...
+
+    def get_language_model(self) -> torch.nn.Module:
+        """
+        Returns the underlying language model used for text generation.
+
+        This is typically the `torch.nn.Module` instance responsible for 
+        processing the merged multimodal embeddings and producing hidden states
+
+        Returns:
+            torch.nn.Module: The core language model component.
+        """
+        ...
+
+    # Only for models that support v0 chunked prefill
+    # TODO(ywang96): Remove this overload once v0 is deprecated
+    @overload
+    def get_input_embeddings(
+        self,
+        input_ids: Tensor,
+        multimodal_embeddings: Optional[MultiModalEmbeddings] = None,
+        attn_metadata: Optional["AttentionMetadata"] = None,
+    ) -> Tensor:
+        ...
+
+    @overload
+    def get_input_embeddings(
+        self,
+        input_ids: Tensor,
+        multimodal_embeddings: Optional[MultiModalEmbeddings] = None,
+    ) -> Tensor:
+        """
+        Returns the input embeddings merged from the text embeddings from 
+        input_ids and the multimodal embeddings generated from multimodal 
+        kwargs.
+        """
         ...
 
 
@@ -35,9 +93,6 @@ class SupportsMultiModal(Protocol):
 @runtime_checkable
 class _SupportsMultiModalType(Protocol):
     supports_multimodal: Literal[True]
-
-    def __call__(self, *, multimodal_config: "MultiModalConfig") -> None:
-        ...
 
 
 @overload
@@ -72,15 +127,11 @@ class SupportsLoRA(Protocol):
         There is no need to redefine this flag if this class is in the
         MRO of your model class.
     """
-
-    packed_modules_mapping: ClassVar[Dict[str, List[str]]]
-    supported_lora_modules: ClassVar[List[str]]
-    embedding_modules: ClassVar[Dict[str, str]]
-    embedding_padding_modules: ClassVar[List[str]]
-
-    # lora_config is None when LoRA is not enabled
-    def __init__(self, *, lora_config: Optional["LoRAConfig"] = None) -> None:
-        ...
+    # The `embedding_module` and `embedding_padding_modules`
+    # are empty by default.
+    embedding_modules: ClassVar[Dict[str, str]] = {}
+    embedding_padding_modules: ClassVar[List[str]] = []
+    packed_modules_mapping: ClassVar[Dict[str, List[str]]] = {}
 
 
 # We can't use runtime_checkable with ClassVar for issubclass checks
@@ -90,12 +141,8 @@ class _SupportsLoRAType(Protocol):
     supports_lora: Literal[True]
 
     packed_modules_mapping: Dict[str, List[str]]
-    supported_lora_modules: List[str]
     embedding_modules: Dict[str, str]
     embedding_padding_modules: List[str]
-
-    def __call__(self, *, lora_config: Optional["LoRAConfig"] = None) -> None:
-        ...
 
 
 @overload
@@ -116,7 +163,6 @@ def supports_lora(
     if not result:
         lora_attrs = (
             "packed_modules_mapping",
-            "supported_lora_modules",
             "embedding_modules",
             "embedding_padding_modules",
         )
@@ -126,14 +172,16 @@ def supports_lora(
         if getattr(model, "supports_lora", False):
             if missing_attrs:
                 logger.warning(
-                    f"The model ({model}) sets `supports_lora=True`, "
-                    f"but is missing LoRA-specific attributes: {missing_attrs}"
+                    "The model ({}) sets `supports_lora=True`, "
+                    "but is missing LoRA-specific attributes: {}",
+                    model,
+                    missing_attrs,
                 )
         else:
             if not missing_attrs:
                 logger.warning(
-                    f"The model ({model}) contains all LoRA-specific "
-                    "attributes, but does not set `supports_lora=True`.")
+                    "The model ({}) contains all LoRA-specific attributes, "
+                    "but does not set `supports_lora=True`.", model)
 
     return result
 
@@ -171,7 +219,7 @@ class SupportsPP(Protocol):
         self,
         *,
         intermediate_tensors: Optional["IntermediateTensors"],
-    ) -> Union[torch.Tensor, "IntermediateTensors"]:
+    ) -> Union[Tensor, "IntermediateTensors"]:
         """
         Accept :class:`IntermediateTensors` when PP rank > 0.
 
@@ -198,7 +246,7 @@ class _SupportsPPType(Protocol):
         self,
         *,
         intermediate_tensors: Optional["IntermediateTensors"],
-    ) -> Union[torch.Tensor, "IntermediateTensors"]:
+    ) -> Union[Tensor, "IntermediateTensors"]:
         ...
 
 
@@ -220,8 +268,8 @@ def supports_pp(
 
     if supports_attributes and not supports_inspect:
         logger.warning(
-            f"The model ({model}) sets `supports_pp=True`, but does not "
-            "accept `intermediate_tensors` in its `forward` method")
+            "The model ({}) sets `supports_pp=True`, but does not accept "
+            "`intermediate_tensors` in its `forward` method", model)
 
     if not supports_attributes:
         pp_attrs = ("make_empty_intermediate_tensors", )
@@ -231,13 +279,16 @@ def supports_pp(
         if getattr(model, "supports_pp", False):
             if missing_attrs:
                 logger.warning(
-                    f"The model ({model}) sets `supports_pp=True`, "
-                    f"but is missing PP-specific attributes: {missing_attrs}")
+                    "The model ({}) sets `supports_pp=True`, "
+                    "but is missing PP-specific attributes: {}",
+                    model,
+                    missing_attrs,
+                )
         else:
             if not missing_attrs:
                 logger.warning(
-                    f"The model ({model}) contains all PP-specific "
-                    "attributes, but does not set `supports_pp=True`.")
+                    "The model ({}) contains all PP-specific attributes, "
+                    "but does not set `supports_pp=True`.", model)
 
     return supports_attributes and supports_inspect
 
@@ -268,20 +319,10 @@ class HasInnerState(Protocol):
         for max_num_seqs, etc. True for e.g. both Mamba and Jamba.
     """
 
-    def __init__(self,
-                 *,
-                 scheduler_config: Optional["SchedulerConfig"] = None) -> None:
-        ...
-
 
 @runtime_checkable
 class _HasInnerStateType(Protocol):
     has_inner_state: ClassVar[Literal[True]]
-
-    def __init__(self,
-                 *,
-                 scheduler_config: Optional["SchedulerConfig"] = None) -> None:
-        ...
 
 
 @overload
@@ -315,16 +356,10 @@ class IsAttentionFree(Protocol):
         True for Mamba but not Jamba.
     """
 
-    def __init__(self) -> None:
-        ...
-
 
 @runtime_checkable
 class _IsAttentionFreeType(Protocol):
     is_attention_free: ClassVar[Literal[True]]
-
-    def __init__(self) -> None:
-        ...
 
 
 @overload
@@ -344,6 +379,43 @@ def is_attention_free(
         return isinstance(model, _IsAttentionFreeType)
 
     return isinstance(model, IsAttentionFree)
+
+
+@runtime_checkable
+class IsHybrid(Protocol):
+    """The interface required for all models like Jamba that have both
+    attention and mamba blocks, indicates that 
+    hf_config has 'layers_block_type'"""
+
+    is_hybrid: ClassVar[Literal[True]] = True
+    """
+        A flag that indicates this model has both mamba and attention blocks
+        , also indicates that the model's hf_config has 
+        'layers_block_type' """
+
+
+@runtime_checkable
+class _IsHybridType(Protocol):
+    is_hybrid: ClassVar[Literal[True]]
+
+
+@overload
+def is_hybrid(model: object) -> TypeIs[IsHybrid]:
+    ...
+
+
+@overload
+def is_hybrid(model: Type[object]) -> TypeIs[Type[IsHybrid]]:
+    ...
+
+
+def is_hybrid(
+    model: Union[Type[object], object]
+) -> Union[TypeIs[Type[IsHybrid]], TypeIs[IsHybrid]]:
+    if isinstance(model, type):
+        return isinstance(model, _IsHybridType)
+
+    return isinstance(model, IsHybrid)
 
 
 @runtime_checkable
@@ -373,3 +445,121 @@ def has_noops(
         return isinstance(model, _HasNoOpsType)
 
     return isinstance(model, HasNoOps)
+
+
+@runtime_checkable
+class SupportsCrossEncoding(Protocol):
+    """The interface required for all models that support cross encoding."""
+
+    supports_cross_encoding: ClassVar[Literal[True]] = True
+
+
+@overload
+def supports_cross_encoding(
+        model: Type[object]) -> TypeIs[Type[SupportsCrossEncoding]]:
+    ...
+
+
+@overload
+def supports_cross_encoding(model: object) -> TypeIs[SupportsCrossEncoding]:
+    ...
+
+
+def _supports_cross_encoding(
+    model: Union[Type[object], object],
+) -> Union[TypeIs[Type[SupportsCrossEncoding]], TypeIs[SupportsCrossEncoding]]:
+
+    if isinstance(model, type):
+        return isinstance(model, SupportsCrossEncoding)
+
+    return isinstance(model, SupportsCrossEncoding)
+
+
+def supports_cross_encoding(
+    model: Union[Type[object], object],
+) -> Union[TypeIs[Type[SupportsCrossEncoding]], TypeIs[SupportsCrossEncoding]]:
+    return is_pooling_model(model) and _supports_cross_encoding(model)
+
+
+class SupportsQuant:
+    """The interface required for all models that support quantization."""
+
+    packed_modules_mapping: ClassVar[Dict[str, List[str]]] = {}
+    quant_config: Optional[QuantizationConfig] = None
+
+    def __new__(cls, *args, **kwargs) -> Self:
+        instance = super().__new__(cls)
+        quant_config = cls._find_quant_config(*args, **kwargs)
+        if quant_config is not None:
+            instance.quant_config = quant_config
+            instance.quant_config.packed_modules_mapping.update(
+                cls.packed_modules_mapping)
+        return instance
+
+    @staticmethod
+    def _find_quant_config(*args, **kwargs) -> Optional[QuantizationConfig]:
+        from aphrodite.common.config import (
+            AphroditeConfig)  # avoid circular import
+
+        args_values = list(args) + list(kwargs.values())
+        for arg in args_values:
+            if isinstance(arg, AphroditeConfig):
+                return arg.quant_config
+
+            if isinstance(arg, QuantizationConfig):
+                return arg
+
+        return None
+
+
+@runtime_checkable
+class SupportsTranscription(Protocol):
+    """The interface required for all models that support transcription."""
+
+    supports_transcription: ClassVar[Literal[True]] = True
+
+
+@overload
+def supports_transcription(
+        model: Type[object]) -> TypeIs[Type[SupportsTranscription]]:
+    ...
+
+
+@overload
+def supports_transcription(model: object) -> TypeIs[SupportsTranscription]:
+    ...
+
+
+def supports_transcription(
+    model: Union[Type[object], object],
+) -> Union[TypeIs[Type[SupportsTranscription]], TypeIs[SupportsTranscription]]:
+    if isinstance(model, type):
+        return isinstance(model, SupportsTranscription)
+
+    return isinstance(model, SupportsTranscription)
+
+
+@runtime_checkable
+class SupportsV0Only(Protocol):
+    """Models with this interface are not compatible with V1 vLLM."""
+
+    supports_v0_only: ClassVar[Literal[True]] = True
+
+
+@overload
+def supports_v0_only(model: Type[object]) -> TypeIs[Type[SupportsV0Only]]:
+    ...
+
+
+@overload
+def supports_v0_only(model: object) -> TypeIs[SupportsV0Only]:
+    ...
+
+
+def supports_v0_only(
+    model: Union[Type[object], object],
+) -> Union[TypeIs[Type[SupportsV0Only]], TypeIs[SupportsV0Only]]:
+    if isinstance(model, type):
+        return isinstance(model, SupportsV0Only)
+
+    return isinstance(model, SupportsV0Only)

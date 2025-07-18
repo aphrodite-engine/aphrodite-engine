@@ -43,6 +43,7 @@ __device__ inline void mma_sp(const FragB& a_frag0, const FragB& a_frag1,
   const uint32_t* a1 = reinterpret_cast<const uint32_t*>(&a_frag1);
   const uint32_t* b = reinterpret_cast<const uint32_t*>(&frag_b);
   const uint32_t* e = reinterpret_cast<const uint32_t*>(&frag_m);
+
   float* c = reinterpret_cast<float*>(&frag_c);
   if (psel == 0) {
     asm volatile(MMA_SP_INST

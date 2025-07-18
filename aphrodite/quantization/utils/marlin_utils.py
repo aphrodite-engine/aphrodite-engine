@@ -3,7 +3,9 @@ from typing import List, Optional, Tuple
 import numpy
 import torch
 
+import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
+from aphrodite.modeling.layers.linear import LinearBase
 from aphrodite.platforms import current_platform
 from aphrodite.scalar_type import ScalarType, scalar_types
 
@@ -29,8 +31,9 @@ def query_marlin_supported_quant_types(has_zp: bool,
                                        device_capability: Optional[int] = None
                                        ):
     if device_capability is None:
-        major, minor = current_platform.get_device_capability()
-        device_capability = major * 10 + minor
+        capability_tuple = current_platform.get_device_capability()
+        device_capability = (-1 if capability_tuple is None else
+                             capability_tuple.to_int())
 
     if device_capability < 80:
         return []
@@ -52,8 +55,9 @@ def _check_marlin_supported(
         device_capability: Optional[int] = None) -> Tuple[bool, Optional[str]]:
 
     if device_capability is None:
-        major, minor = current_platform.get_device_capability()
-        device_capability = major * 10 + minor
+        capability_tuple = current_platform.get_device_capability()
+        device_capability = (-1 if capability_tuple is None else
+                             capability_tuple.to_int())
 
     supported_types = query_marlin_supported_quant_types(
         has_zp, device_capability)
@@ -113,7 +117,7 @@ def verify_marlin_supports_shape(output_size_per_partition: int,
             and input_size_per_partition % group_size != 0):
         raise ValueError(
             f"Weight input_size_per_partition = {input_size_per_partition}"
-            f" is not divisible by group_size = {group_size}."
+            f" is not divisible by group_size = {group_size}. "
             "Consider reducing tensor_parallel_size or running "
             "with --quantization gptq.")
 
@@ -129,6 +133,33 @@ def check_marlin_supports_shape(output_size_per_partition: int,
     except ValueError as e:
         return False, e.__str__()
     return True, None
+
+
+def check_marlin_supports_layer(layer: LinearBase, group_size: int) \
+                                    -> bool:
+    output_size_per_partition = getattr(layer, "output_size_per_partition",
+                                        None) or layer.output_size
+    input_size_per_partition = getattr(layer, "input_size_per_partition",
+                                       None) or layer.input_size
+
+    return check_marlin_supports_shape(
+        output_size_per_partition=output_size_per_partition,
+        input_size_per_partition=input_size_per_partition,
+        input_size=layer.input_size,
+        group_size=group_size)[0]
+
+
+def check_moe_marlin_supports_layer(layer: LinearBase, group_size: int) \
+                                    -> bool:
+    hidden_size = layer.hidden_size
+    intermediate_size_per_partition = layer.intermediate_size_per_partition
+
+    # gate-up: (n, k) = (intermediate_size_per_partition * 2, hidden_size)
+    # down: (n, k) = (hidden_size, intermediate_size_per_partition)
+    # moe marlin requires n % 128 == 0 and k % 64 == 0
+    return hidden_size % 128 == 0 and \
+        intermediate_size_per_partition % max(64, group_size) == 0 and \
+        group_size in [-1, 32, 64, 128]
 
 
 def marlin_make_workspace(output_size_per_partition: int,
@@ -206,6 +237,7 @@ def marlin_moe_permute_scales(
         device=s.device,
         dtype=s.dtype,
     )
+
     for e in range(num_experts):
         output[e] = marlin_permute_scales(s[e], size_k, size_n, group_size)
     return output
@@ -270,6 +302,23 @@ def moe_awq_to_marlin_zero_points(q_zp_packed: torch.Tensor, size_k: int,
     return output
 
 
+def should_use_atomic_add_reduce(m: int, n: int, k: int, device: torch.device,
+                                 dtype: torch.dtype) -> bool:
+    # disable atomicAdd reduce by default,
+    # one can enable it with APHRODITE_MARLIN_USE_ATOMIC_ADD=1
+    if not envs.APHRODITE_MARLIN_USE_ATOMIC_ADD or device.type != "cuda":
+        return False
+
+    # sm8x doesn't support atomicAdd + bfloat16 natively
+    device_capability = torch.cuda.get_device_capability(device)
+    if device_capability[0] < 9 and dtype == torch.bfloat16:
+        return False
+
+    # the performance of atomicAdd is better than global reduce
+    # only when m*n is small and k is large
+    return n < 2048 and k >= 2048
+
+
 def apply_gptq_marlin_linear(
         input: torch.Tensor,
         weight: torch.Tensor,
@@ -281,11 +330,18 @@ def apply_gptq_marlin_linear(
         wtype: ScalarType,
         output_size_per_partition: int,
         input_size_per_partition: int,
+        has_zp: bool,
         is_k_full: bool,
         bias: Optional[torch.Tensor] = None,
         use_fp32_reduce: bool = USE_FP32_REDUCE_DEFAULT) -> torch.Tensor:
     reshaped_x = input.reshape(-1, input.shape[-1])
     out_shape = input.shape[:-1] + (output_size_per_partition, )
+
+    use_atomic_add = should_use_atomic_add_reduce(m=reshaped_x.size(0),
+                                                  n=output_size_per_partition,
+                                                  k=reshaped_x.size(1),
+                                                  device=input.device,
+                                                  dtype=input.dtype)
 
     output = ops.gptq_marlin_gemm(reshaped_x,
                                   weight,
@@ -299,8 +355,10 @@ def apply_gptq_marlin_linear(
                                   size_n=output_size_per_partition,
                                   size_k=input_size_per_partition,
                                   is_k_full=is_k_full,
-                                  has_zp=False,
-                                  use_fp32_reduce=use_fp32_reduce)
+                                  use_atomic_add=use_atomic_add,
+                                  has_zp=has_zp,
+                                  use_fp32_reduce=use_fp32_reduce,
+                                  is_zp_float=False)
 
     if bias is not None:
         output.add_(bias)  # In-place add
@@ -324,6 +382,12 @@ def apply_awq_marlin_linear(
     reshaped_x = input.reshape(-1, input.shape[-1])
     out_shape = input.shape[:-1] + (output_size_per_partition, )
 
+    use_atomic_add = should_use_atomic_add_reduce(m=reshaped_x.size(0),
+                                                  n=output_size_per_partition,
+                                                  k=reshaped_x.size(1),
+                                                  device=input.device,
+                                                  dtype=input.dtype)
+
     output = ops.gptq_marlin_gemm(reshaped_x,
                                   weight,
                                   weight_scale,
@@ -337,7 +401,9 @@ def apply_awq_marlin_linear(
                                   size_k=input_size_per_partition,
                                   is_k_full=True,
                                   has_zp=True,
-                                  use_fp32_reduce=use_fp32_reduce)
+                                  use_atomic_add=use_atomic_add,
+                                  use_fp32_reduce=use_fp32_reduce,
+                                  is_zp_float=False)
 
     if bias is not None:
         output.add_(bias)  # In-place add

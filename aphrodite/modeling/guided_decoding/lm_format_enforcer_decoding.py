@@ -9,9 +9,9 @@ from transformers import PreTrainedTokenizerBase
 
 from aphrodite.common.logits_processor import LogitsProcessor
 from aphrodite.common.sampling_params import GuidedDecodingParams
-from aphrodite.modeling.guided_decoding.lm_format_enforcer_logits_processors import (  # noqa: E501
-    build_aphrodite_logits_processor,
-    build_aphrodite_token_enforcer_tokenizer_data)
+
+from .lm_format_enforcer_logits_processors import (
+    build_aphrodite_logits_processor, build_aphrodite_token_enforcer_tokenizer_data)
 
 
 def get_local_lm_format_enforcer_guided_decoding_logits_processor(

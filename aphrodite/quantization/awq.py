@@ -7,6 +7,7 @@ from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
                                               UnquantizedLinearMethod)
 from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
                                           PackedAphroditeParameter)
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
 
@@ -23,6 +24,7 @@ class AWQConfig(QuantizationConfig):
         zero_point: bool,
         modules_to_not_convert: Optional[List[str]] = None,
     ) -> None:
+        super().__init__()
         self.weight_bits = weight_bits
         self.group_size = group_size
         self.zero_point = zero_point
@@ -40,12 +42,13 @@ class AWQConfig(QuantizationConfig):
                 f"zero_point={self.zero_point}, "
                 f"modules_to_not_convert={self.modules_to_not_convert})")
 
-    def get_name(self) -> str:
+    def get_name(self) -> QuantizationMethods:
         return "awq"
 
     def get_supported_act_dtypes(self) -> List[torch.dtype]:
         return [torch.half]
 
+    @classmethod
     def get_min_capability(cls) -> int:
         # The AWQ kernel only supports Turing or newer GPUs.
         return 75
@@ -53,7 +56,8 @@ class AWQConfig(QuantizationConfig):
     @staticmethod
     def get_config_filenames() -> List[str]:
         return [
-            "quant_config.json",
+            "quant_config.json",  # E.g., casperhansen/vicuna-7b-v1.5-awq
+            # E.g., abhinavkulkarni/mosaicml-mpt-7b-instruct-w4-g128-awq
             "quantize_config.json",
         ]
 
@@ -73,9 +77,6 @@ class AWQConfig(QuantizationConfig):
                 return UnquantizedLinearMethod()
             return AWQLinearMethod(self)
         return None
-
-    def get_scaled_act_names(self) -> List[str]:
-        return ["gelu", "gelu_fast", "gelu_new", "gelu_pytorch_tanh"]
 
 
 def is_layer_skipped_awq(prefix: str, modules_to_not_convert: List[str]):

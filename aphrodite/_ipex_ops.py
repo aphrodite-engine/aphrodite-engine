@@ -1,4 +1,5 @@
-from typing import List, Optional, Tuple
+
+from typing import Optional
 
 import torch
 from loguru import logger
@@ -6,14 +7,14 @@ from loguru import logger
 try:
     import intel_extension_for_pytorch as ipex
 except ImportError as e:
-    logger.warning(f"Import error msg: {e.msg}")
+    logger.warning("Import error msg: {}", e.msg)
 
 
 class ipex_ops:
 
     @staticmethod
     def _reshape_activation_tensor(
-            x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+            x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         num = x.size(0)
         d = x.size(1) // 2
         x = x.reshape(num, 2, d)
@@ -46,6 +47,7 @@ class ipex_ops:
     def gelu_quick(out: torch.Tensor, x: torch.Tensor) -> None:
         ipex.llm.functional.gelu_quick(x, out)
 
+    @staticmethod
     def paged_attention_v1(
         out: torch.Tensor,
         query: torch.Tensor,
@@ -70,20 +72,21 @@ class ipex_ops:
         assert kv_cache_dtype == "auto"
         num_heads = out.size(1)
         num_queries_per_tokens = num_heads // num_kv_heads
-        head_mapping = torch.arange(
-            0,
-            num_kv_heads,
-            device=query.device,
-            dtype=torch.int32,
-        ).view(num_kv_heads,
-               1).repeat_interleave(num_queries_per_tokens).flatten()
-        # todo: ipex will refactor namespace
-        torch.xpu.paged_attention_v1(out, query.contiguous(),
-                                     key_cache.view_as(value_cache),
-                                     value_cache, head_mapping, scale,
-                                     block_tables, context_lens, block_size,
-                                     max_context_len, alibi_slopes)
+        ipex.llm.modules.PagedAttention.single_query_kv_attention(
+            out,
+            query.contiguous(),
+            key_cache.view_as(value_cache),
+            value_cache,
+            num_queries_per_tokens,
+            scale,
+            block_tables,
+            context_lens,
+            block_size,
+            max_context_len,
+            alibi_slopes,
+        )
 
+    @staticmethod
     def paged_attention_v2(
         out: torch.Tensor,
         exp_sum: torch.Tensor,
@@ -111,21 +114,21 @@ class ipex_ops:
         assert kv_cache_dtype == "auto"
         num_heads = out.size(1)
         num_queries_per_tokens = num_heads // num_kv_heads
-        head_mapping = torch.arange(
-            0,
-            num_kv_heads,
-            dtype=torch.int32,
-            device=query.device,
-        ).view(num_kv_heads,
-               1).repeat_interleave(num_queries_per_tokens).flatten()
-        # todo: ipex will refactor namespace
-        torch.xpu.paged_attention_v2(out, exp_sum, max_logits, tmp_out,
-                                     query.contiguous(),
-                                     key_cache.view_as(value_cache),
-                                     value_cache, head_mapping, block_tables,
-                                     context_lens, scale, block_size,
-                                     max_context_len, alibi_slopes)
+        ipex.llm.modules.PagedAttention.single_query_kv_attention(
+            out,
+            query.contiguous(),
+            key_cache.view_as(value_cache),
+            value_cache,
+            num_queries_per_tokens,
+            scale,
+            block_tables,
+            context_lens,
+            block_size,
+            max_context_len,
+            alibi_slopes,
+        )
 
+    @staticmethod
     def rotary_embedding(
         positions: torch.Tensor,  # [batch_size, seq_len]
         query: torch.Tensor,  # [batch_size, seq_len, num_heads*head_size]
@@ -139,6 +142,7 @@ class ipex_ops:
                                                      head_size, cos_sin_cache,
                                                      is_neox, rot_dim)
 
+    @staticmethod
     def batched_rotary_embedding(positions: torch.Tensor, query: torch.Tensor,
                                  key: torch.Tensor, head_size: int,
                                  cos_sin_cache: torch.Tensor, is_neox: bool,
@@ -154,12 +158,14 @@ class ipex_ops:
                  epsilon: float) -> torch.Tensor:
         return ipex.llm.functional.rms_norm(input, weight, epsilon)
 
+    @staticmethod
     def fused_add_rms_norm(input: torch.Tensor, residual: torch.Tensor,
                            weight: torch.Tensor, epsilon: float) -> None:
         tmp = ipex.llm.functional.add_rms_norm(residual, input, weight, None,
                                                epsilon, True)
         input.copy_(tmp)
 
+    @staticmethod
     def varlen_attention(
         query: torch.Tensor,
         key: torch.Tensor,
@@ -167,6 +173,7 @@ class ipex_ops:
         out: torch.Tensor,
         seqlen_q: torch.Tensor,
         seqlen_k: torch.Tensor,
+        alibi_slopes: Optional[torch.Tensor],
         max_seqlen_q: int,
         max_seqlen_k: int,
         pdropout: float,
@@ -175,16 +182,33 @@ class ipex_ops:
         is_causal: bool,
         return_softmax: bool,
         gen_: torch.Generator,
+        window_size_left: float,
+        window_size_right: float,
+        logits_soft_cap: float,
     ) -> None:
-        ipex.llm.functional.varlen_attention(query.contiguous(),
-                                             key.contiguous(),
-                                             value.contiguous(), out,
-                                             seqlen_q.int(), seqlen_k.int(),
-                                             max_seqlen_q, max_seqlen_k,
-                                             pdropout, softmax_scale,
-                                             zero_tensors, is_causal,
-                                             return_softmax, gen_)
+        if ipex.__version__.endswith("cpu"):
+            if logits_soft_cap != 0.0:
+                raise ValueError("IPEX CPU does not support logits_soft_cap")
+            assert alibi_slopes is None
+            assert window_size_left < 0 and window_size_right < 0
+            ipex.llm.functional.varlen_attention(query.contiguous(),
+                                                 key.contiguous(),
+                                                 value.contiguous(), out,
+                                                 seqlen_q.int(),
+                                                 seqlen_k.int(), max_seqlen_q,
+                                                 max_seqlen_k, pdropout,
+                                                 softmax_scale, zero_tensors,
+                                                 is_causal, return_softmax,
+                                                 gen_)
+        else:  # XPU build
+            ipex.llm.functional.varlen_attention(
+                query.contiguous(), key.contiguous(), value.contiguous(), out,
+                seqlen_q.int(), seqlen_k.int(), alibi_slopes, max_seqlen_q,
+                max_seqlen_k, pdropout, softmax_scale, zero_tensors, is_causal,
+                return_softmax, gen_, window_size_left, window_size_right,
+                logits_soft_cap)
 
+    @staticmethod
     def reshape_and_cache(
         key: torch.Tensor,
         value: torch.Tensor,
@@ -200,11 +224,16 @@ class ipex_ops:
             key, value, key_cache, value_cache, slot_mapping)
 
     @staticmethod
-    def copy_blocks(key_caches: List[torch.Tensor],
-                    value_caches: List[torch.Tensor],
+    def copy_blocks(key_caches: list[torch.Tensor],
+                    value_caches: list[torch.Tensor],
                     block_mapping: torch.Tensor) -> None:
-        torch.xpu.copy_blocks(key_caches, value_caches, block_mapping)
+        torch.xpu.copy_blocks(  # type: ignore
+            key_caches,
+            value_caches,
+            block_mapping,
+        )
 
+    @staticmethod
     def swap_blocks(src: torch.Tensor, dst: torch.Tensor,
                     block_mapping: torch.Tensor) -> None:
-        torch.xpu.swap_blocks(src, dst, block_mapping)
+        torch.xpu.swap_blocks(src, dst, block_mapping)  # type: ignore

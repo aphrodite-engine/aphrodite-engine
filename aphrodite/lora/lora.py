@@ -1,9 +1,11 @@
 from typing import List, Optional
+from typing import Sequence as GenericSequence
 
 import torch
 import torch.types
 
 from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.lora.peft_helper import PEFTHelper
 
 
 class LoRALayerWeights:
@@ -57,6 +59,17 @@ class LoRALayerWeights:
     def extra_vocab_size(self) -> int:
         return self.embeddings_tensor.shape[
             0] if self.embeddings_tensor is not None else 0
+
+    @classmethod
+    def from_config(
+        cls,
+        module_name: str,
+        peft_helper: PEFTHelper,
+        embeddings_tensor: Optional[torch.Tensor] = None,
+    ) -> "LoRALayerWeights":
+        return cls(module_name, peft_helper.r, peft_helper.lora_alpha, None,
+                   None, None, embeddings_tensor,
+                   peft_helper.aphrodite_lora_scaling_factor)
 
     @classmethod
     def create_dummy_lora_weights(
@@ -135,7 +148,7 @@ class PackedLoRALayerWeights(LoRALayerWeights):
 
     @classmethod
     def pack(
-            cls, loras: List[Optional["LoRALayerWeights"]]
+        cls, loras: GenericSequence[Optional["LoRALayerWeights"]]
     ) -> "PackedLoRALayerWeights":
         """Pack a list of LoRAs into a single LoRA.
 

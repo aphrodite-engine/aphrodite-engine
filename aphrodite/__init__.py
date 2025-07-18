@@ -9,11 +9,10 @@ from aphrodite.engine.async_aphrodite import AsyncAphrodite
 from aphrodite.executor.ray_utils import initialize_ray_cluster
 from aphrodite.modeling.models import ModelRegistry
 
-from .version import __commit__, __short_commit__, __version__
+from .version import __version_tuple__, __version__
 
 __all__ = [
-    "__commit__",
-    "__short_commit__",
+    "__version_tuple__",
     "__version__",
     "LLM",
     "ModelRegistry",

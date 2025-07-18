@@ -4,7 +4,7 @@ import warnings
 from dataclasses import dataclass
 from enum import IntEnum
 from math import inf
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 import msgspec
 import torch
@@ -18,11 +18,20 @@ from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID,
                                        CompletionSequenceGroupOutput, Logprob,
                                        PromptLogprobs, SampleLogprobs,
                                        SequenceOutput)
-from aphrodite.common.utils import is_cpu
+from aphrodite.platforms import current_platform
+from aphrodite.modeling.layers.utils import apply_penalties
 from aphrodite.modeling.sampling_metadata import (SamplingMetadata,
                                                   SamplingTensors,
                                                   SequenceGroupToSample)
 from aphrodite.spec_decode.metrics import SpecDecodeWorkerMetrics
+
+
+def get_sampler() -> torch.nn.Module:
+    if envs.APHRODITE_USE_V1:
+        # Lazy import: the v1 package isn't distributed
+        from aphrodite.v1.sample.sampler import Sampler as V1Sampler
+        return V1Sampler()
+    return Sampler()
 
 # (num_token_ids, num_parent_ids) per sequence group.
 SampleResultType = List[Tuple[List[int], List[int]]]
@@ -51,7 +60,6 @@ class SampleResultArgsType:
     sample_results_dict: SampleResultsDictType
     sampling_metadata: SamplingMetadata
     greedy_samples: Optional[torch.Tensor]
-    beam_search_logprobs: Optional[torch.Tensor]
 
 
 # Union of non-deferred (single-step scheduling)
@@ -93,6 +101,11 @@ class SamplerOutput(
     # 'broadcasted' to all other PP ranks for next step.
     sampled_token_ids_cpu: Optional[torch.Tensor] = None
 
+    # On-device tensor containing the sampled token embeddings (embeddings
+    # corresponding to the sampled token ids). Used when prompt embeddings are
+    # specified in lieu of prompt token ids or text.
+    sampled_token_embeds: Optional[torch.Tensor] = None
+
     # Spec decode metrics populated by workers.
     spec_decode_worker_metrics: Optional[SpecDecodeWorkerMetrics] = None
 
@@ -110,11 +123,14 @@ class SamplerOutput(
     # block/sync across workers, cpu-gpu sync time and sampling time.
     model_execute_time: Optional[float] = None
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> CompletionSequenceGroupOutput:
         return self.outputs[idx]
 
     def __setitem__(self, idx: int, value):
         self.outputs[idx] = value
+
+    def __iter__(self) -> Iterator[CompletionSequenceGroupOutput]:
+        return iter(self.outputs)
 
     def __len__(self):
         return len(self.outputs)
@@ -192,7 +208,7 @@ class Sampler(nn.Module):
 
         # Whether or not the SamplerOutput should have on-device tensors
         # containing the sampled token ids and probabilities. This is used by
-        # speculative decoding.
+        # speculative decoding and when prompt embeddings are specified.
         self.include_gpu_probs_tensor = False
         self.should_modify_greedy_probs_inplace = False
 
@@ -391,7 +407,7 @@ class Sampler(nn.Module):
                         f"pres_pen: {sampling_tensors.presence_penalties}, "
                         f"freq_pen: {sampling_tensors.frequency_penalties}, "
                         f"rep_pen: {sampling_tensors.repetition_penalties}.")
-                logits = _apply_penalties(
+                logits = apply_penalties(
                     logits, sampling_tensors.prompt_tokens,
                     sampling_tensors.output_tokens,
                     sampling_tensors.presence_penalties,
@@ -602,23 +618,6 @@ class Sampler(nn.Module):
         return self.should_modify_greedy_probs_inplace
 
 
-def _get_bin_counts_and_mask(
-    tokens: torch.Tensor,
-    vocab_size: int,
-    num_seqs: int,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    # Compute the bin counts for the tokens.
-    # vocab_size + 1 for padding.
-    bin_counts = torch.zeros((num_seqs, vocab_size + 1),
-                             dtype=torch.long,
-                             device=tokens.device)
-    bin_counts.scatter_add_(1, tokens, torch.ones_like(tokens))
-    bin_counts = bin_counts[:, :vocab_size]
-    mask = bin_counts > 0
-
-    return bin_counts, mask
-
-
 def _get_custom_token_bans(
         sampling_metadata: SamplingMetadata) -> List[List[int]]:
     assert sampling_metadata.seq_groups is not None
@@ -659,29 +658,6 @@ def _apply_token_bans(logits: torch.Tensor,
         if not banned_token_ids:
             continue
         logits[i, banned_token_ids] = -float("inf")
-    return logits
-
-
-def _apply_penalties(logits: torch.Tensor, prompt_tokens_tensor: torch.Tensor,
-                     output_tokens_tensor: torch.Tensor,
-                     presence_penalties: torch.Tensor,
-                     frequency_penalties: torch.Tensor,
-                     repetition_penalties: torch.Tensor) -> torch.Tensor:
-    num_seqs, vocab_size = logits.shape
-    _, prompt_mask = _get_bin_counts_and_mask(prompt_tokens_tensor, vocab_size,
-                                              num_seqs)
-    output_bin_counts, output_mask = _get_bin_counts_and_mask(
-        output_tokens_tensor, vocab_size, num_seqs)
-
-    repetition_penalties = repetition_penalties[:, None].repeat(1, vocab_size)
-    repetition_penalties[~(prompt_mask | output_mask)] = 1.0
-    logits = torch.where(logits > 0, logits / repetition_penalties,
-                         logits * repetition_penalties)
-
-    # We follow the definition in OpenAI API.
-    # Refer to https://platform.openai.com/docs/api-reference/parameter-details
-    logits -= frequency_penalties.unsqueeze_(dim=1) * output_bin_counts
-    logits -= presence_penalties.unsqueeze_(dim=1) * output_mask
     return logits
 
 
@@ -1237,73 +1213,6 @@ def _random_sample(
     return results
 
 
-def _beam_search_sample(
-    selected_seq_groups: List[SequenceGroupToSample],
-    logprobs: torch.Tensor,
-) -> List[Tuple[List[int], List[int]]]:
-    """Run beam sampling on a given samples.
-    Args:
-        selected_seq_groups: A list of sequence groups batched.
-        logprobs: (num_selected_samples, vocab_size,) A tensor of logprob
-        on selected sample indices.
-    Returns:
-        Tuple of (next_token_ids, parent_ids). The length of returned list is
-        same as the length of selected_seq_groups. If the corresponding
-        seq_group has do_sample=False, tuple contains ([], [])
-    """
-    # We sample 2 * beam_width candidates to make sure that with high
-    # probability we can get `beam_width` candidates in addition to
-    # the finished sequences for the next iteration. See
-    # https://github.com/tensorflow/tensor2tensor/blob/bafdc1b67730430d38d6ab802cbd51f9d053ba2e/tensor2tensor/utils/beam_search.py#L557-L563
-    # for details. See also HF reference:
-    # https://github.com/huggingface/transformers/blob/a4dd53d88e4852f023332d284ff07a01afcd5681/src/transformers/generation/utils.py#L3063-L3065
-    #
-    # NOTE: Beam search is not vectorized, so its speed can be slower than
-    # other sampling methods.
-    sample_idx = 0
-    results = []
-    for seq_group in selected_seq_groups:
-        if not seq_group.do_sample:
-            results.append(([], []))
-            continue
-
-        is_prompt = seq_group.is_prompt
-        seq_ids, sampling_params = seq_group.seq_ids, seq_group.sampling_params
-        num_parent_seqs = len(seq_ids)
-        beam_width = sampling_params.n
-        seq_group_logprobs = logprobs[sample_idx:sample_idx + num_parent_seqs]
-        if is_prompt:
-            # Prompt phase.
-            assert num_parent_seqs == 1, (
-                "Prompt input should have only one seq.")
-            parent_ids = [0] * (2 * beam_width)
-            _, next_token_ids = torch.topk(seq_group_logprobs[0],
-                                           2 * beam_width)
-            next_token_ids = next_token_ids.tolist()
-        else:
-            # Generation phase.
-            cumulative_logprobs = [
-                seq_group.seq_data[seq_id].cumulative_logprob
-                for seq_id in seq_ids
-            ]
-            cumulative_logprobs = torch.tensor(
-                cumulative_logprobs,
-                dtype=torch.float,
-                device=seq_group_logprobs.device)
-            seq_group_logprobs = (seq_group_logprobs +
-                                  cumulative_logprobs.unsqueeze(dim=1))
-            _, topk_ids = torch.topk(seq_group_logprobs.flatten(),
-                                     2 * beam_width)
-            topk_ids = topk_ids.tolist()
-            vocab_size = seq_group_logprobs.size(-1)
-            parent_ids = [i // vocab_size for i in topk_ids]
-            next_token_ids = [i % vocab_size for i in topk_ids]
-        results.append((next_token_ids, parent_ids))
-        sample_idx += num_parent_seqs
-    assert sample_idx == logprobs.size(0)
-    return results
-
-
 # torch.multinomial forces a GPU<->CPU sync.
 # Therefore, we use an optimized implementation instead.
 # Note that we always sample with replacement.
@@ -1389,14 +1298,12 @@ def get_pythonized_sample_results(
         sampling_metadata,
         greedy_samples,
         multinomial_samples,
-        beam_search_logprobs,
         sample_results_dict,
     ) = (
         sample_result_args.sample_metadata,
         sample_result_args.sampling_metadata,
         sample_result_args.greedy_samples,
         sample_result_args.multinomial_samples,
-        sample_result_args.beam_search_logprobs,
         sample_result_args.sample_results_dict,
     )
 
@@ -1409,9 +1316,6 @@ def get_pythonized_sample_results(
         elif sampling_type in (SamplingType.RANDOM, SamplingType.RANDOM_SEED):
             sample_results = _random_sample(seq_groups,
                                             multinomial_samples[sampling_type])
-        elif sampling_type == SamplingType.BEAM:
-            sample_results = _beam_search_sample(seq_groups,
-                                                 beam_search_logprobs)
         sample_results_dict.update(zip(seq_group_id, sample_results))
 
     return [
@@ -1450,7 +1354,6 @@ def _sample_with_torch(
     sample_metadata: SampleMetadataType = {}
     multinomial_samples: MultinomialSamplesType = {}
     greedy_samples: Optional[torch.Tensor] = None
-    beam_search_logprobs: Optional[torch.Tensor] = None
     # Create output tensor for sampled token ids.
     if include_gpu_probs_tensor:
         sampled_token_ids_tensor = torch.full((logprobs.shape[0], 1),
@@ -1496,7 +1399,7 @@ def _sample_with_torch(
 
             seq_groups_arg = (None if sampling_type == SamplingType.RANDOM else
                               seq_groups)
-            if APHRODITE_USE_SAMPLING_KERNELS and not is_cpu():
+            if APHRODITE_USE_SAMPLING_KERNELS and not current_platform.is_cpu():
                 multinomial_samples[
                     sampling_type] = _top_k_top_p_multinomial_with_kernels(
                         probs[long_sample_indices],
@@ -1516,8 +1419,6 @@ def _sample_with_torch(
                 sampled_token_ids_tensor[long_sample_indices] = \
                     multinomial_samples[sampling_type].to(torch.long)
 
-        elif sampling_type == SamplingType.BEAM:
-            beam_search_logprobs = logprobs[sample_indices]
         else:
             raise ValueError(f"Unsupported sampling type: {sampling_type}")
 
@@ -1528,7 +1429,6 @@ def _sample_with_torch(
         sample_metadata=sample_metadata,
         multinomial_samples=multinomial_samples,
         greedy_samples=greedy_samples,
-        beam_search_logprobs=beam_search_logprobs,
         sample_results_dict=sample_results_dict)
 
     if not sampling_metadata.skip_sampler_cpu_output:
@@ -1629,8 +1529,6 @@ def get_logprobs(
     # largest num logprobs in this API. If every logprobs is None, it will be
     # set to -1.
     largest_num_logprobs = -1
-    # If beam search is enabled.
-    use_beam_search = False
 
     # Select indices to compute logprob from, ranks of token ids, and the top
     # k token ids from logprobs.
@@ -1663,21 +1561,21 @@ def get_logprobs(
                 largest_num_logprobs = max(largest_num_logprobs,
                                            sampling_params.logprobs)
 
-            use_beam_search = use_beam_search or sampling_params.use_beam_search
-
         assert len(next_token_ids) == len(query_indices)
 
     if len(query_indices) == 0:
         empty_sampled_logprob = []
         empty_prompt_logprob = None
-        return [empty_prompt_logprob], [empty_sampled_logprob]
+        num_seq_groups = len(sampling_metadata.seq_groups)
+        return [empty_prompt_logprob
+                ] * num_seq_groups, [empty_sampled_logprob] * num_seq_groups
 
     selected_logprobs, ranks = None, None
     top_logprobs, top_token_ids = None, None
 
     # If largest_num_logprobs == -1, i.e. no logprobs are requested, we can
     # skip the whole logprob calculation.
-    if largest_num_logprobs >= 0 or use_beam_search:
+    if largest_num_logprobs >= 0:
         query_indices_gpu = torch.tensor(query_indices, device=logprobs.device)
         next_token_ids_gpu = torch.tensor(next_token_ids,
                                           device=logprobs.device)
@@ -1803,13 +1701,12 @@ def _get_sampled_logprob_if_needed(
     """Compute the sample logprob if needed."""
     seq_ids = seq_group.seq_ids
     num_logprobs = seq_group.sampling_params.logprobs
-    use_beam_search = seq_group.sampling_params.use_beam_search
     sampled_logprobs: SampleLogprobs = []
     next_token_ids, parent_seq_ids = sample_result
 
     if seq_group.do_sample:
         assert len(next_token_ids) > 0
-        if num_logprobs is None and not use_beam_search:
+        if num_logprobs is None:
             for next_token_id in next_token_ids:
                 # Use a dummy logprob
                 sampled_logprobs.append({next_token_id: Logprob(inf)})
@@ -1931,6 +1828,10 @@ def _build_sampler_output(
         assert sample_logprobs is not None
         assert not isinstance(maybe_deferred_sample_results,
                               SampleResultArgsType)
+        assert len(sampling_metadata.seq_groups) \
+            == len(maybe_deferred_sample_results) \
+            == len(prompt_logprobs) \
+            == len(sample_logprobs)
         deferred_sample_results_args = None
 
         for (seq_group, sample_result, group_prompt_logprobs,
@@ -1963,7 +1864,8 @@ def _build_sampler_output(
         deferred_sample_results_args=deferred_sample_results_args)
 
 
-def _get_next_prompt_tokens(seq_group: SequenceGroupToSample) -> List[str]:
+def _get_next_prompt_tokens(
+        seq_group: SequenceGroupToSample) -> tuple[int, ...]:
     """Get a list of next prompt tokens to compute logprob from a
         given sequence group.
     It is used to compute prompt logprob. Imagine you have logprob for each
