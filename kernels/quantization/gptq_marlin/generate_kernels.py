@@ -34,14 +34,15 @@ SCALAR_TYPES = [
     "aphrodite::kU4", "aphrodite::kU4B8", "aphrodite::kU8B128", "aphrodite::kFE4M3fn",
     "aphrodite::kFE2M1f"
 ]
-THREAD_CONFIGS = [(128, 128, 256), (64, 256, 256), (64, 128, 128)]
+THREAD_CONFIGS = [(128, 128, 256), (64, 256, 256), (64, 128, 128),
+                  (128, 64, 128)]
 
 THREAD_M_BLOCKS = [0.5, 1, 2, 3, 4]
 # group_blocks:
 #   = 0 : act order case
 #   = -1 : channelwise quantization
 #   > 0 : group_size=16*group_blocks
-GROUP_BLOCKS = [0, -1, 1, 2, 4, 8]
+GROUP_BLOCKS = [0, 1, -1, 2, 4, 8]
 DTYPES = ["fp16", "bf16"]
 
 
@@ -75,7 +76,7 @@ def generate_new_kernels():
             if scalar_type == "aphrodite::kFE4M3fn" and group_blocks not in [-1, 8]:
                 continue
             # nvfp4 only supports group_size == 16
-            if scalar_type == "aphrodite::kFE2M1f" and group_blocks not in [1, 2]:
+            if scalar_type == "aphrodite::kFE2M1f" and group_blocks != 1:
                 continue
             # other quantization methods don't support group_size = 16
             if scalar_type != "aphrodite::kFE2M1f" and group_blocks == 1:
@@ -87,20 +88,28 @@ def generate_new_kernels():
 
             c_dtype = "half" if dtype == "fp16" else "nv_bfloat16"
 
-            template_str = jinja2.Template(TEMPLATE).render(
-                scalar_t=c_dtype,
-                w_type_id=scalar_type + ".id()",
-                threads=threads,
-                thread_m_blocks=max(m_blocks, 1),
-                thread_n_blocks=n_blocks,
-                thread_k_blocks=k_blocks,
-                m_block_size_8=m_blocks == 0.5,
-                stages="pipe_stages",
-                group_blocks=group_blocks,
-                is_zp_float=False,
-            )
+            is_zp_float_list = [False]
+            if dtype == "fp16" and scalar_type == "aphrodite::kU4" and \
+                    group_blocks == 4:
+                # HQQ (is_zp_float = true) only supports
+                # 4bit quantization and fp16
+                is_zp_float_list.append(True)
 
-            all_template_str_list.append(template_str)
+            for is_zp_float in is_zp_float_list:
+                template_str = jinja2.Template(TEMPLATE).render(
+                    scalar_t=c_dtype,
+                    w_type_id=scalar_type + ".id()",
+                    threads=threads,
+                    thread_m_blocks=max(m_blocks, 1),
+                    thread_n_blocks=n_blocks,
+                    thread_k_blocks=k_blocks,
+                    m_block_size_8=m_blocks == 0.5,
+                    stages="pipe_stages",
+                    group_blocks=group_blocks,
+                    is_zp_float=is_zp_float,
+                )
+
+                all_template_str_list.append(template_str)
 
         file_content = FILE_HEAD + "\n\n"
         file_content += "\n\n".join(all_template_str_list) + "\n\n}\n"
