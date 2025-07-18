@@ -483,6 +483,46 @@ mul_mat_q4_K_dynamic(
         (vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst);
 }
 
+template __global__ void mul_mat_q4_K_dynamic<half, false, 8>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<half, true, 8>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, false, 8>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, true, 8>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+
+template __global__ void mul_mat_q4_K_dynamic<half, false, 16>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<half, true, 16>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, false, 16>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, true, 16>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+
+template __global__ void mul_mat_q4_K_dynamic<half, false, 24>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<half, true, 24>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, false, 24>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, true, 24>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+
+template __global__ void mul_mat_q4_K_dynamic<half, false, 32>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<half, true, 32>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, false, 32>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, true, 32>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+
+template __global__ void mul_mat_q4_K_dynamic<half, false, 40>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<half, true, 40>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, false, 40>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, true, 40>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+
+template __global__ void mul_mat_q4_K_dynamic<half, false, 48>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<half, true, 48>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, false, 48>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, true, 48>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+
+template __global__ void mul_mat_q4_K_dynamic<half, false, 56>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<half, true, 56>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, false, 56>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, true, 56>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+
+template __global__ void mul_mat_q4_K_dynamic<half, false, 64>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<half, true, 64>(const void*, const void*, half*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, false, 64>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+template __global__ void mul_mat_q4_K_dynamic<float, true, 64>(const void*, const void*, float*, const int, const int, const int, const int, const int);
+
 template<typename scalar_t, bool need_check> static __global__ void
 #if defined(USE_ROCM)
 __launch_bounds__(WARP_SIZE_GGUF*NWARPS_Q4_K, 2)

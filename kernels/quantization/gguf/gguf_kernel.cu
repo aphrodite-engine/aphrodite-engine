@@ -88,28 +88,34 @@ static void ggml_mul_mat_q4_K_q8_1_cuda_optimized(
     int mmq_x_best = MMQ_X_Q4_K;  // consistent MMQ_X
 
     // Only try modest improvements on modern GPUs for large batches
-    const bool large_batch = ncols_y >= 1024; // conservative threshold
+    const bool large_batch = ncols_y >= 512;
     if (cc >= 800 && large_batch) {  // only Ampere+ and large batches
-        // test only 8, 16 as safe options
-        for (int mmq_x : {8, 16}) {
+        // test larger tile sizes for better performance
+        for (int mmq_x : {8, 16, 24, 32, 40, 48, 56, 64}) {
             // Check shared memory constraints very conservatively
-                         const size_t shmem_needed = get_mmq_nbytes_shared<12>(mmq_x, mmq_y, cc);
-             const size_t shmem_limit = (size_t)(prop.sharedMemPerBlock * 0.5); // Use only 50% of available
-             if (shmem_needed <= shmem_limit) {
-                 const int ntiles_x = (ncols_y + mmq_x - 1) / mmq_x;
-                 const int ntiles_x_orig = (ncols_y + MMQ_X_Q4_K - 1) / MMQ_X_Q4_K;
+            const size_t shmem_needed = get_mmq_nbytes_shared<12>(mmq_x, mmq_y, cc);
+            const size_t shmem_limit = (size_t)(prop.sharedMemPerBlock * 0.5); // Use only 50% of available
+            if (shmem_needed <= shmem_limit) {
+                const int ntiles_x = (ncols_y + mmq_x - 1) / mmq_x;
+                const int ntiles_x_orig = (ncols_y + MMQ_X_Q4_K - 1) / MMQ_X_Q4_K;
 
-                 // Only use if it actually reduces the number of tiles
-                 if (ntiles_x < ntiles_x_orig) {
-                     mmq_x_best = mmq_x;
+                // Only use if it actually reduces the number of tiles
+                if (ntiles_x < ntiles_x_orig) {
+                    mmq_x_best = mmq_x;
                 }
             }
         }
     }
-
+    
     switch (mmq_x_best) {
         case 8:  launch_mmq_kernel_optimized<scalar_t, 12, 8>(args, stream); break;
         case 16: launch_mmq_kernel_optimized<scalar_t, 12, 16>(args, stream); break;
+        case 24: launch_mmq_kernel_optimized<scalar_t, 12, 24>(args, stream); break;
+        case 32: launch_mmq_kernel_optimized<scalar_t, 12, 32>(args, stream); break;
+        case 40: launch_mmq_kernel_optimized<scalar_t, 12, 40>(args, stream); break;
+        case 48: launch_mmq_kernel_optimized<scalar_t, 12, 48>(args, stream); break;
+        case 56: launch_mmq_kernel_optimized<scalar_t, 12, 56>(args, stream); break;
+        case 64: launch_mmq_kernel_optimized<scalar_t, 12, 64>(args, stream); break;
         default:
             // fallback to original implementation for safety
             ggml_mul_mat_q4_K_q8_1_cuda(vx, vy, dst, ncols_x, nrows_x, ncols_y, nrows_y, nrows_dst, stream);
