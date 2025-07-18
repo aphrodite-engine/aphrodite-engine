@@ -28,12 +28,23 @@ struct mmq_args {
 
 template<int type>
 static size_t get_mmq_nbytes_shared(int mmq_x, int mmq_y, int cc) {
-    // More conservative and accurate shared memory calculation
     if (type == 12) { // Q4_K
-        // The actual shared memory usage is complex and depends on the specific kernel implementation
-        // For safety, use a conservative estimate based on the original tile sizes
-        // TODO: This is a guess, we should use the actual shared memory usage of the kernel
-        return mmq_x * mmq_y * sizeof(float) * 4;  // Conservative estimate
+        // Based on actual allocate_tiles_q4_K<mmq_y> function:
+        // tile_x_ql: mmq_y * (WARP_SIZE_GGUF)       + mmq_y = mmq_y * (32 + 1) = mmq_y * 33
+        // tile_x_dm: mmq_y * (WARP_SIZE_GGUF/QI4_K) + mmq_y/QI4_K = mmq_y * (32/8 + 1/8) = mmq_y * 4.125
+        // tile_x_sc: mmq_y * (WARP_SIZE_GGUF/8)     + mmq_y/8 = mmq_y * (32/8 + 1/8) = mmq_y * 4.125
+        // 
+        // From mul_mat_q template:
+        // tile_y_qs: mmq_x * WARP_SIZE_GGUF = mmq_x * 32
+        // tile_y_ds: mmq_x * WARP_SIZE_GGUF/QI8_1 = mmq_x * (32/8) = mmq_x * 4
+
+        const int tile_x_ql_size = mmq_y * (32 + 1) * sizeof(int);
+        const int tile_x_dm_size = mmq_y * (32/8 + 1) * sizeof(half2);  // QI4_K = 8
+        const int tile_x_sc_size = mmq_y * (32/8 + 1) * sizeof(int);    // /8 for Q4_K scales
+        const int tile_y_qs_size = mmq_x * 32 * sizeof(int);
+        const int tile_y_ds_size = mmq_x * (32/8) * sizeof(half2);      // QI8_1 = 8
+        
+        return tile_x_ql_size + tile_x_dm_size + tile_x_sc_size + tile_y_qs_size + tile_y_ds_size;
     }
     // Fallback for other types
     return mmq_x * mmq_y * sizeof(float) * 4;
@@ -92,9 +103,9 @@ static void ggml_mul_mat_q4_K_q8_1_cuda_optimized(
     if (cc >= 800 && large_batch) {  // only Ampere+ and large batches
         // test larger tile sizes for better performance
         for (int mmq_x : {8, 16, 24, 32, 40, 48, 56, 64}) {
-            // Check shared memory constraints very conservatively
+            // Check shared memory constraints - now with accurate calculation
             const size_t shmem_needed = get_mmq_nbytes_shared<12>(mmq_x, mmq_y, cc);
-            const size_t shmem_limit = (size_t)(prop.sharedMemPerBlock * 0.5); // Use only 50% of available
+            const size_t shmem_limit = (size_t)(prop.sharedMemPerBlock * 0.8); // Use 80% with accurate calculation
             if (shmem_needed <= shmem_limit) {
                 const int ntiles_x = (ncols_y + mmq_x - 1) / mmq_x;
                 const int ntiles_x_orig = (ncols_y + MMQ_X_Q4_K - 1) / MMQ_X_Q4_K;
