@@ -213,3 +213,4 @@ images/
 **/generated/**
 aphrodite/_version.py
 shellcheck-stable/
+kernels/quantization/gguf/ggml-cuda/*
