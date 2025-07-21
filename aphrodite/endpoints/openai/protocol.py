@@ -433,14 +433,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
         "min_p": 0.0,
     }
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_priority_support(cls, data):
-        if not envs.APHRODITE_USE_V1:
-            # Aphrodite V1 does not currently support priority
-            data.pop("priority", None)
-        return data
-
     def to_beam_search_params(
             self,
             default_max_tokens: int,
@@ -941,14 +933,6 @@ class CompletionRequest(OpenAIBaseModel):
 
     # doc: end-completion-extra-params
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_priority_support(cls, data):
-        if not envs.APHRODITE_USE_V1:
-            # Aphrodite V1 does not currently support priority
-            data.pop("priority", None)
-        return data
-
     # Default sampling parameters for completion requests
     _DEFAULT_SAMPLING_PARAMS: dict = {
         "repetition_penalty": 1.0,
@@ -1233,14 +1217,6 @@ class EmbeddingCompletionRequest(OpenAIBaseModel):
 
     # doc: end-embedding-extra-params
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_priority_support(cls, data):
-        if not envs.APHRODITE_USE_V1:
-            # Aphrodite V1 does not currently support priority
-            data.pop("priority", None)
-        return data
-
     def to_pooling_params(self):
         return PoolingParams(dimensions=self.dimensions,
                              additional_data=self.additional_data)
@@ -1297,14 +1273,6 @@ class EmbeddingChatRequest(OpenAIBaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def check_priority_support(cls, data):
-        if not envs.APHRODITE_USE_V1:
-            # Aphrodite V1 does not currently support priority
-            data.pop("priority", None)
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_generation_prompt(cls, data):
         if data.get("continue_final_message") and data.get(
                 "add_generation_prompt"):
@@ -1345,14 +1313,6 @@ class ScoreRequest(OpenAIBaseModel):
 
     # doc: end-score-extra-params
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_priority_support(cls, data):
-        if not envs.APHRODITE_USE_V1:
-            # Aphrodite V1 does not currently support priority
-            data.pop("priority", None)
-        return data
-
     def to_pooling_params(self):
         return PoolingParams(additional_data=self.additional_data)
 
@@ -1378,14 +1338,6 @@ class RerankRequest(OpenAIBaseModel):
     )
 
     # doc: end-rerank-extra-params
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_priority_support(cls, data):
-        if not envs.APHRODITE_USE_V1:
-            # Aphrodite V1 does not currently support priority
-            data.pop("priority", None)
-        return data
 
     def to_pooling_params(self):
         return PoolingParams(additional_data=self.additional_data)
