@@ -319,6 +319,39 @@ def gptq_shuffle(q_weight: torch.Tensor, q_perm: torch.Tensor,
     torch.ops._C.gptq_shuffle(q_weight, q_perm, bit)
 
 
+# exl3
+def exl3_gemm(input: torch.Tensor, trellis: torch.Tensor, suh: torch.Tensor,
+              svh: torch.Tensor, mcg_mult: int, mul1_mult: int) -> torch.Tensor:
+    return torch.ops._C.exl3_gemm(input, trellis, suh, svh, mcg_mult, mul1_mult)
+
+
+def exl3_reconstruct(trellis: torch.Tensor, in_features: int, out_features: int,
+                     mcg_mult: int, mul1_mult: int) -> torch.Tensor:
+    return torch.ops._C.exl3_reconstruct(trellis, in_features, out_features,
+                                         mcg_mult, mul1_mult)
+
+
+if hasattr(torch.ops._C, "exl3_gemm"):
+
+    @register_fake("_C::exl3_gemm")
+    def _exl3_gemm_fake(input: torch.Tensor, trellis: torch.Tensor,
+                        suh: torch.Tensor, svh: torch.Tensor, mcg_mult: int,
+                        mul1_mult: int) -> torch.Tensor:
+        batch_size = input.size(0)
+        out_features = svh.size(0)
+        return torch.empty((batch_size, out_features),
+                           dtype=torch.float32,
+                           device=input.device)
+
+    @register_fake("_C::exl3_reconstruct")
+    def _exl3_reconstruct_fake(trellis: torch.Tensor, in_features: int,
+                               out_features: int, mcg_mult: int,
+                               mul1_mult: int) -> torch.Tensor:
+        return torch.empty((in_features, out_features),
+                           dtype=torch.float16,
+                           device=trellis.device)
+
+
 # squeezellm
 def squeezellm_gemm(vec: torch.Tensor, mat: torch.Tensor, mul: torch.Tensor,
                     lookup_table: torch.Tensor) -> None:

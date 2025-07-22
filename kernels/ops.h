@@ -332,6 +332,15 @@ torch::Tensor gptq_gemm(torch::Tensor a, torch::Tensor b_q_weight,
 
 void gptq_shuffle(torch::Tensor q_weight, torch::Tensor q_perm, int64_t bit);
 
+// EXL3 quantization operations
+torch::Tensor exl3_gemm(torch::Tensor input, torch::Tensor trellis,
+                        torch::Tensor suh, torch::Tensor svh,
+                        int64_t mcg_mult, int64_t mul1_mult);
+
+torch::Tensor exl3_reconstruct(torch::Tensor trellis, int64_t in_features,
+                               int64_t out_features, int64_t mcg_mult,
+                               int64_t mul1_mult);
+
 void static_scaled_fp8_quant(torch::Tensor& out, torch::Tensor const& input,
                              torch::Tensor const& scale);
 
