@@ -261,6 +261,13 @@ class EngineArgs:
     enable_expert_parallel: bool = ParallelConfig.enable_expert_parallel
     max_parallel_loading_workers: Optional[
         int] = ParallelConfig.max_parallel_loading_workers
+    
+    # Adaptive Tensor Parallelism Configuration
+    adaptive_tp_strategy: str = ParallelConfig.adaptive_tp_strategy
+    adaptive_tp_memory_ratios: Optional[List[float]] = ParallelConfig.adaptive_tp_memory_ratios
+    adaptive_tp_min_chunk_size: int = ParallelConfig.adaptive_tp_min_chunk_size
+    adaptive_tp_expected_cache_tokens: Optional[int] = ParallelConfig.adaptive_tp_expected_cache_tokens
+    adaptive_tp_enable_dynamic_rebalancing: bool = ParallelConfig.adaptive_tp_enable_dynamic_rebalancing
     block_size: Optional[BlockSize] = CacheConfig.block_size
     enable_prefix_caching: Optional[bool] = CacheConfig.enable_prefix_caching
     prefix_caching_hash_algo: PrefixCachingHashAlgo = \
@@ -575,6 +582,24 @@ class EngineArgs:
         parallel_group.add_argument(
             "--disable-custom-all-reduce",
             **parallel_kwargs["disable_custom_all_reduce"])
+        
+        # Adaptive Tensor Parallelism Arguments
+        parallel_group.add_argument(
+            "--adaptive-tp-strategy",
+            **parallel_kwargs["adaptive_tp_strategy"])
+        parallel_group.add_argument(
+            "--adaptive-tp-memory-ratios",
+            **parallel_kwargs["adaptive_tp_memory_ratios"])
+        parallel_group.add_argument(
+            "--adaptive-tp-min-chunk-size",
+            **parallel_kwargs["adaptive_tp_min_chunk_size"])
+        parallel_group.add_argument(
+            "--adaptive-tp-expected-cache-tokens",
+            **parallel_kwargs["adaptive_tp_expected_cache_tokens"])
+        parallel_group.add_argument(
+            "--adaptive-tp-enable-dynamic-rebalancing",
+            **parallel_kwargs["adaptive_tp_enable_dynamic_rebalancing"])
+        
         parallel_group.add_argument("--worker-cls",
                                     **parallel_kwargs["worker_cls"])
         parallel_group.add_argument("--worker-extension-cls",
@@ -1051,6 +1076,12 @@ class EngineArgs:
             distributed_executor_backend=self.distributed_executor_backend,
             worker_cls=self.worker_cls,
             worker_extension_cls=self.worker_extension_cls,
+            # Adaptive Tensor Parallelism Configuration
+            adaptive_tp_strategy=self.adaptive_tp_strategy,
+            adaptive_tp_memory_ratios=self.adaptive_tp_memory_ratios,
+            adaptive_tp_min_chunk_size=self.adaptive_tp_min_chunk_size,
+            adaptive_tp_expected_cache_tokens=self.adaptive_tp_expected_cache_tokens,
+            adaptive_tp_enable_dynamic_rebalancing=self.adaptive_tp_enable_dynamic_rebalancing,
         )
 
         speculative_config = self.create_speculative_config(

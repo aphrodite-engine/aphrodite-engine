@@ -15,7 +15,7 @@ from dataclasses import (MISSING, dataclass, field, fields, is_dataclass,
 from functools import cached_property
 from importlib.util import find_spec
 from pathlib import Path
-from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Dict, Literal,
+from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Dict, List, Literal,
                     Optional, Protocol, TypeVar, Union, cast, get_args,
                     get_origin)
 
@@ -1084,11 +1084,19 @@ class ModelConfig:
         total_num_attention_heads = getattr(self.hf_text_config,
                                             "num_attention_heads", 0)
         tensor_parallel_size = parallel_config.tensor_parallel_size
-        if total_num_attention_heads % tensor_parallel_size != 0:
+        
+        # Skip divisibility check for adaptive TP strategies
+        is_adaptive_tp_enabled = (
+            hasattr(parallel_config, 'adaptive_tp_strategy') and 
+            parallel_config.adaptive_tp_strategy != "balanced"
+        )
+        
+        if not is_adaptive_tp_enabled and total_num_attention_heads % tensor_parallel_size != 0:
             raise ValueError(
                 f"Total number of attention heads ({total_num_attention_heads})"
                 " must be divisible by tensor parallel size "
-                f"({tensor_parallel_size}).")
+                f"({tensor_parallel_size}). Consider using adaptive tensor parallelism "
+                f"with --adaptive-tp-strategy memory or manual to handle uneven splits.")
 
         if parallel_config.enable_expert_parallel:
             self._verify_with_expert_parallelism()
@@ -1777,6 +1785,31 @@ class ParallelConfig:
 
     disable_custom_all_reduce: bool = False
     """Disable the custom all-reduce kernel and fall back to NCCL."""
+
+    # Adaptive Tensor Parallelism Configuration
+    adaptive_tp_strategy: Literal["memory", "balanced", "manual"] = "balanced"
+    """Strategy for adaptive tensor parallelism:
+    - balanced: Equal split across devices (current behavior)
+    - memory: Automatic memory-aware distribution based on available GPU memory
+    - manual: User-specified memory ratios via adaptive_tp_memory_ratios
+    """
+    
+    adaptive_tp_memory_ratios: Optional[List[float]] = None
+    """Manual memory ratios for each GPU when adaptive_tp_strategy='manual'.
+    Must have length equal to tensor_parallel_size. Example: [3.0, 2.0, 1.0]
+    for 3 GPUs with 3:2:1 work distribution ratio."""
+    
+    adaptive_tp_min_chunk_size: int = 32
+    """Minimum chunk size for adaptive tensor splitting. Smaller chunks may
+    hurt performance while larger chunks reduce splitting flexibility."""
+    
+    adaptive_tp_expected_cache_tokens: Optional[int] = None
+    """Expected KV cache size in tokens for memory planning in adaptive TP.
+    If not specified, uses model's max_seq_len or estimates based on usage."""
+    
+    adaptive_tp_enable_dynamic_rebalancing: bool = False
+    """Whether to rebalance tensor splits during runtime based on memory usage.
+    Currently not implemented - reserved for future use."""
 
     tokenizer_pool_config: Optional[TokenizerPoolConfig] = None
     """This parameter is deprecated and will be removed in a future release.

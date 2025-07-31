@@ -189,6 +189,9 @@ class Worker(LocalOrDistributedWorkerBase):
         set_random_seed(self.model_config.seed)
 
     def load_model(self):
+        # Initialize adaptive tensor parallelism if enabled
+        self._init_adaptive_tp()
+        
         if self.aphrodite_config.model_config.enable_sleep_mode:
             allocator = CuMemAllocator.get_instance()
             assert allocator.get_current_usage() == 0, (
@@ -200,6 +203,109 @@ class Worker(LocalOrDistributedWorkerBase):
             context = nullcontext()
         with context:
             self.model_runner.load_model()
+
+    def _init_adaptive_tp(self):
+        """Initialize adaptive tensor parallelism if enabled."""
+        logger.info("Adaptive TP: Starting initialization...")
+        
+        try:
+            from aphrodite.distributed.adaptive_parallel_state import AdaptiveTPContext
+            from aphrodite.modeling.layers.linear import set_adaptive_tp_context
+            logger.info("Adaptive TP: Successfully imported required modules")
+        except ImportError as e:
+            logger.error(f"Adaptive TP: Failed to import required modules: {e}")
+            return
+        
+        try:
+            parallel_config = self.aphrodite_config.parallel_config
+            model_config = self.aphrodite_config.model_config
+            
+            logger.info(f"Adaptive TP: Using strategy '{parallel_config.adaptive_tp_strategy}' with TP size {parallel_config.tensor_parallel_size}")
+            
+            # Set environment variable so worker processes can detect adaptive TP usage
+            import os
+            os.environ['ADAPTIVE_TP_STRATEGY'] = parallel_config.adaptive_tp_strategy
+            
+            # Only initialize if adaptive TP strategy is not "balanced"
+            if parallel_config.adaptive_tp_strategy == "balanced":
+                logger.info("Adaptive TP: Using balanced strategy (standard tensor parallelism)")
+                return
+            
+            # Temporary workaround: Skip adaptive TP in multiprocessing environments
+            # where subprocess calls might fail due to permissions or environment setup
+            import multiprocessing
+            import os
+            if (multiprocessing.current_process().name != 'MainProcess' and 
+                not os.environ.get('APHRODITE_FORCE_ADAPTIVE_TP', '').lower() in ['1', 'true']):
+                logger.warning("Adaptive TP: Detected multiprocessing worker environment. "
+                             "Adaptive TP is not yet fully supported in multiprocessing mode. "
+                             "Falling back to balanced strategy. "
+                             "Set APHRODITE_FORCE_ADAPTIVE_TP=1 to override.")
+                return
+            
+            # Validate configuration
+            if parallel_config.adaptive_tp_strategy == "manual":
+                if not parallel_config.adaptive_tp_memory_ratios:
+                    logger.warning("Adaptive TP: Manual strategy specified but no memory ratios provided. "
+                                 "Falling back to balanced strategy.")
+                    return
+                
+                if len(parallel_config.adaptive_tp_memory_ratios) != parallel_config.tensor_parallel_size:
+                    logger.warning(f"Adaptive TP: Memory ratios length ({len(parallel_config.adaptive_tp_memory_ratios)}) "
+                                 f"does not match tensor parallel size ({parallel_config.tensor_parallel_size}). "
+                                 f"Falling back to balanced strategy.")
+                    return
+            
+            # Determine expected cache tokens
+            expected_cache_tokens = parallel_config.adaptive_tp_expected_cache_tokens
+            if expected_cache_tokens is None:
+                try:
+                    # Use model's max sequence length as fallback
+                    expected_cache_tokens = getattr(model_config.hf_config, 'max_position_embeddings', 8192)
+                    logger.info(f"Adaptive TP: Using max_position_embeddings ({expected_cache_tokens}) for cache estimation")
+                except Exception as e:
+                    logger.warning(f"Adaptive TP: Failed to get max_position_embeddings: {e}. Using default 8192.")
+                    expected_cache_tokens = 8192
+            
+            logger.info("Adaptive TP: Creating AdaptiveTPContext...")
+            
+            # Create adaptive TP context with detailed error handling
+            adaptive_context = AdaptiveTPContext(
+                model_config=model_config.hf_config,
+                tensor_parallel_size=parallel_config.tensor_parallel_size,
+                strategy=parallel_config.adaptive_tp_strategy,
+                memory_ratios=parallel_config.adaptive_tp_memory_ratios,
+                min_chunk_size=parallel_config.adaptive_tp_min_chunk_size,
+                expected_cache_tokens=expected_cache_tokens
+            )
+            
+            logger.info("Adaptive TP: AdaptiveTPContext created successfully")
+            
+            # Set the global context for linear layers
+            set_adaptive_tp_context(adaptive_context)
+            logger.info("Adaptive TP: Global context set")
+            
+            # Print summary
+            try:
+                adaptive_context.print_split_summary()
+            except Exception as e:
+                logger.warning(f"Adaptive TP: Failed to print split summary: {e}")
+            
+            logger.info("Adaptive TP initialization completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Adaptive TP initialization failed: {type(e).__name__}: {e}")
+            logger.error("Adaptive TP: Full traceback follows")
+            import traceback
+            logger.error(traceback.format_exc())
+            logger.warning("Adaptive TP: Falling back to balanced tensor parallelism")
+            
+            # Ensure we clear any partial state
+            try:
+                from aphrodite.modeling.layers.linear import set_adaptive_tp_context
+                set_adaptive_tp_context(None)
+            except Exception:
+                pass  # Ignore errors during cleanup
 
     def save_sharded_state(
         self,

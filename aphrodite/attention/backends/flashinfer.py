@@ -955,8 +955,9 @@ class FlashInferImpl(AttentionImpl):
         self.kv_cache_dtype = kv_cache_dtype
         self.logits_soft_cap = logits_soft_cap
 
-        assert self.num_heads % self.num_kv_heads == 0
-        self.num_queries_per_kv = self.num_heads // self.num_kv_heads
+        # Use adaptive TP-aware calculation for num_queries_per_kv
+        from aphrodite.attention.adaptive_utils import calculate_num_queries_per_kv_adaptive
+        self.num_queries_per_kv = calculate_num_queries_per_kv_adaptive(self.num_heads, self.num_kv_heads)
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError("Encoder self-attention and "

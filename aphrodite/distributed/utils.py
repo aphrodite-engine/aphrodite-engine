@@ -25,6 +25,24 @@ import aphrodite.common.envs as envs
 
 def ensure_divisibility(numerator, denominator):
     """Ensure that numerator is divisible by the denominator."""
+    # Check if adaptive TP strategy is being used
+    try:
+        # Check environment variable that might indicate adaptive TP usage
+        import os
+        adaptive_tp_strategy = os.environ.get('ADAPTIVE_TP_STRATEGY', '')
+        if adaptive_tp_strategy and adaptive_tp_strategy != 'balanced':
+            # Skip strict divisibility check for adaptive TP
+            return
+            
+        # Check if adaptive TP functions are available and enabled
+        from aphrodite.modeling.layers.linear import is_adaptive_tp_enabled
+        if is_adaptive_tp_enabled():
+            # Skip strict divisibility check when adaptive TP is active
+            return
+    except (ImportError, AttributeError):
+        pass
+    
+    # Standard divisibility check
     assert numerator % denominator == 0, "{} is not divisible by {}".format(
         numerator, denominator)
 

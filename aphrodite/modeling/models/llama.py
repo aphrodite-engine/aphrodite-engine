@@ -113,18 +113,52 @@ class LlamaAttention(nn.Module):
         self.hidden_size = hidden_size
         tp_size = get_tensor_model_parallel_world_size()
         self.total_num_heads = num_heads
-        assert self.total_num_heads % tp_size == 0
-        self.num_heads = self.total_num_heads // tp_size
-        self.total_num_kv_heads = num_kv_heads
-        if self.total_num_kv_heads >= tp_size:
-            # Number of KV heads is greater than TP size, so we partition
-            # the KV heads across multiple tensor parallel GPUs.
-            assert self.total_num_kv_heads % tp_size == 0
+        
+        # Check if adaptive TP is enabled
+        from aphrodite.modeling.layers.linear import is_adaptive_tp_enabled, get_adaptive_tp_context
+        from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank
+        
+        if is_adaptive_tp_enabled():
+            # Use adaptive TP splits for attention heads
+            adaptive_context = get_adaptive_tp_context()
+            current_rank = get_tensor_model_parallel_rank()
+            attention_split = adaptive_context.get_attention_split(current_rank)
+            
+            if attention_split is not None:
+                self.num_heads = attention_split.size
+            else:
+                # Fallback to balanced split if adaptive split not found
+                assert self.total_num_heads % tp_size == 0
+                self.num_heads = self.total_num_heads // tp_size
         else:
-            # Number of KV heads is less than TP size, so we replicate
-            # the KV heads across multiple tensor parallel GPUs.
-            assert tp_size % self.total_num_kv_heads == 0
-        self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size)
+            # Standard TP: strict divisibility required
+            assert self.total_num_heads % tp_size == 0
+            self.num_heads = self.total_num_heads // tp_size
+        
+        self.total_num_kv_heads = num_kv_heads
+        
+        # Handle KV heads with adaptive TP consideration
+        if is_adaptive_tp_enabled():
+            # For adaptive TP, we need to handle KV heads more carefully
+            # For now, use proportional splitting similar to attention heads
+            if self.total_num_kv_heads >= tp_size:
+                # Calculate KV heads proportionally to attention heads
+                kv_ratio = self.total_num_kv_heads / self.total_num_heads
+                self.num_kv_heads = max(1, int(self.num_heads * kv_ratio))
+            else:
+                # When KV heads < TP size, replicate across ranks
+                self.num_kv_heads = self.total_num_kv_heads
+        else:
+            # Standard TP KV head handling
+            if self.total_num_kv_heads >= tp_size:
+                # Number of KV heads is greater than TP size, so we partition
+                # the KV heads across multiple tensor parallel GPUs.
+                assert self.total_num_kv_heads % tp_size == 0
+            else:
+                # Number of KV heads is less than TP size, so we replicate
+                # the KV heads across multiple tensor parallel GPUs.
+                assert tp_size % self.total_num_kv_heads == 0
+            self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size)
         # MistralConfig has an optional head_dim introduced by Mistral-Nemo
         head_dim = getattr(config, "head_dim", None)
         if head_dim is None:

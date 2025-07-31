@@ -422,8 +422,9 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
         self.sliding_window = sliding_window
         self.kv_cache_dtype = kv_cache_dtype
 
-        assert self.num_heads % self.num_kv_heads == 0
-        self.num_queries_per_kv = self.num_heads // self.num_kv_heads
+        # Use adaptive TP-aware calculation for num_queries_per_kv
+        from aphrodite.attention.adaptive_utils import calculate_num_queries_per_kv_adaptive
+        self.num_queries_per_kv = calculate_num_queries_per_kv_adaptive(self.num_heads, self.num_kv_heads)
         self.need_mask = (self.alibi_slopes is not None
                           or self.sliding_window is not None)
 

@@ -646,8 +646,9 @@ class FlashAttentionImpl(AttentionImpl):
             logits_soft_cap = 0
         self.logits_soft_cap = logits_soft_cap
 
-        assert self.num_heads % self.num_kv_heads == 0
-        self.num_queries_per_kv = self.num_heads // self.num_kv_heads
+        # Use adaptive TP-aware calculation for num_queries_per_kv
+        from aphrodite.attention.adaptive_utils import calculate_num_queries_per_kv_adaptive
+        self.num_queries_per_kv = calculate_num_queries_per_kv_adaptive(self.num_heads, self.num_kv_heads)
 
         support_head_sizes = FlashAttentionBackend.get_supported_head_sizes()
         if head_size not in support_head_sizes:

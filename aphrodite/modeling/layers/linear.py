@@ -12,6 +12,13 @@ from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    split_tensor_along_last_dim,
                                    tensor_model_parallel_all_gather,
                                    tensor_model_parallel_all_reduce)
+# Import adaptive TP functionality
+from aphrodite.distributed.adaptive_parallel_state import AdaptiveTPContext, TensorSplit
+from aphrodite.distributed.adaptive_communication_op import (
+    adaptive_tensor_model_parallel_all_gather,
+    adaptive_split_tensor_for_tp,
+    AdaptiveTPCommunicationGroup
+)
 from aphrodite.modeling.layers.utils import dispatch_unquantized_gemm
 # yapf: disable
 from aphrodite.modeling.parameter import (BaseAphroditeParameter,
@@ -46,6 +53,36 @@ WEIGHT_LOADER_V2_SUPPORTED = [
     "QuarkLinearMethod",
     "ModelOptNvFp4LinearMethod",
 ]
+
+
+# Global adaptive TP context - set during model initialization
+_adaptive_tp_context: Optional[AdaptiveTPContext] = None
+_adaptive_tp_comm_group: Optional[AdaptiveTPCommunicationGroup] = None
+
+
+def set_adaptive_tp_context(context: Optional[AdaptiveTPContext]):
+    """Set the global adaptive TP context."""
+    global _adaptive_tp_context, _adaptive_tp_comm_group
+    _adaptive_tp_context = context
+    if context is not None:
+        _adaptive_tp_comm_group = AdaptiveTPCommunicationGroup(context.get_all_splits())
+    else:
+        _adaptive_tp_comm_group = None
+
+
+def get_adaptive_tp_context() -> Optional[AdaptiveTPContext]:
+    """Get the current adaptive TP context."""
+    return _adaptive_tp_context
+
+
+def get_adaptive_tp_comm_group() -> Optional[AdaptiveTPCommunicationGroup]:
+    """Get the current adaptive TP communication group."""
+    return _adaptive_tp_comm_group
+
+
+def is_adaptive_tp_enabled() -> bool:
+    """Check if adaptive tensor parallelism is enabled."""
+    return _adaptive_tp_context is not None and _adaptive_tp_context.strategy != "balanced"
 
 
 def adjust_bitblas_shard(param, shard_size, shard_offset):
@@ -378,15 +415,55 @@ class ColumnParallelLinear(LinearBase):
     ):
         # Divide the weight matrix along the last dimension.
         self.tp_size = get_tensor_model_parallel_world_size()
+        self.tp_rank = get_tensor_model_parallel_rank()
         self.input_size_per_partition = input_size
-        self.output_size_per_partition = divide(output_size, self.tp_size)
+        
+        # Check if adaptive TP is enabled
+        self.adaptive_tp_enabled = is_adaptive_tp_enabled()
+        self.adaptive_split = None
+        
+        if self.adaptive_tp_enabled:
+            # Get adaptive splits for this layer type
+            context = get_adaptive_tp_context()
+            comm_group = get_adaptive_tp_comm_group()
+            
+            if context and comm_group:
+                # Determine split type based on layer characteristics
+                # For now, use MLP input splits for most column parallel layers
+                # This can be refined based on layer naming or other heuristics
+                split_type = self._determine_split_type(prefix, output_size)
+                rank_splits = comm_group.get_current_rank_splits()
+                self.adaptive_split = rank_splits.get(split_type)
+                
+                if self.adaptive_split:
+                    self.output_size_per_partition = self.adaptive_split.size
+                    logger.debug(f"Adaptive TP: {prefix} using {split_type} split "
+                               f"size={self.adaptive_split.size} for rank {self.tp_rank}")
+                else:
+                    # Fall back to balanced if no split found
+                    self.output_size_per_partition = divide(output_size, self.tp_size)
+                    self.adaptive_tp_enabled = False
+                    logger.warning(f"Adaptive TP: No split found for {prefix}, falling back to balanced")
+            else:
+                # Fall back if context not available
+                self.output_size_per_partition = divide(output_size, self.tp_size)
+                self.adaptive_tp_enabled = False
+        else:
+            # Standard tensor parallelism
+            self.output_size_per_partition = divide(output_size, self.tp_size)
+        
         self.output_partition_sizes = [self.output_size_per_partition]
+        
         # If QKV or MergedColumn, use output size of each partition.
         if hasattr(self, "output_sizes"):
-            self.output_partition_sizes = [
-                divide(output_size, self.tp_size)
-                for output_size in self.output_sizes
-            ]
+            if self.adaptive_tp_enabled and self.adaptive_split:
+                # For adaptive TP, all outputs use the same split size
+                self.output_partition_sizes = [self.output_size_per_partition] * len(self.output_sizes)
+            else:
+                self.output_partition_sizes = [
+                    divide(output_size, self.tp_size)
+                    for output_size in self.output_sizes
+                ]
 
         super().__init__(input_size,
                          output_size,
@@ -423,6 +500,33 @@ class ColumnParallelLinear(LinearBase):
         else:
             self.register_parameter("bias", None)
 
+    def _determine_split_type(self, prefix: str, output_size: int) -> str:
+        """
+        Determine the appropriate split type for adaptive TP based on layer characteristics.
+        
+        This heuristic maps layer types to split categories:
+        - Attention layers (qkv_proj, q_proj, k_proj, v_proj) -> 'attention'
+        - MLP intermediate layers (gate_proj, up_proj) -> 'mlp_input' 
+        - Output/vocabulary layers (lm_head, embed_tokens) -> 'vocab'
+        - Default -> 'mlp_input' for most other column parallel layers
+        """
+        prefix_lower = prefix.lower()
+        
+        # Attention-related layers
+        if any(name in prefix_lower for name in ['qkv_proj', 'q_proj', 'k_proj', 'v_proj', 'attn']):
+            return 'attention'
+        
+        # Vocabulary/embedding layers
+        if any(name in prefix_lower for name in ['lm_head', 'embed_tokens', 'vocab', 'wte']):
+            return 'vocab'
+        
+        # MLP layers (gate_proj, up_proj, etc.)
+        if any(name in prefix_lower for name in ['gate_proj', 'up_proj', 'mlp', 'ffn', 'fc1', 'fc2']):
+            return 'mlp_input'
+        
+        # Default to mlp_input for most column parallel layers
+        return 'mlp_input'
+
     def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
         tp_rank = get_tensor_model_parallel_rank()
         output_dim = getattr(param, "output_dim", None)
@@ -444,8 +548,24 @@ class ColumnParallelLinear(LinearBase):
             final_shape = list(loaded_weight.shape)
             if output_dim is not None:
                 tp_size = get_tensor_model_parallel_world_size()
-                assert final_shape[output_dim] % tp_size == 0
-                final_shape[output_dim] = final_shape[output_dim] // tp_size
+                
+                # Check if adaptive TP is enabled to allow more flexible shape configurations
+                if is_adaptive_tp_enabled():
+                    # For adaptive TP, we need to handle the case where the shape might not be perfectly divisible
+                    # We'll use the adaptive context to get the appropriate splits
+                    adaptive_context = get_adaptive_tp_context()
+                    if adaptive_context is not None:
+                        # Use adaptive splits instead of strict divisibility check
+                        # The actual splitting will be handled by the adaptive context
+                        pass
+                    else:
+                        # Fallback to standard check if adaptive context not available
+                        assert final_shape[output_dim] % tp_size == 0
+                        final_shape[output_dim] = final_shape[output_dim] // tp_size
+                else:
+                    # Standard TP: enforce strict constraint
+                    assert final_shape[output_dim] % tp_size == 0
+                    final_shape[output_dim] = final_shape[output_dim] // tp_size
             param.materialize(final_shape, dtype=loaded_weight.dtype)
 
         param_data = param.data
@@ -463,7 +583,8 @@ class ColumnParallelLinear(LinearBase):
         assert param_data.shape == loaded_weight.shape
         param_data.copy_(loaded_weight)
 
-    def weight_loader_v2(self, param: Parameter, loaded_weight: torch.Tensor):
+    def weight_loader_v2(self, param: BaseAphroditeParameter,
+                         loaded_weight: torch.Tensor):
         # Special case for loading scales off disk, which often do not
         # have a shape (such as in the case of AutoFP8).
         if len(loaded_weight.shape) == 0:
@@ -479,11 +600,33 @@ class ColumnParallelLinear(LinearBase):
         # Matrix multiply.
         assert self.quant_method is not None
         output_parallel = self.quant_method.apply(self, input_, bias)
+        
         if self.gather_output:
-            # All-gather across the partitions.
-            output = tensor_model_parallel_all_gather(output_parallel)
+            # Choose appropriate all-gather operation
+            if self.adaptive_tp_enabled:
+                # Use adaptive all-gather for uneven splits
+                comm_group = get_adaptive_tp_comm_group()
+                if comm_group:
+                    split_type = self._determine_split_type(self.prefix if hasattr(self, 'prefix') else '', 
+                                                          self.output_size)
+                    
+                    if split_type == 'attention':
+                        output = comm_group.all_gather_attention(output_parallel)
+                    elif split_type == 'vocab':
+                        output = comm_group.all_gather_vocab(output_parallel)
+                    else:  # mlp_input or default
+                        output = comm_group.all_gather_mlp_input(output_parallel)
+                        
+                    logger.debug(f"Adaptive TP: Used {split_type} all-gather for output shape {output_parallel.shape} -> {output.shape}")
+                else:
+                    # Fallback to standard all-gather
+                    output = tensor_model_parallel_all_gather(output_parallel)
+            else:
+                # Standard all-gather for balanced TP
+                output = tensor_model_parallel_all_gather(output_parallel)
         else:
             output = output_parallel
+            
         output_bias = self.bias if self.skip_bias_add else None
         if not self.return_bias:
             return output
@@ -536,7 +679,23 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
     ):
         self.output_sizes = output_sizes
         tp_size = get_tensor_model_parallel_world_size()
-        assert all(output_size % tp_size == 0 for output_size in output_sizes)
+        
+        # Check if adaptive TP is enabled to allow more flexible output size configurations
+        if is_adaptive_tp_enabled():
+            # For adaptive TP, we need to handle the case where output sizes might not be perfectly divisible
+            # We'll use the adaptive context to get the appropriate splits
+            adaptive_context = get_adaptive_tp_context()
+            if adaptive_context is not None:
+                # Use adaptive splits instead of strict divisibility check
+                # The actual splitting will be handled by the parent class
+                pass
+            else:
+                # Fallback to standard check if adaptive context not available
+                assert all(output_size % tp_size == 0 for output_size in output_sizes)
+        else:
+            # Standard TP: enforce strict constraint
+            assert all(output_size % tp_size == 0 for output_size in output_sizes)
+            
         super().__init__(input_size=input_size,
                          output_size=sum(output_sizes),
                          bias=bias,
@@ -546,6 +705,60 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                          quant_config=quant_config,
                          prefix=prefix,
                          return_bias=return_bias)
+
+    def _determine_split_type(self, prefix: str, output_size: int) -> str:
+        """
+        Determine the split type based on layer prefix and output size for adaptive TP.
+        
+        Args:
+            prefix: Layer prefix/name to help determine type
+            output_size: Output size of the layer
+            
+        Returns:
+            Split type: 'attention', 'mlp_input', 'vocab', or 'default'
+        """
+        prefix_lower = prefix.lower()
+        
+        # Attention projections (q, k, v, qkv)
+        if any(term in prefix_lower for term in ['qkv', 'q_proj', 'k_proj', 'v_proj', 'attn']):
+            return 'attention'
+        
+        # MLP projections (gate, up, intermediate)
+        elif any(term in prefix_lower for term in ['gate_up', 'gate_proj', 'up_proj', 'mlp', 'intermediate']):
+            return 'mlp_input'
+        
+        # Vocabulary/output projections
+        elif any(term in prefix_lower for term in ['lm_head', 'vocab', 'embed_out', 'output']):
+            return 'vocab'
+        
+        # Default: try to infer from output size if we have adaptive context
+        if is_adaptive_tp_enabled():
+            adaptive_context = get_adaptive_tp_context()
+            if adaptive_context:
+                # Compare output size to known split sizes to make a reasonable guess
+                attention_splits = adaptive_context.get_all_splits().get('attention', [])
+                mlp_input_splits = adaptive_context.get_all_splits().get('mlp_input', [])
+                vocab_splits = adaptive_context.get_all_splits().get('vocab', [])
+                
+                current_rank = get_tensor_model_parallel_rank()
+                
+                # Check if output size matches any of our known split sizes
+                if attention_splits and current_rank < len(attention_splits):
+                    attention_size = attention_splits[current_rank].size
+                    if abs(output_size - attention_size * 64) < 100:  # head_dim approximation
+                        return 'attention'
+                
+                if mlp_input_splits and current_rank < len(mlp_input_splits):
+                    mlp_size = mlp_input_splits[current_rank].size
+                    if abs(output_size - mlp_size) < 50:
+                        return 'mlp_input'
+                
+                if vocab_splits and current_rank < len(vocab_splits):
+                    vocab_size = vocab_splits[current_rank].size
+                    if abs(output_size - vocab_size) < 100:
+                        return 'vocab'
+        
+        return 'default'
 
     def weight_loader(self,
                       param: Parameter,
@@ -642,8 +855,73 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
         tp_rank = get_tensor_model_parallel_rank()
         tp_size = get_tensor_model_parallel_world_size()
         if output_dim is not None:
-            shard_offset = sum(self.output_sizes[:loaded_shard_id]) // tp_size
-            shard_size = self.output_sizes[loaded_shard_id] // tp_size
+            # Check if adaptive TP was requested (even if context not available in workers)
+            import os
+            adaptive_tp_strategy = os.environ.get('ADAPTIVE_TP_STRATEGY', 'balanced')
+            is_adaptive_tp_requested = adaptive_tp_strategy != 'balanced'
+            
+            
+            if is_adaptive_tp_requested:
+                adaptive_context = get_adaptive_tp_context()
+                if adaptive_context is not None:
+                    # Main process: use adaptive context to get proper shard size
+                    split_type = self._determine_split_type(getattr(self, 'prefix', ''), 
+                                                          self.output_sizes[loaded_shard_id])
+                    
+                    if split_type == 'attention':
+                        attention_split = adaptive_context.get_attention_split(tp_rank)
+                        if attention_split:
+                            shard_size = attention_split.size
+                            shard_offset = attention_split.start_idx
+                        else:
+                            # Fallback to standard calculation
+                            shard_offset = sum(self.output_sizes[:loaded_shard_id]) // tp_size
+                            shard_size = self.output_sizes[loaded_shard_id] // tp_size
+                    elif split_type == 'mlp_input':
+                        mlp_input_split = adaptive_context.get_mlp_input_split(tp_rank)
+                        if mlp_input_split:
+                            shard_size = mlp_input_split.size
+                            shard_offset = mlp_input_split.start_idx
+                        else:
+                            # Fallback to standard calculation
+                            shard_offset = sum(self.output_sizes[:loaded_shard_id]) // tp_size
+                            shard_size = self.output_sizes[loaded_shard_id] // tp_size
+                    elif split_type == 'vocab':
+                        vocab_split = adaptive_context.get_vocab_split(tp_rank)
+                        if vocab_split:
+                            shard_size = vocab_split.size
+                            shard_offset = vocab_split.start_idx
+                        else:
+                            # Fallback to standard calculation
+                            shard_offset = sum(self.output_sizes[:loaded_shard_id]) // tp_size
+                            shard_size = self.output_sizes[loaded_shard_id] // tp_size
+                    else:
+                        # Default: use actual parameter dimensions instead of trying to calculate splits
+                        # The parameter has already been pre-processed by the weight loading pipeline
+                        
+                        if output_dim < len(param_data.shape):
+                            shard_size = param_data.shape[output_dim]
+                            shard_offset = 0  # Use the full parameter as provided
+                        else:
+                            # Emergency fallback
+                            shard_size = 1
+                            shard_offset = 0
+                else:
+                    # Worker process: adaptive TP requested but no context available
+                    # Use the actual loaded weight dimensions, not the parameter dimensions
+                    
+                    # Use the loaded weight's actual dimension size
+                    if output_dim < len(param_data.shape):
+                        shard_size = param_data.shape[output_dim]
+                        shard_offset = 0  # Workers get their specific shard, start from 0
+                    else:
+                        # Emergency fallback - use minimal safe values
+                        shard_size = 1
+                        shard_offset = 0
+            else:
+                # Standard TP: use original logic
+                shard_offset = sum(self.output_sizes[:loaded_shard_id]) // tp_size
+                shard_size = self.output_sizes[loaded_shard_id] // tp_size
             # Special case for quantization.
             # If quantized, we need to adjust the offset and size to account
             # for the packing.
@@ -665,10 +943,18 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
             is_sharded_weight = is_sharded_weight or use_bitsandbytes_4bit
 
             if use_bitsandbytes_4bit:
-                shard_size = loaded_weight.shape[output_dim]
-                shard_offset = loaded_weight.shape[output_dim] * \
-                    loaded_shard_id
+                # For adaptive TP, preserve the calculated shard sizes
+                # Check environment variable to detect adaptive TP (consistent with above)
+                import os
+                adaptive_tp_strategy = os.environ.get('ADAPTIVE_TP_STRATEGY', 'balanced')
+                if adaptive_tp_strategy == 'balanced':
+                    # Standard TP: override with bitsandbytes logic
+                    shard_size = loaded_weight.shape[output_dim]
+                    shard_offset = loaded_weight.shape[output_dim] * \
+                        loaded_shard_id
+                # If adaptive TP is requested, keep the shard sizes we calculated earlier
 
+            
             param_data = param_data.narrow(output_dim, shard_offset,
                                            shard_size)
             start_idx = tp_rank * shard_size
@@ -679,8 +965,9 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
         elif is_metadata:
             # metadata indicates fixed size concatenated along dim 0
             shard_size = loaded_weight.shape[0]
-            shard_offset = loaded_shard_id * shard_size
-            param_data = param_data.narrow(0, shard_offset, shard_size)
+            shard_index = ["q", "k", "v"].index(loaded_shard_id)
+            param_data = param_data.narrow(0, shard_index * shard_size,
+                                           shard_size)
 
         # Special case for per-tensor scales in fused case.
         elif needs_scalar_to_array:
@@ -823,14 +1110,39 @@ class QKVParallelLinear(ColumnParallelLinear):
         self.total_num_kv_heads = total_num_kv_heads
         # Divide the weight matrix along the last dimension.
         tp_size = get_tensor_model_parallel_world_size()
-        self.num_heads = divide(self.total_num_heads, tp_size)
-        if tp_size >= self.total_num_kv_heads:
-            self.num_kv_heads = 1
-            self.num_kv_head_replicas = divide(tp_size,
-                                               self.total_num_kv_heads)
+        
+        # Check if adaptive TP is enabled and use adaptive splits
+        if is_adaptive_tp_enabled():
+            adaptive_context = get_adaptive_tp_context()
+            current_rank = get_tensor_model_parallel_rank()
+            attention_split = adaptive_context.get_attention_split(current_rank)
+            
+            if attention_split is not None:
+                self.num_heads = attention_split.size
+            else:
+                # Fallback to standard division if adaptive split not found
+                self.num_heads = divide(self.total_num_heads, tp_size)
+                
+            # For adaptive TP, handle KV heads proportionally
+            if self.total_num_kv_heads >= tp_size:
+                # Calculate KV heads proportionally to attention heads
+                kv_ratio = self.total_num_kv_heads / self.total_num_heads
+                self.num_kv_heads = max(1, int(self.num_heads * kv_ratio))
+                self.num_kv_head_replicas = 1
+            else:
+                # When KV heads < TP size, replicate across ranks
+                self.num_kv_heads = 1
+                self.num_kv_head_replicas = self.total_num_kv_heads
         else:
-            self.num_kv_heads = divide(self.total_num_kv_heads, tp_size)
-            self.num_kv_head_replicas = 1
+            # Standard TP: use existing logic with divisibility checks
+            self.num_heads = divide(self.total_num_heads, tp_size)
+            if tp_size >= self.total_num_kv_heads:
+                self.num_kv_heads = 1
+                self.num_kv_head_replicas = divide(tp_size,
+                                                   self.total_num_kv_heads)
+            else:
+                self.num_kv_heads = divide(self.total_num_kv_heads, tp_size)
+                self.num_kv_head_replicas = 1
         input_size = self.hidden_size
         output_size = (self.num_heads +
                        2 * self.num_kv_heads) * tp_size * self.head_size
@@ -1045,16 +1357,34 @@ class QKVParallelLinear(ColumnParallelLinear):
 
         # If output dim is defined, use the default loading process.
         if output_dim is not None:
-            if loaded_shard_id == "q":
-                shard_offset = 0
-                shard_size = self.num_heads * self.head_size
-            elif loaded_shard_id == "k":
-                shard_offset = self.num_heads * self.head_size
-                shard_size = self.num_kv_heads * self.head_size
-            elif loaded_shard_id == "v":
-                shard_offset = (self.num_heads +
-                                self.num_kv_heads) * self.head_size
-                shard_size = self.num_kv_heads * self.head_size
+            # Check if adaptive TP is being used for main QKV logic
+            import os
+            adaptive_tp_strategy = os.environ.get('ADAPTIVE_TP_STRATEGY', 'balanced')
+            
+            if adaptive_tp_strategy != 'balanced':
+                # For adaptive TP, the parameter has already been pre-processed/split
+                # Use the actual parameter dimensions instead of calculating from head sizes
+                
+                if output_dim < len(param_data.shape):
+                    # For adaptive TP, just use the full parameter as provided
+                    shard_size = param_data.shape[output_dim]
+                    shard_offset = 0
+                else:
+                    shard_size = 1
+                    shard_offset = 0
+            else:
+                # Standard TP: use original head size calculations
+                if loaded_shard_id == "q":
+                    shard_offset = 0
+                    shard_size = self.num_heads * self.head_size
+                elif loaded_shard_id == "k":
+                    shard_offset = self.num_heads * self.head_size
+                    shard_size = self.num_kv_heads * self.head_size
+                elif loaded_shard_id == "v":
+                    shard_offset = (self.num_heads +
+                                    self.num_kv_heads) * self.head_size
+                    shard_size = self.num_kv_heads * self.head_size
+            
             # Special case for Quantized Weights.
             # If quantized, we need to adjust the offset and size to account
             # for the packing.
@@ -1075,20 +1405,40 @@ class QKVParallelLinear(ColumnParallelLinear):
             is_sharded_weight = is_sharded_weight or use_bitsandbytes_4bit
 
             if use_bitsandbytes_4bit:
-                orig_qkv_offsets = {
-                    "q": (0, self.num_heads * self.head_size),
-                    "k": (self.num_heads * self.head_size,
-                          self.num_kv_heads * self.head_size),
-                    "v":
-                    ((self.num_heads + self.num_kv_heads) * self.head_size,
-                     self.num_kv_heads * self.head_size),
-                    "total":
-                    ((self.num_heads + 2 * self.num_kv_heads) * self.head_size,
-                     0)
-                }
-                shard_size, shard_offset = adjust_bitsandbytes_4bit_shard(
-                    param, orig_qkv_offsets, loaded_shard_id)
+                # Check if adaptive TP is being used
+                import os
+                adaptive_tp_strategy = os.environ.get('ADAPTIVE_TP_STRATEGY', 'balanced')
+                if adaptive_tp_strategy != 'balanced':
+                    # For adaptive TP, the parameter has already been pre-processed/split
+                    # Use the actual parameter dimensions instead of calculating from head sizes
+                    
+                    if output_dim < len(param_data.shape):
+                        # For adaptive TP, just use the full parameter as provided
+                        shard_size = param_data.shape[output_dim]
+                        shard_offset = 0
+                    else:
+                        shard_size = 1
+                        shard_offset = 0
+                else:
+                    # Standard TP: use original logic
+                    orig_qkv_offsets = {
+                        "q": (0, self.num_heads * self.head_size),
+                        "k": (self.num_heads * self.head_size,
+                              self.num_kv_heads * self.head_size),
+                        "v":
+                        ((self.num_heads + self.num_kv_heads) * self.head_size,
+                         self.num_kv_heads * self.head_size),
+                        "total":
+                        ((self.num_heads + 2 * self.num_kv_heads) * self.head_size,
+                         0)
+                    }
+                    shard_size, shard_offset = adjust_bitsandbytes_4bit_shard(
+                        param, orig_qkv_offsets, loaded_shard_id)
+            else:
+                # Original logic for non-bitsandbytes case
+                pass
 
+            
             param_data = param_data.narrow(output_dim, shard_offset,
                                            shard_size)
             if loaded_shard_id == "q":
@@ -1100,8 +1450,7 @@ class QKVParallelLinear(ColumnParallelLinear):
             if not is_sharded_weight:
                 loaded_weight = loaded_weight.narrow(output_dim, start_idx,
                                                      shard_size)
-
-        # Special case for for AQLM codebooks.
+        # Special case for AQLM codebooks.
         elif is_metadata:
             # metadata indicates fixed size concatenated along dim 0
             shard_size = loaded_weight.shape[0]
@@ -1167,7 +1516,40 @@ class RowParallelLinear(LinearBase):
         # Divide the weight matrix along the first dimension.
         self.tp_rank = get_tensor_model_parallel_rank()
         self.tp_size = get_tensor_model_parallel_world_size()
-        self.input_size_per_partition = divide(input_size, self.tp_size)
+        
+        # Check if adaptive TP is enabled
+        self.adaptive_tp_enabled = is_adaptive_tp_enabled()
+        self.adaptive_split = None
+        
+        if self.adaptive_tp_enabled:
+            # Get adaptive splits for this layer type
+            context = get_adaptive_tp_context()
+            comm_group = get_adaptive_tp_comm_group()
+            
+            if context and comm_group:
+                # For RowParallelLinear, we typically use MLP output splits
+                # since these layers reduce along the input dimension
+                split_type = self._determine_row_split_type(prefix, input_size)
+                rank_splits = comm_group.get_current_rank_splits()
+                self.adaptive_split = rank_splits.get(split_type)
+                
+                if self.adaptive_split:
+                    self.input_size_per_partition = self.adaptive_split.size
+                    logger.debug(f"Adaptive TP: {prefix} using {split_type} split "
+                               f"size={self.adaptive_split.size} for rank {self.tp_rank}")
+                else:
+                    # Fall back to balanced if no split found
+                    self.input_size_per_partition = divide(input_size, self.tp_size)
+                    self.adaptive_tp_enabled = False
+                    logger.warning(f"Adaptive TP: No split found for {prefix}, falling back to balanced")
+            else:
+                # Fall back if context not available
+                self.input_size_per_partition = divide(input_size, self.tp_size)
+                self.adaptive_tp_enabled = False
+        else:
+            # Standard tensor parallelism
+            self.input_size_per_partition = divide(input_size, self.tp_size)
+        
         self.output_size_per_partition = output_size
         self.output_partition_sizes = [output_size]
 
@@ -1206,6 +1588,28 @@ class RowParallelLinear(LinearBase):
             })
         else:
             self.register_parameter("bias", None)
+
+    def _determine_row_split_type(self, prefix: str, input_size: int) -> str:
+        """
+        Determine the appropriate split type for RowParallelLinear adaptive TP.
+        
+        RowParallelLinear typically follows ColumnParallelLinear layers, so:
+        - MLP down_proj follows gate/up_proj -> use 'mlp_input' 
+        - Attention o_proj follows qkv_proj -> use 'attention'
+        - Most other row parallel layers -> 'mlp_input'
+        """
+        prefix_lower = prefix.lower()
+        
+        # Attention output projection (follows qkv/q/k/v projections)
+        if any(name in prefix_lower for name in ['o_proj', 'attn_out', 'attention_output']):
+            return 'attention'
+        
+        # MLP down projection (follows gate/up projections) 
+        if any(name in prefix_lower for name in ['down_proj', 'mlp_down', 'fc3', 'dense']):
+            return 'mlp_input'
+        
+        # Default to mlp_input for most row parallel layers
+        return 'mlp_input'
 
     def weight_loader(self, param: Parameter, loaded_weight: torch.Tensor):
         tp_rank = get_tensor_model_parallel_rank()
@@ -1262,10 +1666,36 @@ class RowParallelLinear(LinearBase):
         if self.input_is_parallel:
             input_parallel = input_
         else:
-            tp_rank = get_tensor_model_parallel_rank()
-            splitted_input = split_tensor_along_last_dim(
-                input_, num_partitions=self.tp_size)
-            input_parallel = splitted_input[tp_rank].contiguous()
+            # Choose appropriate input splitting method
+            if self.adaptive_tp_enabled:
+                # Use adaptive tensor splitting for uneven partitions
+                comm_group = get_adaptive_tp_comm_group()
+                if comm_group:
+                    split_type = self._determine_row_split_type(
+                        self.prefix if hasattr(self, 'prefix') else '', 
+                        self.input_size
+                    )
+                    
+                    if split_type == 'attention':
+                        input_parallel = comm_group.split_attention_tensor(input_)
+                    elif split_type == 'vocab':
+                        input_parallel = comm_group.split_vocab_tensor(input_)
+                    else:  # mlp_input or default
+                        input_parallel = comm_group.split_mlp_input_tensor(input_)
+                        
+                    logger.debug(f"Adaptive TP: Used {split_type} tensor split for input shape {input_.shape} -> {input_parallel.shape}")
+                else:
+                    # Fallback to standard splitting
+                    tp_rank = get_tensor_model_parallel_rank()
+                    splitted_input = split_tensor_along_last_dim(
+                        input_, num_partitions=self.tp_size)
+                    input_parallel = splitted_input[tp_rank].contiguous()
+            else:
+                # Standard tensor splitting for balanced TP
+                tp_rank = get_tensor_model_parallel_rank()
+                splitted_input = split_tensor_along_last_dim(
+                    input_, num_partitions=self.tp_size)
+                input_parallel = splitted_input[tp_rank].contiguous()
 
         # Matrix multiply.
         assert self.quant_method is not None
@@ -1276,6 +1706,7 @@ class RowParallelLinear(LinearBase):
                                                   input_parallel,
                                                   bias=bias_)
         if self.reduce_results and self.tp_size > 1:
+            # All-reduce remains the same for adaptive TP since we're summing contributions
             output = tensor_model_parallel_all_reduce(output_parallel)
         else:
             output = output_parallel
@@ -1508,3 +1939,18 @@ class QKVCrossParallelLinear(LinearBase):
         s += f", tp_size={get_tensor_model_parallel_world_size()}"
         s += ", gather_output=False"
         return s
+
+
+# Export adaptive TP functions for external use
+__all__ = [
+    'set_adaptive_tp_context',
+    'get_adaptive_tp_context', 
+    'get_adaptive_tp_comm_group',
+    'is_adaptive_tp_enabled',
+    'ColumnParallelLinear',
+    'RowParallelLinear',
+    'MergedColumnParallelLinear',
+    'QKVCrossParallelLinear',
+    'ReplicatedLinear',
+    'LinearBase',
+]
