@@ -48,7 +48,9 @@ from aphrodite.endpoints.chat_utils import (load_chat_template,
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.args import (make_arg_parser,
                                              validate_parsed_serve_args)
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
+from aphrodite.endpoints.openai.protocol import (AnthropicMessagesRequest,
+                                                 AnthropicMessagesResponse,
+                                                 ChatCompletionRequest,
                                                  ChatCompletionResponse,
                                                  CompletionRequest,
                                                  CompletionResponse,
@@ -78,6 +80,7 @@ from aphrodite.endpoints.openai.serving_completions import (
     OpenAIServingCompletion)
 from aphrodite.endpoints.openai.serving_embedding import OpenAIServingEmbedding
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
+from aphrodite.endpoints.openai.serving_messages import OpenAIServingMessages
 from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
                                                        OpenAIServingModels)
 from aphrodite.endpoints.openai.serving_pooling import OpenAIServingPooling
@@ -91,12 +94,9 @@ from aphrodite.endpoints.utils import (cli_env_setup, load_aware_call,
                                        with_cancellation)
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_aphrodite import AsyncAphrodite
-from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,
-                                              RPCShutdownRequest)
 from aphrodite.engine.multiprocessing.client import MQAphroditeEngineClient
 from aphrodite.engine.multiprocessing.engine import run_mp_engine
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.modeling.model_loader.weight_utils import get_model_config_yaml
 from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.server import serve_http
 from aphrodite.transformers_utils.config import (
@@ -369,6 +369,10 @@ def chat(request: Request) -> Optional[OpenAIServingChat]:
     return request.app.state.openai_serving_chat
 
 
+def messages(request: Request) -> Optional[OpenAIServingMessages]:
+    return request.app.state.openai_serving_messages
+
+
 def completion(request: Request) -> Optional[OpenAIServingCompletion]:
     return request.app.state.openai_serving_completion
 
@@ -527,6 +531,28 @@ async def create_chat_completion(request: ChatCompletionRequest,
                             status_code=generator.code)
 
     elif isinstance(generator, ChatCompletionResponse):
+        return JSONResponse(content=generator.model_dump())
+
+    return StreamingResponse(content=generator, media_type="text/event-stream")
+
+
+@router.post("/v1/messages", dependencies=[Depends(validate_json_request)])
+@with_cancellation
+@load_aware_call
+async def create_messages(request: AnthropicMessagesRequest,
+                          raw_request: Request):
+    handler = messages(raw_request)
+    if handler is None:
+        return base(raw_request).create_error_response(
+            message="The model does not support Anthropic Messages API")
+
+    generator = await handler.create_message(request, raw_request)
+
+    if isinstance(generator, ErrorResponse):
+        return JSONResponse(content=generator.model_dump(),
+                            status_code=generator.code)
+
+    elif isinstance(generator, AnthropicMessagesResponse):
         return JSONResponse(content=generator.model_dump())
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
@@ -1256,6 +1282,18 @@ async def init_app_state(
         reasoning_parser=args.reasoning_parser,
         enable_prompt_tokens_details=args.enable_prompt_tokens_details,
     ) if model_config.runner_type == "generate" else None
+    state.openai_serving_messages = OpenAIServingMessages(
+        engine_client,
+        model_config,
+        state.openai_serving_models,
+        args.response_role,
+        request_logger=request_logger,
+        chat_template=resolved_chat_template,
+        return_tokens_as_token_ids=args.return_tokens_as_token_ids,
+        enable_auto_tools=args.enable_auto_tool_choice,
+        tool_parser=args.tool_call_parser,
+        reasoning_parser=args.reasoning_parser,
+    ) if model_config.runner_type == "generate" else None
     state.openai_serving_completion = OpenAIServingCompletion(
         engine_client,
         model_config,
@@ -1393,6 +1431,9 @@ async def run_server(args, **uvicorn_kwargs) -> None:
         )  # noqa: E501
         logger.info(
             f"Chat API:          {protocol}://{host_name}:{port_str}{root_path}/v1/chat/completions"
+        )  # noqa: E501
+        logger.info(
+            f"Anthropic Messages API:      {protocol}://{host_name}:{port_str}{root_path}/v1/messages"
         )  # noqa: E501
         logger.info(
             f"Embeddings API:    {protocol}://{host_name}:{port_str}{root_path}/v1/embeddings"

@@ -1986,6 +1986,224 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
     """Extracted words and their corresponding timestamps."""
 
 
+# ========== Anthropic Messages ========== #
+
+# Anthropic Messages API Protocol Definitions
+
+class AnthropicContentBlock(OpenAIBaseModel):
+    """Base class for Anthropic content blocks"""
+    type: str
+
+
+class AnthropicTextBlock(AnthropicContentBlock):
+    type: Literal["text"] = "text"
+    text: str
+
+
+class AnthropicImageSource(OpenAIBaseModel):
+    type: Literal["base64"] = "base64"
+    media_type: Literal["image/jpeg", "image/png", "image/gif", "image/webp"]
+    data: str
+
+
+class AnthropicImageBlock(AnthropicContentBlock):
+    type: Literal["image"] = "image"
+    source: AnthropicImageSource
+
+
+class AnthropicToolUseBlock(AnthropicContentBlock):
+    type: Literal["tool_use"] = "tool_use"
+    id: str
+    name: str
+    input: dict[str, Any]
+
+
+class AnthropicToolResultBlock(AnthropicContentBlock):
+    type: Literal["tool_result"] = "tool_result"
+    tool_use_id: str
+    content: Optional[Union[str, list[Union[AnthropicTextBlock, AnthropicImageBlock]]]] = None
+    is_error: Optional[bool] = False
+
+
+class AnthropicThinkingBlock(AnthropicContentBlock):
+    type: Literal["thinking"] = "thinking"
+    thinking: str
+
+
+# Union type for all Anthropic content blocks
+AnthropicContent = Union[
+    AnthropicTextBlock,
+    AnthropicImageBlock, 
+    AnthropicToolUseBlock,
+    AnthropicToolResultBlock,
+    AnthropicThinkingBlock
+]
+
+
+class AnthropicMessage(OpenAIBaseModel):
+    role: Literal["user", "assistant"]
+    content: Union[str, list[AnthropicContent]]
+
+
+class AnthropicTool(OpenAIBaseModel):
+    name: str
+    description: Optional[str] = None
+    input_schema: dict[str, Any]
+
+
+class AnthropicToolChoiceAuto(OpenAIBaseModel):
+    type: Literal["auto"] = "auto"
+    disable_parallel_tool_use: Optional[bool] = False
+
+
+class AnthropicToolChoiceAny(OpenAIBaseModel):
+    type: Literal["any"] = "any"
+    disable_parallel_tool_use: Optional[bool] = False
+
+
+class AnthropicToolChoiceNone(OpenAIBaseModel):
+    type: Literal["none"] = "none"
+
+
+class AnthropicToolChoiceTool(OpenAIBaseModel):
+    type: Literal["tool"] = "tool"
+    name: str
+    disable_parallel_tool_use: Optional[bool] = False
+
+
+AnthropicToolChoice = Union[
+    AnthropicToolChoiceAuto,
+    AnthropicToolChoiceAny,
+    AnthropicToolChoiceNone,
+    AnthropicToolChoiceTool
+]
+
+
+class AnthropicThinkingConfig(OpenAIBaseModel):
+    """Base class for thinking configurations"""
+    type: str
+
+
+class AnthropicThinkingConfigEnabled(AnthropicThinkingConfig):
+    type: Literal["enabled"] = "enabled"
+    budget_tokens: int = Field(ge=1024)
+
+
+class AnthropicThinkingConfigDisabled(AnthropicThinkingConfig):
+    type: Literal["disabled"] = "disabled"
+
+
+AnthropicThinking = Union[AnthropicThinkingConfigEnabled, AnthropicThinkingConfigDisabled]
+
+
+class AnthropicMetadata(OpenAIBaseModel):
+    user_id: Optional[str] = Field(None, max_length=256)
+
+
+class AnthropicUsage(OpenAIBaseModel):
+    input_tokens: int
+    output_tokens: int
+    cache_creation_input_tokens: Optional[int] = None
+    cache_read_input_tokens: Optional[int] = None
+
+
+class AnthropicMessagesRequest(OpenAIBaseModel):
+    model: str = Field(min_length=1, max_length=256)
+    messages: list[AnthropicMessage] = Field(max_items=100000)
+    max_tokens: int = Field(ge=1)
+
+    # Optional parameters
+    container: Optional[str] = None
+    metadata: Optional[AnthropicMetadata] = None
+    service_tier: Optional[Literal["auto", "standard_only"]] = None
+    stop_sequences: Optional[list[str]] = Field(default_factory=list)
+    stream: Optional[bool] = False
+    system: Optional[Union[str, list[AnthropicTextBlock]]] = None
+    temperature: Optional[float] = Field(None, ge=0.0, le=1.0)
+    thinking: Optional[AnthropicThinking] = None
+    tool_choice: Optional[AnthropicToolChoice] = None
+    tools: Optional[list[AnthropicTool]] = None
+    top_k: Optional[int] = Field(None, ge=0)
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0)
+
+    # Aphrodite-specific extensions for compatibility
+    request_id: Optional[str] = None
+
+    # For sampling params conversion
+    frequency_penalty: Optional[float] = 0.0
+    presence_penalty: Optional[float] = 0.0
+    seed: Optional[int] = None
+
+    # TODO: add more parameters
+
+
+class AnthropicMessagesResponse(OpenAIBaseModel):
+    id: str
+    type: Literal["message"] = "message"
+    role: Literal["assistant"] = "assistant"
+    content: list[AnthropicContent]
+    model: str
+    stop_reason: Optional[Literal["end_turn", "max_tokens", "stop_sequence",
+                                  "tool_use", "pause_turn", "refusal"]]
+    stop_sequence: Optional[str] = None
+    usage: AnthropicUsage
+    container: Optional[dict[str, Any]] = None
+
+
+# Streaming response classes
+class AnthropicMessageStart(OpenAIBaseModel):
+    type: Literal["message_start"] = "message_start"
+    message: AnthropicMessagesResponse
+
+
+class AnthropicContentBlockStart(OpenAIBaseModel):
+    type: Literal["content_block_start"] = "content_block_start"
+    index: int
+    content_block: AnthropicContent
+
+
+class AnthropicContentBlockDelta(OpenAIBaseModel):
+    type: Literal["content_block_delta"] = "content_block_delta"
+    index: int
+    delta: dict[str, Any]  # Contains the delta content
+
+
+class AnthropicContentBlockStop(OpenAIBaseModel):
+    type: Literal["content_block_stop"] = "content_block_stop"
+    index: int
+
+
+class AnthropicMessageDelta(OpenAIBaseModel):
+    type: Literal["message_delta"] = "message_delta"
+    delta: dict[str, Any]
+    usage: AnthropicUsage
+
+
+class AnthropicMessageStop(OpenAIBaseModel):
+    type: Literal["message_stop"] = "message_stop"
+
+
+class AnthropicPing(OpenAIBaseModel):
+    type: Literal["ping"] = "ping"
+
+
+class AnthropicError(OpenAIBaseModel):
+    type: Literal["error"] = "error"
+    error: dict[str, Any]
+
+
+AnthropicStreamEvent = Union[
+    AnthropicMessageStart,
+    AnthropicContentBlockStart,
+    AnthropicContentBlockDelta,
+    AnthropicContentBlockStop,
+    AnthropicMessageDelta,
+    AnthropicMessageStop,
+    AnthropicPing,
+    AnthropicError
+]
+
+
 # ========== KoboldAI ========== #
 
 
