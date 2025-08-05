@@ -13,7 +13,7 @@ def top_a(
 
     probs = torch.softmax(logits, dim=-1)
     top_probs, _ = probs.max(dim=-1, keepdim=True)
-    threshold = torch.pow(top_probs, 2) * top_a.unsqueeze_(dim=1)
+    threshold = torch.pow(top_probs, 2) * top_a.unsqueeze(dim=1)
     tokens_to_remove = probs < threshold
     logits = logits.masked_fill_(tokens_to_remove, -float("inf"))
 
