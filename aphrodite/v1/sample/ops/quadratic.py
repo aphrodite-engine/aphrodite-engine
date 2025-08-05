@@ -32,10 +32,8 @@ def quadratic(
 
     mask = smoothing_factor != 0
 
-    smoothing_factor.unsqueeze_(dim=1)
-    smoothing_curve.unsqueeze_(dim=1)
-    k = smoothing_factor * (3 - smoothing_curve) / 2
-    s = smoothing_factor * (smoothing_curve - 1) / 2
+    k = (smoothing_factor * (3 - smoothing_curve) / 2).unsqueeze_(dim=1)
+    s = (smoothing_factor * (smoothing_curve - 1) / 2).unsqueeze_(dim=1)
 
     quadlogits = logits[mask]  # limit to logits using this sampler
     max_logits = quadlogits.max(dim=-1, keepdim=True).values
