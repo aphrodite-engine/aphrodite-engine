@@ -555,6 +555,18 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.def("gptq_shuffle(Tensor! q_weight, Tensor q_perm, int bit) -> ()");
   ops.impl("gptq_shuffle", torch::kCUDA, &gptq_shuffle);
 
+  // EXL3 quantization operations
+  ops.def(
+      "exl3_gemm(Tensor input, Tensor trellis, Tensor suh, Tensor svh, "
+      "int mcg_mult, int mul1_mult) -> Tensor",
+      {stride_tag});
+  ops.impl("exl3_gemm", torch::kCUDA, &exl3_gemm);
+
+  ops.def(
+      "exl3_reconstruct(Tensor trellis, int in_features, int out_features, "
+      "int mcg_mult, int mul1_mult) -> Tensor");
+  ops.impl("exl3_reconstruct", torch::kCUDA, &exl3_reconstruct);
+
   // Compute FP8 quantized tensor for given scaling factor.
   ops.def(
       "static_scaled_fp8_quant(Tensor! result, Tensor input, Tensor scale) -> "

@@ -242,6 +242,7 @@ set(APHRODITE_EXT_SRC
   "kernels/quantization/fp8/common.cu"
   "kernels/quantization/fused_kernels/fused_layernorm_dynamic_per_token_quant.cu"
   "kernels/quantization/gguf/gguf_kernel.cu"
+  "kernels/quantization/exl3/exl3_gemm.cu"
   "kernels/quantization/activation_kernels.cu"
   "kernels/cuda_utils_kernels.cu"
   "kernels/prepare_inputs/advance_step.cu"
