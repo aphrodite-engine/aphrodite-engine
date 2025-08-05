@@ -1420,52 +1420,52 @@ async def run_server(args, **uvicorn_kwargs) -> None:
 
         if SERVE_KOBOLD_LITE_UI:
             ui_url = f"{protocol}://{host_name}:{port_str}{root_path}/"
-            logger.info(f"Kobold Lite UI:    {ui_url}")
+            logger.info(f"Kobold Lite UI:                  {ui_url}")
 
         if not args.disable_fastapi_docs:
             logger.info(
-                f"Documentation:     {protocol}://{host_name}:{port_str}{root_path}/redoc"
+                f"Documentation:                   {protocol}://{host_name}:{port_str}{root_path}/redoc"
             )  # noqa: E501
         logger.info(
-            f"Completions API:   {protocol}://{host_name}:{port_str}{root_path}/v1/completions"
+            f"Completions API:                 {protocol}://{host_name}:{port_str}{root_path}/v1/completions"
         )  # noqa: E501
         logger.info(
-            f"Chat API:          {protocol}://{host_name}:{port_str}{root_path}/v1/chat/completions"
+            f"Chat API:                        {protocol}://{host_name}:{port_str}{root_path}/v1/chat/completions"
         )  # noqa: E501
         logger.info(
-            f"Anthropic Messages API:      {protocol}://{host_name}:{port_str}{root_path}/v1/messages"
+            f"Anthropic Messages API:          {protocol}://{host_name}:{port_str}{root_path}/v1/messages"
         )  # noqa: E501
         logger.info(
-            f"Embeddings API:    {protocol}://{host_name}:{port_str}{root_path}/v1/embeddings"
+            f"Embeddings API:                  {protocol}://{host_name}:{port_str}{root_path}/v1/embeddings"
         )  # noqa: E501
         logger.info(
-            f"Pooling API:       {protocol}://{host_name}:{port_str}{root_path}/pooling"
+            f"Pooling API:                     {protocol}://{host_name}:{port_str}{root_path}/pooling"
         )  # noqa: E501
         logger.info(
-            f"Score API:         {protocol}://{host_name}:{port_str}{root_path}/score"
+            f"Score API:                       {protocol}://{host_name}:{port_str}{root_path}/score"
         )  # noqa: E501
         logger.info(
-            f"Rerank API:        {protocol}://{host_name}:{port_str}{root_path}/rerank"
+            f"Rerank API:                      {protocol}://{host_name}:{port_str}{root_path}/rerank"
         )  # noqa: E501
         logger.info(
-            f"Rerank API v1:     {protocol}://{host_name}:{port_str}{root_path}/v1/rerank"
+            f"Rerank API v1:                   {protocol}://{host_name}:{port_str}{root_path}/v1/rerank"
         )  # noqa: E501
         logger.info(
-            f"Rerank API v2:     {protocol}://{host_name}:{port_str}{root_path}/v2/rerank"
+            f"Rerank API v2:                   {protocol}://{host_name}:{port_str}{root_path}/v2/rerank"
         )  # noqa: E501
         logger.info(
-            f"Transcription API: {protocol}://{host_name}:{port_str}{root_path}/v1/audio/transcriptions"
+            f"Transcription API:               {protocol}://{host_name}:{port_str}{root_path}/v1/audio/transcriptions"
         )  # noqa: E501
         logger.info(
-            f"Tokenization API:  {protocol}://{host_name}:{port_str}{root_path}/v1/tokenize"
+            f"Tokenization API:                {protocol}://{host_name}:{port_str}{root_path}/v1/tokenize"
         )  # noqa: E501
 
         if envs.APHRODITE_KOBOLD_API:
             logger.info(
-                f"KoboldAI API:      {protocol}://{host_name}:{port_str}{root_path}/api/v1"
+                f"KoboldAI API:                    {protocol}://{host_name}:{port_str}{root_path}/api/v1"
             )  # noqa: E501
             logger.info(
-                f"KoboldAI Extra:    {protocol}://{host_name}:{port_str}{root_path}/api/extra"
+                f"KoboldAI Extra:                  {protocol}://{host_name}:{port_str}{root_path}/api/extra"
             )  # noqa: E501
 
         shutdown_task = await serve_http(
