@@ -1,6 +1,6 @@
 # Datastructures defining an input batch
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, cast
 
 import numpy as np
@@ -37,6 +37,9 @@ class CachedRequestState:
     mrope_position_delta: Optional[int] = None
 
     lora_request: Optional[LoRARequest] = None
+
+    # Phrase banning state - tokens to mask in next generation
+    _tokens_to_mask: list[int] = field(default_factory=list)
 
     def __post_init__(self):
         self.num_prompt_tokens = len(self.prompt_token_ids)

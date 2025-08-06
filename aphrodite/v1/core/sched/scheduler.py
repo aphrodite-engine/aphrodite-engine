@@ -452,7 +452,8 @@ class Scheduler(SchedulerInterface):
         assert (len(scheduled_new_reqs) + len(scheduled_resumed_reqs) +
                 len(scheduled_running_reqs) <= len(self.running))
 
-        # Get the longest common prefix among all requests in the running queue.
+        # Get the longest common prefix among all requests in the running
+        # queue.
         # This can be potentially used for cascade attention.
         num_common_prefix_blocks = 0
         if self.running:
@@ -466,6 +467,11 @@ class Scheduler(SchedulerInterface):
             structured_output_request_ids,
             scheduled_spec_decode_tokens,
         )
+
+        self._update_phrase_detection_for_all_requests(
+            scheduled_running_reqs + scheduled_resumed_reqs
+        )
+
         # Construct the scheduler output.
         new_reqs_data = [
             NewRequestData.from_request(req,
@@ -558,6 +564,7 @@ class Scheduler(SchedulerInterface):
             req_data.new_token_ids = new_token_ids
             req_data.new_block_ids = new_block_ids
             req_data.num_computed_tokens = num_computed_tokens
+            req_data.tokens_to_mask = getattr(request, '_tokens_to_mask', [])
         else:
             # No cached request data, or all cached request data has been
             # used by the scheduled requests.
@@ -790,6 +797,31 @@ class Scheduler(SchedulerInterface):
                 scheduler_output.finished_req_ids | self.finished_req_ids)
 
         return engine_core_outputs
+
+    def _update_phrase_detection_for_all_requests(
+        self, requests: list[Request]) -> None:
+        """Update phrase detection state for all scheduled requests."""
+        for request in requests:
+            self._update_phrase_detection_state_for_current_tokens(request)
+
+    def _update_phrase_detection_state_for_current_tokens(
+        self, request: Request) -> None:
+        """Update phrase detection state based on current output tokens."""
+        banned_phrases = request.sampling_params.banned_phrases_token_ids
+        if not banned_phrases:
+            request._tokens_to_mask = []
+            return
+
+        tokens_to_mask = set()
+        for phrase_tokens in banned_phrases:
+            if not phrase_tokens:
+                continue
+
+            # Always ban the first token of any banned phrase
+            first_token = phrase_tokens[0]
+            tokens_to_mask.add(first_token)
+
+        request._tokens_to_mask = list(tokens_to_mask)
 
     def add_request(self, request: Request) -> None:
         self.waiting.add_request(request)

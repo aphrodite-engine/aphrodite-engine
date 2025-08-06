@@ -27,6 +27,7 @@ class NewRequestData:
     block_ids: list[int]
     num_computed_tokens: int
     lora_request: Optional[LoRARequest]
+    tokens_to_mask: list[int]
 
     @classmethod
     def from_request(
@@ -44,6 +45,7 @@ class NewRequestData:
             block_ids=block_ids,
             num_computed_tokens=request.num_computed_tokens,
             lora_request=request.lora_request,
+            tokens_to_mask=getattr(request, '_tokens_to_mask', []),
         )
 
 
@@ -58,6 +60,7 @@ class CachedRequestData:
     new_token_ids: list[int]
     new_block_ids: list[int]
     num_computed_tokens: int
+    tokens_to_mask: list[int]
 
     @classmethod
     def from_request(
@@ -73,6 +76,7 @@ class CachedRequestData:
             new_token_ids=new_token_ids,
             new_block_ids=new_block_ids,
             num_computed_tokens=request.num_computed_tokens,
+            tokens_to_mask=getattr(request, '_tokens_to_mask', []),
         )
 
 

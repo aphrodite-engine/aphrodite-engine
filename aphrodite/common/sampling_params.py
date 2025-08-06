@@ -413,6 +413,7 @@ class SamplingParams(
     allowed_token_ids: Optional[List[int]] = None
     extra_args: Optional[dict[str, Any]] = None
     bad_words: Optional[List[str]] = None
+    banned_phrases_token_ids: Optional[List[List[int]]] = None
 
     @staticmethod
     def from_optional(
@@ -475,6 +476,7 @@ class SamplingParams(
         allowed_token_ids: Optional[List[int]] = None,
         extra_args: Optional[dict[str, Any]] = None,
         bad_words: Optional[List[str]] = None,
+        banned_phrases_token_ids: Optional[List[List[int]]] = None,
     ) -> "SamplingParams":
         if logit_bias is not None:
             # Convert token_id to integer
@@ -567,8 +569,8 @@ class SamplingParams(
             allowed_token_ids=allowed_token_ids,
             extra_args=extra_args,
             bad_words=bad_words,
+            banned_phrases_token_ids=banned_phrases_token_ids,
         )
-
 
     default_values = {
         "n": 1,
@@ -629,6 +631,7 @@ class SamplingParams(
         "logit_bias": None,
         "allowed_token_ids": None,
         "bad_words": None,
+        "banned_phrases_token_ids": None,
         "extra_args": None,
     }
 
@@ -821,6 +824,10 @@ class SamplingParams(
             self.token_ban_ranges, list):
             raise ValueError(
                 "token_ban_ranges must be a list of tuples")
+        if self.banned_phrases_token_ids is not None and not isinstance(
+                self.banned_phrases_token_ids, list):
+            raise ValueError(
+                "banned_phrases_token_ids must be a list of lists of integers")
         if self.bad_words is None:
             self.bad_words = []
         else:
