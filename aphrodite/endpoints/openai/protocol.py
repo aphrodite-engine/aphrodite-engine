@@ -20,7 +20,8 @@ from aphrodite.common.sampling_params import (BeamSearchParams,
                                               RequestOutputKind,
                                               SamplingParams)
 from aphrodite.common.sequence import Logprob
-from aphrodite.common.utils import random_uuid, resolve_obj_by_qualname
+from aphrodite.common.utils import (generate_phrase_variants, random_uuid,
+                                    resolve_obj_by_qualname)
 from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
@@ -305,6 +306,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
     skew: Optional[float] = 0.0
     custom_token_bans: Optional[list[int]] = None
     token_ban_ranges: Optional[list[tuple[list[int], int, int]]] = None
+    banned_phrases: Optional[list[str]] = Field(
+        default=None,
+        description="List of phrases that should be banned from generation. "
+                   "These will be tokenized and matched as complete sequences.")
     sampler_priority: Optional[Union[list[int], list[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority", "sampler_order"))
@@ -538,6 +543,20 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 token_id = tokenizer.encode(f'a{s}')[-1]
                 dry_sequence_breaker_ids.append(token_id)
 
+        # Tokenize banned phrases with variants
+        banned_phrases_token_ids = []
+        if self.banned_phrases:
+            for phrase in self.banned_phrases:
+                # Generate variants of the phrase to catch different
+                # tokenizations
+                phrase_variants = generate_phrase_variants(phrase)
+                for variant in phrase_variants:
+                    # Tokenize the variant
+                    token_ids = tokenizer.encode(variant,
+                                                 add_special_tokens=False)
+                    if token_ids:  # Only add non-empty tokenizations
+                        banned_phrases_token_ids.append(token_ids)
+
         return SamplingParams.from_optional(
             n=self.n,
             presence_penalty=self.presence_penalty,
@@ -589,6 +608,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             skew=self.skew,
             custom_token_bans=self.custom_token_bans,
             token_ban_ranges=self.token_ban_ranges,
+            banned_phrases_token_ids=banned_phrases_token_ids,
             sampler_priority=self.sampler_priority,
             output_kind=RequestOutputKind.DELTA if self.stream \
                 else RequestOutputKind.FINAL_ONLY,
@@ -875,6 +895,10 @@ class CompletionRequest(OpenAIBaseModel):
     skew: Optional[float] = 0.0
     custom_token_bans: Optional[list[int]] = None
     token_ban_ranges: Optional[list[tuple[list[int], int, int]]] = None
+    banned_phrases: Optional[list[str]] = Field(
+        default=None,
+        description="List of phrases that should be banned from generation. "
+                   "These will be tokenized and matched as complete sequences.")
     sampler_priority: Optional[Union[list[int], list[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority", "sampler_order"))
@@ -1036,6 +1060,20 @@ class CompletionRequest(OpenAIBaseModel):
                 token_id = tokenizer.encode(f'a{s}')[-1]
                 dry_sequence_breaker_ids.append(token_id)
 
+        # Tokenize banned phrases with variants
+        banned_phrases_token_ids = []
+        if self.banned_phrases:
+            for phrase in self.banned_phrases:
+                # Generate variants of the phrase to catch different
+                # tokenizations
+                phrase_variants = generate_phrase_variants(phrase)
+                for variant in phrase_variants:
+                    # Tokenize the variant
+                    token_ids = tokenizer.encode(variant,
+                                                 add_special_tokens=False)
+                    if token_ids:  # Only add non-empty tokenizations
+                        banned_phrases_token_ids.append(token_ids)
+
         return SamplingParams.from_optional(
             n=self.n,
             best_of=self.best_of,
@@ -1088,6 +1126,7 @@ class CompletionRequest(OpenAIBaseModel):
             skew=self.skew,
             custom_token_bans=self.custom_token_bans,
             token_ban_ranges=self.token_ban_ranges,
+            banned_phrases_token_ids=banned_phrases_token_ids,
             sampler_priority=self.sampler_priority,
             output_kind=RequestOutputKind.DELTA if self.stream \
                 else RequestOutputKind.FINAL_ONLY,

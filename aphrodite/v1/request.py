@@ -57,6 +57,9 @@ class Request:
         self.num_computed_tokens = 0
         self.cache_salt: Optional[str] = cache_salt
 
+        # Phrase banning state - tokens to mask in next generation
+        self._tokens_to_mask: list[int] = []
+
         # Multi-modal related
         self.mm_positions = multi_modal_placeholders or []
         self.mm_inputs = multi_modal_inputs or []

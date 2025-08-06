@@ -24,8 +24,7 @@ from aphrodite.common.utils import (STR_DTYPE_TO_TORCH_DTYPE,
 from aphrodite.distributed.kv_transfer import (get_kv_transfer_group,
                                                has_kv_transfer_group)
 from aphrodite.distributed.parallel_state import (
-    get_pp_group, get_tensor_model_parallel_rank,
-    get_tensor_model_parallel_world_size, graph_capture)
+    get_pp_group, get_tensor_model_parallel_rank, graph_capture)
 from aphrodite.forward_context import set_forward_context
 from aphrodite.modeling.layers.rotary_embedding import MRotaryEmbedding
 from aphrodite.modeling.model_loader import get_model
@@ -356,6 +355,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
+                _tokens_to_mask=new_req_data.tokens_to_mask,
             )
 
             # Only relevant for models using M-RoPE (e.g, Qwen2-VL)
@@ -424,6 +424,9 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                 # The request is resumed from preemption.
                 # Replace the existing block IDs with the new ones.
                 req_state.block_ids = req_data.new_block_ids
+
+            # Update tokens to mask from scheduler
+            req_state._tokens_to_mask = req_data.tokens_to_mask
 
             req_index = self.input_batch.req_id_to_index.get(req_id)
             if req_index is None:
@@ -1012,6 +1015,23 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             indices=out_indices,
         )
 
+    def apply_banned_phrase_masking(self, logits: torch.Tensor):
+        """Apply logit masking for requests with banned phrase tokens."""
+        for i, req_id in enumerate(self.input_batch.req_ids):
+            if req_id is None:
+                continue
+
+            request = self.requests.get(req_id)
+            if request is None:
+                continue
+
+            # Check if this request has tokens to mask
+            if hasattr(request, '_tokens_to_mask') and request._tokens_to_mask:
+                # Mask the tokens that would continue banned phrases
+                for token_id in request._tokens_to_mask:
+                    if token_id < logits.shape[1]:  # Ensure token is in vocab
+                        logits[i, token_id] = float('-inf')
+
     @torch.inference_mode()
     def execute_model(
         self,
@@ -1125,6 +1145,9 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         # Apply structured output bitmasks if present
         if scheduler_output.grammar_bitmask is not None:
             self.apply_grammar_bitmask(scheduler_output, logits)
+
+        # Apply banned phrase logit masking if needed
+        self.apply_banned_phrase_masking(logits)
 
         # Sample the next token and get logprobs if needed.
         sampling_metadata = self.input_batch.sampling_metadata
