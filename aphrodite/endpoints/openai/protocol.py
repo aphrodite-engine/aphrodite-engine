@@ -308,8 +308,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
     token_ban_ranges: Optional[list[tuple[list[int], int, int]]] = None
     banned_phrases: Optional[list[str]] = Field(
         default=None,
-        description="List of phrases that should be banned from generation. "
-                   "These will be tokenized and matched as complete sequences.")
+        description=("List of phrases that should be banned from generation. "
+                     "These will be tokenized and matched as complete "
+                     "sequences."),
+        validation_alias=AliasChoices("banned_phrases", "banned_strings"))
     sampler_priority: Optional[Union[list[int], list[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority", "sampler_order"))
@@ -897,8 +899,10 @@ class CompletionRequest(OpenAIBaseModel):
     token_ban_ranges: Optional[list[tuple[list[int], int, int]]] = None
     banned_phrases: Optional[list[str]] = Field(
         default=None,
-        description="List of phrases that should be banned from generation. "
-                   "These will be tokenized and matched as complete sequences.")
+        description=("List of phrases that should be banned from generation. "
+                     "These will be tokenized and matched as complete "
+                     "sequences."),
+        validation_alias=AliasChoices("banned_phrases", "banned_strings"))
     sampler_priority: Optional[Union[list[int], list[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority", "sampler_order"))
