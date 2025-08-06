@@ -158,8 +158,10 @@ def flash_attn_varlen_func(
     q_descale=None,
     k_descale=None,
     v_descale=None,
+    num_splits: int = 0,
     # Version selector
     fa_version: int = DEFAULT_FA_VERSION,
+    s_aux=None,
 ):
     """dropout_p should be set to 0.0 during evaluation
     Supports multi-query and grouped-query attention (MQA/GQA) by passing in K, V with fewer heads
@@ -239,6 +241,8 @@ def flash_attn_varlen_func(
             raise NotImplementedError(
                 "FA2 does not support scheduler_metadata, q_descale, "
                 "k_descale, v_descale")
+        if num_splits > 1:
+            raise NotImplementedError("FA2 does not support num_splits > 1")
         out, softmax_lse = torch.ops._aphrodite_fa2_C.varlen_fwd(
             q,
             k,
@@ -263,6 +267,7 @@ def flash_attn_varlen_func(
             softcap,
             return_softmax_lse and dropout_p > 0,
             None,
+            s_aux=s_aux,
         )
     elif fa_version == 3:
         assert alibi_slopes is None, "Alibi is not supported in FA3"
@@ -297,9 +302,10 @@ def flash_attn_varlen_func(
             softcap,
             True,  # rotary_interleaved
             scheduler_metadata,
-            0,  # num_splits
+            num_splits,
             None,  # pack_gqa
             0,  # sm_margin
+            s_aux,
         )
     else:
         raise ValueError(f"Unsupported FA version: {fa_version}")

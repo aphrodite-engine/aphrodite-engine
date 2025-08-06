@@ -11,12 +11,16 @@ from typing import Optional, Union
 import jinja2
 # yapf conflicts with isort for this block
 # yapf: disable
-from aphrodite_cutlass_library_extension import (
-    APHRODITEDataType, APHRODITEDataTypeAPHRODITEScalarTypeTag,
-    APHRODITEDataTypeNames, APHRODITEDataTypeSize, APHRODITEDataTypeTag,
-    APHRODITEDataTypeTorchDataTypeTag, APHRODITEKernelScheduleTag, DataType,
-    EpilogueScheduleTag, EpilogueScheduleType, MixedInputKernelScheduleType,
-    TileSchedulerTag, TileSchedulerType)
+from aphrodite_cutlass_library_extension import (DataType, EpilogueScheduleTag,
+                                            EpilogueScheduleType,
+                                            MixedInputKernelScheduleType,
+                                            TileSchedulerTag,
+                                            TileSchedulerType, APHRODITEDataType,
+                                            APHRODITEDataTypeNames,
+                                            APHRODITEDataTypeSize, APHRODITEDataTypeTag,
+                                            APHRODITEDataTypeTorchDataTypeTag,
+                                            APHRODITEDataTypeAPHRODITEScalarTypeTag,
+                                            APHRODITEKernelScheduleTag)
 
 # yapf: enable
 
