@@ -3,7 +3,7 @@ import sys
 from abc import abstractmethod
 from contextlib import contextmanager
 from types import CodeType
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import torch
 from loguru import logger
@@ -38,15 +38,20 @@ class TorchCompileWrapperWithCustomDispatcher:
 
             backend = aphrodite_config.compilation_config.init_backend(
                 aphrodite_config)
+            options = None
+            if isinstance(backend, str) and backend == "inductor":
+                options = get_current_aphrodite_config(
+                ).compilation_config.inductor_compile_config
 
             compiled_callable = torch.compile(
                 self.forward,
                 fullgraph=envs.APHRODITE_TEST_DYNAMO_FULLGRAPH_CAPTURE,
-                backend=backend)
+                backend=backend,
+                options=options)
 
         self.compiled_callable = compiled_callable
         self.original_code_object = self.__class__.forward.__code__
-        self.compiled_codes: List[CodeType] = []
+        self.compiled_codes: list[CodeType] = []
         torch._dynamo.convert_frame.register_bytecode_hook(self.bytecode_hook)
 
         # read the env var to determine whether to use the custom dispatcher
@@ -85,10 +90,11 @@ class TorchCompileWrapperWithCustomDispatcher:
             return
 
         self.compiled_codes.append(new_code)
-        local_cache_dir = (self.aphrodite_config.compilation_config
-                           .local_cache_dir)
-        if isinstance(local_cache_dir, str):
-            decompiled_file = os.path.join(local_cache_dir,
+        debug_dump_dir = \
+            self.aphrodite_config.compilation_config.debug_dump_path
+        if isinstance(debug_dump_dir, str) and debug_dump_dir != "":
+            rank = self.aphrodite_config.parallel_config.rank
+            decompiled_file = os.path.join(debug_dump_dir, f"rank_{rank}",
                                            "transformed_code.py")
             if not os.path.exists(decompiled_file):
                 try:
