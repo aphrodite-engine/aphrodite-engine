@@ -7,7 +7,6 @@ from aphrodite.distributed.kv_transfer.kv_connector.factory import (
     KVConnectorFactory)
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
     KVConnectorBase_V1, KVConnectorRole)
-from aphrodite.distributed.parallel_state import get_world_group
 
 if TYPE_CHECKING:
     from aphrodite.common.config import AphroditeConfig
@@ -60,11 +59,7 @@ def ensure_kv_transfer_initialized(aphrodite_config: "AphroditeConfig") -> None:
     if (aphrodite_config.kv_transfer_config.is_kv_transfer_instance
             and _KV_CONNECTOR_AGENT is None):
         if envs.APHRODITE_USE_V1:
-            _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector_v1(
+            _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(
                 config=aphrodite_config, role=KVConnectorRole.WORKER)
         else:
-            _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector_v0(
-                rank=get_world_group().rank,
-                local_rank=get_world_group().local_rank,
-                config=aphrodite_config,
-            )
+            raise ValueError("V0 is no longer supported")

@@ -826,7 +826,7 @@ class DifferentialFlashAttentionImpl(AttentionImpl):
                     softcap=self.logits_soft_cap,
                 ).squeeze(1)
             except Exception as e:
-                logger.error("Error in PagedAttention.forward_decode: %s",
+                logger.error("Error in PagedAttention.forward_decode: {}",
                              str(e))
                 raise e
 

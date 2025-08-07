@@ -1017,7 +1017,7 @@ class ModelConfig:
         # Don't log the most common case
         if runner_type != "generate":
             logger.info(
-                "Resolved `--runner auto` to `--runner %s`. "
+                "Resolved `--runner auto` to `--runner {}`. "
                 "Pass the value explicitly to silence this message.",
                 runner_type)
 

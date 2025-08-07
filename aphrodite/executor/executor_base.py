@@ -203,7 +203,7 @@ class ExecutorBase(ABC):
         time_after_sleep = time.perf_counter()
         self.sleeping_tags = {"weights", "kv_cache"}
         self.is_sleeping = True
-        logger.info("It took %.6f seconds to fall asleep.",
+        logger.info("It took {:.6f} seconds to fall asleep.",
                     time_after_sleep - time_before_sleep)
 
     def wake_up(self, tags: Optional[list[str]] = None):
@@ -219,7 +219,7 @@ class ExecutorBase(ABC):
         time_before_wakeup = time.perf_counter()
         self.collective_rpc("wake_up", kwargs=dict(tags=tags))
         time_after_wakeup = time.perf_counter()
-        logger.info("It took %.6f seconds to wake up tags {}.",
+        logger.info("It took {:.6f} seconds to wake up tags {}.",
                     time_after_wakeup - time_before_wakeup,
                     tags if tags is not None else self.sleeping_tags)
         if tags:

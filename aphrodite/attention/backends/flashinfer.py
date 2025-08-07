@@ -215,14 +215,14 @@ class FlashInferState(AttentionState):
     def get_kv_cache_layout():
         from aphrodite.v1.attention.backends.utils import _KV_CACHE_LAYOUT_OVERRIDE
         if _KV_CACHE_LAYOUT_OVERRIDE is not None:
-            logger.info_once("Using KV cache layout %s",
+            logger.info_once("Using KV cache layout {}",
                              _KV_CACHE_LAYOUT_OVERRIDE)
             return _KV_CACHE_LAYOUT_OVERRIDE
-        cache_layout = envs.VLLM_KV_CACHE_LAYOUT
+        cache_layout = envs.APHRODITE_KV_CACHE_LAYOUT
         if cache_layout is None:
             logger.info_once("Using default KV cache layout NHD")
             return "NHD"
-        logger.info_once("Using KV cache layout %s", cache_layout)
+        logger.info_once("Using KV cache layout {}", cache_layout)
         return cache_layout
 
     def _get_prefill_wrapper(self):

@@ -781,7 +781,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
         "--profile",
         action="store_true",
         help="Use Torch Profiler. The endpoint must be launched with "
-        "VLLM_TORCH_PROFILER_DIR to enable profiler.",
+        "APHRODITE_TORCH_PROFILER_DIR to enable profiler.",
     )
     parser.add_argument(
         "--save-result",
@@ -1057,7 +1057,7 @@ def main(args: argparse.Namespace):
         result_json: dict[str, Any] = {}
 
         # Setup
-        current_dt = datetime.now().strftime("%Y%m%d-%H%M%S")
+        current_dt = datetime.now().strftime("%Y%m{}-%H%M%S")
         result_json["date"] = current_dt
         result_json["endpoint_type"] = args.endpoint_type
         result_json["label"] = label

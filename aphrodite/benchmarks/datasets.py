@@ -213,7 +213,7 @@ class BenchmarkDataset(ABC):
             additional = random.choices(requests,
                                         k=num_requests - len(requests))
             requests.extend(additional)
-            logger.info("Oversampled requests to reach %d total samples.",
+            logger.info("Oversampled requests to reach {} total samples.",
                         num_requests)
 
 
@@ -352,7 +352,7 @@ class RandomDataset(BenchmarkDataset):
 
         # Add logging for debugging
         logger.info(
-            "Sampling input_len from [%s, %s] and output_len from [%s, %s]",
+            "Sampling input_len from [{}, {}] and output_len from [{}, {}]",
             input_low, input_high, output_low, output_high)
 
         input_lens = np.random.randint(input_low,
@@ -1441,7 +1441,7 @@ class ASRDataset(HuggingFaceDataset):
                 ))
         if skipped:
             logger.warning(
-                "%d samples discarded from dataset due to"
+                "{} samples discarded from dataset due to"
                 " their length being greater than"
                 " what Whisper supports.",
                 skipped,

@@ -1,12 +1,10 @@
-import os
 import pickle
-import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from multiprocessing import shared_memory
 from threading import Event
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 from unittest.mock import patch
 
 import torch
@@ -21,25 +19,46 @@ import aphrodite.common.envs as envs
 from aphrodite.common.utils import (get_ip, get_open_port,
                                     get_open_zmq_ipc_path,
                                     is_valid_ipv6_address)
-from aphrodite.distributed.utils import StatelessProcessGroup
+from aphrodite.distributed.utils import StatelessProcessGroup, sched_yield
 
-APHRODITE_RINGBUFFER_WARNING_INTERVAL = (
-    envs.APHRODITE_RINGBUFFER_WARNING_INTERVAL)
-
-
-# We prefer to use os.sched_yield as it results in tighter polling loops,
-# measured to be around 3e-7 seconds. However on earlier versions of Python
-# os.sched_yield() does not release the GIL, so we fall back to time.sleep(0)
-USE_SCHED_YIELD = ((sys.version_info[:3] >= (3, 11, 1))
-                   or (sys.version_info[:2] == (3, 10)
-                       and sys.version_info[2] >= 8))
+APHRODITE_RINGBUFFER_WARNING_INTERVAL = envs.APHRODITE_RINGBUFFER_WARNING_INTERVAL
 
 
-def sched_yield():
-    if USE_SCHED_YIELD:
-        os.sched_yield()
-    else:
-        time.sleep(0)
+class SpinTimer:
+
+    def record_activity(self):
+        pass
+
+    def spin(self):
+        sched_yield()
+
+
+class SpinSleepTimer(SpinTimer):
+    """
+    In setups which have long inactivity periods it is desirable to reduce
+    system power consumption when aphrodite does nothing. This would lead to more
+    CPU thermal headroom when a request eventually comes, especially when
+    multiple GPUs are connected as each GPU would otherwise pin one thread at
+    100% CPU usage.
+
+    The simplest solution is to reduce polling frequency when there is no
+    activity for a certain period of time.
+    """
+
+    def __init__(self, busy_loop_s: float = 3.0, wait_sleep_s: float = 0.1):
+        self.last_activity = time.monotonic()
+        self.busy_loop_s = busy_loop_s
+        self.wait_sleep_s = wait_sleep_s
+
+    def record_activity(self):
+        self.last_activity = time.monotonic()
+
+    def spin(self):
+        curr_time = time.monotonic()
+        if curr_time >= self.last_activity + self.busy_loop_s:
+            time.sleep(self.wait_sleep_s)
+        else:
+            sched_yield()
 
 
 class ShmRingBuffer:
@@ -56,7 +75,7 @@ class ShmRingBuffer:
         of items that can be stored in the buffer are known in advance.
         In this case, we don't need to synchronize the access to
          the buffer.
-        
+
         Buffer memory layout:
                   data                                 metadata
                     |                                      |
@@ -172,9 +191,9 @@ class ShmRingBuffer:
 
 @dataclass
 class Handle:
-    local_reader_ranks: List[int] = field(default_factory=list)
+    local_reader_ranks: list[int] = field(default_factory=list)
 
-    buffer_handle: Optional[Tuple[int, int, int, str]] = None
+    buffer_handle: Optional[tuple[int, int, int, str]] = None
     local_subscribe_addr: Optional[str] = None
     remote_subscribe_addr: Optional[str] = None
     remote_addr_ipv6: bool = False
@@ -186,7 +205,7 @@ class MessageQueue:
         self,
         n_reader,  # number of all readers
         n_local_reader,  # number of local readers through shared memory
-        local_reader_ranks: Optional[List[int]] = None,
+        local_reader_ranks: Optional[list[int]] = None,
         max_chunk_bytes: int = 1024 * 1024 * 10,
         max_chunks: int = 10,
         connect_ip: Optional[str] = None,
@@ -252,6 +271,7 @@ class MessageQueue:
         self.local_reader_rank = -1
         # rank does not matter for remote readers
         self._is_remote_reader = False
+        self._read_spin_timer = SpinTimer()
 
         self.handle = Handle(
             local_reader_ranks=local_reader_ranks,
@@ -262,8 +282,8 @@ class MessageQueue:
             remote_addr_ipv6=remote_addr_ipv6,
         )
 
-        logger.debug(
-            "Aphrodite message queue communication handle: {}", self.handle)
+        logger.info("Aphrodite message queue communication handle: {}",
+                    self.handle)
 
     def export_handle(self) -> Handle:
         return self.handle
@@ -291,6 +311,9 @@ class MessageQueue:
             self.local_socket.connect(socket_addr)
 
             self.remote_socket = None
+
+            self._read_spin_timer = SpinSleepTimer(
+            ) if envs.APHRODITE_SLEEP_WHEN_IDLE else SpinTimer()
         else:
             self.buffer = None  # type: ignore
             self.current_idx = -1
@@ -363,8 +386,7 @@ class MessageQueue:
 
                     # if we wait for a long time, log a message
                     if (time.monotonic() - start_time
-                            > APHRODITE_RINGBUFFER_WARNING_INTERVAL *
-                            n_warning):
+                            > APHRODITE_RINGBUFFER_WARNING_INTERVAL * n_warning):
                         logger.debug(
                             ("No available shared memory broadcast block found"
                              " in {} second."),
@@ -423,15 +445,14 @@ class MessageQueue:
                     # we need to wait until it is written
 
                     # Release the processor to other threads
-                    sched_yield()
+                    self._read_spin_timer.spin()
 
                     # if we wait for a long time, log a message
                     if (time.monotonic() - start_time
-                            > APHRODITE_RINGBUFFER_WARNING_INTERVAL *
-                            n_warning):
+                            > APHRODITE_RINGBUFFER_WARNING_INTERVAL * n_warning):
                         logger.debug(
                             ("No available shared memory broadcast block found"
-                             "in {} second."),
+                             " in {} second."),
                             APHRODITE_RINGBUFFER_WARNING_INTERVAL,
                         )
                         n_warning += 1
@@ -455,6 +476,8 @@ class MessageQueue:
                 metadata_buffer[self.local_reader_rank + 1] = 1
                 self.current_idx = (self.current_idx +
                                     1) % self.buffer.max_chunks
+
+                self._read_spin_timer.record_activity()
                 break
 
     def enqueue(self, obj, timeout: Optional[float] = None):

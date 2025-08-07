@@ -1,7 +1,6 @@
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
 from aphrodite.common.utils import Device
-from aphrodite.platforms import current_platform
 from aphrodite.processing.block.interfaces import (Block, BlockAllocator,
                                                    BlockId,
                                                    DeviceAwareBlockAllocator)
@@ -56,8 +55,7 @@ class CpuGpuBlockAllocator(DeviceAwareBlockAllocator):
             - The block IDs are assigned contiguously, with GPU block IDs coming
                 before CPU block IDs.
         """
-        # For HPU, block id 0 is used only for padding
-        reserved_blocks = 1 if current_platform.is_hpu() else 0
+        reserved_blocks = 0
         block_ids = list(
             range(reserved_blocks, num_gpu_blocks + num_cpu_blocks))
         num_gpu_blocks -= reserved_blocks

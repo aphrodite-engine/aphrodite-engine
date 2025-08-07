@@ -496,7 +496,7 @@ class LoggingStatLogger(StatLoggerBase):
             if (stats.cpu_prefix_cache_hit_rate >= 0
                     or stats.gpu_prefix_cache_hit_rate >= 0):
                 log_fn(
-                    "Prefix cache hit rate: GPU: %.2f%%, CPU: %.2f%%",
+                    "Prefix cache hit rate: GPU: {:.2f}%%, CPU: {:.2f}%%",
                     stats.gpu_prefix_cache_hit_rate * 100,
                     stats.cpu_prefix_cache_hit_rate * 100,
                 )
@@ -552,7 +552,7 @@ class PrometheusStatLogger(StatLoggerBase):
         # Convenience function for logging to counter.
         # Prevent ValueError from negative increment
         if data < 0:
-            logger.warning("Skipping negative increment of %g to %s", data,
+            logger.warning("Skipping negative increment of %g to {}", data,
                            counter)
             return
         counter.labels(**self.labels).inc(data)

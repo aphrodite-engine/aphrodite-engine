@@ -34,7 +34,7 @@ class AphroditeInductorPass(InductorPass):
     def end_and_log(self):
         self._end_time = time.perf_counter_ns()
         duration_ms = float(self._end_time - self._start_time) / 1.0e6
-        logger.debug("{} completed in %.1f ms", self.pass_name, duration_ms)
+        logger.debug("{} completed in {:.1f} ms", self.pass_name, duration_ms)
 
 
 class PrinterInductorPass(AphroditeInductorPass):

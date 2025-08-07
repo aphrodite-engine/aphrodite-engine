@@ -410,7 +410,7 @@ class XPUModelRunner(ModelRunnerBase[ModelInputForXPUWithSamplingMetadata]):
             self.model = get_model(aphrodite_config=self.aphrodite_config)
 
         self.model_memory_usage = m.consumed_memory
-        logger.info("Loading model weights took %.4f GiB",
+        logger.info("Loading model weights took {:.4f} GiB",
                     self.model_memory_usage / GiB_bytes)
 
     def get_model(self) -> nn.Module:

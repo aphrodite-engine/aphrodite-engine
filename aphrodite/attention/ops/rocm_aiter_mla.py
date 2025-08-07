@@ -36,7 +36,7 @@ def aiter_mla_decode_fwd(
     logit_cap: float = 0.0,
 ):
 
-    torch.ops.vllm.rocm_aiter_mla_decode_fwd(q,
+    torch.ops.aphroditerocm_aiter_mla_decode_fwd(q,
                                              kv_buffer.view(
                                                  -1, 1, 1, q.shape[-1]),
                                              o,

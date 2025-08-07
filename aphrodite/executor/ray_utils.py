@@ -195,8 +195,8 @@ def _verify_bundles(placement_group: "PlacementGroup",
         if len(bundles) < parallel_config.tensor_parallel_size:
             logger.warning(
                 "tensor_parallel_size={} "
-                "is bigger than a reserved number of %ss ({} "
-                "%ss) in a node {}. Tensor parallel workers can be "
+                "is bigger than a reserved number of {}s ({} "
+                "{}s) in a node {}. Tensor parallel workers can be "
                 "spread out to 2+ nodes which can degrade the performance "
                 "unless you have fast interconnect across nodes, like "
                 "Infiniband. To resolve this issue, make sure you have more "
@@ -337,8 +337,8 @@ def initialize_ray_cluster(
         # created and wait cluster to be ready
         if parallel_config.world_size > num_devices_in_cluster:
             logger.warning(
-                "The number of required %ss exceeds the total "
-                "number of available %ss in the placement group.", device_str,
+                "The number of required {}s exceeds the total "
+                "number of available {}s in the placement group.", device_str,
                 device_str)
         # Create a new placement group
         placement_group_specs: List[Dict[str, float]] = ([{

@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import torch
 import torch.distributed as dist
@@ -20,7 +20,6 @@ try:
 except Exception:
     # For CPUs
     custom_ar = False
-
 
 
 def _can_p2p(rank: int, world_size: int) -> bool:
@@ -67,9 +66,8 @@ class CustomAllreduce:
         if not custom_ar:
             # disable because of missing custom allreduce library
             # e.g. in a non-GPU environment
-            if dist.get_rank(group=group) == 0:
-                logger.info("Custom allreduce is disabled because "
-                            "of missing custom allreduce library")
+            logger.info("Custom allreduce is disabled because "
+                        "of missing custom allreduce library")
             return
 
         self.group = group
@@ -79,10 +77,9 @@ class CustomAllreduce:
 
         if not all(in_the_same_node_as(group, source_rank=0)):
             # No need to initialize custom allreduce for multi-node case.
-            if dist.get_rank(group=group) == 0:
-                logger.warning(
-                    "Custom allreduce is disabled because this process group"
-                    " spans across nodes.")
+            logger.warning(
+                "Custom allreduce is disabled because this process group"
+                " spans across nodes.")
             return
 
         rank = dist.get_rank(group=self.group)
@@ -93,12 +90,11 @@ class CustomAllreduce:
             return
 
         if world_size not in CustomAllreduce._SUPPORTED_WORLD_SIZES:
-            if rank == 0:
-                logger.warning(
-                    "Custom allreduce is disabled due to an unsupported world"
-                    " size: {}. Supported world sizes: {}. To silence this "
-                    "warning, specify disable_custom_all_reduce=True explicitly.",
-                    world_size, str(CustomAllreduce._SUPPORTED_WORLD_SIZES))
+            logger.warning(
+                "Custom allreduce is disabled due to an unsupported world"
+                " size: {}. Supported world sizes: {}. To silence this "
+                "warning, specify disable_custom_all_reduce=True explicitly.",
+                world_size, str(CustomAllreduce._SUPPORTED_WORLD_SIZES))
             return
 
         if isinstance(device, int):
@@ -133,23 +129,20 @@ class CustomAllreduce:
         fully_connected = current_platform.is_fully_connected(
             physical_device_ids)
         if world_size > 2 and not fully_connected:
-            if rank == 0:
-                logger.warning(
-                    "Custom allreduce is disabled because it's not supported on"
-                    " more than two PCIe-only GPUs. To silence this warning, "
-                    "specify disable_custom_all_reduce=True explicitly.")
+            logger.warning(
+                "Custom allreduce is disabled because it's not supported on"
+                " more than two PCIe-only GPUs. To silence this warning, "
+                "specify disable_custom_all_reduce=True explicitly.")
             return
         # test P2P capability, this checks software/cudaruntime support
         # this is expensive to compute at the first time
         # then we cache the result
         # On AMD GPU, p2p is always enabled between XGMI connected GPUs
         if not current_platform.is_rocm() and not _can_p2p(rank, world_size):
-            if rank == 0:
-                logger.warning(
-                    "Custom allreduce is disabled because your platform lacks "
-                    "GPU P2P capability or P2P test failed. To silence this "
-                    "warning, specify disable_custom_all_reduce=True "
-                    "explicitly.")
+            logger.warning(
+                "Custom allreduce is disabled because your platform lacks "
+                "GPU P2P capability or P2P test failed. To silence this "
+                "warning, specify disable_custom_all_reduce=True explicitly.")
             return
 
         self.disabled = False
@@ -268,7 +261,8 @@ class CustomAllreduce:
 
     def close(self):
         if not self.disabled and self._ptr:
-            ops.dispose(self._ptr)
+            if ops is not None:
+                ops.dispose(self._ptr)
             self._ptr = 0
             self.free_shared_buffer(self.meta_ptrs, rank=self.rank)
             self.free_shared_buffer(self.buffer_ptrs, rank=self.rank)
@@ -279,7 +273,7 @@ class CustomAllreduce:
     @staticmethod
     def create_shared_buffer(size_in_bytes: int,
                              group: Optional[ProcessGroup] = None,
-                             uncached: Optional[bool] = False) -> List[int]:
+                             uncached: Optional[bool] = False) -> list[int]:
         pointer, handle = ops.allocate_shared_buffer_and_handle(size_in_bytes)
 
         world_size = dist.get_world_size(group=group)
@@ -287,7 +281,7 @@ class CustomAllreduce:
         handles = [None] * world_size
         dist.all_gather_object(handles, handle, group=group)
 
-        pointers: List[int] = []
+        pointers: list[int] = []
         for i, h in enumerate(handles):
             if i == rank:
                 pointers.append(pointer)  # type: ignore
@@ -296,9 +290,10 @@ class CustomAllreduce:
         return pointers
 
     @staticmethod
-    def free_shared_buffer(pointers: List[int],
+    def free_shared_buffer(pointers: list[int],
                            group: Optional[ProcessGroup] = None,
                            rank: Optional[int] = 0) -> None:
         if rank is None:
             rank = dist.get_rank(group=group)
-        ops.free_shared_buffer(pointers[rank])
+        if ops is not None:
+            ops.free_shared_buffer(pointers[rank])

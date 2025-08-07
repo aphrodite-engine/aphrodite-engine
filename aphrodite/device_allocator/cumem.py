@@ -9,7 +9,7 @@ import dataclasses
 import gc
 import os
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 import torch
 
@@ -45,7 +45,7 @@ def find_loaded_library(lib_name) -> Optional[str]:
 cumem_available = False
 try:
     from aphrodite.cumem_allocator import (init_module, python_create_and_map,
-                                      python_unmap_and_release)
+                                           python_unmap_and_release)
     from aphrodite.distributed.device_communicators.cuda_wrapper import (
         CudaRTLibrary)
     lib_name = find_loaded_library("cumem_allocator")
@@ -61,7 +61,7 @@ except ModuleNotFoundError:
     libcudart = None
 
 # py_device, py_alignedSize, py_d_mem, py_p_memHandle
-HandleType = Tuple[int, int, int, int]
+HandleType = tuple[int, int, int, int]
 
 
 @dataclasses.dataclass
@@ -146,9 +146,9 @@ class CuMemAllocator:
             "Please track https://github.com/pytorch/pytorch/issues/147851 "
             "for the latest updates.")
 
-        self.pointer_to_data: Dict[int, AllocationData] = {}
+        self.pointer_to_data: dict[int, AllocationData] = {}
         self.current_tag: str = CuMemAllocator.default_tag
-        self.allocator_and_pools: Dict[str, Any] = {}
+        self.allocator_and_pools: dict[str, Any] = {}
 
     def python_malloc_callback(self, allocation_handle: HandleType) -> None:
         """
@@ -170,7 +170,7 @@ class CuMemAllocator:
 
     def sleep(
             self,
-            offload_tags: Optional[Union[Tuple[str, ...],
+            offload_tags: Optional[Union[tuple[str, ...],
                                          str]] = None) -> None:
         """
         Put the allocator in sleep mode.
