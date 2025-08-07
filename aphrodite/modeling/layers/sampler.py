@@ -1087,9 +1087,22 @@ def _apply_xtc_sampling(
     Returns:
         torch.Tensor: The modified logits.
     """
-    apply_xtc = torch.rand_like(xtc_probabilities) < xtc_probabilities
+    # Ensure xtc_probabilities is a tensor with the right shape
+    if not isinstance(xtc_probabilities, torch.Tensor):
+        xtc_probabilities = torch.tensor(xtc_probabilities,
+                                         device=logits.device,
+                                         dtype=torch.float32)
 
-    if not apply_xtc.any():
+    # Ensure the tensor has the right shape for broadcasting
+    if xtc_probabilities.dim() == 0:
+        xtc_probabilities = xtc_probabilities.unsqueeze(0)
+
+    # Create random tensor with the same shape as xtc_probabilities
+    random_tensor = torch.rand_like(xtc_probabilities)
+    apply_xtc = random_tensor < xtc_probabilities
+
+    # Use .any() with explicit dimension handling
+    if not apply_xtc.any().item():
         return logits
 
     probs = torch.softmax(logits, dim=-1)
@@ -1102,7 +1115,7 @@ def _apply_xtc_sampling(
 
     # Apply XTC only to rows where it should be applied
     for i in range(logits.shape[0]):
-        if apply_xtc[i]:
+        if apply_xtc[i].item():
             # Count logits above the threshold (skipping the first)
             indices_to_remove = above_threshold[i].count_nonzero(dim=-1).item()
             if indices_to_remove > 0:

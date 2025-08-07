@@ -23,9 +23,21 @@ def xtc(
     if xtc_threshold is None or xtc_probability is None:
         return logits
 
-    apply_xtc = torch.rand_like(xtc_probability) < xtc_probability
+    # Ensure xtc_probability is a tensor with the right shape
+    if not isinstance(xtc_probability, torch.Tensor):
+        xtc_probability = torch.tensor(xtc_probability, device=logits.device,
+                                       dtype=torch.float32)
 
-    if not apply_xtc.any():
+    # Ensure the tensor has the right shape for broadcasting
+    if xtc_probability.dim() == 0:
+        xtc_probability = xtc_probability.unsqueeze(0)
+
+    # Create random tensor with the same shape as xtc_probability
+    random_tensor = torch.rand_like(xtc_probability)
+    apply_xtc = random_tensor < xtc_probability
+
+    # Use .any() with explicit dimension handling
+    if not apply_xtc.any().item():
         return logits
 
     probs = torch.softmax(logits, dim=-1)
@@ -38,7 +50,7 @@ def xtc(
 
     # Apply XTC only to rows where it should be applied
     for i in range(logits.shape[0]):
-        if apply_xtc[i]:
+        if apply_xtc[i].item():
             # Count logits above the threshold (skipping the first)
             indices_to_remove = above_threshold[i].count_nonzero(dim=-1).item()
             if indices_to_remove > 0:
