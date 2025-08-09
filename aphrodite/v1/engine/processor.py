@@ -14,12 +14,13 @@ from aphrodite.multimodal import (MULTIMODAL_REGISTRY, MultiModalKwargs,
 from aphrodite.multimodal.inputs import PlaceholderRange
 from aphrodite.multimodal.processing import EncDecMultiModalProcessor
 from aphrodite.multimodal.utils import merge_and_sort_multimodal_metadata
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.transformers_utils.tokenizer_group import TokenizerGroup
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.mm_input_cache import MirroredProcessingCache
 from aphrodite.v1.structured_output.backend_guidance import (
     validate_guidance_grammar)
+from aphrodite.v1.structured_output.backend_outlines import (
+    validate_structured_output_request_outlines)
 from aphrodite.v1.structured_output.backend_xgrammar import (
     validate_xgrammar_grammar)
 
@@ -52,13 +53,20 @@ class Processor:
         self.use_hash = self.mm_input_cache_client.use_cache or \
             self.cache_config.enable_prefix_caching
 
+    @property
+    def mm_registry(self):
+        return self.input_preprocessor.mm_registry
+
     def _validate_logprobs(
         self,
         params: SamplingParams,
     ) -> None:
         max_logprobs = self.model_config.max_logprobs
+        if max_logprobs == -1:
+            return
         # Validate sample logprobs.
-        if params.logprobs and params.logprobs > max_logprobs:
+        if params.logprobs and (params.logprobs == -1
+                                or params.logprobs > max_logprobs):
             raise ValueError(
                 f"Requested sample logprobs of {params.logprobs}, "
                 f"which is greater than max allowed: {max_logprobs}")
@@ -72,6 +80,7 @@ class Processor:
     def _validate_sampling_params(
         self,
         params: SamplingParams,
+        lora_request: Optional[LoRARequest],
     ) -> None:
         self._validate_structured_output(params)
         self._validate_logit_bias(params)
@@ -80,7 +89,12 @@ class Processor:
             return
         if not params.allowed_token_ids:
             raise ValueError("allowed_token_ids is not None and empty!")
-        vocab_size = self.model_config.get_vocab_size()
+        if self.tokenizer is None:
+            # When skip_tokenizer_init=True, we can't validate token IDs
+            # Skip validation and let the model handle invalid tokens
+            return
+        tokenizer = self.tokenizer.get_lora_tokenizer(lora_request)
+        vocab_size = len(tokenizer)
         if not all(0 <= tid < vocab_size for tid in params.allowed_token_ids):
             raise ValueError(
                 "allowed_token_ids contains out-of-vocab token id!")
@@ -120,17 +134,18 @@ class Processor:
     def _validate_params(
         self,
         params: Union[SamplingParams, PoolingParams],
+        lora_request: Optional[LoRARequest],
     ):
         """
         Validate supported SamplingParam.
         Should raise ValueError if unsupported for API Server.
         """
 
-        if not isinstance(params, SamplingParams):
-            raise ValueError("V1 does not yet support Pooling models.")
+        if isinstance(params, PoolingParams):
+            return
 
         self._validate_logprobs(params)
-        self._validate_sampling_params(params)
+        self._validate_sampling_params(params, lora_request)
         self._validate_supported_sampling_params(params)
 
     def _validate_lora(self, lora_request: Optional[LoRARequest]) -> None:
@@ -141,6 +156,11 @@ class Processor:
     def _validate_structured_output(self, params: SamplingParams) -> None:
         if not params.guided_decoding or not self.decoding_config:
             return
+
+        if self.model_config.skip_tokenizer_init and params.guided_decoding:
+            raise ValueError(
+                "Structured outputs requires a tokenizer so it can't be used with 'skip_tokenizer_init'"  # noqa: E501
+            )
 
         engine_level_backend = self.decoding_config.backend
         if params.guided_decoding.backend:
@@ -163,6 +183,12 @@ class Processor:
             params.guided_decoding.backend = engine_level_backend
 
         # Request content validation
+        if (isinstance(params.guided_decoding.choice, list)
+                and not params.guided_decoding.choice):
+            # It is invalid for choice to be an empty list
+            raise ValueError(f"Choice '{params.guided_decoding.choice}' "
+                             "cannot be an empty list")
+
         if engine_level_backend.startswith("xgrammar"):
             # xgrammar with no fallback
             validate_xgrammar_grammar(params)
@@ -172,6 +198,9 @@ class Processor:
             # https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md#special-tokens
             # Without tokenizer these are disallowed in grammars.
             validate_guidance_grammar(params, tokenizer=None)
+        elif engine_level_backend == "outlines":
+            # outlines backend
+            validate_structured_output_request_outlines(params)
         else:
             # NOTE: engine_level_backend must be "auto" here, because we have
             # checked supported_backends above.
@@ -183,8 +212,10 @@ class Processor:
                 validate_xgrammar_grammar(params)
                 params.guided_decoding.backend = "xgrammar"
             except ValueError:
-                # The request includes some jsonschema feature(s) that
+                # The request either failed validation
+                # or includes some jsonschema feature(s) that
                 # are not supported in xgrammar. Fall back to guidance.
+                validate_guidance_grammar(params, tokenizer=None)
                 params.guided_decoding.backend = "guidance"
             # Remember that this backend was set automatically
             params.guided_decoding.backend_was_auto = True
@@ -198,18 +229,22 @@ class Processor:
         lora_request: Optional[LoRARequest] = None,
         tokenization_kwargs: Optional[dict[str, Any]] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
+        data_parallel_rank: Optional[int] = None,
     ) -> tuple[Optional[str], EngineCoreRequest]:
 
-        # TODO: Support pooling models.
-        # TODO: Support encoder-decoder models.
+        # TODO(woosuk): Support pooling models.
+        # TODO(woosuk): Support encoder-decoder models.
         self._validate_lora(lora_request)
-        self._validate_params(params)
+        self._validate_params(params, lora_request)
         if trace_headers is not None:
             raise ValueError("V1 does not support tracing yet.")
-        if prompt_adapter_request is not None:
-            raise ValueError("V1 does not support prompt_adapter_request.")
+
+        data_parallel_size = self.aphrodite_config.parallel_config.data_parallel_size
+        if data_parallel_rank is not None and not (0 <= data_parallel_rank <
+                                                   data_parallel_size):
+            raise ValueError(f"data_parallel_rank {data_parallel_rank} "
+                             f"is out of range [0, {data_parallel_size}).")
 
         if arrival_time is None:
             arrival_time = time.time()
@@ -218,12 +253,10 @@ class Processor:
         # 1. Tokenize text prompt, with LoRA request if one exists.
         # 2. For multimodal models with a merged preprocessor, preprocess
         #   multimodal data and expand prompt token ids accordingly.
-        # 3. Apply prompt adapter to prompt token ids if one exists.
         processed_inputs: ProcessorInputs = self.input_preprocessor.preprocess(
             prompt,
             tokenization_kwargs=tokenization_kwargs,
             lora_request=lora_request,
-            prompt_adapter_request=prompt_adapter_request,
             return_mm_hashes=self.use_hash,
         )
         from aphrodite.platforms import current_platform
@@ -242,18 +275,23 @@ class Processor:
         if encoder_inputs is not None:
             raise NotImplementedError
 
-        assert isinstance(params, SamplingParams)
-        # TODO: can we avoid cloning here in multiproc case?
-        sampling_params = params.clone()
-        # If unset max tokens, then generate up to the max_model_len.
-        if sampling_params.max_tokens is None:
-            sampling_params.max_tokens = (
-                self.model_config.max_model_len -
-                len(decoder_inputs["prompt_token_ids"]))
-        sampling_params.update_from_generation_config(
-            self.generation_config_fields, eos_token_id)
-        sampling_params.update_from_tokenizer(
-            self.tokenizer.get_lora_tokenizer(lora_request))
+        sampling_params = None
+        pooling_params = None
+        if isinstance(params, SamplingParams):
+            # TODO: can we avoid cloning here in multiproc case?
+            sampling_params = params.clone()
+            # If unset max tokens, then generate up to the max_model_len.
+            if sampling_params.max_tokens is None:
+                sampling_params.max_tokens = (
+                    self.model_config.max_model_len -
+                    len(decoder_inputs["prompt_token_ids"]))
+            sampling_params.update_from_generation_config(
+                self.generation_config_fields, eos_token_id)
+            if self.tokenizer is not None:
+                sampling_params.update_from_tokenizer(
+                    self.tokenizer.get_lora_tokenizer(lora_request))
+        else:
+            pooling_params = params.clone()
 
         # Multimodal related.
         sorted_mm_inputs: Optional[Sequence[Optional[MultiModalKwargs]]] = None
@@ -310,11 +348,13 @@ class Processor:
             mm_hashes=sorted_mm_hashes,
             mm_placeholders=sorted_mm_positions,
             sampling_params=sampling_params,
+            pooling_params=pooling_params,
             eos_token_id=eos_token_id,
             arrival_time=arrival_time,
             lora_request=lora_request,
             cache_salt=decoder_inputs.get("cache_salt"),
             priority=priority,
+            data_parallel_rank=data_parallel_rank,
         )
 
     def _validate_model_inputs(self,
@@ -339,7 +379,6 @@ class Processor:
         prompt_type: Literal["encoder", "decoder"],
     ):
         model_config = self.model_config
-        tokenizer = self.tokenizer.get_lora_tokenizer(lora_request)
 
         prompt_ids = prompt_inputs["prompt_token_ids"]
         if not prompt_ids:
@@ -348,9 +387,14 @@ class Processor:
             else:
                 raise ValueError(f"The {prompt_type} prompt cannot be empty")
 
-        max_input_id = max(prompt_ids, default=0)
-        if max_input_id > tokenizer.max_token_id:
-            raise ValueError(f"Token id {max_input_id} is out of vocabulary")
+        if self.model_config.skip_tokenizer_init:
+            tokenizer = None
+        else:
+            tokenizer = self.tokenizer.get_lora_tokenizer(lora_request)
+            max_input_id = max(prompt_ids, default=0)
+            if max_input_id > tokenizer.max_token_id:
+                raise ValueError(
+                    f"Token id {max_input_id} is out of vocabulary")
 
         max_prompt_len = self.model_config.max_model_len
         if len(prompt_ids) > max_prompt_len:

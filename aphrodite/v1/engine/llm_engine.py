@@ -7,26 +7,29 @@ from typing_extensions import TypeVar
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig, ParallelConfig
-from aphrodite.common.outputs import RequestOutput
+from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.utils import Device
 from aphrodite.distributed import (
     stateless_destroy_torch_distributed_process_group)
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.inputs import PromptType
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
+from aphrodite.tasks import SupportedTask
 from aphrodite.transformers_utils.tokenizer_group import (
     TokenizerGroup, init_tokenizer_from_configs)
 from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.utils import Device
 from aphrodite.v1.engine.core_client import EngineCoreClient
 from aphrodite.v1.engine.output_processor import OutputProcessor
 from aphrodite.v1.engine.parallel_sampling import ParentRequest
 from aphrodite.v1.engine.processor import Processor
 from aphrodite.v1.executor.abstract import Executor
-from aphrodite.v1.metrics.loggers import StatLoggerFactory
+from aphrodite.v1.metrics.loggers import (PrometheusStatLogger, StatLoggerBase,
+                                          StatLoggerFactory)
+from aphrodite.v1.metrics.reader import Metric, get_metrics_snapshot
+from aphrodite.v1.metrics.stats import IterationStats
 
 _R = TypeVar("_R", default=Any)
 
@@ -61,6 +64,11 @@ class LLMEngine:
         self.model_config = aphrodite_config.model_config
         self.cache_config = aphrodite_config.cache_config
 
+        self.log_stats = log_stats
+        self.stat_logger: Optional[StatLoggerBase] = None
+        if self.log_stats:
+            self.stat_logger = PrometheusStatLogger(aphrodite_config)
+
         # important: init dp group before init the engine_core
         # In the decoupled engine case this is handled in EngineCoreProc.
         parallel_config = aphrodite_config.parallel_config
@@ -70,11 +78,14 @@ class LLMEngine:
             self.dp_group = None
         self.should_execute_dummy_batch = False
 
-        # Tokenizer (+ ensure liveness if running in another process).
-        self.tokenizer = init_tokenizer_from_configs(
-            model_config=aphrodite_config.model_config,
-            scheduler_config=aphrodite_config.scheduler_config,
-            lora_config=aphrodite_config.lora_config)
+        if self.model_config.skip_tokenizer_init:
+            self.tokenizer = None
+        else:
+            # Tokenizer (+ ensure liveness if running in another process).
+            self.tokenizer = init_tokenizer_from_configs(
+                model_config=aphrodite_config.model_config,
+                scheduler_config=aphrodite_config.scheduler_config,
+                lora_config=aphrodite_config.lora_config)
 
         # Processor (convert Inputs --> EngineCoreRequests)
         self.processor = Processor(aphrodite_config=aphrodite_config,
@@ -83,7 +94,7 @@ class LLMEngine:
 
         # OutputProcessor (convert EngineCoreOutputs --> RequestOutput).
         self.output_processor = OutputProcessor(self.tokenizer,
-                                                log_stats=False)
+                                                log_stats=self.log_stats)
 
         # EngineCore (gets EngineCoreRequests and gives EngineCoreOutputs)
         self.engine_core = EngineCoreClient.make_client(
@@ -91,12 +102,15 @@ class LLMEngine:
             asyncio_mode=False,
             aphrodite_config=aphrodite_config,
             executor_class=executor_class,
-            log_stats=False,  # FIXME: implement
+            log_stats=self.log_stats,
         )
 
         if not multiprocess_mode:
             # for v0 compatibility
             self.model_executor = self.engine_core.engine_core.model_executor  # type: ignore
+
+        # Don't keep the dummy data in memory
+        self.reset_mm_cache()
 
     @classmethod
     def from_aphrodite_config(
@@ -145,7 +159,7 @@ class LLMEngine:
     def has_unfinished_requests(self) -> bool:
         has_unfinished = self.output_processor.has_unfinished_requests()
         if self.dp_group is None:
-            return has_unfinished
+            return has_unfinished or self.engine_core.dp_engines_running()
         return self.has_unfinished_requests_dp(has_unfinished)
 
     def has_unfinished_requests_dp(self, has_unfinished: bool) -> bool:
@@ -158,6 +172,9 @@ class LLMEngine:
     @classmethod
     def validate_outputs(cls, outputs, output_type):
         return outputs
+
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        return self.engine_core.get_supported_tasks()
 
     def abort_request(self, request_ids: list[str]) -> None:
         """Remove request_ids from EngineCore and Detokenizer."""
@@ -174,14 +191,17 @@ class LLMEngine:
         lora_request: Optional[LoRARequest] = None,
         tokenization_kwargs: Optional[dict[str, Any]] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
     ) -> None:
+        # Validate the request_id type.
+        if not isinstance(request_id, str):
+            raise TypeError(
+                f"request_id must be a string, got {type(request_id)}")
+
         # Process raw inputs into the request.
         prompt_str, request = self.processor.process_inputs(
             request_id, prompt, params, arrival_time, lora_request,
-            tokenization_kwargs, trace_headers, prompt_adapter_request,
-            priority)
+            tokenization_kwargs, trace_headers, priority)
 
         n = params.n if isinstance(params, SamplingParams) else 1
 
@@ -206,7 +226,7 @@ class LLMEngine:
             # Add the request to EngineCore.
             self.engine_core.add_request(child_request)
 
-    def step(self) -> list[RequestOutput]:
+    def step(self) -> Union[list[RequestOutput], list[PoolingRequestOutput]]:
 
         if self.should_execute_dummy_batch:
             self.should_execute_dummy_batch = False
@@ -217,11 +237,20 @@ class LLMEngine:
         outputs = self.engine_core.get_output()
 
         # 2) Process EngineCoreOutputs.
+        iteration_stats = IterationStats() if self.log_stats else None
         processed_outputs = self.output_processor.process_outputs(
-            outputs.outputs)
+            outputs.outputs,
+            engine_core_timestamp=outputs.timestamp,
+            iteration_stats=iteration_stats)
 
         # 3) Abort any reqs that finished due to stop strings.
         self.engine_core.abort_requests(processed_outputs.reqs_to_abort)
+
+        # 4) Record stats
+        if self.stat_logger is not None:
+            assert outputs.scheduler_stats is not None
+            self.stat_logger.record(scheduler_stats=outputs.scheduler_stats,
+                                    iteration_stats=iteration_stats)
 
         return processed_outputs.request_outputs
 
@@ -237,6 +266,11 @@ class LLMEngine:
     def stop_profile(self):
         self.engine_core.profile(False)
 
+    def reset_mm_cache(self):
+        self.processor.mm_registry.reset_processor_cache()
+        self.processor.mm_input_cache_client.reset()
+        self.engine_core.reset_mm_cache()
+
     def reset_prefix_cache(self, device: Optional[Device] = None):
         self.engine_core.reset_prefix_cache()
 
@@ -248,6 +282,10 @@ class LLMEngine:
 
     def is_sleeping(self) -> bool:
         return self.engine_core.is_sleeping()
+
+    def get_metrics(self) -> list[Metric]:
+        assert self.log_stats, "Stat logging disabled"
+        return get_metrics_snapshot()
 
     def get_tokenizer_group(self) -> TokenizerGroup:
         if self.tokenizer is None:
