@@ -11,7 +11,7 @@ import triton.language as tl
 from loguru import logger
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common.utils import direct_register_custom_op
+from aphrodite.utils import direct_register_custom_op
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.quant_utils import scaled_dequantize
 from aphrodite.quantization.utils.w8a8_utils import CUTLASS_BLOCK_FP8_SUPPORTED

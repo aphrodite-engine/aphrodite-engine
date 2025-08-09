@@ -1,6 +1,6 @@
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 from aphrodite.processing.block.interfaces import (Block, BlockAllocator,
                                                    BlockId,
                                                    DeviceAwareBlockAllocator)

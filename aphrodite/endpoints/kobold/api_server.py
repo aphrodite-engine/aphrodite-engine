@@ -17,7 +17,7 @@ from prometheus_client import make_asgi_app
 
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import _SAMPLING_EPS, SamplingParams
-from aphrodite.common.utils import random_uuid
+from aphrodite.utils import random_uuid
 from aphrodite.endpoints.kobold.protocol import KAIGenerationInputSchema
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_aphrodite import AsyncAphrodite

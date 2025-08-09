@@ -16,7 +16,7 @@ from aphrodite.common.sequence import (Sequence, SequenceData, SequenceGroup,
                                        SequenceGroupMetadata,
                                        SequenceGroupMetadataDelta,
                                        SequenceStage, SequenceStatus)
-from aphrodite.common.utils import Device, PyObjectCache
+from aphrodite.utils import Device, PyObjectCache
 from aphrodite.lora.request import LoRARequest
 from aphrodite.processing.interfaces import AllocStatus, BlockSpaceManager
 from aphrodite.prompt_adapter.request import PromptAdapterRequest

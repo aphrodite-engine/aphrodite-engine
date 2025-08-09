@@ -14,7 +14,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.ops.merge_attn_states import merge_attn_states
 from aphrodite.attention.utils.fa_utils import (flash_attn_supports_fp8,
                                                 get_flash_attn_version)
-from aphrodite.common.utils import cdiv
+from aphrodite.utils import cdiv
 from aphrodite.platforms import current_platform
 
 if TYPE_CHECKING:

@@ -19,7 +19,7 @@ from aphrodite.attention.layer import Attention
 from aphrodite.common.config import (AphroditeConfig,
                                      get_layers_from_aphrodite_config)
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import (LayerBlockType, cdiv,
+from aphrodite.utils import (LayerBlockType, cdiv,
                                     is_pin_memory_available)
 from aphrodite.compilation.wrapper import (
     TorchCompileWrapperWithCustomDispatcher)

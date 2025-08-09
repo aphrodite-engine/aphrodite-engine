@@ -9,7 +9,7 @@ from transformers import BambaConfig
 from aphrodite.attention.layer import Attention
 from aphrodite.common.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import LayerBlockType
+from aphrodite.utils import LayerBlockType
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.forward_context import get_forward_context

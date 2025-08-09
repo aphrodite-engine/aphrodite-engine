@@ -3,7 +3,7 @@ from typing import Literal, Optional, TypedDict, Union, cast, overload
 
 from typing_extensions import TypeIs
 
-from aphrodite.common.utils import is_list_of
+from aphrodite.utils import is_list_of
 
 from .data import (EmbedsPrompt, ExplicitEncoderDecoderPrompt, ProcessorInputs,
                    PromptType, SingletonInputs, SingletonPrompt, TextPrompt,

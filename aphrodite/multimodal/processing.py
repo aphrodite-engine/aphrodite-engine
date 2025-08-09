@@ -17,7 +17,7 @@ from transformers import BatchFeature, PretrainedConfig, ProcessorMixin
 from typing_extensions import assert_never
 
 from aphrodite.common.jsontree import json_map_leaves, json_reduce_leaves
-from aphrodite.common.utils import (GiB_bytes, LRUCache, flatten_2d_lists,
+from aphrodite.utils import (GiB_bytes, LRUCache, flatten_2d_lists,
                                     full_groupby)
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,

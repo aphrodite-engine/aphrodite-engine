@@ -18,7 +18,7 @@ import cloudpickle
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.common.utils import is_in_doc_build
+from aphrodite.utils import is_in_doc_build
 
 from .interfaces import (has_inner_state, has_noops, is_attention_free,
                          is_hybrid, supports_cross_encoding,

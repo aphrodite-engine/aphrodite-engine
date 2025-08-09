@@ -12,7 +12,7 @@ from aphrodite.endpoints.utils import (
     APHRODITE_SUBCMD_PARSER_EPILOG, show_filtered_argument_or_group_from_help)
 
 if typing.TYPE_CHECKING:
-    from aphrodite.common.utils import FlexibleArgumentParser
+    from aphrodite.utils import FlexibleArgumentParser
 
 
 class RunBatchSubcommand(CLISubcommand):

@@ -30,7 +30,7 @@ from aphrodite.common.sequence import (ExecuteModelRequest,
                                        SequenceGroup, SequenceGroupBase,
                                        SequenceGroupMetadata,
                                        SequenceGroupOutput, SequenceStatus)
-from aphrodite.common.utils import (Counter, Device, resolve_obj_by_qualname,
+from aphrodite.utils import (Counter, Device, resolve_obj_by_qualname,
                                     weak_bind)
 from aphrodite.endpoints.openai.logits_processors import (
     get_logits_processors as get_openai_logits_processors)

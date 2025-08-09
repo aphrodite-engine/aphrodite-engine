@@ -6,7 +6,7 @@ from neuronxcc import nki
 from neuronxcc.nki.language import par_dim
 
 
-from aphrodite.common.utils import cdiv
+from aphrodite.utils import cdiv
 
 
 def is_power_of_2(x):

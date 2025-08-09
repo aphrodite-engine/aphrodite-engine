@@ -23,7 +23,7 @@ from aphrodite.benchmarks.lib.utils import (
     convert_to_pytorch_benchmark_format, write_to_json)
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams
-from aphrodite.common.utils import merge_async_iterators
+from aphrodite.utils import merge_async_iterators
 from aphrodite.endpoints.openai.api_server import (
     build_async_engine_client_from_engine_args)
 from aphrodite.engine.args_tools import AsyncEngineArgs, EngineArgs

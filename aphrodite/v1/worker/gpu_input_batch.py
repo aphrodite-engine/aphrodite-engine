@@ -8,7 +8,7 @@ import torch
 
 from aphrodite.common.sampling_params import (SamplerID, SamplingParams,
                                               SamplingType)
-from aphrodite.common.utils import swap_dict_values
+from aphrodite.utils import swap_dict_values
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal.inputs import MultiModalKwargs, PlaceholderRange
 from aphrodite.v1.outputs import LogprobsTensors

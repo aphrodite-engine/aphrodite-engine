@@ -1,7 +1,7 @@
 from typing import List, Optional, Tuple
 
 from aphrodite.common.sequence import Sequence, SequenceGroup
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 from aphrodite.processing.interfaces import AllocStatus, BlockSpaceManager
 
 

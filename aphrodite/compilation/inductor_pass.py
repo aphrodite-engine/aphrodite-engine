@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional, Union
 import torch
 from torch import fx
 
-from aphrodite.common.utils import is_torch_equal_or_newer
+from aphrodite.utils import is_torch_equal_or_newer
 
 if is_torch_equal_or_newer("2.6"):
     from torch._inductor.custom_graph_pass import CustomGraphPass

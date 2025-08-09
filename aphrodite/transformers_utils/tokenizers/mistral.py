@@ -8,7 +8,7 @@ import huggingface_hub
 from huggingface_hub import HfApi, hf_hub_download
 from loguru import logger
 
-from aphrodite.common.utils import is_list_of
+from aphrodite.utils import is_list_of
 from aphrodite.transformers_utils.tokenizer_base import TokenizerBase
 
 if TYPE_CHECKING:

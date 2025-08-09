@@ -4,7 +4,7 @@ import argparse
 import typing
 
 if typing.TYPE_CHECKING:
-    from aphrodite.common.utils import FlexibleArgumentParser
+    from aphrodite.utils import FlexibleArgumentParser
 
 
 class CLISubcommand:

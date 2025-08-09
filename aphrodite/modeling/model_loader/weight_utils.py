@@ -24,7 +24,7 @@ from tqdm.auto import tqdm
 
 from aphrodite.common.config import LoadConfig, ModelConfig
 from aphrodite.common.logger import log_once
-from aphrodite.common.utils import PlaceholderModule
+from aphrodite.utils import PlaceholderModule
 from aphrodite.distributed import get_tensor_model_parallel_rank
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig, get_quantization_config

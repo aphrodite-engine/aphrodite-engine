@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import Optional
 
 from aphrodite.common.envs import APHRODITE_MM_INPUT_CACHE_GIB
-from aphrodite.common.utils import is_list_of
+from aphrodite.utils import is_list_of
 from aphrodite.multimodal import MultiModalKwargs
 from aphrodite.multimodal.processing import ProcessingCache
 

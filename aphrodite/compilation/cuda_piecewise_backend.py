@@ -9,7 +9,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import weak_ref_tensors
+from aphrodite.utils import weak_ref_tensors
 from aphrodite.compilation.backends import AphroditeBackend
 from aphrodite.compilation.counter import compilation_counter
 from aphrodite.compilation.monitor import end_monitoring_torch_compile

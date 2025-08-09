@@ -208,7 +208,7 @@ from aphrodite.attention.backends.utils import (PAD_SLOT_ID,
                                                 is_block_tables_empty)
 from aphrodite.attention.ops.merge_attn_states import merge_attn_states
 from aphrodite.attention.utils.fa_utils import get_flash_attn_version
-from aphrodite.common.utils import (async_tensor_h2d, cdiv,
+from aphrodite.utils import (async_tensor_h2d, cdiv,
                                     make_tensor_with_pad, round_down)
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear, LinearBase,
                                               UnquantizedLinearMethod)

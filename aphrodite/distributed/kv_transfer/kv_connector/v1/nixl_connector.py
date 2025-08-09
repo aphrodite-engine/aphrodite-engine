@@ -27,7 +27,7 @@ from aphrodite.distributed.utils import divide
 from aphrodite.forward_context import ForwardContext
 from loguru import logger
 from aphrodite.platforms import _Backend, current_platform
-from aphrodite.common.utils import make_zmq_path, make_zmq_socket, round_down
+from aphrodite.utils import make_zmq_path, make_zmq_socket, round_down
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.request import RequestStatus
 

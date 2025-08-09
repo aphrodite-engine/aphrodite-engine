@@ -23,7 +23,7 @@ from torch.distributed.distributed_c10d import (Backend, PrefixStore,
 from torch.distributed.rendezvous import rendezvous
 
 import aphrodite.common.envs as envs
-from aphrodite.common.utils import get_tcp_uri, is_torch_equal_or_newer
+from aphrodite.utils import get_tcp_uri, is_torch_equal_or_newer
 
 # We prefer to use os.sched_yield as it results in tighter polling loops,
 # measured to be around 3e-7 seconds. However on earlier versions of Python

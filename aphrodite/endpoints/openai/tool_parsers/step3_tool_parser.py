@@ -5,7 +5,7 @@ from typing import Any, Optional, Union
 
 import regex as re
 
-from aphrodite.common.utils import random_uuid
+from aphrodite.utils import random_uuid
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  DeltaFunctionCall,
                                                  DeltaMessage, DeltaToolCall,

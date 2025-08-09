@@ -9,7 +9,7 @@ from transformers import (BatchFeature, LlavaNextVideoConfig,
 
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import is_list_of
+from aphrodite.utils import is_list_of
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.models.clip import CLIPVisionModel
 from aphrodite.modeling.sampling_metadata import SamplingMetadata

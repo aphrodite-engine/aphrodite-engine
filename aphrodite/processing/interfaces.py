@@ -5,7 +5,7 @@ from typing import Sequence as GenericSequence
 from typing import Tuple
 
 from aphrodite.common.sequence import Sequence, SequenceGroup
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 
 
 class AllocStatus(enum.Enum):

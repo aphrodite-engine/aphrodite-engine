@@ -26,7 +26,7 @@ from lmcache.v1.storage_backend.connector.nixl_connector_v3 import (
     NixlReceiverInfo)
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import cdiv
+from aphrodite.utils import cdiv
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase_V1, KVConnectorMetadata, KVConnectorRole)
 from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank

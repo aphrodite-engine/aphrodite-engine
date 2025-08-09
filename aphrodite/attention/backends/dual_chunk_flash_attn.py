@@ -17,7 +17,7 @@ from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType
 from aphrodite.attention.backends.flash_attn import (
     FlashAttentionBackend, FlashAttentionImpl, FlashAttentionMetadata,
     FlashAttentionMetadataBuilder)
-from aphrodite.common.utils import async_tensor_h2d
+from aphrodite.utils import async_tensor_h2d
 from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank
 
 if TYPE_CHECKING:

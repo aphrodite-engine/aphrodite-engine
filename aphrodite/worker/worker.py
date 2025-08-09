@@ -13,7 +13,7 @@ from aphrodite.common.sequence import (ExecuteModelRequest,
                                        IntermediateTensors,
                                        SequenceGroupMetadata,
                                        SequenceGroupMetadataDelta)
-from aphrodite.common.utils import (GiB_bytes, MemorySnapshot, bind_kv_cache,
+from aphrodite.utils import (GiB_bytes, MemorySnapshot, bind_kv_cache,
                                     memory_profiling)
 from aphrodite.device_allocator.cumem import CuMemAllocator
 from aphrodite.distributed import (ensure_model_parallel_initialized,
@@ -59,7 +59,7 @@ class Worker(LocalOrDistributedWorkerBase):
         self.is_driver_worker = is_driver_worker
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
-            from aphrodite.common.utils import init_cached_hf_modules
+            from aphrodite.utils import init_cached_hf_modules
             init_cached_hf_modules()
 
         # Return hidden states from target model if the draft model is an

@@ -6,7 +6,7 @@ import torch.distributed as dist
 from loguru import logger
 from torch.distributed import ProcessGroup, ReduceOp
 
-from aphrodite.common.utils import current_stream
+from aphrodite.utils import current_stream
 from aphrodite.distributed.device_communicators.pynccl_wrapper import (
     NCCLLibrary, buffer_type, cudaStream_t, ncclComm_t, ncclDataTypeEnum,
     ncclRedOpTypeEnum, ncclUniqueId)

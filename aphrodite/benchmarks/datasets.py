@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.common.utils import PlaceholderModule
+from aphrodite.utils import PlaceholderModule
 from aphrodite.lora.request import LoRARequest
 from aphrodite.lora.utils import get_adapter_absolute_path
 from aphrodite.multimodal import MultiModalDataDict
@@ -50,7 +50,7 @@ except ImportError:
     librosa = PlaceholderModule("librosa")
 
 try:
-    from aphrodite.common.utils import FlexibleArgumentParser
+    from aphrodite.utils import FlexibleArgumentParser
 except ImportError:
     from argparse import ArgumentParser as FlexibleArgumentParser
 

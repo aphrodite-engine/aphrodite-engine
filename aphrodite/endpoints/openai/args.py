@@ -15,7 +15,7 @@ from pydantic.dataclasses import dataclass
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import config
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.endpoints.chat_utils import (ChatTemplateContentFormatOption,
                                             validate_chat_template)
 from aphrodite.endpoints.openai.serving_models import (LoRAModulePath,

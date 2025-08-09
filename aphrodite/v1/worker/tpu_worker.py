@@ -12,7 +12,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig, ParallelConfig
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
 from aphrodite.modeling import set_random_seed
@@ -60,7 +60,7 @@ class TPUWorker:
 
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
-            from aphrodite.common.utils import init_cached_hf_modules
+            from aphrodite.utils import init_cached_hf_modules
             init_cached_hf_modules()
 
         # Delay profiler initialization to the start of the profiling.

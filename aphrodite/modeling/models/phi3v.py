@@ -23,7 +23,7 @@ from transformers import (BatchFeature, CLIPVisionConfig, PretrainedConfig,
 
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import is_list_of
+from aphrodite.utils import is_list_of
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from aphrodite.modeling.sampling_metadata import SamplingMetadata

@@ -12,7 +12,7 @@ from loguru import logger
 from aphrodite.common.config import (AphroditeConfig, ObservabilityConfig,
                                      set_current_aphrodite_config)
 from aphrodite.common.sequence import ExecuteModelRequest, IntermediateTensors
-from aphrodite.common.utils import (enable_trace_function_call_for_thread,
+from aphrodite.utils import (enable_trace_function_call_for_thread,
                                     resolve_obj_by_qualname, run_method,
                                     update_environment_variables,
                                     warn_for_unimplemented_methods)
@@ -518,7 +518,7 @@ class WorkerWrapperBase:
             trust_remote_code = aphrodite_config.model_config.trust_remote_code
             if trust_remote_code:
                 # note: lazy import to avoid importing torch before initializing
-                from aphrodite.common.utils import init_cached_hf_modules
+                from aphrodite.utils import init_cached_hf_modules
                 init_cached_hf_modules()
 
     def adjust_rank(self, rank_mapping: Dict[int, int]) -> None:

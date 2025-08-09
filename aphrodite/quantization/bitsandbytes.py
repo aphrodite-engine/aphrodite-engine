@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from aphrodite.common.utils import direct_register_custom_op
+from aphrodite.utils import direct_register_custom_op
 from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
                                               UnquantizedLinearMethod,
                                               set_weight_attrs)

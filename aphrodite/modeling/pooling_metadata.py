@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.utils import is_pin_memory_available
 
 
 class PoolingMetadata:

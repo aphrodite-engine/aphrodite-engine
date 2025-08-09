@@ -30,7 +30,7 @@ from aphrodite.common.config import (AphroditeConfig, LoadConfig, LoadFormat,
                                      ModelConfig, ParallelConfig,
                                      set_current_aphrodite_config)
 from aphrodite.common.envs import APHRODITE_USE_MODELSCOPE
-from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.utils import is_pin_memory_available
 from aphrodite.distributed import (get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
 # yapf conflicts with isort for this block
@@ -540,7 +540,7 @@ class DefaultModelLoader(BaseModelLoader):
                 model_config, model)
 
             # Import tensor_progress_bar here to avoid circular imports
-            from aphrodite.common.utils import tensor_progress_bar
+            from aphrodite.utils import tensor_progress_bar
 
             loaded_weights = model.load_weights(
                 tensor_progress_bar(weights_iter, total_bytes,

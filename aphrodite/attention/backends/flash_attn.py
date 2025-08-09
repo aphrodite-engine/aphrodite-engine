@@ -24,7 +24,7 @@ from aphrodite.attention.backends.utils import (
     is_all_encoder_attn_metadata_set, is_block_tables_empty)
 from aphrodite.attention.utils.fa_utils import (flash_attn_supports_fp8,
                                                 get_flash_attn_version)
-from aphrodite.common.utils import async_tensor_h2d, make_tensor_with_pad
+from aphrodite.utils import async_tensor_h2d, make_tensor_with_pad
 from aphrodite.multimodal import MultiModalPlaceholderMap
 
 if TYPE_CHECKING:

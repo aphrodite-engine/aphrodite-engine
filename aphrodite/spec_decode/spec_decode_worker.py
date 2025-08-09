@@ -29,7 +29,7 @@ from aphrodite.spec_decode.batch_expansion import BatchExpansionTop1Scorer
 if current_platform.is_cuda_alike():
     from aphrodite.spec_decode.draft_model_runner import TP1DraftModelRunner
 
-from aphrodite.common.utils import resolve_obj_by_qualname
+from aphrodite.utils import resolve_obj_by_qualname
 from aphrodite.spec_decode.interfaces import (SpeculativeProposals,
                                               SpeculativeScorer,
                                               SpeculativeScores)

@@ -15,7 +15,7 @@ from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
-from aphrodite.common.utils import (DeviceMemoryProfiler, GiB_bytes,
+from aphrodite.utils import (DeviceMemoryProfiler, GiB_bytes,
                                     make_tensor_with_pad)
 from aphrodite.distributed import get_pp_group
 from aphrodite.forward_context import set_forward_context

@@ -9,7 +9,7 @@ from loguru import logger
 
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import LazyLoader
+from aphrodite.utils import LazyLoader
 from aphrodite.transformers_utils.tokenizer_group import (
     init_tokenizer_from_configs)
 from aphrodite.v1.structured_output.backend_types import (

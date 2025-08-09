@@ -7,7 +7,7 @@ from fastapi import Request
 
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import PoolingRequestOutput, ScoringRequestOutput
-from aphrodite.common.utils import make_async, merge_async_iterators
+from aphrodite.utils import make_async, merge_async_iterators
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (ErrorResponse, RerankDocument,
                                                  RerankRequest, RerankResponse,

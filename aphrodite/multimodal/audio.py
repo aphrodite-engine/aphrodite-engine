@@ -6,7 +6,7 @@ from typing import Literal, Optional
 import numpy as np
 import numpy.typing as npt
 
-from aphrodite.common.utils import PlaceholderModule
+from aphrodite.utils import PlaceholderModule
 
 from .base import MediaIO
 

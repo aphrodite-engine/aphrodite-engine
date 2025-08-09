@@ -13,7 +13,7 @@ from loguru import logger
 import aphrodite.common.envs as envs
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import RequestOutput
-from aphrodite.common.utils import PlaceholderModule
+from aphrodite.utils import PlaceholderModule
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (
     DeltaMessage, ErrorResponse, RequestResponseMetadata,

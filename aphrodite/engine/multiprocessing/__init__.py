@@ -6,7 +6,7 @@ from typing import List, Mapping, Optional, Union
 from aphrodite import PoolingParams
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 from aphrodite.inputs import PromptType
 from aphrodite.lora.request import LoRARequest
 from aphrodite.prompt_adapter.request import PromptAdapterRequest

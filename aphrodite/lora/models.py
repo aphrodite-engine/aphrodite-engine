@@ -17,7 +17,7 @@ from aphrodite.adapter_commons.utils import (add_adapter, deactivate_adapter,
                                              set_adapter_mapping)
 from aphrodite.common.config import LoRAConfig
 from aphrodite.common.logger import log_once
-from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.utils import is_pin_memory_available
 from aphrodite.lora.layers import BaseLayerWithLoRA, LoRAMapping
 from aphrodite.lora.lora import LoRALayerWeights, PackedLoRALayerWeights
 from aphrodite.lora.peft_helper import PEFTHelper

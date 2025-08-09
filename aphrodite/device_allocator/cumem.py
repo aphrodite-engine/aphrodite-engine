@@ -13,7 +13,7 @@ from typing import Any, Callable, Optional, Union
 
 import torch
 
-from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.utils import is_pin_memory_available
 
 
 def find_loaded_library(lib_name) -> Optional[str]:

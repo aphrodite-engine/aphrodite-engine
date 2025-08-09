@@ -6,7 +6,7 @@ import torch
 
 from aphrodite.common.sampling_params import SamplingParams, SamplingType
 from aphrodite.common.sequence import SequenceData, SequenceGroupMetadata
-from aphrodite.common.utils import (PyObjectCache, async_tensor_h2d,
+from aphrodite.utils import (PyObjectCache, async_tensor_h2d,
                                     is_pin_memory_available,
                                     make_tensor_with_pad)
 from aphrodite.constants import APHRODITE_TOKEN_ID_ARRAY_TYPE

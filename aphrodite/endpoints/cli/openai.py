@@ -12,7 +12,7 @@ from openai.types.chat import ChatCompletionMessageParam
 from aphrodite.endpoints.cli.types import CLISubcommand
 
 if TYPE_CHECKING:
-    from aphrodite.common.utils import FlexibleArgumentParser
+    from aphrodite.utils import FlexibleArgumentParser
 
 
 def _register_signal_handlers():

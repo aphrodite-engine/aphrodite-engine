@@ -8,7 +8,7 @@ from torch.nn.parameter import Parameter, UninitializedParameter
 
 from aphrodite import _custom_ops as ops
 from aphrodite.common.logger import log_once
-from aphrodite.common.utils import direct_register_custom_op
+from aphrodite.utils import direct_register_custom_op
 from aphrodite.modeling.layers.fused_moe.layer import (FusedMoE,
                                                        FusedMoEMethodBase)
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase

@@ -8,7 +8,7 @@ from typing import (TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar,
 
 import torch
 
-from aphrodite.common.utils import get_mp_context, kill_process_tree
+from aphrodite.utils import get_mp_context, kill_process_tree
 from aphrodite.modeling.models.utils import extract_layer_index
 from aphrodite.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
                                        usage_message)

@@ -10,7 +10,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import GiB_bytes
+from aphrodite.utils import GiB_bytes
 from aphrodite.device_allocator.cumem import CuMemAllocator
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment,
@@ -49,7 +49,7 @@ class Worker(WorkerBase):
 
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
-            from aphrodite.common.utils import init_cached_hf_modules
+            from aphrodite.utils import init_cached_hf_modules
             init_cached_hf_modules()
 
         # Buffers saved before sleep

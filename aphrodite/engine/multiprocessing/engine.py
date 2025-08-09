@@ -11,7 +11,7 @@ from aphrodite import AsyncEngineArgs, SamplingParams
 from aphrodite.common.config import AphroditeConfig
 # yapf: enable
 from aphrodite.common.outputs import RequestOutput
-from aphrodite.common.utils import deprecate_kwargs
+from aphrodite.utils import deprecate_kwargs
 from aphrodite.engine.aphrodite_engine import AphroditeEngine
 # yapf conflicts with isort for this block
 # yapf: disable

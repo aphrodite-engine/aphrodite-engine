@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from aphrodite.common.config import AphroditeConfig, ModelConfig
     from aphrodite.common.pooling_params import PoolingParams
     from aphrodite.common.sampling_params import SamplingParams
-    from aphrodite.common.utils import FlexibleArgumentParser
+    from aphrodite.utils import FlexibleArgumentParser
     from aphrodite.lora.request import LoRARequest
 else:
     ModelConfig = None

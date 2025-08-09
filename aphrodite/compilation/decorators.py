@@ -9,7 +9,7 @@ from torch._dynamo.symbolic_convert import InliningInstructionTranslator
 
 from aphrodite.common.config import AphroditeConfig, CompilationLevel
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import supports_dynamo
+from aphrodite.utils import supports_dynamo
 from aphrodite.compilation.counter import compilation_counter
 from aphrodite.compilation.wrapper import (
     TorchCompileWrapperWithCustomDispatcher)

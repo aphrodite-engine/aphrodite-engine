@@ -36,7 +36,7 @@ from loguru import logger
 from torch.distributed import Backend, ProcessGroup
 
 import aphrodite.common.envs as envs
-from aphrodite.common.utils import (direct_register_custom_op,
+from aphrodite.utils import (direct_register_custom_op,
                                     get_distributed_init_method,
                                     resolve_obj_by_qualname,
                                     supports_custom_op)

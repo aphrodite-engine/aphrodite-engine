@@ -6,7 +6,7 @@ from loguru import logger
 from torch import Tensor
 from typing_extensions import Self, TypeIs
 
-from aphrodite.common.utils import supports_kw
+from aphrodite.utils import supports_kw
 from aphrodite.quantization.base_config import QuantizationConfig
 
 from .interfaces_base import is_pooling_model

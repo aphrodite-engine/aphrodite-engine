@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 import aphrodite.common.envs as envs
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import (FlexibleArgumentParser,
+from aphrodite.utils import (FlexibleArgumentParser,
                                     iterate_with_cancellation, random_uuid)
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_aphrodite import AsyncAphrodite

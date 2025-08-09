@@ -8,7 +8,7 @@ from transformers import BatchFeature, PretrainedConfig, ProcessorMixin
 from typing_extensions import TypeVar
 
 from aphrodite.common.jsontree import JSONTree, json_map_leaves
-from aphrodite.common.utils import get_allowed_kwarg_only_overrides
+from aphrodite.utils import get_allowed_kwarg_only_overrides
 from aphrodite.transformers_utils.processor import cached_processor_from_config
 
 if TYPE_CHECKING:

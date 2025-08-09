@@ -37,7 +37,7 @@ from aphrodite.common.config import (AphroditeConfig, BlockSize, CacheConfig,
                                      SpeculativeConfig, TaskOption,
                                      TokenizerMode, get_attr_docs, get_field)
 from aphrodite.common.test_utils import MODEL_WEIGHTS_S3_BUCKET, MODELS_ON_S3
-from aphrodite.common.utils import (STR_DUAL_CHUNK_FLASH_ATTN_VAL,
+from aphrodite.utils import (STR_DUAL_CHUNK_FLASH_ATTN_VAL,
                                     FlexibleArgumentParser, GiB_bytes, get_ip,
                                     is_in_ray_actor)
 from aphrodite.platforms import CpuArchEnum, current_platform

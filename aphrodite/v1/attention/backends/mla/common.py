@@ -198,7 +198,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.backends.utils import get_mla_dims
 from aphrodite.attention.ops.merge_attn_states import merge_attn_states
 from aphrodite.attention.utils.fa_utils import get_flash_attn_version
-from aphrodite.common.utils import cdiv, round_down
+from aphrodite.utils import cdiv, round_down
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear, LinearBase,
                                               UnquantizedLinearMethod)
 from aphrodite.modeling.layers.rotary_embedding import RotaryEmbedding

@@ -13,7 +13,7 @@ import torch
 import zmq
 
 from aphrodite.common.config import KVTransferConfig
-from aphrodite.common.utils import current_stream, get_ip
+from aphrodite.utils import current_stream, get_ip
 from aphrodite.distributed.device_communicators.pynccl_wrapper import (
     NCCLLibrary, buffer_type, cudaStream_t, ncclComm_t, ncclDataTypeEnum)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.p2p.tensor_memory_pool import (  # noqa: E501

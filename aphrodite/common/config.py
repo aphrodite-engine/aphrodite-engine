@@ -33,7 +33,7 @@ from aphrodite import version
 from aphrodite.common.logger import log_once
 # yapf conflicts with isort for this block
 # yapf: disable
-from aphrodite.common.utils import (DEFAULT_MAX_NUM_BATCHED_TOKENS,
+from aphrodite.utils import (DEFAULT_MAX_NUM_BATCHED_TOKENS,
                                     MULTIMODAL_MODEL_MAX_NUM_BATCHED_TOKENS,
                                     POOLING_MODEL_MAX_NUM_BATCHED_TOKENS,
                                     GiB_bytes, LayerBlockType, LazyLoader,

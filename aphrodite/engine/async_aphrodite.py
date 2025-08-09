@@ -17,7 +17,7 @@ from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import Device, deprecate_kwargs, weak_bind
+from aphrodite.utils import Device, deprecate_kwargs, weak_bind
 from aphrodite.engine.aphrodite_engine import (AphroditeEngine,
                                                SchedulerOutputState)
 from aphrodite.engine.args_tools import AsyncEngineArgs

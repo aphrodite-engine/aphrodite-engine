@@ -17,7 +17,7 @@ import zmq
 from loguru import logger
 
 from aphrodite.common.config import AphroditeConfig, ParallelConfig
-from aphrodite.common.utils import resolve_obj_by_qualname, zmq_socket_ctx
+from aphrodite.utils import resolve_obj_by_qualname, zmq_socket_ctx
 from aphrodite.distributed import (
     stateless_destroy_torch_distributed_process_group)
 from aphrodite.executor.multiproc_worker_utils import _add_prefix

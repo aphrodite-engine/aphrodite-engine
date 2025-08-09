@@ -2,7 +2,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from typing import Optional
 
-from aphrodite.common.utils import cdiv, sha256
+from aphrodite.utils import cdiv, sha256
 from aphrodite.distributed.kv_events import KVCacheEvent
 from aphrodite.v1.core.block_pool import BlockPool
 from aphrodite.v1.core.kv_cache_utils import (BlockHashType, KVCacheBlock,

@@ -14,7 +14,7 @@ from aphrodite.attention import (AttentionMetadata, AttentionMetadataBuilder,
                                  AttentionState)
 from aphrodite.attention.backends.abstract import AttentionType
 from aphrodite.common.config import ModelConfig
-from aphrodite.common.utils import async_tensor_h2d, make_tensor_with_pad
+from aphrodite.utils import async_tensor_h2d, make_tensor_with_pad
 from aphrodite.multimodal import MultiModalPlaceholderMap
 
 if TYPE_CHECKING:

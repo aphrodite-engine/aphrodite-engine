@@ -16,7 +16,7 @@ import requests
 import torch
 
 import aphrodite.common.envs as envs
-from aphrodite.common.utils import (cuda_device_count_stateless,
+from aphrodite.utils import (cuda_device_count_stateless,
                                     cuda_get_device_properties)
 from aphrodite.connections import global_http_connection
 from aphrodite.version import __version__ as APHRODITE_VERSION

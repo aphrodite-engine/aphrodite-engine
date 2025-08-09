@@ -10,7 +10,7 @@ from torch._inductor.pattern_matcher import PatternMatcherPass
 from torch.distributed._symmetric_memory import enable_symm_mem_for_group
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import direct_register_custom_op
+from aphrodite.utils import direct_register_custom_op
 from aphrodite.distributed import (get_tp_group,
                                    tensor_model_parallel_all_reduce)
 from aphrodite.distributed.parallel_state import (

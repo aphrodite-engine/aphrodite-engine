@@ -16,7 +16,7 @@ from zmq import IPV6  # type: ignore
 from zmq import SUB, SUBSCRIBE, XPUB, XPUB_VERBOSE, Context  # type: ignore
 
 import aphrodite.common.envs as envs
-from aphrodite.common.utils import (get_ip, get_open_port,
+from aphrodite.utils import (get_ip, get_open_port,
                                     get_open_zmq_ipc_path,
                                     is_valid_ipv6_address)
 from aphrodite.distributed.utils import StatelessProcessGroup, sched_yield

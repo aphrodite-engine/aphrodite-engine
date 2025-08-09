@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from aphrodite.common.utils import cdiv
+from aphrodite.utils import cdiv
 from aphrodite.v1.core.block_pool import BlockPool
 from aphrodite.v1.core.kv_cache_utils import BlockHashType, KVCacheBlock
 from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheSpec,

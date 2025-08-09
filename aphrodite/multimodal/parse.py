@@ -10,7 +10,7 @@ from PIL.Image import Image
 from transformers import BatchFeature
 from typing_extensions import TypeAlias, TypeGuard, assert_never
 
-from aphrodite.common.utils import is_list_of
+from aphrodite.utils import is_list_of
 
 from .audio import AudioResampler
 from .inputs import (AudioItem, HfAudioItem, HfImageItem, HfVideoItem,

@@ -8,7 +8,7 @@ from typing import Any, Callable, NamedTuple, Optional
 from loguru import logger
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import GiB_bytes, sha256
+from aphrodite.utils import GiB_bytes, sha256
 from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
                                              KVCacheGroupSpec, KVCacheSpec,
                                              KVCacheTensor, SlidingWindowSpec)

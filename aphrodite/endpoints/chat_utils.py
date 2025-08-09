@@ -36,7 +36,7 @@ from transformers import (PreTrainedTokenizer, PreTrainedTokenizerFast,
 from typing_extensions import Required, TypeAlias, TypedDict
 
 from aphrodite.common.config import ModelConfig
-from aphrodite.common.utils import random_uuid
+from aphrodite.utils import random_uuid
 from aphrodite.modeling.models import SupportsMultiModal
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalDataDict
 from aphrodite.multimodal.utils import MediaConnector

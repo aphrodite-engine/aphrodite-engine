@@ -28,7 +28,7 @@ import torch
 from loguru import logger
 from torch.distributed import ReduceOp
 
-from aphrodite.common.utils import find_nccl_library
+from aphrodite.utils import find_nccl_library
 
 # === export types and functions from nccl to Python ===
 # for the original nccl definition, please check

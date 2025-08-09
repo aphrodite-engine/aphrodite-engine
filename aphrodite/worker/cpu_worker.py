@@ -11,7 +11,7 @@ from aphrodite.attention import get_attn_backend
 from aphrodite.common.config import (AphroditeConfig, CacheConfig,
                                      DeviceConfig, ModelConfig, ParallelConfig)
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE, bind_kv_cache
+from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE, bind_kv_cache
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
 from aphrodite.lora.request import LoRARequest
@@ -149,7 +149,7 @@ class CPUWorker(LocalOrDistributedWorkerBase):
 
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
-            from aphrodite.common.utils import init_cached_hf_modules
+            from aphrodite.utils import init_cached_hf_modules
             init_cached_hf_modules()
 
         # Setup OpenMP threads affinity.

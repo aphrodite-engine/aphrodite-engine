@@ -8,7 +8,7 @@ from ray.experimental.channel.communicator import (Communicator,
                                                    TorchTensorAllocator)
 from torch.distributed import ReduceOp
 
-from aphrodite.common.utils import current_stream
+from aphrodite.utils import current_stream
 from aphrodite.distributed.device_communicators.base_device_communicator import (
     DeviceCommunicatorBase)
 from aphrodite.distributed.parallel_state import get_pp_group

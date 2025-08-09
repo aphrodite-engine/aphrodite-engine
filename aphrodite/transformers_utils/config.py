@@ -24,7 +24,7 @@ from transformers.models.auto.modeling_auto import (
 from transformers.utils import CONFIG_NAME as HF_CONFIG_NAME
 
 from aphrodite.common.envs import APHRODITE_USE_MODELSCOPE
-from aphrodite.common.utils import resolve_obj_by_qualname
+from aphrodite.utils import resolve_obj_by_qualname
 from aphrodite.transformers_utils.configs import (ChatGLMConfig, Cohere2Config,
                                                   DbrxConfig,
                                                   DeepseekVLV2Config,

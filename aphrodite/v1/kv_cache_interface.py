@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import cdiv, get_dtype_size
+from aphrodite.utils import cdiv, get_dtype_size
 
 
 @dataclass

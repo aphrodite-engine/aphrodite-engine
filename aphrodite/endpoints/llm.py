@@ -25,7 +25,7 @@ from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import (BeamSearchParams,
                                               RequestOutputKind,
                                               SamplingParams)
-from aphrodite.common.utils import (Counter, Device, deprecate_kwargs,
+from aphrodite.utils import (Counter, Device, deprecate_kwargs,
                                     is_list_of)
 from aphrodite.endpoints.chat_utils import (
     ChatCompletionMessageParam, ChatTemplateContentFormatOption,

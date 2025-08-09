@@ -1,6 +1,6 @@
 from loguru import logger
 
-from aphrodite.common.utils import resolve_obj_by_qualname
+from aphrodite.utils import resolve_obj_by_qualname
 from aphrodite.platforms import current_platform
 
 from .punica_base import PunicaWrapperBase

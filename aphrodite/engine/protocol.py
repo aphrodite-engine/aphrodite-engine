@@ -10,7 +10,7 @@ from aphrodite.common.outputs import (CompletionOutput, PoolingRequestOutput,
                                       RequestOutput)
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
-from aphrodite.common.utils import (Device, collect_from_async_generator,
+from aphrodite.utils import (Device, collect_from_async_generator,
                                     random_uuid)
 from aphrodite.inputs.data import PromptType, TokensPrompt
 from aphrodite.inputs.parse import is_explicit_encoder_decoder_prompt

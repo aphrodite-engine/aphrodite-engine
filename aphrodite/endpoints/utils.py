@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
 from starlette.background import BackgroundTask, BackgroundTasks
 
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.endpoints.openai.args import make_arg_parser
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  CompletionRequest)

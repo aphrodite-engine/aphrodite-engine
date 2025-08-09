@@ -31,7 +31,7 @@ from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
                                        IntermediateTensors, Logprob,
                                        SequenceData, SequenceGroupMetadata,
                                        SequenceOutput)
-from aphrodite.common.utils import (bind_kv_cache, is_pin_memory_available,
+from aphrodite.utils import (bind_kv_cache, is_pin_memory_available,
                                     make_tensor_with_pad)
 from aphrodite.distributed import broadcast_tensor_dict
 from aphrodite.distributed.parallel_state import get_world_group

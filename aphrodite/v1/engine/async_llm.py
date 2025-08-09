@@ -13,7 +13,7 @@ from aphrodite.common.envs import APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import Device, cdiv
+from aphrodite.utils import Device, cdiv
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs import PromptType

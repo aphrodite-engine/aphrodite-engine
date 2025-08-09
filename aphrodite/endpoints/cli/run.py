@@ -7,7 +7,7 @@ from loguru import logger
 
 import aphrodite
 import aphrodite.common.envs as envs
-from aphrodite.common.utils import (FlexibleArgumentParser, decorate_logs,
+from aphrodite.utils import (FlexibleArgumentParser, decorate_logs,
                                     get_tcp_uri, set_process_title)
 from aphrodite.endpoints.cli.types import CLISubcommand
 from aphrodite.endpoints.openai.api_server import (run_server,

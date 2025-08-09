@@ -12,7 +12,7 @@ from safetensors.torch import load as safetensors_load
 from safetensors.torch import save as safetensors_save
 
 from aphrodite.common.config import KVTransferConfig
-from aphrodite.common.utils import (join_host_port, make_zmq_path,
+from aphrodite.utils import (join_host_port, make_zmq_path,
                                     split_host_port)
 from aphrodite.distributed.kv_transfer.kv_pipe.base import KVPipeBase
 

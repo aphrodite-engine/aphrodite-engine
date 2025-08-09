@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, Response
 from loguru import logger
 
 from aphrodite.common import envs
-from aphrodite.common.utils import find_process_using_port
+from aphrodite.utils import find_process_using_port
 from aphrodite.endpoints.ssl import SSLCertRefresher
 from aphrodite.engine.async_aphrodite import AsyncEngineDeadError
 from aphrodite.engine.multiprocessing import MQEngineDeadError

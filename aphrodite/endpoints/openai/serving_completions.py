@@ -13,7 +13,7 @@ from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.common.sequence import Logprob
-from aphrodite.common.utils import merge_async_iterators
+from aphrodite.utils import merge_async_iterators
 from aphrodite.endpoints.logger import RequestLogger
 # yapf conflicts with isort for this block
 # yapf: disable

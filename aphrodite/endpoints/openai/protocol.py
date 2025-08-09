@@ -32,7 +32,7 @@ from aphrodite.common.sampling_params import (BeamSearchParams,
                                               RequestOutputKind,
                                               SamplingParams)
 from aphrodite.common.sequence import Logprob
-from aphrodite.common.utils import random_uuid, resolve_obj_by_qualname
+from aphrodite.utils import random_uuid, resolve_obj_by_qualname
 from aphrodite.endpoints.chat_utils import (ChatCompletionMessageParam,
                                             random_tool_call_id)
 from aphrodite.endpoints.score_utils import (ScoreContentPartParam,

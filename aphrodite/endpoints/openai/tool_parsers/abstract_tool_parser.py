@@ -5,7 +5,7 @@ from typing import Callable, Optional, Union
 
 from loguru import logger
 
-from aphrodite.common.utils import import_from_path, is_list_of
+from aphrodite.utils import import_from_path, is_list_of
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  DeltaMessage,
                                                  ExtractedToolCallInformation)

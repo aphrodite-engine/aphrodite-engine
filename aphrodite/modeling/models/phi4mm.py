@@ -10,7 +10,7 @@ from transformers import (BatchFeature, PretrainedConfig, ProcessorMixin,
 
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import is_list_of
+from aphrodite.utils import is_list_of
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (

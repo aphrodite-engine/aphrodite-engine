@@ -54,7 +54,7 @@ class CpuPlatform(Platform):
     @classmethod
     def check_and_update_config(cls, aphrodite_config: AphroditeConfig) -> None:
         import aphrodite.common.envs as envs
-        from aphrodite.common.utils import GiB_bytes
+        from aphrodite.utils import GiB_bytes
         model_config = aphrodite_config.model_config
         # Reminder: Please update docs/source/features/compatibility_matrix.md
         # If the feature combo become valid

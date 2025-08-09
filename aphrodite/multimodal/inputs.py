@@ -15,7 +15,7 @@ from transformers import BatchFeature
 from typing_extensions import NotRequired, TypeAlias
 
 from aphrodite.common.jsontree import JSONTree, json_map_leaves
-from aphrodite.common.utils import full_groupby, is_list_of
+from aphrodite.utils import full_groupby, is_list_of
 
 if TYPE_CHECKING:
     from .hasher import MultiModalHashDict

@@ -2,7 +2,7 @@ from typing import Optional
 
 import torch
 
-from aphrodite.common.utils import (direct_register_custom_op,
+from aphrodite.utils import (direct_register_custom_op,
                                     is_torch_equal_or_newer)
 from aphrodite.platforms import current_platform
 

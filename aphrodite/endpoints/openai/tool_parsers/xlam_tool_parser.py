@@ -6,7 +6,7 @@ from typing import Any, Optional, Union
 import regex as re
 from loguru import logger
 
-from aphrodite.common.utils import random_uuid
+from aphrodite.utils import random_uuid
 from aphrodite.endpoints.chat_utils import random_tool_call_id
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  DeltaFunctionCall,

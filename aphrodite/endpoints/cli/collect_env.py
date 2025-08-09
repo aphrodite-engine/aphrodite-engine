@@ -7,7 +7,7 @@ from aphrodite.collect_env import main as collect_env_main
 from aphrodite.endpoints.cli.types import CLISubcommand
 
 if typing.TYPE_CHECKING:
-    from aphrodite.common.utils import FlexibleArgumentParser
+    from aphrodite.utils import FlexibleArgumentParser
 
 
 class CollectEnvSubcommand(CLISubcommand):

@@ -13,7 +13,7 @@ def main():
     import aphrodite.endpoints.cli.openai
     import aphrodite.endpoints.cli.run_batch
     import aphrodite.endpoints.cli.run
-    from aphrodite.common.utils import FlexibleArgumentParser
+    from aphrodite.utils import FlexibleArgumentParser
     from aphrodite.endpoints.utils import (APHRODITE_SUBCMD_PARSER_EPILOG,
                                            cli_env_setup)
 

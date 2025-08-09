@@ -6,7 +6,7 @@ import torch.nn as nn
 from loguru import logger
 from typing_extensions import TypeIs, TypeVar
 
-from aphrodite.common.utils import supports_kw
+from aphrodite.utils import supports_kw
 
 if TYPE_CHECKING:
     from aphrodite.common.config import AphroditeConfig

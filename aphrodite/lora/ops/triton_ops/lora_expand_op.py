@@ -7,7 +7,7 @@ https://arxiv.org/abs/2310.18547
 
 import torch
 
-from aphrodite.common.utils import direct_register_custom_op
+from aphrodite.utils import direct_register_custom_op
 from aphrodite.lora.ops.triton_ops.kernel_utils import do_expand_kernel
 from aphrodite.lora.ops.triton_ops.utils import _get_lora_b_ptr
 from aphrodite.platforms import current_platform

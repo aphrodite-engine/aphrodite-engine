@@ -12,7 +12,7 @@ from aphrodite.attention.selector import backend_name_to_enum, get_attn_backend
 from aphrodite.attention.utils.kv_sharing_utils import (
     validate_kv_sharing_target)
 from aphrodite.common.config import CacheConfig, get_current_aphrodite_config
-from aphrodite.common.utils import direct_register_custom_op
+from aphrodite.utils import direct_register_custom_op
 from aphrodite.distributed.kv_transfer import (get_kv_transfer_group,
                                                has_kv_transfer_group,
                                                is_v1_kv_transfer_group)

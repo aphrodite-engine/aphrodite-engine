@@ -4,7 +4,7 @@ from itertools import chain
 from typing import TYPE_CHECKING, Optional
 
 from aphrodite.plugins import load_plugins_by_group
-from aphrodite.common.utils import resolve_obj_by_qualname
+from aphrodite.utils import resolve_obj_by_qualname
 
 from .interface import _Backend  # noqa: F401
 from .interface import CpuArchEnum, Platform, PlatformEnum
@@ -49,7 +49,7 @@ def cuda_platform_plugin() -> Optional[str]:
     is_cuda = False
     logger.debug("Checking if CUDA platform is available.")
     try:
-        from aphrodite.common.utils import import_pynvml
+        from aphrodite.utils import import_pynvml
         pynvml = import_pynvml()
         pynvml.nvmlInit()
         try:

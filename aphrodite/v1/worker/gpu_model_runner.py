@@ -17,7 +17,7 @@ from aphrodite.common.config import (AphroditeConfig, CompilationLevel,
                                      get_layers_from_aphrodite_config)
 from aphrodite.common.sampling_params import SamplingType
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import (STR_DTYPE_TO_TORCH_DTYPE,
+from aphrodite.utils import (STR_DTYPE_TO_TORCH_DTYPE,
                                     DeviceMemoryProfiler, GiB_bytes,
                                     LayerBlockType, LazyLoader, cdiv,
                                     check_use_alibi, is_pin_memory_available)
@@ -1045,7 +1045,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             tp_size = self.aphrodite_config.parallel_config.tensor_parallel_size
             if self.aphrodite_config.compilation_config.pass_config. \
                 enable_sequence_parallelism and tp_size > 1:
-                from aphrodite.common.utils import round_up
+                from aphrodite.utils import round_up
                 num_input_tokens = round_up(num_scheduled_tokens, tp_size)
             else:
                 num_input_tokens = num_scheduled_tokens

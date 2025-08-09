@@ -15,7 +15,7 @@ from typing_extensions import ParamSpec
 import aphrodite._C  # noqa
 import aphrodite.common.envs as envs
 from aphrodite.common.logger import log_once
-from aphrodite.common.utils import import_pynvml
+from aphrodite.utils import import_pynvml
 
 from .interface import DeviceCapability, Platform, PlatformEnum, _Backend
 

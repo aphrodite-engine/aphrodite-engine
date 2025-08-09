@@ -43,7 +43,7 @@ from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import _SAMPLING_EPS, SamplingParams
-from aphrodite.common.utils import (Device, FlexibleArgumentParser,
+from aphrodite.utils import (Device, FlexibleArgumentParser,
                                     decorate_logs, get_open_zmq_ipc_path,
                                     is_valid_ipv6_address, set_ulimit)
 from aphrodite.endpoints.chat_utils import (load_chat_template,

@@ -36,7 +36,7 @@ from typing_extensions import TypeVar
 
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import flatten_2d_lists
+from aphrodite.utils import flatten_2d_lists
 from aphrodite.modeling.layers.resampler import (BaseResampler, Resampler2,
                                                  get_2d_sincos_pos_embed)
 from aphrodite.modeling.model_loader.utils import set_default_torch_dtype

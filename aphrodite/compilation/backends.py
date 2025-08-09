@@ -16,7 +16,7 @@ from torch._dispatch.python import enable_python_dispatcher
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig, CompilationConfig
-from aphrodite.common.utils import (is_torch_equal_or_newer,
+from aphrodite.utils import (is_torch_equal_or_newer,
                                     resolve_obj_by_qualname)
 from aphrodite.platforms import current_platform
 

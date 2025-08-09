@@ -13,7 +13,7 @@ from transformers import (AutoTokenizer, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
 
 from aphrodite.common.envs import APHRODITE_USE_MODELSCOPE
-from aphrodite.common.utils import make_async
+from aphrodite.utils import make_async
 from aphrodite.lora.request import LoRARequest
 from aphrodite.transformers_utils.tokenizer_base import (TokenizerBase,
                                                          TokenizerRegistry)

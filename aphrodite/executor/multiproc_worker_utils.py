@@ -12,7 +12,7 @@ import torch
 from loguru import logger
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import (_maybe_force_spawn, decorate_logs,
+from aphrodite.utils import (_maybe_force_spawn, decorate_logs,
                                     get_mp_context, run_method)
 
 T = TypeVar('T')

@@ -17,7 +17,7 @@ import zmq.asyncio
 from loguru import logger
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import (get_open_zmq_inproc_path,
+from aphrodite.utils import (get_open_zmq_inproc_path,
                                     get_open_zmq_ipc_path, make_zmq_socket)
 from aphrodite.lora.request import LoRARequest
 from aphrodite.v1.engine import (EngineCoreOutputs, EngineCoreRequest,

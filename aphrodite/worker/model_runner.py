@@ -24,7 +24,7 @@ from aphrodite.common.config import AphroditeConfig, CompilationLevel
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
-from aphrodite.common.utils import (DeviceMemoryProfiler, GiB_bytes,
+from aphrodite.utils import (DeviceMemoryProfiler, GiB_bytes,
                                     PyObjectCache, async_tensor_h2d,
                                     flatten_2d_lists, is_pin_memory_available,
                                     supports_dynamo, weak_ref_tensor)

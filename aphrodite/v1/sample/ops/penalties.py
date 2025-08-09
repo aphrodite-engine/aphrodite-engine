@@ -1,6 +1,6 @@
 import torch
 
-from aphrodite.common.utils import (is_pin_memory_available,
+from aphrodite.utils import (is_pin_memory_available,
                                     make_tensor_with_pad)
 from aphrodite.modeling.layers.utils import apply_penalties
 

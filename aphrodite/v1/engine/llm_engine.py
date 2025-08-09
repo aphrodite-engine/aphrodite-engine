@@ -10,7 +10,7 @@ from aphrodite.common.config import AphroditeConfig, ParallelConfig
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 from aphrodite.distributed import (
     stateless_destroy_torch_distributed_process_group)
 from aphrodite.engine.args_tools import EngineArgs

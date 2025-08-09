@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import FlexibleArgumentParser, random_uuid
+from aphrodite.utils import FlexibleArgumentParser, random_uuid
 from aphrodite.endpoints.logger import RequestLogger
 # yapf: disable
 from aphrodite.endpoints.openai.api_server import build_async_engine_client

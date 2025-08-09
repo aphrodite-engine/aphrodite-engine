@@ -10,7 +10,7 @@ from loguru import logger
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import (STR_DTYPE_TO_TORCH_DTYPE, bind_kv_cache,
+from aphrodite.utils import (STR_DTYPE_TO_TORCH_DTYPE, bind_kv_cache,
                                     get_dtype_size)
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)

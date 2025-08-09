@@ -11,7 +11,7 @@ from transformers_neuronx.config import GenerationConfig
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
-from aphrodite.common.utils import (is_pin_memory_available,
+from aphrodite.utils import (is_pin_memory_available,
                                     make_tensor_with_pad)
 from aphrodite.forward_context import set_forward_context
 from aphrodite.modeling.layers.sampler import SamplerOutput

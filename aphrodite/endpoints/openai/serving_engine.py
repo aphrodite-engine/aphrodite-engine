@@ -29,7 +29,7 @@ from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.common.sequence import Logprob, PromptLogprobs
-from aphrodite.common.utils import (AsyncMicrobatchTokenizer, is_list_of,
+from aphrodite.utils import (AsyncMicrobatchTokenizer, is_list_of,
                                     merge_async_iterators, random_uuid)
 # yapf conflicts with isort for this block
 # yapf: disable

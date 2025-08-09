@@ -10,7 +10,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import (_run_task_with_lock,
+from aphrodite.utils import (_run_task_with_lock,
                                     get_distributed_init_method, get_ip,
                                     get_open_port, make_async)
 from aphrodite.executor.executor_base import (

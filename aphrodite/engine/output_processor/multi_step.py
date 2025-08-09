@@ -8,7 +8,7 @@ from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID,
                                        CompletionSequenceGroupOutput, Sequence,
                                        SequenceGroup, SequenceGroupOutput,
                                        SequenceOutput, SequenceStatus)
-from aphrodite.common.utils import Counter
+from aphrodite.utils import Counter
 from aphrodite.engine.output_processor.interfaces import (
     SequenceGroupOutputProcessor)
 from aphrodite.engine.output_processor.single_step import (

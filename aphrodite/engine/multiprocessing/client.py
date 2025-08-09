@@ -20,7 +20,7 @@ from aphrodite.common.config import (AphroditeConfig, DecodingConfig,
 from aphrodite.common.envs import APHRODITE_RPC_TIMEOUT
 from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 # yapf conflicts with isort for this block
 # yapf: disable
 from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,

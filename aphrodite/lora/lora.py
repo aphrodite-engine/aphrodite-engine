@@ -4,7 +4,7 @@ from typing import Optional
 import torch
 import torch.types
 
-from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.utils import is_pin_memory_available
 from aphrodite.lora.peft_helper import PEFTHelper
 
 

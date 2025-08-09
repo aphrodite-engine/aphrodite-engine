@@ -9,7 +9,7 @@ from loguru import logger
 import aphrodite.platforms
 from aphrodite.common.config import ParallelConfig
 from aphrodite.common.sequence import ExecuteModelRequest, IntermediateTensors
-from aphrodite.common.utils import get_ip
+from aphrodite.utils import get_ip
 from aphrodite.executor.msgspec_utils import decode_hook, encode_hook
 from aphrodite.platforms import current_platform
 from aphrodite.worker.worker_base import WorkerWrapperBase

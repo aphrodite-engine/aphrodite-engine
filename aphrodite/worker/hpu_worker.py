@@ -16,7 +16,7 @@ from loguru import logger
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig, ParallelConfig
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import bind_kv_cache
+from aphrodite.utils import bind_kv_cache
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
 from aphrodite.hpu_extension.profiler import HabanaMemoryProfiler, format_bytes
@@ -59,7 +59,7 @@ class HPUWorker(LocalOrDistributedWorkerBase):
 
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
-            from aphrodite.common.utils import init_cached_hf_modules
+            from aphrodite.utils import init_cached_hf_modules
             init_cached_hf_modules()
 
         self.model_runner: HPUModelRunner = HPUModelRunner(

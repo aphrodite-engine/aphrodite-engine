@@ -4,7 +4,7 @@ from typing import Callable, Optional, Union
 import msgspec
 import torch
 
-from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.utils import is_pin_memory_available
 from aphrodite.modeling.layers.spec_decode_base_sampler import (
     SpecDecodeBaseSampler)
 from aphrodite.platforms import current_platform

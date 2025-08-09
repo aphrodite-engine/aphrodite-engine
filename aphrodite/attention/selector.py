@@ -9,7 +9,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.attention.backends.abstract import AttentionBackend
-from aphrodite.common.utils import STR_BACKEND_ENV_VAR, resolve_obj_by_qualname
+from aphrodite.utils import STR_BACKEND_ENV_VAR, resolve_obj_by_qualname
 from aphrodite.platforms import _Backend, current_platform
 
 

@@ -16,7 +16,7 @@ from transformers import PretrainedConfig
 import aphrodite.common.envs as envs
 from aphrodite.common.config import (ModelConfig, ParallelConfig,
                                      set_current_aphrodite_config)
-from aphrodite.common.utils import FlexibleArgumentParser, PlaceholderModule
+from aphrodite.utils import FlexibleArgumentParser, PlaceholderModule
 from aphrodite.engine.aphrodite_engine import AphroditeEngine
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.layers.vocab_parallel_embedding import (

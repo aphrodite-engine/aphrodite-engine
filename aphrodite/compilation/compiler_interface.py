@@ -12,7 +12,7 @@ import torch.fx as fx
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import is_torch_equal_or_newer
+from aphrodite.utils import is_torch_equal_or_newer
 from aphrodite.compilation.counter import compilation_counter
 
 from .inductor_pass import pass_context

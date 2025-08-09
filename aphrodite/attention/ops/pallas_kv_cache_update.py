@@ -4,7 +4,7 @@ import jax
 from jax.experimental import pallas as pl
 from jax.experimental.pallas import tpu as pltpu
 
-from aphrodite.common.utils import cdiv
+from aphrodite.utils import cdiv
 
 
 def _kv_cache_update_kernel(

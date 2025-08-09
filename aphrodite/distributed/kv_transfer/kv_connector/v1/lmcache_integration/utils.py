@@ -103,7 +103,7 @@ def create_lmcache_metadata(
     Returns:
         tuple: (LMCacheEngineMetadata, LMCacheEngineConfig)
     """
-    from aphrodite.common.utils import get_kv_cache_torch_dtype
+    from aphrodite.utils import get_kv_cache_torch_dtype
 
     from lmcache.config import LMCacheEngineMetadata
 

@@ -13,7 +13,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.backends.utils import CommonAttentionState
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.logger import log_once
-from aphrodite.common.utils import cdiv
+from aphrodite.utils import cdiv
 
 
 class PallasAttentionBackend(AttentionBackend):

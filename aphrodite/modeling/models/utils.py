@@ -12,7 +12,7 @@ from transformers import PretrainedConfig
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import (get_cuda_view_from_cpu_tensor,
+from aphrodite.utils import (get_cuda_view_from_cpu_tensor,
                                     is_pin_memory_available, is_uva_available)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.multimodal import MultiModalPlaceholderMap, NestedTensors

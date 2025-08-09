@@ -2,7 +2,7 @@
 Worker-related helper functions.
 '''
 
-from aphrodite.common.utils import STR_NOT_IMPL_ENC_DEC_ERR_STRS
+from aphrodite.utils import STR_NOT_IMPL_ENC_DEC_ERR_STRS
 from aphrodite.worker.model_runner import GPUModelRunnerBase
 
 

@@ -9,7 +9,7 @@ import torch
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
                                        IntermediateTensors, Logprob,
                                        SequenceGroupMetadata, SequenceOutput)
-from aphrodite.common.utils import (PyObjectCache, async_tensor_h2d,
+from aphrodite.utils import (PyObjectCache, async_tensor_h2d,
                                     current_stream)
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.sampler import (PromptLogprobs, SampleLogprobs,

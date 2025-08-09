@@ -7,7 +7,7 @@ from typing import Optional, Union
 from loguru import logger
 
 from aphrodite.common.config import ModelConfig
-from aphrodite.common.utils import AtomicCounter
+from aphrodite.utils import AtomicCounter
 from aphrodite.endpoints.openai.protocol import (ErrorResponse,
                                                  LoadLoRAAdapterRequest,
                                                  ModelCard, ModelList,

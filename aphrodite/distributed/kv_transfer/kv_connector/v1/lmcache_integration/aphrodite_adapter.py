@@ -35,7 +35,7 @@ from aphrodite.attention.backends.mla.common import MLACommonMetadata
 from aphrodite.common.config import (CacheConfig, ModelConfig, ParallelConfig,
                                      SchedulerConfig)
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.common.utils import cdiv, get_kv_cache_torch_dtype, round_down
+from aphrodite.utils import cdiv, get_kv_cache_torch_dtype, round_down
 
 from .utils import ENGINE_NAME, lmcache_get_config
 

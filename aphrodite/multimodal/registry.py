@@ -8,7 +8,7 @@ from typing_extensions import deprecated
 
 from aphrodite.common.envs import APHRODITE_MM_INPUT_CACHE_GIB
 from aphrodite.common.logger import log_once
-from aphrodite.common.utils import ClassRegistry
+from aphrodite.utils import ClassRegistry
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.transformers_utils.tokenizer import (
     AnyTokenizer, cached_tokenizer_from_config)

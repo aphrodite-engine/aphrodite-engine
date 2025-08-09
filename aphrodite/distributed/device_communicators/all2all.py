@@ -4,7 +4,7 @@ import torch
 import torch.distributed as dist
 from loguru import logger
 
-from aphrodite.common.utils import has_deep_ep, has_pplx
+from aphrodite.utils import has_deep_ep, has_pplx
 from aphrodite.forward_context import get_forward_context
 
 from .base_device_communicator import All2AllManagerBase, Cache

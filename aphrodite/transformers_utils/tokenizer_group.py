@@ -6,7 +6,7 @@ from aphrodite.transformers_utils.tokenizer import (AnyTokenizer, encode_tokens,
                                                get_lora_tokenizer,
                                                get_lora_tokenizer_async,
                                                get_tokenizer)
-from aphrodite.common.utils import LRUCache
+from aphrodite.utils import LRUCache
 
 
 class TokenizerGroup:

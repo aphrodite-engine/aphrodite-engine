@@ -3,7 +3,7 @@ import time
 from typing import TYPE_CHECKING, Optional, Union
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import is_list_of
+from aphrodite.utils import is_list_of
 from aphrodite.multimodal.inputs import MultiModalKwargs, PlaceholderRange
 from aphrodite.v1.engine import (EngineCoreEvent, EngineCoreEventType,
                                  EngineCoreRequest, FinishReason)

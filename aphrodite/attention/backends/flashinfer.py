@@ -46,9 +46,9 @@ from aphrodite.attention.ops.paged_attn import PagedAttention
 from aphrodite.common.config import (AphroditeConfig,
                                      get_layers_from_aphrodite_config)
 from aphrodite.common.logger import log_once
-from aphrodite.common.utils import (async_tensor_h2d, get_kv_cache_torch_dtype,
+from aphrodite.utils import (async_tensor_h2d, get_kv_cache_torch_dtype,
                                     make_tensor_with_pad)
-from aphrodite.common.utils.flashinfer import use_trtllm_attention
+from aphrodite.utils.flashinfer import use_trtllm_attention
 
 if TYPE_CHECKING:
     from aphrodite.worker.model_runner import (

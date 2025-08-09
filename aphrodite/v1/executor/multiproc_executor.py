@@ -20,7 +20,7 @@ import cloudpickle
 from loguru import logger
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.utils import (get_distributed_init_method,
+from aphrodite.utils import (get_distributed_init_method,
                                     get_mp_context, get_open_port)
 from aphrodite.distributed import (destroy_distributed_environment,
                                    destroy_model_parallel)
