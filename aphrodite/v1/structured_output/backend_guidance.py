@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import json
 import os
@@ -7,11 +9,8 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import torch
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.utils import LazyLoader
-from aphrodite.transformers_utils.tokenizer_group import (
-    init_tokenizer_from_configs)
 from aphrodite.v1.structured_output.backend_types import (
     StructuredOutputBackend, StructuredOutputGrammar, StructuredOutputOptions)
 from aphrodite.v1.structured_output.request import get_structured_output_key
@@ -25,7 +24,6 @@ else:
     llguidance_hf = LazyLoader("llguidance.hf", globals(), "llguidance.hf")
     llguidance_torch = LazyLoader("llguidance.torch", globals(),
                                   "llguidance.torch")
-
 
 
 def _walk_json_for_additional_properties(data: object):
@@ -51,25 +49,17 @@ def process_for_additional_properties(
     return guide_json_obj
 
 
+@dataclass
 class GuidanceBackend(StructuredOutputBackend):
 
-    def __init__(self, aphrodite_config: AphroditeConfig):
-        self.aphrodite_config = aphrodite_config
-        tokenizer_group = init_tokenizer_from_configs(
-            model_config=aphrodite_config.model_config,
-            scheduler_config=aphrodite_config.scheduler_config,
-            lora_config=aphrodite_config.lora_config)  # type: ignore[arg-type]
-        self.aphrodite_config = aphrodite_config
-        self.vocab_size = aphrodite_config.model_config.get_vocab_size()
-
+    def __post_init__(self):
         self.disable_any_whitespace = \
-            aphrodite_config.decoding_config.disable_any_whitespace
+            self.aphrodite_config.decoding_config.disable_any_whitespace
         self.disable_additional_properties = \
-            aphrodite_config.decoding_config.disable_additional_properties
+            self.aphrodite_config.decoding_config.disable_additional_properties
 
-        tokenizer = tokenizer_group.get_lora_tokenizer(None)
         self.ll_tokenizer = llguidance_hf.from_tokenizer(
-            tokenizer, self.vocab_size)
+            self.tokenizer, self.vocab_size)
 
     def compile_grammar(self, request_type: StructuredOutputOptions,
                         grammar_spec: str) -> StructuredOutputGrammar:
@@ -113,7 +103,7 @@ class GuidanceGrammar(StructuredOutputGrammar):
             err = self.ll_matcher.get_error()
             if err:
                 self.printed_error = True
-                logger.warning("LLMatcher error: {}", err)
+                logger.warning("LLMatcher error: %s", err)
 
     def accept_tokens(self, request_id: str, tokens: list[int]) -> bool:
         """Accepts a list of tokens and advances the parser.
