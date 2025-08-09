@@ -1,15 +1,25 @@
+from __future__ import annotations
+
 import os
 from abc import abstractmethod
 from collections.abc import Sequence
 from functools import cached_property
-from typing import Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 from loguru import logger
 
 from aphrodite.utils import import_from_path, is_list_of
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
-from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+
+if TYPE_CHECKING:
+    from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
+                                                     DeltaMessage,
+                                                     ResponsesRequest)
+    from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+else:
+    ChatCompletionRequest = Any
+    DeltaMessage = Any
+    ResponsesRequest = Any
+    AnyTokenizer = Any
 
 
 class ReasoningParser:
@@ -30,7 +40,7 @@ class ReasoningParser:
         return self.model_tokenizer.get_vocab()
 
     @abstractmethod
-    def is_reasoning_end(self, input_ids: list[int]) -> bool:
+    def is_reasoning_end(self, input_ids: Sequence[int]) -> bool:
         """
         Check if the reasoning content ends in the input_ids.
 
@@ -60,7 +70,9 @@ class ReasoningParser:
 
     @abstractmethod
     def extract_reasoning_content(
-            self, model_output: str, request: ChatCompletionRequest
+        self,
+        model_output: str,
+        request: Union[ChatCompletionRequest, ResponsesRequest],
     ) -> tuple[Optional[str], Optional[str]]:
         """
         Extract reasoning content from a complete model-generated string.
@@ -103,7 +115,7 @@ class ReasoningParserManager:
     reasoning_parsers: dict[str, type] = {}
 
     @classmethod
-    def get_reasoning_parser(cls, name) -> type:
+    def get_reasoning_parser(cls, name: str | None) -> type[ReasoningParser]:
         """
         Get reasoning parser by name which is registered by `register_module`.
 
@@ -181,6 +193,6 @@ class ReasoningParserManager:
         try:
             import_from_path(module_name, plugin_path)
         except Exception:
-            logger.exception("Failed to load module '{}' from {}.",
+            logger.exception("Failed to load module '%s' from %s.",
                              module_name, plugin_path)
             return
