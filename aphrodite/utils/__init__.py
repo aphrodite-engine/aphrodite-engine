@@ -13,11 +13,11 @@ import importlib.metadata
 import importlib.util
 import inspect
 import ipaddress
+import json
 import math
 import multiprocessing
 import os
 import pickle
-import re
 import signal
 import socket
 import subprocess
@@ -32,26 +32,31 @@ import uuid
 import warnings
 import weakref
 from argparse import (Action, ArgumentDefaultsHelpFormatter, ArgumentParser,
-                      ArgumentTypeError)
+                      ArgumentTypeError, RawDescriptionHelpFormatter,
+                      _ArgumentGroup)
 from asyncio import FIRST_COMPLETED, AbstractEventLoop, Task
 from collections import UserDict, defaultdict
-from collections.abc import (AsyncGenerator, Awaitable, Generator, Hashable,
-                             Iterable, Iterator, KeysView, Mapping)
+from collections.abc import (AsyncGenerator, Awaitable, Collection, Generator,
+                             Hashable, Iterable, Iterator, KeysView, Mapping,
+                             Sequence)
+from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import cache, lru_cache, partial, wraps
 from types import MappingProxyType
 from typing import (TYPE_CHECKING, Any, Callable, Generic, Literal, NamedTuple,
-                    Optional, Sequence, Tuple, Type, TypeVar, Union, cast,
-                    overload)
+                    Optional, TextIO, Tuple, TypeVar, Union, cast, overload)
 from urllib.parse import urlparse
 from uuid import uuid4
 
 import cachetools
+import cbor2
 import cloudpickle
 import numpy as np
 import numpy.typing as npt
 import psutil
+import regex as re
+import setproctitle
 import torch
 import torch.types
 import yaml
@@ -60,36 +65,43 @@ import zmq.asyncio
 from loguru import logger
 from packaging import version
 from packaging.version import Version
-from rich.progress import (BarColumn, Progress, SpinnerColumn, TextColumn,
-                           TimeElapsedColumn)
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from torch.library import Library
+from transformers.tokenization_utils_base import BatchEncoding
 from typing_extensions import Never, ParamSpec, TypeIs, assert_never
 
 import aphrodite.common.envs as envs
-# NOTE: import triton_utils to make TritonPlaceholderModule work
-#       if triton is unavailable
-import aphrodite.triton_utils  # noqa: F401
 from aphrodite.common.logger import enable_trace_function_call
+from aphrodite.ray.lazy_utils import is_in_ray_actor
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig, ModelConfig
+    from argparse import Namespace
+
+    from aphrodite.common.config import ModelConfig, AphroditeConfig
+
+
+# This value is chosen to have a balance between ITL and TTFT. Note it is
+# not optimized for throughput.
+DEFAULT_MAX_NUM_BATCHED_TOKENS = 2048
+POOLING_MODEL_MAX_NUM_BATCHED_TOKENS = 32768
+MULTIMODAL_MODEL_MAX_NUM_BATCHED_TOKENS = 5120
 
 # Exception strings for non-implemented encoder/decoder scenarios
 
-# Reminder: Please update docs/source/features/compatibility_matrix.md
+# Reminder: Please update docs/features/compatibility_matrix.md
 # If the feature combo become valid
 
 STR_NOT_IMPL_ENC_DEC_SWA = \
     "Sliding window attention for encoder/decoder models " + \
-                    "is not currently supported."
+    "is not currently supported."
 
 STR_NOT_IMPL_ENC_DEC_PREFIX_CACHE = \
     "Prefix caching for encoder/decoder models " + \
-                    "is not currently supported."
+    "is not currently supported."
 
 STR_NOT_IMPL_ENC_DEC_CHUNKED_PREFILL = \
     "Chunked prefill for encoder/decoder models " + \
-                    "is not currently supported."
+    "is not currently supported."
 
 STR_NOT_IMPL_ENC_DEC_LOGIT_SOFTCAP = (
     "Models with logits_soft_cap "
@@ -97,7 +109,7 @@ STR_NOT_IMPL_ENC_DEC_LOGIT_SOFTCAP = (
     "currently not supported for encoder/decoder "
     "models.")
 
-STR_NOT_IMPL_ENC_DEC_LORA = ("LoRA is currently not currently "
+STR_NOT_IMPL_ENC_DEC_LORA = ("LoRA is not currently "
                              "supported with encoder/decoder "
                              "models.")
 
@@ -117,10 +129,6 @@ STR_NOT_IMPL_ENC_DEC_BACKEND = ("XFormers and Flash-Attention are the only "
                                 "backends currently supported with encoder/"
                                 "decoder models.")
 
-STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER = ("Prompt adapters are not "
-                                       "currently supported with encoder/"
-                                       "decoder models.")
-
 # Efficiently import all enc/dec error strings
 # rather than having to import all of the above
 STR_NOT_IMPL_ENC_DEC_ERR_STRS = {
@@ -134,7 +142,6 @@ STR_NOT_IMPL_ENC_DEC_ERR_STRS = {
     "STR_NOT_IMPL_ENC_DEC_MM": STR_NOT_IMPL_ENC_DEC_MM,
     "STR_NOT_IMPL_ENC_DEC_SPEC_DEC": STR_NOT_IMPL_ENC_DEC_SPEC_DEC,
     "STR_NOT_IMPL_ENC_DEC_BACKEND": STR_NOT_IMPL_ENC_DEC_BACKEND,
-    "STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER": STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER,
 }
 
 # Constants related to forcing the attention backend selection
@@ -148,9 +155,10 @@ STR_BACKEND_ENV_VAR: str = "APHRODITE_ATTENTION_BACKEND"
 # register, corresponding to possible backends
 STR_FLASHINFER_ATTN_VAL: str = "FLASHINFER"
 STR_TORCH_SDPA_ATTN_VAL: str = "TORCH_SDPA"
-STR_TRITON_FLASH_ATTN_VAL: str = "TRITON_FLASH"
+STR_ROCM_FLASH_ATTN_VAL: str = "ROCM_FLASH"
 STR_XFORMERS_ATTN_VAL: str = "XFORMERS"
 STR_FLASH_ATTN_VAL: str = "FLASH_ATTN"
+STR_DUAL_CHUNK_FLASH_ATTN_VAL: str = "DUAL_CHUNK_FLASH_ATTN"
 STR_INVALID_VAL: str = "INVALID"
 
 GB_bytes = 1_000_000_000
@@ -158,6 +166,10 @@ GB_bytes = 1_000_000_000
 
 GiB_bytes = 1 << 30
 """The number of bytes in one gibibyte (GiB)."""
+
+# ANSI color codes
+CYAN = '\033[1;36m'
+RESET = '\033[0;0m'
 
 STR_DTYPE_TO_TORCH_DTYPE = {
     "half": torch.half,
@@ -167,6 +179,7 @@ STR_DTYPE_TO_TORCH_DTYPE = {
     "fp8_e4m3": torch.uint8,
     "fp8_e5m2": torch.uint8,
     "int8": torch.int8,
+    "fp8_inc": torch.float8_e4m3fn,
 }
 
 TORCH_DTYPE_TO_NUMPY_DTYPE = {
@@ -177,6 +190,16 @@ TORCH_DTYPE_TO_NUMPY_DTYPE = {
     torch.int32: np.int32,
     torch.int64: np.int64,
 }
+
+
+@contextlib.contextmanager
+def set_default_torch_num_threads(num_threads: int):
+    """Sets the default number of threads for PyTorch to the given value."""
+    old_num_threads = torch.get_num_threads()
+    torch.set_num_threads(num_threads)
+    yield
+    torch.set_num_threads(old_num_threads)
+
 
 P = ParamSpec('P')
 T = TypeVar("T")
@@ -309,8 +332,8 @@ class LRUCache(cachetools.LRUCache[_K, _V], Generic[_K, _V]):
         """
         Gets the cumulative number of hits and queries against this cache.
 
-        If :code:`delta=True`, instead gets these statistics
-        since the last call that also passed :code:`delta=True`.
+        If `delta=True`, instead gets these statistics
+        since the last call that also passed `delta=True`.
         """
         info = CacheInfo(hits=self._hits, total=self._total)
 
@@ -488,6 +511,196 @@ def random_uuid() -> str:
     return str(uuid.uuid4().hex)
 
 
+class AsyncMicrobatchTokenizer:
+    """Asynchronous tokenizer with micro-batching.
+
+    Pulls pending encode/decode requests from a queue and batches
+    them up to reduce overhead. A single-thread ThreadPoolExecutor
+    is used so the event loop stays responsive.
+    """
+
+    def __init__(
+        self,
+        tokenizer,
+        max_batch_size: int = 32,
+        batch_wait_timeout_s: float = 0.002,
+    ) -> None:
+        self.tokenizer = tokenizer
+        self.max_batch_size = max_batch_size
+        self.batch_wait_timeout_s = batch_wait_timeout_s
+
+        self._loop = asyncio.get_running_loop()
+        self._queues: dict[tuple,
+                           asyncio.Queue[Union[tuple[str, dict,
+                                                     asyncio.Future],
+                                               tuple[list[int],
+                                                     asyncio.Future]]]] = {}
+        self._batcher_tasks: list[asyncio.Task] = []
+
+        # Single-thread executor for blocking tokenizer calls.
+        self._executor = ThreadPoolExecutor(max_workers=1)
+
+    # === Public async API ===
+    async def __call__(self, prompt, **kwargs):
+        result_future: asyncio.Future = self._loop.create_future()
+        key = self._queue_key("encode", kwargs)
+        queue = self._get_queue(self._loop, key)
+        await queue.put((prompt, kwargs, result_future))
+        return await result_future
+
+    async def decode(self, token_ids, **kwargs):
+        result_future: asyncio.Future = self._loop.create_future()
+        key = self._queue_key("decode", kwargs)
+        queue = self._get_queue(self._loop, key)
+        await queue.put((token_ids, result_future))
+        return await result_future
+
+    # === Internal helpers ===
+    def _get_queue(
+        self, loop: asyncio.AbstractEventLoop, key: tuple
+    ) -> asyncio.Queue[Union[tuple[str, dict, asyncio.Future], tuple[
+            list[int], asyncio.Future]]]:
+        """Get the request queue for the given operation key, creating a new
+        queue and batcher task if needed."""
+        queue = self._queues.get(key)
+        if queue is None:
+            self._queues[key] = queue = asyncio.Queue()
+            if key[0] == "encode":
+                can_batch = key[1] != "other"
+                coro = self._batch_encode_loop(queue, can_batch)
+            else:
+                assert key[0] == "decode", \
+                    f"Unknown operation type: {key[0]}."
+                coro = self._batch_decode_loop(queue)
+            self._batcher_tasks.append(loop.create_task(coro))
+        return queue
+
+    async def _batch_encode_loop(self, queue: asyncio.Queue, can_batch: bool):
+        """Batch incoming encode requests for efficiency."""
+        while True:
+            prompt, kwargs, result_future = await queue.get()
+            prompts = [prompt]
+            kwargs_list = [kwargs]
+            result_futures = [result_future]
+            deadline = self._loop.time() + self.batch_wait_timeout_s
+
+            while len(prompts) < self.max_batch_size:
+                timeout = deadline - self._loop.time()
+                if timeout <= 0:
+                    break
+                try:
+                    prompt, kwargs, result_future = await asyncio.wait_for(
+                        queue.get(), timeout)
+                    prompts.append(prompt)
+                    result_futures.append(result_future)
+                    if not can_batch:
+                        kwargs_list.append(kwargs)
+                except asyncio.TimeoutError:
+                    break
+
+            try:
+                # If every request uses identical kwargs we can run a single
+                # batched tokenizer call for a big speed-up.
+                if can_batch and len(prompts) > 1:
+                    encode_fn = partial(self.tokenizer, prompts, **kwargs)
+                    results = await self._loop.run_in_executor(
+                        self._executor, encode_fn)
+
+                    for i, fut in enumerate(result_futures):
+                        if not fut.done():
+                            data = {k: v[i] for k, v in results.items()}
+                            fut.set_result(BatchEncoding(data))
+                else:
+                    encode_fn = lambda prompts=prompts, kwargs=kwargs_list: [
+                        self.tokenizer(p, **kw)
+                        for p, kw in zip(prompts, kwargs)
+                    ]
+                    results = await self._loop.run_in_executor(
+                        self._executor, encode_fn)
+
+                    for fut, res in zip(result_futures, results):
+                        if not fut.done():
+                            fut.set_result(res)
+            except Exception as e:
+                for fut in result_futures:
+                    if not fut.done():
+                        fut.set_exception(e)
+
+    async def _batch_decode_loop(self, queue: asyncio.Queue):
+        """Batch incoming decode requests for efficiency."""
+        while True:
+            token_ids, result_future = await queue.get()
+            token_ids_list = [token_ids]
+            result_futures = [result_future]
+            deadline = self._loop.time() + self.batch_wait_timeout_s
+
+            while len(token_ids_list) < self.max_batch_size:
+                timeout = deadline - self._loop.time()
+                if timeout <= 0:
+                    break
+                try:
+                    token_ids, result_future = await asyncio.wait_for(
+                        queue.get(), timeout)
+                    token_ids_list.append(token_ids)
+                    result_futures.append(result_future)
+                except asyncio.TimeoutError:
+                    break
+
+            try:
+                # Perform a single batched decode call for all requests
+                results = await self._loop.run_in_executor(
+                    self._executor, self.tokenizer.batch_decode,
+                    token_ids_list)
+                for fut, res in zip(result_futures, results):
+                    if not fut.done():
+                        fut.set_result(res)
+            except Exception as e:
+                for fut in result_futures:
+                    if not fut.done():
+                        fut.set_exception(e)
+
+    def _queue_key(self, op: str, kwargs: dict) -> tuple:
+        """
+        Return a normalized key describing operation + kwargs.
+
+        - `add_special_tokens`: {True/False}
+        - `truncation`: {True/False}
+          - If `truncation` is False (`max_length` is None), 
+            returns a key for a can_batch queue.
+          - If `truncation` is True and `max_length` is None or equals
+            `tokenizer.model_max_length`, returns a key for a can_batch queue.
+          - Otherwise, returns a key for a cannot_batch queue.
+
+        Examples:
+          - Decode: ("decode",)
+          - Encode typical: 
+            ("encode", add_special_tokens, bool_truncation, max_length_label)
+          - Fallback: ("encode", "other")
+        """
+
+        if op == "decode":
+            return ("decode", )
+
+        add_special_tokens = kwargs.get("add_special_tokens", True)
+        truncation = kwargs.get("truncation", False)
+        max_length = kwargs.get("max_length")
+
+        if not truncation:
+            return ("encode", add_special_tokens, False, None)
+
+        model_max = getattr(self.tokenizer, "model_max_length", None)
+        if max_length is None or (model_max is not None
+                                  and max_length == model_max):
+            return ("encode", add_special_tokens, True, "model_max")
+
+        return ("encode", "other")
+
+    def __del__(self):
+        for task in self._batcher_tasks:
+            if not task.done():
+                task.cancel()
+
+
 def make_async(
     func: Callable[P, T],
     executor: Optional[concurrent.futures.Executor] = None
@@ -568,8 +781,8 @@ def get_ip() -> str:
             "The environment variable HOST_IP is deprecated and ignored, as"
             " it is often used by Docker and other software to"
             " interact with the container's network stack. Please "
-            "use APHRODITE_HOST_IP instead to set the IP address for Aphrodite"
-            " processes to communicate with each other.")
+            "use APHRODITE_HOST_IP instead to set the IP address for "
+            "Aphrodite processes to communicate with each other.")
     if host_ip:
         return host_ip
 
@@ -601,6 +814,34 @@ def get_ip() -> str:
     return "0.0.0.0"
 
 
+def test_loopback_bind(address, family):
+    try:
+        s = socket.socket(family, socket.SOCK_DGRAM)
+        s.bind((address, 0))  # Port 0 = auto assign
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+def get_loopback_ip() -> str:
+    loopback_ip = envs.APHRODITE_LOOPBACK_IP
+    if loopback_ip:
+        return loopback_ip
+
+    # APHRODITE_LOOPBACK_IP is not set, try to get it based on network
+    # interface
+
+    if test_loopback_bind("127.0.0.1", socket.AF_INET):
+        return "127.0.0.1"
+    elif test_loopback_bind("::1", socket.AF_INET6):
+        return "::1"
+    else:
+        raise RuntimeError(
+            "Neither 127.0.0.1 nor ::1 are bound to a local interface. "
+            "Set the APHRODITE_LOOPBACK_IP environment variable explicitly.")
+
+
 def is_valid_ipv6_address(address: str) -> bool:
     try:
         ipaddress.IPv6Address(address)
@@ -609,10 +850,34 @@ def is_valid_ipv6_address(address: str) -> bool:
         return False
 
 
+def split_host_port(host_port: str) -> Tuple[str, int]:
+    # ipv6
+    if host_port.startswith('['):
+        host, port = host_port.rsplit(']', 1)
+        host = host[1:]
+        port = port.split(':')[1]
+        return host, int(port)
+    else:
+        host, port = host_port.split(':')
+        return host, int(port)
+
+
+def join_host_port(host: str, port: int) -> str:
+    if is_valid_ipv6_address(host):
+        return f"[{host}]:{port}"
+    else:
+        return f"{host}:{port}"
+
+
 def get_distributed_init_method(ip: str, port: int) -> str:
-    # Brackets are not permitted in ipv4 addresses,
-    # see https://github.com/python/cpython/issues/103848
-    return f"tcp://[{ip}]:{port}" if ":" in ip else f"tcp://{ip}:{port}"
+    return get_tcp_uri(ip, port)
+
+
+def get_tcp_uri(ip: str, port: int) -> str:
+    if is_valid_ipv6_address(ip):
+        return f"tcp://[{ip}]:{port}"
+    else:
+        return f"tcp://{ip}:{port}"
 
 
 def get_open_zmq_ipc_path() -> str:
@@ -704,6 +969,20 @@ def cdiv(a: int, b: int) -> int:
     return -(a // -b)
 
 
+def next_power_of_2(n) -> int:
+    """The next power of 2 (inclusive)"""
+    if n < 1:
+        return 1
+    return 1 << (n - 1).bit_length()
+
+
+def prev_power_of_2(n: int) -> int:
+    """The previous power of 2 (inclusive)"""
+    if n <= 0:
+        return 0
+    return 1 << (n.bit_length() - 1)
+
+
 def round_up(x: int, y: int) -> int:
     return ((x + y - 1) // y) * y
 
@@ -722,7 +1001,7 @@ def _generate_random_fp8(
     # to generate random data for fp8 data.
     # For example, s.11111.00 in fp8e5m2 format represents Inf.
     #     | E4M3        | E5M2
-    #-----|-------------|-------------------
+    # -----|-------------|-------------------
     # Inf | N/A         | s.11111.00
     # NaN | s.1111.111  | s.11111.{01,10,11}
     from aphrodite import _custom_ops as ops
@@ -737,16 +1016,15 @@ def get_kv_cache_torch_dtype(
         model_dtype: Optional[Union[str, torch.dtype]] = None) -> torch.dtype:
     if isinstance(cache_dtype, str):
         if cache_dtype == "auto":
-            if isinstance(model_dtype, str):
+            if isinstance(model_dtype,
+                          str) and model_dtype in STR_DTYPE_TO_TORCH_DTYPE:
                 torch_dtype = STR_DTYPE_TO_TORCH_DTYPE[model_dtype]
             elif isinstance(model_dtype, torch.dtype):
                 torch_dtype = model_dtype
             else:
                 raise ValueError(f"Invalid model dtype: {model_dtype}")
-        elif cache_dtype in ["half", "bfloat16", "float"]:
+        elif cache_dtype in STR_DTYPE_TO_TORCH_DTYPE:
             torch_dtype = STR_DTYPE_TO_TORCH_DTYPE[cache_dtype]
-        elif cache_dtype == "fp8":
-            torch_dtype = torch.uint8
         else:
             raise ValueError(f"Invalid kv cache dtype: {cache_dtype}")
     elif isinstance(cache_dtype, torch.dtype):
@@ -811,7 +1089,6 @@ def create_kv_caches_with_random(
     seed: Optional[int] = None,
     device: Optional[str] = "cuda",
 ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
-
     if cache_dtype == "fp8" and head_size % 16:
         raise ValueError(
             f"Does not support key cache of type fp8 with head_size {head_size}"
@@ -877,6 +1154,7 @@ class DeviceMemoryProfiler:
     def current_memory_usage(self) -> float:
         # Return the memory usage in bytes.
         from aphrodite.platforms import current_platform
+        gc.collect()
         return current_platform.get_current_memory_usage(self.device)
 
     def __enter__(self):
@@ -958,6 +1236,53 @@ def get_dtype_size(dtype: torch.dtype) -> int:
     return torch.tensor([], dtype=dtype).element_size()
 
 
+# bool = 0, int = 1, float = 2, complex = 3
+def _get_precision_level(dtype: torch.dtype) -> int:
+    # NOTE: Complex dtypes return `is_floating_point=False`
+    return ((dtype != torch.bool) + dtype.is_floating_point +
+            dtype.is_complex * 2)
+
+
+def is_lossless_cast(src_dtype: torch.dtype, tgt_dtype: torch.dtype):
+    """
+    Test whether it is lossless to cast a tensor from
+    `src_dtype` to `tgt_dtype`.
+    """
+    if src_dtype == tgt_dtype:
+        return True
+
+    src_level = _get_precision_level(src_dtype)
+    tgt_level = _get_precision_level(tgt_dtype)
+
+    if src_level < tgt_level:
+        return True
+    if src_level > tgt_level:
+        return False
+
+    # Compare integral types
+    if not src_dtype.is_floating_point and not src_dtype.is_complex:
+        src_info = torch.iinfo(src_dtype)
+        tgt_info = torch.iinfo(tgt_dtype)
+        return src_info.min >= tgt_info.min and src_info.max <= tgt_info.max
+
+    # Compare floating-point types
+    src_info = torch.finfo(src_dtype)
+    tgt_info = torch.finfo(tgt_dtype)
+    return (src_info.min >= tgt_info.min and src_info.max <= tgt_info.max
+            and src_info.resolution >= tgt_info.resolution)
+
+
+def common_broadcastable_dtype(dtypes: Collection[torch.dtype]):
+    """
+    Get the common `dtype` where all of the other `dtypes` can be
+    cast to it without losing any information.
+    """
+    return max(
+        dtypes,
+        key=lambda dtype: sum(is_lossless_cast(dt, dtype) for dt in dtypes),
+    )
+
+
 # `collections` helpers
 def is_list_of(
     value: object,
@@ -983,7 +1308,7 @@ def flatten_2d_lists(lists: Iterable[Iterable[T]]) -> list[T]:
 
 def full_groupby(values: Iterable[_V], *, key: Callable[[_V], _K]):
     """
-    Unlike :class:`itertools.groupby`, groups are not broken by
+    Unlike [`itertools.groupby`][], groups are not broken by
     non-contiguous data.
     """
     groups = defaultdict[_K, list[_V]](list)
@@ -1043,7 +1368,7 @@ def find_nccl_library() -> str:
 
     # manually load the nccl library
     if so_file:
-        logger.debug(
+        logger.info(
             "Found nccl from environment variable APHRODITE_NCCL_SO_PATH={}",
             so_file)
     else:
@@ -1053,18 +1378,17 @@ def find_nccl_library() -> str:
             so_file = "librccl.so.1"
         else:
             raise ValueError("NCCL only supports CUDA and ROCm backends.")
-        logger.debug("Found nccl from library {}", so_file)
+        logger.info("Found nccl from library {}", so_file)
     return so_file
 
 
 prev_set_stream = torch.cuda.set_stream
 
-_current_stream = None
+_current_stream_tls = threading.local()
 
 
 def _patched_set_stream(stream: torch.cuda.Stream) -> None:
-    global _current_stream
-    _current_stream = stream
+    _current_stream_tls.value = stream
     prev_set_stream(stream)
 
 
@@ -1084,20 +1408,21 @@ def current_stream() -> torch.cuda.Stream:
     from C/C++ code.
     """
     from aphrodite.platforms import current_platform
-    global _current_stream
-    if _current_stream is None:
+    if not hasattr(_current_stream_tls,
+                   "value") or _current_stream_tls.value is None:
         # when this function is called before any stream is set,
         # we return the default stream.
         # On ROCm using the default 0 stream in combination with RCCL
         # is hurting performance. Therefore creating a dedicated stream
         # per process
-        _current_stream = torch.cuda.Stream() if current_platform.is_rocm(
-        ) else torch.cuda.current_stream()
-    return _current_stream
+        _current_stream_tls.value = torch.cuda.Stream(
+        ) if current_platform.is_rocm() else torch.cuda.current_stream()
+    return _current_stream_tls.value
 
 
 def enable_trace_function_call_for_thread(
-        aphrodite_config: AphroditeConfig) -> None:
+    aphrodite_config: AphroditeConfig,
+) -> None:
     """Set up function tracing for the current thread,
     if enabled via the APHRODITE_TRACE_FUNCTION environment variable
     """
@@ -1108,10 +1433,11 @@ def enable_trace_function_call_for_thread(
         tmp_dir = os.path.join(tmp_dir, getpass.getuser())
         filename = (f"APHRODITE_TRACE_FUNCTION_for_process_{os.getpid()}"
                     f"_thread_{threading.get_ident()}_"
-                    f"at_{datetime.datetime.now()}.log").replace(" ", "_")
-        log_path = os.path.join(
-            tmp_dir, "aphrodite",
-            f"aphrodite-instance-{aphrodite_config.instance_id}", filename)
+                    f"at_{datetime.datetime.now()}.log"
+                    ).replace(" ", "_")
+        log_path = os.path.join(tmp_dir, "aphrodite",
+                                f"aphrodite-instance-{aphrodite_config.instance_id}",  # noqa: E501
+                                filename)
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         enable_trace_function_call(log_path)
 
@@ -1130,7 +1456,6 @@ def deprecate_args(
     is_deprecated: Union[bool, Callable[[], bool]] = True,
     additional_message: Optional[str] = None,
 ) -> Callable[[F], F]:
-
     if not callable(is_deprecated):
         is_deprecated = partial(identity, is_deprecated)
 
@@ -1215,7 +1540,6 @@ def _cuda_device_count_stateless(
     # torch/cuda/__init__.py#L831C1-L831C17
     import torch.cuda
     import torch.version
-
     from aphrodite.platforms import current_platform
     if not torch.cuda._is_compiled():
         return 0
@@ -1250,6 +1574,13 @@ def cuda_is_initialized() -> bool:
     return torch.cuda.is_initialized()
 
 
+def xpu_is_initialized() -> bool:
+    """Check if XPU is initialized."""
+    if not torch.xpu._is_compiled():
+        return False
+    return torch.xpu.is_initialized()
+
+
 def cuda_get_device_properties(device,
                                names: Sequence[str],
                                init_cuda=False) -> tuple[Any, ...]:
@@ -1280,7 +1611,7 @@ def weak_bind(bound_method: Callable[..., Any], ) -> Callable[..., None]:
     return weak_bound
 
 
-#From: https://stackoverflow.com/a/4104188/2749989
+# From: https://stackoverflow.com/a/4104188/2749989
 def run_once(f: Callable[P, None]) -> Callable[P, None]:
 
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> None:
@@ -1304,7 +1635,8 @@ class StoreBoolean(Action):
                              "Expected 'true' or 'false'.")
 
 
-class SortedHelpFormatter(ArgumentDefaultsHelpFormatter):
+class SortedHelpFormatter(ArgumentDefaultsHelpFormatter,
+                          RawDescriptionHelpFormatter):
     """SortedHelpFormatter that sorts arguments by their option strings."""
 
     def _split_lines(self, text, width):
@@ -1328,46 +1660,181 @@ class SortedHelpFormatter(ArgumentDefaultsHelpFormatter):
 class FlexibleArgumentParser(ArgumentParser):
     """ArgumentParser that allows both underscore and dash in names."""
 
+    _deprecated: set[Action] = set()
+
     def __init__(self, *args, **kwargs):
         # Set the default 'formatter_class' to SortedHelpFormatter
         if 'formatter_class' not in kwargs:
             kwargs['formatter_class'] = SortedHelpFormatter
         super().__init__(*args, **kwargs)
 
-    def parse_args(self, args=None, namespace=None):
+    if sys.version_info < (3, 13):
+        # Enable the deprecated kwarg for Python 3.12 and below
+
+        def parse_known_args(self, args=None, namespace=None):
+            if args is not None and "--disable-log-requests" in args:
+                # Special case warning because the warning below won't trigger
+                # if –-disable-log-requests because its value is default.
+                logger.warning_once(
+                    "argument '--disable-log-requests' is deprecated and "
+                    "replaced with '--enable-log-requests'. This will be "
+                    "removed in v0.12.0.")
+            namespace, args = super().parse_known_args(args, namespace)
+            for action in FlexibleArgumentParser._deprecated:
+                if (hasattr(namespace, dest := action.dest)
+                        and getattr(namespace, dest) != action.default):
+                    logger.warning_once("argument '{}' is deprecated", dest)
+            return namespace, args
+
+        def add_argument(self, *args, **kwargs):
+            deprecated = kwargs.pop("deprecated", False)
+            action = super().add_argument(*args, **kwargs)
+            if deprecated:
+                FlexibleArgumentParser._deprecated.add(action)
+            return action
+
+        class _FlexibleArgumentGroup(_ArgumentGroup):
+
+            def add_argument(self, *args, **kwargs):
+                deprecated = kwargs.pop("deprecated", False)
+                action = super().add_argument(*args, **kwargs)
+                if deprecated:
+                    FlexibleArgumentParser._deprecated.add(action)
+                return action
+
+        def add_argument_group(self, *args, **kwargs):
+            group = self._FlexibleArgumentGroup(self, *args, **kwargs)
+            self._action_groups.append(group)
+            return group
+
+    def parse_args(  # type: ignore[override]
+        self,
+        args: list[str] | None = None,
+        namespace: Namespace | None = None,
+    ):
         if args is None:
             args = sys.argv[1:]
 
         # Check for --model in command line arguments first
-        if args and args[0] == "run":
+        if args and args[0] == "serve":
             model_in_cli_args = any(arg == '--model' for arg in args)
 
             if model_in_cli_args:
                 raise ValueError(
-                    "With `aphrodite run`, you should provide the model as a "
+                    "With `aphrodite serve`, you should provide the model as a "
                     "positional argument or in a config file instead of via "
                     "the `--model` option.")
 
         if '--config' in args:
             args = self._pull_args_from_config(args)
 
+        def repl(match: re.Match) -> str:
+            """Replaces underscores with dashes in the matched string."""
+            return match.group(0).replace("_", "-")
+
+        # Everything between the first -- and the first .
+        pattern = re.compile(r"(?<=--)[^\.]*")
+
         # Convert underscores to dashes and vice versa in argument names
-        processed_args = []
-        for arg in args:
+        processed_args = list[str]()
+        for i, arg in enumerate(args):
             if arg.startswith('--'):
                 if '=' in arg:
                     key, value = arg.split('=', 1)
-                    key = '--' + key[len('--'):].replace('_', '-')
+                    key = pattern.sub(repl, key, count=1)
                     processed_args.append(f'{key}={value}')
                 else:
-                    processed_args.append('--' +
-                                          arg[len('--'):].replace('_', '-'))
-            elif arg.startswith('-O') and arg != '-O' and len(arg) == 2:
-                # allow -O flag to be used without space, e.g. -O3
-                processed_args.append('-O')
-                processed_args.append(arg[2:])
+                    key = pattern.sub(repl, arg, count=1)
+                    processed_args.append(key)
+            elif arg.startswith('-O') and arg != '-O' and arg[2] != '.':
+                # allow -O flag to be used without space, e.g. -O3 or -Odecode
+                # -O.<...> handled later
+                # also handle -O=<level> here
+                level = arg[3:] if arg[2] == '=' else arg[2:]
+                processed_args.append(f'-O.level={level}')
+            elif arg == '-O' and i + 1 < len(args) and args[i + 1] in {
+                    "0", "1", "2", "3"
+            }:
+                # Convert -O <n> to -O.level <n>
+                processed_args.append('-O.level')
             else:
                 processed_args.append(arg)
+
+        def create_nested_dict(keys: list[str], value: str) -> dict[str, Any]:
+            """Creates a nested dictionary from a list of keys and a value.
+
+            For example, `keys = ["a", "b", "c"]` and `value = 1` will create:
+            `{"a": {"b": {"c": 1}}}`
+            """
+            nested_dict: Any = value
+            for key in reversed(keys):
+                nested_dict = {key: nested_dict}
+            return nested_dict
+
+        def recursive_dict_update(
+            original: dict[str, Any],
+            update: dict[str, Any],
+        ) -> set[str]:
+            """Recursively updates a dictionary with another dictionary.
+            Returns a set of duplicate keys that were overwritten.
+            """
+            duplicates = set[str]()
+            for k, v in update.items():
+                if isinstance(v, dict) and isinstance(original.get(k), dict):
+                    nested_duplicates = recursive_dict_update(original[k], v)
+                    duplicates |= {f"{k}.{d}" for d in nested_duplicates}
+                elif isinstance(v, list) and isinstance(original.get(k), list):
+                    original[k] += v
+                else:
+                    if k in original:
+                        duplicates.add(k)
+                    original[k] = v
+            return duplicates
+
+        delete = set[int]()
+        dict_args = defaultdict[str, dict[str, Any]](dict)
+        duplicates = set[str]()
+        for i, processed_arg in enumerate(processed_args):
+            if i in delete:  # skip if value from previous arg
+                continue
+
+            if processed_arg.startswith("-") and "." in processed_arg:
+                if "=" in processed_arg:
+                    processed_arg, value_str = processed_arg.split("=", 1)
+                    if "." not in processed_arg:
+                        # False positive, '.' was only in the value
+                        continue
+                else:
+                    value_str = processed_args[i + 1]
+                    delete.add(i + 1)
+
+                if processed_arg.endswith("+"):
+                    processed_arg = processed_arg[:-1]
+                    value_str = json.dumps(list(value_str.split(",")))
+
+                key, *keys = processed_arg.split(".")
+                try:
+                    value = json.loads(value_str)
+                except json.decoder.JSONDecodeError:
+                    value = value_str
+
+                # Merge all values with the same key into a single dict
+                arg_dict = create_nested_dict(keys, value)
+                arg_duplicates = recursive_dict_update(dict_args[key],
+                                                       arg_dict)
+                duplicates |= {f'{key}.{d}' for d in arg_duplicates}
+                delete.add(i)
+        # Filter out the dict args we set to None
+        processed_args = [
+            a for i, a in enumerate(processed_args) if i not in delete
+        ]
+        if duplicates:
+            logger.warning("Found duplicate keys %s", ", ".join(duplicates))
+
+        # Add the dict args back as if they were originally passed as JSON
+        for dict_arg, dict_value in dict_args.items():
+            processed_args.append(dict_arg)
+            processed_args.append(json.dumps(dict_value))
 
         return super().parse_args(processed_args, namespace)
 
@@ -1554,49 +2021,8 @@ def supports_kw(
         last_param = params[next(reversed(params))]  # type: ignore
         return (last_param.kind == inspect.Parameter.VAR_KEYWORD
                 and last_param.name != kw_name)
+
     return False
-
-
-def resolve_mm_processor_kwargs(
-    init_kwargs: Optional[Mapping[str, object]],
-    inference_kwargs: Optional[Mapping[str, object]],
-    callable: Callable[..., object],
-    *,
-    requires_kw_only: bool = True,
-    allow_var_kwargs: bool = False,
-) -> dict[str, Any]:
-    """Applies filtering to eliminate invalid mm_processor_kwargs, i.e.,
-    those who are not explicit keywords to the given callable (of one is
-    given; otherwise no filtering is done), then merges the kwarg dicts,
-    giving priority to inference_kwargs if there are any collisions.
-
-    In the case that no kwarg overrides are provided, returns an empty
-    dict so that it can still be kwarg expanded into the callable later on.
-
-    If allow_var_kwargs=True, allows for things that can be expanded into
-    kwargs as long as they aren't naming collision for var_kwargs or potential
-    positional arguments.
-    """
-    # Filter inference time multimodal processor kwargs provided
-    runtime_mm_kwargs = get_allowed_kwarg_only_overrides(
-        callable,
-        overrides=inference_kwargs,
-        requires_kw_only=requires_kw_only,
-        allow_var_kwargs=allow_var_kwargs,
-    )
-
-    # Filter init time multimodal processor kwargs provided
-    init_mm_kwargs = get_allowed_kwarg_only_overrides(
-        callable,
-        overrides=init_kwargs,
-        requires_kw_only=requires_kw_only,
-        allow_var_kwargs=allow_var_kwargs,
-    )
-
-    # Merge the final processor kwargs, prioritizing inference
-    # time values over the initialization time values.
-    mm_processor_kwargs = {**init_mm_kwargs, **runtime_mm_kwargs}
-    return mm_processor_kwargs
 
 
 def get_allowed_kwarg_only_overrides(
@@ -1663,6 +2089,12 @@ def supports_dynamo() -> bool:
     return base_torch_version >= Version("2.4.0")
 
 
+# Supports xccl with PyTorch versions >= 2.8.0.dev for XPU platform
+def supports_xccl() -> bool:
+    return is_torch_equal_or_newer(
+        "2.8.0.dev") and torch.distributed.is_xccl_available()
+
+
 # Some backends use pytorch version < 2.4.0 which doesn't
 # support `torch.library.custom_op`.
 def supports_custom_op() -> bool:
@@ -1718,9 +2150,9 @@ class LazyDict(Mapping[str, T], Generic[T]):
         return len(self._factory)
 
 
-class ClassRegistry(UserDict[Type[T], _V]):
+class ClassRegistry(UserDict[type[T], _V]):
 
-    def __getitem__(self, key: Type[T]) -> _V:
+    def __getitem__(self, key: type[T]) -> _V:
         for cls in key.mro():
             if cls in self.data:
                 return self.data[cls]
@@ -1776,14 +2208,6 @@ def get_cuda_view_from_cpu_tensor(cpu_tensor: torch.Tensor) -> torch.Tensor:
     return torch.ops._C.get_cuda_view_from_cpu_tensor(cpu_tensor)
 
 
-def is_in_doc_build() -> bool:
-    try:
-        from sphinx.ext.autodoc.mock import _MockModule
-        return isinstance(torch, _MockModule)
-    except ModuleNotFoundError:
-        return False
-
-
 def import_from_path(module_name: str, file_path: Union[str, os.PathLike]):
     """
     Import a Python file according to its file path.
@@ -1823,9 +2247,10 @@ class _PlaceholderBase:
     Disallows downstream usage of placeholder modules.
 
     We need to explicitly override each dunder method because
-    :meth:`__getattr__` is not called when they are accessed.
+    [`__getattr__`][aphrodite.utils._PlaceholderBase.__getattr__]
+    is not called when they are accessed.
 
-    See also:
+    Info:
         [Special method lookup](https://docs.python.org/3/reference/datamodel.html#special-lookup)
     """
 
@@ -1998,8 +2423,8 @@ class PlaceholderModule(_PlaceholderBase):
         except ImportError as exc:
             for extra, names in get_aphrodite_optional_dependencies().items():
                 if name in names:
-                    msg = (f"Please install aphrodite[{extra}] for {extra} "
-                           "support")
+                    msg = (f"Please install aphrodite-engine[{extra}] for "
+                           f"{extra} support")
                     raise ImportError(msg) from exc
 
             raise exc
@@ -2039,7 +2464,7 @@ def direct_register_custom_op(
         fake_impl: Optional[Callable] = None,
         target_lib: Optional[Library] = None,
         dispatch_key: str = "CUDA",
-        tags: Tuple[torch.Tag, ...] = (),
+        tags: tuple[torch.Tag, ...] = (),
 ):
     """
     `torch.library.custom_op` can have significant overhead because it
@@ -2056,9 +2481,6 @@ def direct_register_custom_op(
     library object. If you want to bind the operator to a different library,
     make sure the library object is alive when the operator is used.
     """
-    if is_in_doc_build():
-        return
-
     if not supports_custom_op():
         from aphrodite.platforms import current_platform
         assert not current_platform.is_cuda_alike(), (
@@ -2122,6 +2544,8 @@ def kill_process_tree(pid: int):
 class MemorySnapshot:
     """Memory snapshot."""
     torch_peak: int = 0
+    free_memory: int = 0
+    total_memory: int = 0
     cuda_memory: int = 0
     torch_memory: int = 0
     non_torch_memory: int = 0
@@ -2141,8 +2565,8 @@ class MemorySnapshot:
         self.torch_peak = torch.cuda.memory_stats().get(
             "allocated_bytes.all.peak", 0)
 
-        self.cuda_memory = torch.cuda.mem_get_info(
-        )[1] - torch.cuda.mem_get_info()[0]
+        self.free_memory, self.total_memory = torch.cuda.mem_get_info()
+        self.cuda_memory = self.total_memory - self.free_memory
 
         # torch.cuda.memory_reserved() is how many bytes
         # PyTorch gets from cuda (by calling cudaMalloc, etc.)
@@ -2155,6 +2579,8 @@ class MemorySnapshot:
     def __sub__(self, other: MemorySnapshot) -> MemorySnapshot:
         return MemorySnapshot(
             torch_peak=self.torch_peak - other.torch_peak,
+            free_memory=self.free_memory - other.free_memory,
+            total_memory=self.total_memory - other.total_memory,
             cuda_memory=self.cuda_memory - other.cuda_memory,
             torch_memory=self.torch_memory - other.torch_memory,
             non_torch_memory=self.non_torch_memory - other.non_torch_memory,
@@ -2175,6 +2601,16 @@ class MemoryProfilingResult:
     before_profile: MemorySnapshot = field(default_factory=MemorySnapshot)
     after_profile: MemorySnapshot = field(default_factory=MemorySnapshot)
     profile_time: float = 0.0
+
+    def __repr__(self) -> str:
+        return (f"Memory profiling takes {self.profile_time:.2f} seconds. "
+                f"Total non KV cache memory: "
+                f"{(self.non_kv_cache_memory / GiB_bytes):.2f}GiB; "
+                f"torch peak memory increase: "
+                f"{(self.torch_peak_increase / GiB_bytes):.2f}GiB; "
+                f"non-torch forward increase memory: "
+                f"{(self.non_torch_increase / GiB_bytes):.2f}GiB; "
+                f"weights memory: {(self.weights_memory / GiB_bytes):.2f}GiB.")
 
 
 @contextlib.contextmanager
@@ -2226,7 +2662,7 @@ def memory_profiling(
     The increase of `torch.cuda.memory_stats()["allocated_bytes.all.peak"]` during profiling gives (b.).
 
     The increase of `non_torch_memory` from creating the current Aphrodite instance until after profiling to get (c.).
-    """ # noqa
+    """  # noqa
     gc.collect()
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
@@ -2270,8 +2706,8 @@ def set_ulimit(target_soft_limit=65535):
                                (target_soft_limit, current_hard))
         except ValueError as e:
             logger.warning(
-                "Found ulimit of {} and failed to automatically increase "
-                "with error {}. This can cause fd limit errors like "
+                "Found ulimit of %s and failed to automatically increase "
+                "with error %s. This can cause fd limit errors like "
                 "`OSError: [Errno 24] Too many open files`. Consider "
                 "increasing with ulimit -n", current_soft, e)
 
@@ -2283,7 +2719,7 @@ def get_exception_traceback():
     return err_str
 
 
-def split_zmq_path(path: str) -> Tuple[str, str, str]:
+def split_zmq_path(path: str) -> tuple[str, str, str]:
     """Split a zmq path into its parts."""
     parsed = urlparse(path)
     if not parsed.scheme:
@@ -2304,6 +2740,24 @@ def split_zmq_path(path: str) -> Tuple[str, str, str]:
     return scheme, host, port
 
 
+def make_zmq_path(scheme: str, host: str, port: Optional[int] = None) -> str:
+    """Make a ZMQ path from its parts.
+
+    Args:
+        scheme: The ZMQ transport scheme (e.g. tcp, ipc, inproc).
+        host: The host - can be an IPv4 address, IPv6 address, or hostname.
+        port: Optional port number, only used for TCP sockets.
+
+    Returns:
+        A properly formatted ZMQ path string.
+    """
+    if port is None:
+        return f"{scheme}://{host}"
+    if is_valid_ipv6_address(host):
+        return f"{scheme}://[{host}]:{port}"
+    return f"{scheme}://{host}:{port}"
+
+
 # Adapted from: https://github.com/sgl-project/sglang/blob/v0.4.1/python/sglang/srt/utils.py#L783 # noqa: E501
 def make_zmq_socket(
     ctx: Union[zmq.asyncio.Context, zmq.Context],  # type: ignore[name-defined]
@@ -2311,6 +2765,7 @@ def make_zmq_socket(
     socket_type: Any,
     bind: Optional[bool] = None,
     identity: Optional[bytes] = None,
+    linger: Optional[int] = None,
 ) -> Union[zmq.Socket, zmq.asyncio.Socket]:  # type: ignore[name-defined]
     """Make a ZMQ socket with the proper bind/connect semantics."""
 
@@ -2330,7 +2785,7 @@ def make_zmq_socket(
         buf_size = -1  # Use system default buffer size
 
     if bind is None:
-        bind = socket_type != zmq.PUSH
+        bind = socket_type not in (zmq.PUSH, zmq.SUB, zmq.XSUB)
 
     if socket_type in (zmq.PULL, zmq.DEALER, zmq.ROUTER):
         socket.setsockopt(zmq.RCVHWM, 0)
@@ -2342,6 +2797,12 @@ def make_zmq_socket(
 
     if identity is not None:
         socket.setsockopt(zmq.IDENTITY, identity)
+
+    if linger is not None:
+        socket.setsockopt(zmq.LINGER, linger)
+
+    if socket_type == zmq.XPUB:
+        socket.setsockopt(zmq.XPUB_VERBOSE, True)
 
     # Determine if the path is a TCP socket with an IPv6 address.
     # Enable IPv6 on the zmq socket if so.
@@ -2381,17 +2842,6 @@ def zmq_socket_ctx(
         ctx.destroy(linger=linger)
 
 
-def is_in_ray_actor():
-    """Check if we are in a Ray actor."""
-
-    try:
-        import ray
-        return (ray.is_initialized()
-                and ray.get_runtime_context().get_actor_id() is not None)
-    except ImportError:
-        return False
-
-
 def _maybe_force_spawn():
     """Check if we need to force the use of the `spawn` multiprocessing start
     method.
@@ -2399,24 +2849,25 @@ def _maybe_force_spawn():
     if os.environ.get("APHRODITE_WORKER_MULTIPROC_METHOD") == "spawn":
         return
 
-    reason = None
-    if cuda_is_initialized():
-        reason = "CUDA is initialized"
-    elif is_in_ray_actor():
+    reasons = []
+    if is_in_ray_actor():
         # even if we choose to spawn, we need to pass the ray address
         # to the subprocess so that it knows how to connect to the ray cluster.
         # env vars are inherited by subprocesses, even if we use spawn.
         import ray
         os.environ["RAY_ADDRESS"] = ray.get_runtime_context().gcs_address
-        reason = "In a Ray actor and can only be spawned"
+        reasons.append("In a Ray actor and can only be spawned")
 
-    if reason is not None:
+    if cuda_is_initialized():
+        reasons.append("CUDA is initialized")
+    elif xpu_is_initialized():
+        reasons.append("XPU is initialized")
+
+    if reasons:
         logger.warning(
             "We must use the `spawn` multiprocessing start method. "
             "Overriding APHRODITE_WORKER_MULTIPROC_METHOD to 'spawn'. "
-            "See https://docs.aphrodite.ai/en/latest/getting_started/"
-            "troubleshooting.html#python-multiprocessing "
-            "for more information. Reason: {}", reason)
+            "Reasons: {}", "; ".join(reasons))
         os.environ["APHRODITE_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 
@@ -2433,8 +2884,9 @@ def get_mp_context():
 
 
 def bind_kv_cache(
-        ctx: dict[str, Any],
-        kv_cache: list[list[torch.Tensor]],  # [virtual_engine][layer_index]
+    ctx: dict[str, Any],
+    kv_cache: list[list[torch.Tensor]],  # [virtual_engine][layer_index]
+    shared_kv_cache_layers: Optional[dict[str, str]] = None
 ) -> None:
     # Bind the kv_cache tensor to Attention modules, similar to
     # ctx[layer_name].kv_cache[ve]=kv_cache[ve][extract_layer_index(layer_name)]
@@ -2446,12 +2898,17 @@ def bind_kv_cache(
     #    attention of the same layer (e.g., bart's decoder.layers.1.self_attn
     #    and decoder.layers.1.encoder_attn) is mapped to the same kv cache
     #    tensor
+    # 5. Some models have attention layers that share kv cache with previous
+    #    layers, this is specified through shared_kv_cache_layers
+    if shared_kv_cache_layers is None:
+        shared_kv_cache_layers = {}
     from aphrodite.attention import AttentionType
     from aphrodite.modeling.models.utils import extract_layer_index
     layer_need_kv_cache = [
         layer_name for layer_name in ctx
         if (hasattr(ctx[layer_name], 'attn_type') and ctx[layer_name].attn_type
             in (AttentionType.DECODER, AttentionType.ENCODER_DECODER))
+                and ctx[layer_name].kv_sharing_target_layer_name is None
     ]
     layer_index_sorted = sorted(
         set(
@@ -2464,6 +2921,12 @@ def bind_kv_cache(
         assert len(forward_ctx.kv_cache) == len(kv_cache)
         for ve, ve_kv_cache in enumerate(kv_cache):
             forward_ctx.kv_cache[ve] = ve_kv_cache[kv_cache_idx]
+    if shared_kv_cache_layers is not None:
+        for layer_name, target_layer_name in shared_kv_cache_layers.items():
+            assert extract_layer_index(target_layer_name) < \
+               extract_layer_index(layer_name), \
+                   "v0 doesn't support interleaving kv sharing"
+            ctx[layer_name].kv_cache = ctx[target_layer_name].kv_cache
 
 
 def run_method(obj: Any, method: Union[str, bytes, Callable], args: tuple[Any],
@@ -2679,14 +3142,17 @@ def cprofile(save_file: Optional[str] = None, enabled: bool = True):
 
 # Only relevant for models using ALiBi (e.g, MPT)
 def check_use_alibi(model_config: ModelConfig) -> bool:
-    return (getattr(model_config.hf_text_config, "alibi", False)  # Falcon
+    cfg = model_config.hf_text_config
+    return (getattr(cfg, "alibi", False)  # Falcon
             or ("BloomForCausalLM" in getattr(model_config.hf_config,
                                               "architectures", []))  # Bloom
-            or getattr(model_config.hf_text_config, "position_encoding_type",
-                       "") == "alibi"  # codellm_1b_alibi
-            or
-            (hasattr(model_config.hf_text_config, "attn_config")  # MPT
-             and model_config.hf_text_config.attn_config.get("alibi", False)))
+            or getattr(cfg, "position_encoding_type", "") ==
+            "alibi"  # codellm_1b_alibi
+            or (hasattr(cfg, "attn_config")  # MPT
+                and ((isinstance(cfg.attn_config, dict)
+                      and cfg.attn_config.get("alibi", False)) or
+                     (not isinstance(cfg.attn_config, dict)
+                      and getattr(cfg.attn_config, "alibi", False)))))
 
 
 def sha256(input) -> int:
@@ -2707,6 +3173,29 @@ def sha256(input) -> int:
                           byteorder="big")
 
 
+def sha256_cbor_64bit(input) -> int:
+    """
+    Hash objects using CBOR serialization and SHA-256, then truncate to 64bits.
+
+    This option is useful for non-Python-dependent serialization and hashing.
+
+    Args:
+        input: Object to be serialized and hashed. Supported types include
+            basic Python types and complex structures like lists, tuples, and
+            dictionaries.
+            Custom classes must implement CBOR serialization methods.
+
+    Returns:
+        An integer in the range [0, 2^64-1] representing the lower 64 bits
+        of the SHA-256 hash of the CBOR serialized input.
+    """
+    input_bytes = cbor2.dumps(input, canonical=True)
+    full_hash = int.from_bytes(hashlib.sha256(input_bytes).digest(),
+                               byteorder="big")
+
+    return full_hash & ((1 << 64) - 1)
+
+
 def is_torch_equal_or_newer(target: str) -> bool:
     """Check if the installed torch version is >= the target version.
 
@@ -2717,11 +3206,114 @@ def is_torch_equal_or_newer(target: str) -> bool:
         Whether the condition meets.
     """
     try:
-        torch_version = version.parse(str(torch.__version__))
-        return torch_version >= version.parse(target)
+        return _is_torch_equal_or_newer(str(torch.__version__), target)
     except Exception:
         # Fallback to PKG-INFO to load the package info, needed by the doc gen.
         return Version(importlib.metadata.version('torch')) >= Version(target)
+
+
+# Helper function used in testing.
+def _is_torch_equal_or_newer(torch_version: str, target: str) -> bool:
+    torch_version = version.parse(torch_version)
+    return torch_version >= version.parse(target)
+
+
+@cache
+def _has_module(module_name: str) -> bool:
+    """Return True if *module_name* can be found in the current environment.
+
+    The result is cached so that subsequent queries for the same module incur
+    no additional overhead.
+    """
+    return importlib.util.find_spec(module_name) is not None
+
+
+def has_pplx() -> bool:
+    """Whether the optional `pplx_kernels` package is available."""
+
+    return _has_module("pplx_kernels")
+
+
+def has_deep_ep() -> bool:
+    """Whether the optional `deep_ep` package is available."""
+
+    return _has_module("deep_ep")
+
+
+def has_deep_gemm() -> bool:
+    """Whether the optional `deep_gemm` package is available."""
+
+    return _has_module("deep_gemm")
+
+
+def set_process_title(name: str,
+                      suffix: str = "",
+                      append: bool = False) -> None:
+    """
+    Set the current process title to a specific name with an
+    optional suffix.
+
+    Args:
+        name: The title to assign to the current process.
+        suffix: An optional suffix to append to the base name.
+        append: Whether to append to the existing process title.
+    """
+    if suffix:
+        name = f"{name}_{suffix}"
+    if append:
+        name = f"{setproctitle.getproctitle()}_{name}"
+    else:
+        name = f"{envs.APHRODITE_PROCESS_NAME_PREFIX}::{name}"
+    setproctitle.setproctitle(name)
+
+
+def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
+    """Prepend each output line with process-specific prefix"""
+
+    prefix = f"{CYAN}({worker_name} pid={pid}){RESET} "
+    file_write = file.write
+
+    def write_with_prefix(s: str):
+        if not s:
+            return
+        if file.start_new_line:  # type: ignore[attr-defined]
+            file_write(prefix)
+        idx = 0
+        while (next_idx := s.find('\n', idx)) != -1:
+            next_idx += 1
+            file_write(s[idx:next_idx])
+            if next_idx == len(s):
+                file.start_new_line = True  # type: ignore[attr-defined]
+                return
+            file_write(prefix)
+            idx = next_idx
+        file_write(s[idx:])
+        file.start_new_line = False  # type: ignore[attr-defined]
+
+    file.start_new_line = True  # type: ignore[attr-defined]
+    file.write = write_with_prefix  # type: ignore[method-assign]
+
+
+def decorate_logs(process_name: Optional[str] = None) -> None:
+    """
+    Adds a process-specific prefix to each line of output written to stdout and
+    stderr.
+
+    This function is intended to be called before initializing the api_server,
+    engine_core, or worker classes, so that all subsequent output from the
+    process is prefixed with the process name and PID. This helps distinguish
+    log output from different processes in multi-process environments.
+
+    Args:
+        process_name: Optional; the name of the process to use in the prefix.
+            If not provided, the current process name from the multiprocessing
+            context is used.
+    """
+    if process_name is None:
+        process_name = get_mp_context().current_process().name
+    pid = os.getpid()
+    _add_prefix(sys.stdout, process_name, pid)
+    _add_prefix(sys.stderr, process_name, pid)
 
 
 def tensor_progress_bar(iterable: Iterable[Tuple[str, torch.Tensor]],
