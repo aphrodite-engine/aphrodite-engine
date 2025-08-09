@@ -5,15 +5,13 @@ Punica: Multi-Tenant LoRA Serving.
 https://arxiv.org/abs/2310.18547
 """
 
-from typing import List
-
 import torch
-import triton
-import triton.language as tl
 
 from aphrodite.common.utils import direct_register_custom_op
 from aphrodite.lora.ops.triton_ops.kernel_utils import do_shrink_kernel
 from aphrodite.lora.ops.triton_ops.utils import _get_lora_a_ptr
+from aphrodite.platforms import current_platform
+from aphrodite.triton_utils import tl, triton
 
 
 @triton.jit
@@ -97,7 +95,7 @@ def _lora_shrink_kernel(input_ptr, lora_ptr, out_ptr, M, N, K,
 @torch.inference_mode()
 def _lora_shrink(
     inputs: torch.Tensor,  #  shape [num_tokens, hidden_size]
-    lora_a_weights: List[
+    lora_a_weights: list[
         torch.Tensor],  # shape [num_loras, lora_rank, hidden_size]
     output_tensor: torch.Tensor,  # shape [num_slices, num_tokens, lora_rank]
     token_lora_mapping: torch.Tensor,  # shape [num_tokens]
@@ -111,7 +109,7 @@ def _lora_shrink(
     """
     Args:
         inputs (torch.Tensor): Input tensor
-        lora_a_weights (List[torch.Tensor]): LoRA weights
+        lora_a_weights (list[torch.Tensor]): LoRA weights
         output_tensor (torch.Tensor): output tensor
         token_lora_mapping (torch.Tensor): A tensor mapping each input token
             to the lora-id related to that token. A value of -1 indicates that
@@ -167,7 +165,6 @@ def _lora_shrink(
     NUM_WARPS = 4
     NUM_CTAS = 1
     NUM_STAGES = 2
-    MAX_NREG = None
 
     EVEN_K = K % (BLOCK_K * SPLIT_K) == 0  # type: ignore
 
@@ -212,7 +209,6 @@ def _lora_shrink(
         num_warps=NUM_WARPS,
         num_ctas=NUM_CTAS,
         num_stages=NUM_STAGES,
-        maxnreg=MAX_NREG,
     )
 
     return
@@ -220,7 +216,7 @@ def _lora_shrink(
 
 def _lora_shrink_fake(
     inputs: torch.Tensor,
-    lora_a_weights: List[torch.Tensor],
+    lora_a_weights: list[torch.Tensor],
     output_tensor: torch.Tensor,
     token_lora_mapping: torch.Tensor,
     token_indices_sorted_by_lora_ids: torch.Tensor,
@@ -239,6 +235,7 @@ try:
         op_func=_lora_shrink,
         mutates_args=["output_tensor"],
         fake_impl=_lora_shrink_fake,
+        dispatch_key=current_platform.dispatch_key,
     )
     lora_shrink = torch.ops.aphrodite.lora_shrink
 

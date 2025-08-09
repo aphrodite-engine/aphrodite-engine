@@ -1,5 +1,6 @@
 from typing import List, Optional, Union
 
+import torch
 from loguru import logger
 
 from aphrodite.common.pooling_params import PoolingParams
@@ -20,6 +21,7 @@ class RequestLogger:
         request_id: str,
         prompt: Optional[str],
         prompt_token_ids: Optional[List[int]],
+        prompt_embeds: Optional[torch.Tensor],
         params: Optional[Union[SamplingParams, PoolingParams]],
         lora_request: Optional[LoRARequest],
         prompt_adapter_request: Optional[PromptAdapterRequest],
@@ -37,4 +39,6 @@ class RequestLogger:
                     f"params: {params}, "
                     f"prompt_token_ids: {prompt_token_ids}, "
                     f"lora_request: {lora_request}, "
-                    f"prompt_adapter_request: {prompt_adapter_request}.")
+                    f"prompt_adapter_request: {prompt_adapter_request}, "
+                    "prompt_embeds shape: {}",
+                    prompt_embeds.shape if prompt_embeds is not None else None)

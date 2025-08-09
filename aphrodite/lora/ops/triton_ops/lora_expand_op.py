@@ -5,15 +5,13 @@ Punica: Multi-Tenant LoRA Serving.
 https://arxiv.org/abs/2310.18547
 """
 
-from typing import List
-
 import torch
-import triton
-import triton.language as tl
 
 from aphrodite.common.utils import direct_register_custom_op
 from aphrodite.lora.ops.triton_ops.kernel_utils import do_expand_kernel
 from aphrodite.lora.ops.triton_ops.utils import _get_lora_b_ptr
+from aphrodite.platforms import current_platform
+from aphrodite.triton_utils import tl, triton
 
 
 @triton.jit
@@ -126,7 +124,7 @@ def _lora_expand_kernel(
 @torch.inference_mode()
 def _lora_expand(
     inputs: torch.Tensor,  # shape [num_slices, num_tokens, lora_rank]
-    lora_b_weights: List[
+    lora_b_weights: list[
         torch.Tensor],  # shape [num_lora, hidden_size, lora_rank]
     output_tensor: torch.
     Tensor,  # shape [num_tokens, hidden_size * num_slices]
@@ -142,7 +140,7 @@ def _lora_expand(
     """
     Args:
         inputs (torch.Tensor): input tensor
-        lora_b_weights (List[torch.Tensor]): lora'b weight
+        lora_b_weights (list[torch.Tensor]): lora'b weight
         output_tensor (torch.Tensor): output tensor
         token_lora_mapping (torch.Tensor): A tensor mapping each input token
             to the lora-id related to that token. A value of -1 indicates that
@@ -154,7 +152,7 @@ def _lora_expand(
         lora_token_start_loc (torch.Tensor): A cumulative sum of
             num_tokens_per_lora. lora_token_start_loc[0] is always 0 so that
             lora_token_start_loc[i], along with num_tokens_per_lora[i]
-            identifies the the region in token_indices_sorted_by_lora_ids that
+            identifies the region in token_indices_sorted_by_lora_ids that
             LoRA lora_ids[i] should process.
         lora_ids (torch.Tensor): LoRA ids to process.
         no_lora_flag_cpu (torch.Tensor): A CPU tensor of size 1, that indicates
@@ -203,7 +201,6 @@ def _lora_expand(
     NUM_WARPS = 4
     NUM_CTAS = 1
     NUM_STAGES = 2
-    MAX_NREG = None
 
     EVEN_K = K % BLOCK_K == 0  # type: ignore
 
@@ -257,7 +254,6 @@ def _lora_expand(
         num_warps=NUM_WARPS,
         num_ctas=NUM_CTAS,
         num_stages=NUM_STAGES,
-        maxnreg=MAX_NREG,
     )
 
     return
@@ -265,7 +261,7 @@ def _lora_expand(
 
 def _lora_expand_fake(
     inputs: torch.Tensor,
-    lora_b_weights: List[torch.Tensor],
+    lora_b_weights: list[torch.Tensor],
     output_tensor: torch.Tensor,
     token_lora_mapping: torch.Tensor,
     token_indices_sorted_by_lora_ids: torch.Tensor,
@@ -285,6 +281,7 @@ try:
         op_func=_lora_expand,
         mutates_args=["output_tensor"],
         fake_impl=_lora_expand_fake,
+        dispatch_key=current_platform.dispatch_key,
     )
     lora_expand = torch.ops.aphrodite.lora_expand
 

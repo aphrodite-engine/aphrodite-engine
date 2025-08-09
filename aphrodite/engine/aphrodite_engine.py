@@ -1,4 +1,3 @@
-import copy
 import time
 from collections import Counter as collectionsCounter
 from collections import deque
@@ -8,11 +7,11 @@ from functools import partial
 from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Deque, Dict,
                     Iterable, List, Literal, Mapping, NamedTuple, Optional)
 from typing import Sequence as GenericSequence
-from typing import Set, Type, Union, cast, overload
+from typing import Set, Type, Union, cast
 
 import torch
 from loguru import logger
-from typing_extensions import TypeVar, deprecated
+from typing_extensions import TypeVar
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import (AphroditeConfig, DecodingConfig,
@@ -31,8 +30,8 @@ from aphrodite.common.sequence import (ExecuteModelRequest,
                                        SequenceGroup, SequenceGroupBase,
                                        SequenceGroupMetadata,
                                        SequenceGroupOutput, SequenceStatus)
-from aphrodite.common.utils import (Counter, Device, deprecate_kwargs,
-                                    resolve_obj_by_qualname, weak_bind)
+from aphrodite.common.utils import (Counter, Device, resolve_obj_by_qualname,
+                                    weak_bind)
 from aphrodite.endpoints.openai.logits_processors import (
     get_logits_processors as get_openai_logits_processors)
 from aphrodite.engine.args_tools import EngineArgs
@@ -44,11 +43,9 @@ from aphrodite.engine.output_processor.util import (
     create_output_by_sequence_group)
 from aphrodite.executor.executor_base import ExecutorBase
 from aphrodite.inputs import ProcessorInputs, PromptType, SingletonInputs
-from aphrodite.inputs.parse import is_token_prompt, split_enc_dec_inputs
+from aphrodite.inputs.parse import split_enc_dec_inputs
 from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
-from aphrodite.modeling.guided_decoding import (
-    get_local_guided_decoding_logits_processor)
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from aphrodite.multimodal.processing import EncDecMultiModalProcessor
@@ -251,14 +248,14 @@ class AphroditeEngine:
         self.log_stats = log_stats
         self.use_cached_outputs = use_cached_outputs
 
-        if not self.model_config.skip_tokenizer_init:
-            self.tokenizer = self._init_tokenizer()
-            self.detokenizer = Detokenizer(self.tokenizer)
-            tokenizer_group = self.get_tokenizer_group()
-        else:
+        if self.model_config.skip_tokenizer_init:
             self.tokenizer = None
             self.detokenizer = None
             tokenizer_group = None
+        else:
+            self.tokenizer = self._init_tokenizer()
+            self.detokenizer = Detokenizer(self.tokenizer)
+            tokenizer_group = self.get_tokenizer_group()
 
         # Ensure that the function doesn't contain a reference to self,
         # to avoid engine GC issues
@@ -402,10 +399,8 @@ class AphroditeEngine:
                 self.scheduler,
                 self.seq_counter,
                 get_tokenizer_for_seq,
-                stop_checker=StopChecker(
-                    self.scheduler_config.max_model_len,
-                    get_tokenizer_for_seq,
-                ),
+                stop_checker=StopChecker(self.scheduler_config.max_model_len,
+                                         get_tokenizer_for_seq),
             ))
 
         self.seq_id_to_seq_group: Dict[str, SequenceGroupBase] = {}
@@ -413,6 +408,10 @@ class AphroditeEngine:
         # Flag to set when an input fails to process and the engine should run
         # the next step without re-scheduling.
         self._skip_scheduling_next_step = False
+
+        # Don't keep the dummy data in memory
+        self.reset_mm_cache()
+
 
     def _initialize_kv_caches(self) -> None:
         """Initialize the KV cache in the worker(s).
@@ -641,7 +640,6 @@ class AphroditeEngine:
     def stop_remote_worker_execution_loop(self) -> None:
         self.modeling.stop_remote_worker_execution_loop()
 
-    @overload
     def add_request(
         self,
         request_id: str,
@@ -653,42 +651,6 @@ class AphroditeEngine:
         trace_headers: Optional[Mapping[str, str]] = None,
         prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
-    ) -> None:
-        ...
-
-    @overload
-    @deprecated("'inputs' will be renamed to 'prompt")
-    def add_request(
-        self,
-        request_id: str,
-        *,
-        inputs: PromptType,
-        params: Union[SamplingParams, PoolingParams],
-        arrival_time: Optional[float] = None,
-        lora_request: Optional[LoRARequest] = None,
-        trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-        priority: int = 0,
-    ) -> None:
-        ...
-
-    @deprecate_kwargs(
-        "inputs",
-        additional_message="Please use the 'prompt' parameter instead.",
-    )
-    def add_request(
-            self,
-            request_id: str,
-            prompt: Optional[PromptType] = None,
-            params: Optional[Union[SamplingParams, PoolingParams]] = None,
-            arrival_time: Optional[float] = None,
-            lora_request: Optional[LoRARequest] = None,
-            tokenization_kwargs: Optional[dict[str, Any]] = None,
-            trace_headers: Optional[Mapping[str, str]] = None,
-            prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-            priority: int = 0,
-            *,
-            inputs: Optional[PromptType] = None,  # DEPRECATED
     ) -> None:
         """Add a request to the engine's request pool.
 
@@ -735,9 +697,9 @@ class AphroditeEngine:
             >>> # continue the request processing
             >>> ...
         """
-        if inputs is not None:
-            prompt = inputs
-        assert prompt is not None and params is not None
+        if not isinstance(request_id, str):
+            raise TypeError(
+                f"request_id must be a string, got {type(request_id)}")
 
         if lora_request is not None and not self.lora_config:
             raise ValueError(f"Got lora_request {lora_request} but LoRA is "
@@ -748,11 +710,10 @@ class AphroditeEngine:
                              "Priority scheduling is not enabled.")
 
         if isinstance(params, SamplingParams) \
-            and (params.guided_decoding or params.logits_processors) \
+            and params.logits_processors \
             and self.scheduler_config.num_scheduler_steps > 1:
             raise ValueError(
-                "Guided decoding and logits processors are not supported "
-                "in multi-step decoding")
+                "Logits processors are not supported in multi-step decoding")
 
         if arrival_time is None:
             arrival_time = time.time()
@@ -762,11 +723,6 @@ class AphroditeEngine:
                 and not prompt.get("prompt_token_ids", None)):
             seq_len = prompt["prompt_embeds"].shape[0]
             prompt["prompt_token_ids"] = [0] * seq_len
-
-        if self.tokenizer is not None:
-            self._validate_token_prompt(
-                prompt,
-                tokenizer=self.get_tokenizer(lora_request=lora_request))
 
         processed_inputs = self.input_preprocessor.preprocess(
             prompt,
@@ -785,27 +741,6 @@ class AphroditeEngine:
             trace_headers=trace_headers,
             priority=priority,
         )
-
-    def _validate_token_prompt(self, prompt: PromptType,
-                               tokenizer: AnyTokenizer):
-        # Guard against out-of-vocab tokens.
-        # For some tokenizers, tokenizer.decode will happily return empty text
-        # for token ids that are out of vocab, and we don't detect token ids
-        # that are greater than the max token id before running the model.
-        # However, these token ids will later crash a cuda kernel at runtime
-        # with an index out of bounds error. This will crash the entire engine.
-        # This needs to happen before multimodal input pre-processing, which
-        # may add dummy <image> tokens that aren't part of the tokenizer's
-        # vocabulary.
-        if is_token_prompt(prompt):
-            prompt_ids = prompt["prompt_token_ids"]
-            if len(prompt_ids) == 0:
-                # Empty prompt check is handled later
-                return
-            max_input_id = max(prompt_ids)
-            if max_input_id > tokenizer.max_token_id:
-                raise ValueError(
-                    "Token id {} is out of vocabulary".format(max_input_id))
 
     def _create_sequence_group_with_sampling(
         self,
@@ -944,6 +879,10 @@ class AphroditeEngine:
         Returns True if there are unfinished requests for the virtual engine.
         """
         return self.scheduler[virtual_engine].has_unfinished_seqs()
+
+    def reset_mm_cache(self) -> bool:
+        """Reset the multi-modal cache."""
+        return self.input_preprocessor.mm_registry.reset_processor_cache()
 
     def reset_prefix_cache(self, device: Optional[Device] = None) -> bool:
         """Reset prefix cache for all devices."""
@@ -1684,6 +1623,20 @@ class AphroditeEngine:
         gpu_prefix_cache_hit_rate = self.scheduler[
             0].get_prefix_cache_hit_rate(Device.GPU)
 
+        # Exchange the uasge and cache hit stats between gpu and cpu when
+        # running on cpu because the cpu_worker.py intentionally reports the
+        # number of cpu blocks as gpu blocks in favor of cache management.
+        if self.device_config.device_type == "cpu":
+            num_total_gpu, num_total_cpu = num_total_cpu, num_total_gpu
+            gpu_cache_usage_sys, cpu_cache_usage_sys = (
+                cpu_cache_usage_sys,
+                gpu_cache_usage_sys,
+            )
+            gpu_prefix_cache_hit_rate, cpu_prefix_cache_hit_rate = (
+                cpu_prefix_cache_hit_rate,
+                gpu_prefix_cache_hit_rate,
+            )
+
         # Iteration stats
         num_prompt_tokens_iter = 0
         num_generation_tokens_iter = 0
@@ -1701,9 +1654,6 @@ class AphroditeEngine:
         time_inference_requests: List[float] = []
         time_prefill_requests: List[float] = []
         time_decode_requests: List[float] = []
-        time_in_queue_requests: List[float] = []
-        model_forward_time_requests: List[float] = []
-        model_execute_time_requests: List[float] = []
         #   Metadata
         num_prompt_tokens_requests: List[int] = []
         num_generation_tokens_requests: List[int] = []
@@ -1817,15 +1767,6 @@ class AphroditeEngine:
                             now - seq_group.metrics.first_token_time)
                         time_inference_requests.append(
                             now - seq_group.metrics.first_scheduled_time)
-                    if seq_group.metrics.time_in_queue is not None:
-                        time_in_queue_requests.append(
-                            seq_group.metrics.time_in_queue)
-                    if seq_group.metrics.model_forward_time is not None:
-                        model_forward_time_requests.append(
-                            seq_group.metrics.model_forward_time)
-                    if seq_group.metrics.model_execute_time is not None:
-                        model_execute_time_requests.append(
-                            seq_group.metrics.model_execute_time * 1000)
                     # Metadata
                     request_ids.append(seq_group.request_id)
                     num_prompt_tokens_requests.append(
@@ -1857,13 +1798,6 @@ class AphroditeEngine:
                 num_generation_tokens_from_prefill_groups)
             num_tokens_iter = (num_generation_tokens_iter +
                                num_prompt_tokens_iter)
-        # Spec decode, if enabled, emits specialized metrics from the worker in
-        # sampler output.
-        if model_output and isinstance(model_output[0], SamplerOutput) and (
-                model_output[0].spec_decode_worker_metrics is not None):
-            spec_decode_metrics = model_output[0].spec_decode_worker_metrics
-        else:
-            spec_decode_metrics = None
 
         return Stats(
             now=now,
@@ -1885,7 +1819,6 @@ class AphroditeEngine:
             num_tokens_iter=num_tokens_iter,
             time_to_first_tokens_iter=time_to_first_tokens_iter,
             time_per_output_tokens_iter=time_per_output_tokens_iter,
-            spec_decode_metrics=spec_decode_metrics,
             num_preemption_iter=num_preemption_iter,
 
             # Request stats
@@ -1895,9 +1828,6 @@ class AphroditeEngine:
             time_inference_requests=time_inference_requests,
             time_prefill_requests=time_prefill_requests,
             time_decode_requests=time_decode_requests,
-            time_in_queue_requests=time_in_queue_requests,
-            model_forward_time_requests=model_forward_time_requests,
-            model_execute_time_requests=model_execute_time_requests,
             #   Metadata
             num_prompt_tokens_requests=num_prompt_tokens_requests,
             num_generation_tokens_requests=num_generation_tokens_requests,
@@ -1986,8 +1916,14 @@ class AphroditeEngine:
                 context=trace_context,
                 start_time=arrival_time_nano_seconds) as seq_span:
             metrics = seq_group.metrics
-            ttft = metrics.first_token_time - metrics.arrival_time
-            e2e_time = metrics.finished_time - metrics.arrival_time
+
+            # Handle potential None values for cancelled/aborted requests
+            ttft = (metrics.first_token_time - metrics.arrival_time
+                    if metrics.first_token_time is not None else None)
+
+            e2e_time = (metrics.finished_time - metrics.arrival_time
+                        if metrics.finished_time is not None else None)
+
             seq_span.set_attribute(SpanAttributes.GEN_AI_RESPONSE_MODEL,
                                    self.model_config.model)
             seq_span.set_attribute(SpanAttributes.GEN_AI_REQUEST_ID,
@@ -2010,11 +1946,19 @@ class AphroditeEngine:
                     seq.get_output_len()
                     for seq in seq_group.get_finished_seqs()
                 ]))
-            seq_span.set_attribute(SpanAttributes.GEN_AI_LATENCY_TIME_IN_QUEUE,
-                                   metrics.time_in_queue)
-            seq_span.set_attribute(
-                SpanAttributes.GEN_AI_LATENCY_TIME_TO_FIRST_TOKEN, ttft)
-            seq_span.set_attribute(SpanAttributes.GEN_AI_LATENCY_E2E, e2e_time)
+
+            # Only set timing attributes if the values are available
+            if metrics.time_in_queue is not None:
+                seq_span.set_attribute(
+                    SpanAttributes.GEN_AI_LATENCY_TIME_IN_QUEUE,
+                    metrics.time_in_queue)
+            if ttft is not None:
+                seq_span.set_attribute(
+                    SpanAttributes.GEN_AI_LATENCY_TIME_TO_FIRST_TOKEN, ttft)
+            if e2e_time is not None:
+                seq_span.set_attribute(SpanAttributes.GEN_AI_LATENCY_E2E,
+                                       e2e_time)
+
             if metrics.scheduler_time is not None:
                 seq_span.set_attribute(
                     SpanAttributes.GEN_AI_LATENCY_TIME_IN_SCHEDULER,
@@ -2056,10 +2000,16 @@ class AphroditeEngine:
         if not prompt_ids:
             if prompt_type == "encoder" and model_config.is_multimodal_model:
                 pass  # Mllama may have empty encoder inputs for text-only data
-            if prompt_inputs["type"] == "embeds":
+            elif prompt_inputs["type"] == "embeds":
                 pass
             else:
                 raise ValueError(f"The {prompt_type} prompt cannot be empty")
+
+        if tokenizer is not None:
+            max_input_id = max(prompt_ids, default=0)
+            if max_input_id > tokenizer.max_token_id:
+                raise ValueError(
+                    f"Token id {max_input_id} is out of vocabulary")
 
         max_prompt_len = self.model_config.max_model_len
         if len(prompt_ids) > max_prompt_len:
@@ -2104,36 +2054,6 @@ class AphroditeEngine:
 
         logits_processors = []
 
-        if sampling_params.guided_decoding is not None:
-            # Defensively copy sampling params since guided decoding logits
-            # processors can have different state for each request
-            sampling_params = copy.copy(sampling_params)
-            guided_decoding = sampling_params.guided_decoding
-
-            logger.debug(
-                "Building guided decoding logits processor in "
-                "AphroditeEngine. Params: {}", guided_decoding)
-
-            tokenizer = self.get_tokenizer(lora_request=lora_request)
-            guided_decoding.backend = guided_decoding.backend or \
-                self.decoding_config.backend
-
-            if self.decoding_config.reasoning_backend:
-                logger.debug("Building with reasoning backend {}",
-                             self.decoding_config.reasoning_backend)
-
-            processor = get_local_guided_decoding_logits_processor(
-                guided_params=guided_decoding,
-                tokenizer=tokenizer,
-                model_config=self.model_config,
-                reasoning_backend=self.decoding_config.reasoning_backend,
-            )
-            if processor:
-                logits_processors.append(processor)
-
-            # Unset so this doesn't get passed down to the model
-            sampling_params.guided_decoding = None
-
         if (sampling_params.logit_bias or sampling_params.allowed_token_ids):
             tokenizer = self.get_tokenizer(lora_request=lora_request)
 
@@ -2171,8 +2091,7 @@ class AphroditeEngine:
 
 
 if envs.is_set("APHRODITE_USE_V1") and envs.APHRODITE_USE_V1:
-    from aphrodite.v1.engine.llm_engine import (
-        LLMEngine as V1AphroditeEngine)
+    from aphrodite.v1.engine.llm_engine import LLMEngine as V1AphroditeEngine
     AphroditeEngine = V1AphroditeEngine  # type: ignore
 
 setup_logger()

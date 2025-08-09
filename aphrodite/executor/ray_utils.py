@@ -84,9 +84,8 @@ try:
             # TODO: This is needed right now because Ray Compiled Graph
             # executes on a background thread, so we need to reset torch's
             # current device.
-            import torch
             if not self.compiled_dag_cuda_device_set:
-                torch.cuda.set_device(self.worker.device)
+                current_platform.set_device(self.worker.device)
                 self.compiled_dag_cuda_device_set = True
 
             output = self.worker._execute_model_spmd(execute_model_req,
@@ -110,8 +109,7 @@ try:
                     # Not needed
                     pass
                 else:
-                    import torch
-                    torch.cuda.set_device(self.worker.device)
+                    current_platform.set_device(self.worker.device)
 
                 self.compiled_dag_cuda_device_set = True
 
@@ -143,7 +141,9 @@ try:
 
 except ImportError as e:
     ray = None  # type: ignore
-    ray_import_err = e
+    # only capture string to avoid variable references in the traceback that can
+    # prevent garbage collection in some cases
+    ray_import_err = str(e)
     RayWorkerWrapper = None  # type: ignore
 
 
@@ -155,8 +155,8 @@ def ray_is_available() -> bool:
 def assert_ray_available():
     """Raise an exception if Ray is not available."""
     if ray is None:
-        raise ValueError("Failed to import Ray, please install Ray with "
-                         "`pip install ray`.") from ray_import_err
+        raise ValueError(f"Failed to import Ray: {ray_import_err}."
+                         "Please install Ray with `pip install ray`.")
 
 
 def _verify_bundles(placement_group: "PlacementGroup",
@@ -291,9 +291,12 @@ def initialize_ray_cluster(
             logger.warning(
                 "No existing RAY instance detected. "
                 "A new instance will be launched with current node resources.")
-            ray.init(address=ray_address, num_gpus=parallel_config.world_size)
+            ray.init(address=ray_address,
+                     num_gpus=parallel_config.world_size,
+                     runtime_env=parallel_config.ray_runtime_env)
     else:
-        ray.init(address=ray_address)
+        ray.init(address=ray_address,
+                 runtime_env=parallel_config.ray_runtime_env)
 
     device_str = current_platform.ray_device_key
     if not device_str:

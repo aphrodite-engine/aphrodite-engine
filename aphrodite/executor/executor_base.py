@@ -3,6 +3,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import (Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple,
                     Union)
+from functools import cached_property
 
 import torch.nn as nn
 from loguru import logger
@@ -16,6 +17,7 @@ from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.worker.worker_base import WorkerBase
+from aphrodite.tasks import SupportedTask
 
 _R = TypeVar("_R", default=Any)
 
@@ -29,6 +31,7 @@ class ExecutorBase(ABC):
     """
 
     uses_ray: bool  # whether the executor uses Ray for orchestration.
+    supports_pp: bool = False  # whether the executor supports PP
 
     def __init__(
         self,
@@ -129,6 +132,11 @@ class ExecutorBase(ABC):
             return func(worker.get_model())
 
         return self.collective_rpc(rpc_func)
+
+    @cached_property  # Avoid unnecessary RPC calls
+    def supported_tasks(self) -> tuple[SupportedTask, ...]:
+        output = self.collective_rpc("get_supported_tasks")
+        return output[0]
 
     def execute_model(
         self, execute_model_req: ExecuteModelRequest

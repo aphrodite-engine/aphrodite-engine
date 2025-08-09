@@ -9,7 +9,7 @@ import typing
 # The environment variables override should be imported before any other
 # modules to ensure that the environment variables are set before any
 # other modules are imported.
-import aphrodite.env_override  # noqa: F401
+import aphrodite.common.env_override  # noqa: F401
 
 MODULE_ATTRS = {
     "AsyncEngineArgs": ".engine.arg_utils:AsyncEngineArgs",

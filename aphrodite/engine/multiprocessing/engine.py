@@ -11,6 +11,7 @@ from aphrodite import AsyncEngineArgs, SamplingParams
 from aphrodite.common.config import AphroditeConfig
 # yapf: enable
 from aphrodite.common.outputs import RequestOutput
+from aphrodite.common.utils import deprecate_kwargs
 from aphrodite.engine.aphrodite_engine import AphroditeEngine
 # yapf conflicts with isort for this block
 # yapf: disable
@@ -25,6 +26,7 @@ from aphrodite.engine.multiprocessing import (APHRODITE_RPC_SUCCESS_STR,
                                               RPCIsSleepingResponse,
                                               RPCLoadAdapterRequest,
                                               RPCProcessRequest,
+                                              RPCResetMultiModalCacheRequest,
                                               RPCResetPrefixCacheRequest,
                                               RPCSleepRequest,
                                               RPCStartupRequest,
@@ -115,10 +117,20 @@ class MQAphroditeEngine:
             return ENGINE_DEAD_ERROR()
 
     @classmethod
-    def from_aphrodite_config(cls, aphrodite_config: AphroditeConfig,
-                         usage_context: UsageContext,
-                         disable_log_requests: bool, disable_log_stats: bool,
-                         ipc_path: str) -> "MQAphroditeEngine":
+    @deprecate_kwargs(
+        "disable_log_requests",
+        additional_message=("This argument will have no effect. "
+                            "Use `enable_log_requests` instead."),
+    )
+    def from_aphrodite_config(
+            cls,
+            aphrodite_config: AphroditeConfig,
+            usage_context: UsageContext,
+            enable_log_requests: bool,
+            disable_log_stats: bool,
+            ipc_path: str,
+            disable_log_requests: bool = True,  # Deprecated, will be removed
+    ) -> "MQAphroditeEngine":
         # Setup plugins for each process
         from aphrodite.plugins import load_general_plugins
         load_general_plugins()
@@ -131,7 +143,7 @@ class MQAphroditeEngine:
             ipc_path=ipc_path,
             usage_context=usage_context,
             use_async_sockets=use_async_sockets,
-            log_requests=(not disable_log_requests),
+            log_requests=enable_log_requests,
             log_stats=(not disable_log_stats),
         )
 
@@ -145,7 +157,7 @@ class MQAphroditeEngine:
             ipc_path=ipc_path,
             aphrodite_config=aphrodite_config,
             usage_context=usage_context,
-            disable_log_requests=engine_args.disable_log_requests,
+            enable_log_requests=engine_args.enable_log_requests,
             disable_log_stats=engine_args.disable_log_stats,
         )
 
@@ -269,6 +281,8 @@ class MQAphroditeEngine:
                         self.stop_profile()
                 elif isinstance(request, RPCLoadAdapterRequest):
                     self._handle_load_adapter_request(request)
+                elif isinstance(request, RPCResetMultiModalCacheRequest):
+                    self.reset_mm_cache()
                 elif isinstance(request, RPCResetPrefixCacheRequest):
                     self.reset_prefix_cache()
                 elif isinstance(request, RPCSleepRequest):
@@ -284,7 +298,7 @@ class MQAphroditeEngine:
         except Exception as e:
             self._set_errored(e)
             self._send_unhealthy(e)
-            raise e
+            raise e from None
 
     def _handle_process_request(self, request: RPCProcessRequest):
         """Handle RPCProcessRequest by adding it to the AphroditeEngine."""
@@ -409,6 +423,9 @@ class MQAphroditeEngine:
     def stop_profile(self) -> None:
         self.engine.stop_profile()
 
+    def reset_mm_cache(self) -> bool:
+        return self.engine.reset_mm_cache()
+
     def reset_prefix_cache(self) -> bool:
         return self.engine.reset_prefix_cache()
 
@@ -426,9 +443,10 @@ def signal_handler(*_) -> None:
     raise KeyboardInterrupt("MQAphroditeEngine terminated")
 
 
-def run_mp_engine(aphrodite_config: AphroditeConfig, usage_context: UsageContext,
+def run_mp_engine(aphrodite_config: AphroditeConfig,
+                  usage_context: UsageContext,
                   ipc_path: str, disable_log_stats: bool,
-                  disable_log_requests: bool, engine_alive):
+                  enable_log_requests: bool, engine_alive):
     try:
         # Ensure we can serialize transformer config before spawning
         maybe_register_config_serialize_by_value()
@@ -437,7 +455,7 @@ def run_mp_engine(aphrodite_config: AphroditeConfig, usage_context: UsageContext
             aphrodite_config=aphrodite_config,
             usage_context=usage_context,
             disable_log_stats=disable_log_stats,
-            disable_log_requests=disable_log_requests,
+            enable_log_requests=enable_log_requests,
             ipc_path=ipc_path)
 
         signal.signal(signal.SIGTERM, signal_handler)
@@ -447,4 +465,4 @@ def run_mp_engine(aphrodite_config: AphroditeConfig, usage_context: UsageContext
     except BaseException as e:
         logger.exception(e)
         engine_alive.value = False
-        raise e
+        raise e from None

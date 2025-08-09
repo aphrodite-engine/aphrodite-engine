@@ -14,6 +14,7 @@ from typing import Any, AsyncGenerator, Optional
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+import aphrodite.common.envs as envs
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.utils import (FlexibleArgumentParser,
                                     iterate_with_cancellation, random_uuid)
@@ -21,7 +22,6 @@ from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_aphrodite import AsyncAphrodite
 from aphrodite.server.launch import serve_http
 
-TIMEOUT_KEEP_ALIVE = 5  # seconds.
 app = FastAPI()
 engine = None
 
@@ -114,7 +114,7 @@ async def run_server(args: Namespace,
         host=args.host,
         port=args.port,
         log_level=args.log_level,
-        timeout_keep_alive=TIMEOUT_KEEP_ALIVE,
+        timeout_keep_alive=envs.APHRODITE_HTTP_TIMEOUT_KEEP_ALIVE,
         ssl_keyfile=args.ssl_keyfile,
         ssl_certfile=args.ssl_certfile,
         ssl_ca_certs=args.ssl_ca_certs,

@@ -1,50 +1,53 @@
+from __future__ import annotations
+
 import argparse
+import typing
 
-import aphrodite.endpoints.cli.benchmark.latency
-import aphrodite.endpoints.cli.benchmark.serve
-import aphrodite.endpoints.cli.benchmark.throughput
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.endpoints.cli.benchmark.base import BenchmarkSubcommandBase
 from aphrodite.endpoints.cli.types import CLISubcommand
+from aphrodite.endpoints.utils import (
+    APHRODITE_SUBCMD_PARSER_EPILOG, show_filtered_argument_or_group_from_help)
 
-BENCHMARK_CMD_MODULES = [
-    aphrodite.endpoints.cli.benchmark.latency,
-    aphrodite.endpoints.cli.benchmark.serve,
-    aphrodite.endpoints.cli.benchmark.throughput,
-]
+if typing.TYPE_CHECKING:
+    from aphrodite.common.utils import FlexibleArgumentParser
 
 
 class BenchmarkSubcommand(CLISubcommand):
     """ The `bench` subcommand for the Aphrodite CLI. """
 
-    def __init__(self):
-        self.name = "bench"
-        super().__init__()
+    name = "bench"
+    help = "Aphrodite bench subcommand."
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
         args.dispatch_function(args)
 
     def validate(self, args: argparse.Namespace) -> None:
-        if args.bench_type in self.cmds:
-            self.cmds[args.bench_type].validate(args)
+        pass
 
     def subparser_init(
             self,
             subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         bench_parser = subparsers.add_parser(
-            "bench",
-            help="Aphrodite bench subcommand.",
-            description="Aphrodite bench subcommand.",
+            self.name,
+            help=self.help,
+            description=self.help,
             usage="aphrodite bench <bench_type> [options]")
         bench_subparsers = bench_parser.add_subparsers(required=True,
                                                        dest="bench_type")
-        self.cmds = {}
-        for cmd_module in BENCHMARK_CMD_MODULES:
-            new_cmds = cmd_module.cmd_init()
-            for cmd in new_cmds:
-                cmd.subparser_init(bench_subparsers).set_defaults(
-                    dispatch_function=cmd.cmd)
-                self.cmds[cmd.name] = cmd
+
+        for cmd_cls in BenchmarkSubcommandBase.__subclasses__():
+            cmd_subparser = bench_subparsers.add_parser(
+                cmd_cls.name,
+                help=cmd_cls.help,
+                description=cmd_cls.help,
+                usage=f"aphrodite bench {cmd_cls.name} [options]",
+            )
+            cmd_subparser.set_defaults(dispatch_function=cmd_cls.cmd)
+            cmd_cls.add_cli_args(cmd_subparser)
+            show_filtered_argument_or_group_from_help(cmd_subparser,
+                                                      ["bench", cmd_cls.name])
+            cmd_subparser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG
         return bench_parser
 
 
