@@ -8,13 +8,13 @@ import torch.distributed
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.attention.layer import Attention
+from aphrodite.common.config import (AphroditeConfig,
+                                     get_layers_from_aphrodite_config)
 from aphrodite.common.sequence import (ExecuteModelRequest,
                                        IntermediateTensors,
                                        SequenceGroupMetadata,
                                        SequenceGroupMetadataDelta)
-from aphrodite.utils import (GiB_bytes, MemorySnapshot, bind_kv_cache,
-                                    memory_profiling)
 from aphrodite.device_allocator.cumem import CuMemAllocator
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment,
@@ -25,7 +25,8 @@ from aphrodite.modeling import set_random_seed
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
 from aphrodite.platforms import current_platform
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
+from aphrodite.utils import (GiB_bytes, MemorySnapshot, bind_kv_cache,
+                             memory_profiling)
 from aphrodite.worker.cache_engine import CacheEngine
 from aphrodite.worker.enc_dec_model_runner import EncoderDecoderModelRunner
 from aphrodite.worker.model_runner import GPUModelRunnerBase, ModelRunner
@@ -70,7 +71,12 @@ class Worker(LocalOrDistributedWorkerBase):
             or (speculative_config.draft_model_config.hf_config.model_type ==
                 model_config.hf_config.model_type) \
             or (speculative_config.draft_model_config.hf_config.model_type
-                not in ("medusa", "mlp_speculator", "eagle", "deepseek_mtp")) \
+                not in ("medusa",
+                        "mlp_speculator",
+                        "eagle",
+                        "deepseek_mtp",
+                        "glm4_moe_mtp",
+                        "mimo_mtp")) \
                     else {"return_hidden_states": True}
 
         ModelRunnerClass: Type[GPUModelRunnerBase] = ModelRunner
@@ -123,6 +129,8 @@ class Worker(LocalOrDistributedWorkerBase):
         if self.profiler is None:
             raise RuntimeError("Profiler is not enabled.")
         self.profiler.stop()
+        print(
+            self.profiler.key_averages().table(sort_by="self_cuda_time_total"))
 
     def sleep(self, level: int = 1) -> None:
         free_bytes_before_sleep = torch.cuda.mem_get_info()[0]
@@ -337,8 +345,29 @@ class Worker(LocalOrDistributedWorkerBase):
             self.cache_engine[ve].gpu_cache
             for ve in range(self.parallel_config.pipeline_parallel_size)
         ]
+
+        # Layer pairings for cross-layer KV sharing.
+        # If an Attention layer `layer_name` is in the keys of this dict, it
+        # means this layer will perform attention using the keys and values
+        # from the KV cache of `shared_kv_cache_layers[layer_name]`.
+        shared_kv_cache_layers: dict[str, str] = {}
+
+        attn_layers = get_layers_from_aphrodite_config(
+            self.aphrodite_config, Attention)
+
+        for layer_name, attn_module in attn_layers.items():
+            if (kv_tgt_layer :=
+                    attn_module.kv_sharing_target_layer_name) is not None:
+                # The layer doesn't need its own KV cache and will use that of
+                # the target layer. We skip creating a KVCacheSpec for it, so
+                # that KV cache management logic will act as this layer does
+                # not exist, and doesn't allocate KV cache for the layer. This
+                # enables the memory saving of cross-layer kv sharing, allowing
+                # a given amount of memory to accommodate longer context lengths
+                # or enable more requests to be processed simultaneously.
+                shared_kv_cache_layers[layer_name] = kv_tgt_layer
         bind_kv_cache(self.compilation_config.static_forward_context,
-                      self.gpu_cache)
+                      self.gpu_cache, shared_kv_cache_layers)
 
     def _warm_up_model(self) -> None:
         # warm up sizes that are not in cudagraph capture sizes,
@@ -482,19 +511,6 @@ class Worker(LocalOrDistributedWorkerBase):
     def list_loras(self) -> Set[int]:
         return self.model_runner.list_loras()
 
-    def add_prompt_adapter(
-            self, prompt_adapter_request: PromptAdapterRequest) -> bool:
-        return self.model_runner.add_prompt_adapter(prompt_adapter_request)
-
-    def remove_prompt_adapter(self, prompt_adapter_id: int) -> bool:
-        return self.model_runner.remove_lora(prompt_adapter_id)
-
-    def pin_prompt_adapter(self, prompt_adapter_id: int) -> bool:
-        return self.model_runner.pin_prompt_adapter(prompt_adapter_id)
-
-    def list_prompt_adapters(self) -> Set[int]:
-        return self.model_runner.list_prompt_adapters()
-
     @property
     def max_model_len(self) -> int:
         return self.model_config.max_model_len
@@ -522,7 +538,8 @@ def init_worker_distributed_environment(
     set_custom_all_reduce(not parallel_config.disable_custom_all_reduce)
 
     init_distributed_environment(parallel_config.world_size, rank,
-                                 distributed_init_method, local_rank)
+                                 distributed_init_method, local_rank,
+                                 current_platform.dist_backend)
     ensure_model_parallel_initialized(parallel_config.tensor_parallel_size,
                                       parallel_config.pipeline_parallel_size)
 

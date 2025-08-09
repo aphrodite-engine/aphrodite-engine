@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 import torch
 
@@ -9,6 +9,7 @@ from aphrodite.common.sequence import (IntermediateTensors, PoolerOutput,
                                        SequenceData, SequenceGroupMetadata)
 from aphrodite.distributed import get_pp_group
 from aphrodite.forward_context import set_forward_context
+from aphrodite.modeling.models.interfaces_base import AphroditeModelForPooling
 from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.multimodal import MultiModalKwargs
 from aphrodite.worker.model_runner import (GPUModelRunnerBase,
@@ -57,13 +58,6 @@ class PoolingModelRunner(
             assert model_input.lora_mapping is not None
             self.set_active_loras(model_input.lora_requests,
                                   model_input.lora_mapping)
-
-        if self.prompt_adapter_config:
-            assert model_input.prompt_adapter_requests is not None
-            assert model_input.prompt_adapter_mapping is not None
-            self.set_active_prompt_adapters(
-                model_input.prompt_adapter_requests,
-                model_input.prompt_adapter_mapping)
 
         # Currently cuda graph is only supported by the decode phase.
         assert model_input.attn_metadata is not None
@@ -115,10 +109,13 @@ class PoolingModelRunner(
                 input_ids=model_input.input_tokens,
                 positions=model_input.input_positions,
                 intermediate_tensors=intermediate_tensors,
-                **MultiModalKwargs.as_kwargs(multi_modal_kwargs,
-                                             device=self.device),
+                **MultiModalKwargs.as_kwargs(
+                    multi_modal_kwargs,
+                    device=self.device,
+                ),
                 **cross_enc_kwargs,
-                **seqlen_agnostic_kwargs)
+                **seqlen_agnostic_kwargs,
+            )
 
         if (self.observability_config is not None
                 and self.observability_config.collect_model_forward_time):
@@ -188,6 +185,13 @@ class PoolingModelRunner(
         for i, seq_group_metadata in enumerate(seq_group_metadata_list):
             seq_ids = list(seq_group_metadata.seq_data.keys())
             pooling_params = seq_group_metadata.pooling_params
+            assert pooling_params is not None
+            assert (task := pooling_params.task) is not None, (
+                "You did not set `task` in the API")
+
+            model = cast(AphroditeModelForPooling, self.model)
+            to_update = model.pooler.get_pooling_updates(task)
+            to_update.apply(pooling_params)
             seq_groups.append((seq_ids, pooling_params))
 
         seq_data: Dict[int, SequenceData] = {}
