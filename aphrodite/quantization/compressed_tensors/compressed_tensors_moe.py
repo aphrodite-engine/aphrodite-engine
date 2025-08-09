@@ -10,6 +10,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe import (
     FusedMoE, FusedMoEActivationFormat, FusedMoEConfig, FusedMoEMethodBase,
     FusedMoEPermuteExpertsUnpermute, FusedMoEPrepareAndFinalize,
@@ -74,10 +75,10 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
                     raise ValueError(
                         "WNA16MoE is not supported with actorder=group/dynamic."
                     )
-                logger.info_once("Using CompressedTensorsWNA16MoEMethod")
+                log_once("INFO", "Using CompressedTensorsWNA16MoEMethod")
                 return CompressedTensorsWNA16MoEMethod(quant_config)
             else:
-                logger.info_once("Using CompressedTensorsWNA16MarlinMoEMethod")
+                log_once("INFO", "Using CompressedTensorsWNA16MarlinMoEMethod")
                 return CompressedTensorsWNA16MarlinMoEMethod(quant_config)
         elif quant_config._is_fp4a4_nvfp4(weight_quant, input_quant):
             return CompressedTensorsW4A4MoeMethod()
@@ -215,9 +216,11 @@ class CompressedTensorsW4A4MoeMethod(CompressedTensorsMoEMethod):
 
         if not torch.allclose(layer.w13_weight_global_scale[:, 0],
                               layer.w13_weight_global_scale[:, 1]):
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "w1_weight_global_scale must match w3_weight_global_scale. "
-                "Accuracy may be affected.")
+                "Accuracy may be affected.",
+            )
 
         # Take inverse of global scale saved to disk
         layer.w13_weight_scale_2 = torch.nn.Parameter(
@@ -520,10 +523,12 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
                     "activation scales are None.")
             if (not all_close_1d(layer.w13_input_scale)
                     or not all_close_1d(layer.w2_input_scale)):
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     "Found input_scales that are not equal for "
                     "fp8 MoE layer. Using the maximum across experts "
-                    "for each layer.")
+                    "for each layer.",
+                )
             layer.w13_input_scale = torch.nn.Parameter(
                 layer.w13_input_scale.max(), requires_grad=False)
             layer.w2_input_scale = torch.nn.Parameter(

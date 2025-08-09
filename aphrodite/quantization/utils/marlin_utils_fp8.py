@@ -4,6 +4,7 @@ import torch
 from loguru import logger
 
 import aphrodite._custom_ops as ops
+from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.marlin_utils import (
     USE_FP32_REDUCE_DEFAULT, marlin_make_workspace_new, marlin_permute_scales,
@@ -74,7 +75,8 @@ def apply_fp8_marlin_linear(
 
 def prepare_fp8_layer_for_marlin(layer: torch.nn.Module,
                                  size_k_first: bool = True) -> None:
-    logger.warning_once(
+    log_once(
+        "WARNING",
         "Your GPU does not have native support for FP8 computation but "
         "FP8 quantization is being used. Weight-only FP8 compression will "
         "be used leveraging the Marlin kernel. This may degrade "
@@ -158,7 +160,8 @@ def prepare_fp8_layer_for_marlin(layer: torch.nn.Module,
 
 def prepare_moe_fp8_layer_for_marlin(layer: torch.nn.Module,
                                      size_k_first: bool = True) -> None:
-    logger.warning_once(
+    log_once(
+        "WARNING",
         "Your GPU does not have native support for FP8 computation but "
         "FP8 quantization is being used. Weight-only FP8 compression will "
         "be used leveraging the Marlin kernel. This may degrade "

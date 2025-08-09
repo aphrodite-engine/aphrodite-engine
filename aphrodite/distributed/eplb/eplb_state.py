@@ -34,6 +34,7 @@ from loguru import logger
 from torch.distributed import ProcessGroup, all_gather, all_reduce
 
 from aphrodite.common.config import ParallelConfig
+from aphrodite.common.logger import log_once
 from aphrodite.distributed.parallel_state import (get_ep_group, get_node_count,
                                                   in_the_same_node_as)
 from aphrodite.distributed.utils import StatelessProcessGroup
@@ -259,7 +260,8 @@ class EplbState:
 
             if num_gpus % num_nodes != 0:
                 num_nodes = 1
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     f"num_gpus % num_nodes != 0, "
                     "not using hierarchical rearrangement algorithm.\n"
                     f"{num_gpus=}, {num_nodes=}")
@@ -494,7 +496,8 @@ class EplbState:
 
         if num_gpus % num_nodes != 0:
             self.num_nodes = 1
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 f"num_gpus % num_nodes != 0, "
                 "not using hierarchical rearrangement algorithm.\n"
                 f"{num_gpus=}, {num_nodes=}")

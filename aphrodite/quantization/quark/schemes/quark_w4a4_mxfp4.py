@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from loguru import logger
 
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
                                           PackedAphroditeParameter)
 from aphrodite.platforms import current_platform
@@ -33,14 +34,16 @@ class QuarkW4A4MXFP4(QuarkScheme):
 
         if not current_platform.supports_mx():
             self.emulate = True
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "The current platform does not support native MXFP4 "
                 "computation. Simulated weight dequantization and activation "
                 "QDQ (quantize and dequantize) will be used, with the linear "
                 "layers computed in high precision.")
         else:
             self.emulate = True
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "The current platform supports native MXFP4 "
                 "computation, but kernels are not yet integrated in vLLM. "
                 "Simulated weight dequantization and activation "

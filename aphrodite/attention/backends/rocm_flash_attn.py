@@ -19,6 +19,7 @@ from aphrodite.attention.backends.utils import (CommonAttentionState,
 from aphrodite.attention.ops.paged_attn import (PagedAttention,
                                                 PagedAttentionMetadata)
 from aphrodite.common.config import get_current_aphrodite_config
+from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 from aphrodite.platforms.rocm import use_rocm_custom_paged_attention
 from aphrodite.quantization.utils.quant_utils import GroupShape
@@ -502,7 +503,8 @@ class ROCmFlashAttentionImpl(AttentionImpl):
             raise NotImplementedError("KV sharing is not supported in V0 "
                                       "ROCM_FLASH backend.")
         if use_irope:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "Using irope in ROCm Flash Attention is not supported yet, it "
                 "will fail back to global attention for long context.")
         if use_irope:

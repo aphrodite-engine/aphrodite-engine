@@ -12,9 +12,10 @@ import os
 from typing import Any, Callable, NoReturn, Optional
 
 import requests
+from loguru import logger
 
 import aphrodite.common.envs as envs
-from loguru import logger
+from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 
 # This is the storage path for the cubins, it can be replaced
@@ -129,14 +130,20 @@ def has_nvidia_artifactory() -> bool:
         response = requests.get(FLASHINFER_CUBINS_REPOSITORY, timeout=5)
         accessible = response.status_code == 200
         if accessible:
-            logger.debug_once("NVIDIA artifactory is accessible")
+            log_once("DEBUG", "NVIDIA artifactory is accessible")
         else:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "NVIDIA artifactory returned failed status code: %d",
-                response.status_code)
+                response.status_code,
+            )
         return accessible
     except Exception as e:
-        logger.warning_once("Failed to connect to NVIDIA artifactory: %s", e)
+        log_once(
+            "WARNING",
+            "Failed to connect to NVIDIA artifactory: %s",
+            e,
+        )
         return False
 
 
@@ -160,21 +167,31 @@ def use_trtllm_attention(
 
     env_value = envs.APHRODITE_USE_TRTLLM_ATTENTION
     if env_value is not None:
-        logger.info_once("APHRODITE_USE_TRTLLM_ATTENTION is set to %s", env_value)
+        log_once(
+            "INFO",
+            "APHRODITE_USE_TRTLLM_ATTENTION is set to {}",
+            env_value,
+        )
         # Environment variable is set - respect it
         # Making the conditional check for zero because
         # the path is automatically enabled if the batch size condition
         # is satisfied.
         no_use_trtllm = (env_value == "0")
         if not no_use_trtllm:
-            logger.info_once("Using TRTLLM attention.")
+            log_once(
+                "INFO",
+                "Using TRTLLM attention.",
+            )
         return not no_use_trtllm
     else:
         # Environment variable not set - use auto-detection
         use_trtllm = (num_tokens <= 256 and max_seq_len < 131072
                       and kv_cache_dtype == "auto")
         if use_trtllm:
-            logger.warning_once("Using TRTLLM attention (auto-detected).")
+            log_once(
+                "WARNING",
+                "Using TRTLLM attention (auto-detected).",
+            )
         return use_trtllm
 
 

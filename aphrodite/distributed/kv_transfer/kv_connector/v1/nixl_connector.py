@@ -14,10 +14,12 @@ from typing import TYPE_CHECKING, Any, Optional
 import msgspec
 import torch
 import zmq
+from loguru import logger
 
-from aphrodite.common import envs
 from aphrodite.attention.selector import backend_name_to_enum, get_attn_backend
+from aphrodite.common import envs
 from aphrodite.common.config import AphroditeConfig
+from aphrodite.common.logger import log_once
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
     CopyBlocksOp, KVConnectorBase_V1, KVConnectorMetadata, KVConnectorRole)
 from aphrodite.distributed.parallel_state import (
@@ -25,7 +27,6 @@ from aphrodite.distributed.parallel_state import (
     get_tp_group)
 from aphrodite.distributed.utils import divide
 from aphrodite.forward_context import ForwardContext
-from loguru import logger
 from aphrodite.platforms import _Backend, current_platform
 from aphrodite.utils import make_zmq_path, make_zmq_socket, round_down
 from aphrodite.v1.core.sched.output import SchedulerOutput
@@ -135,8 +136,10 @@ class NixlConnector(KVConnectorBase_V1):
     @classmethod
     def get_required_kvcache_layout(cls, aphrodite_config: AphroditeConfig):
         if aphrodite_config.model_config is None:
-            logger.warning_once("Unable to detect current VLLM config. "
-                                "Fallback to default kv cache layout.")
+            log_once(
+                "WARNING",
+                "Unable to detect current Aphrodite config. "
+                "Fallback to default kv cache layout.")
             return None
         use_mla = aphrodite_config.model_config.use_mla
         if use_mla:
@@ -144,8 +147,10 @@ class NixlConnector(KVConnectorBase_V1):
             # as the layout should not matter in that case,
             # which fallback to the default behavior.
             return None
-        logger.info_once("NixlConnector setting KV cache "
-                         "layout to HND for better xfer performance.")
+        log_once(
+            "INFO",
+            "NixlConnector setting KV cache layout to HND for better xfer "
+            "performance.")
         return "HND"
 
     ############################################################

@@ -8,6 +8,7 @@ from compressed_tensors.quantization import (QuantizationArgs,
 from loguru import logger
 
 import aphrodite.common.envs as envs
+from aphrodite.common.logger import log_once
 from aphrodite.common.config import ParallelConfig
 from aphrodite.distributed import get_dp_group, get_tensor_model_parallel_rank
 from aphrodite.quantization.base_config import QuantizationConfig
@@ -320,8 +321,11 @@ class FusedMoEConfig:
 
     def __post_init__(self):
         if self.dp_size > 1:
-            logger.debug_once("Using FusedMoEConfig::max_num_tokens=%d",
-                              self.max_num_tokens)
+            log_once(
+                "DEBUG",
+                "Using FusedMoEConfig::max_num_tokens=%d",
+                self.max_num_tokens,
+            )
 
         assert self.max_num_tokens > 0
 
@@ -459,10 +463,12 @@ class FusedMoEConfig:
             else:
                 _quant_config = FusedMoEQuantConfig()
                 if moe_parallel_config.dp_size > 1:
-                    logger.warning_once("MoE DP setup unable to determine "
-                                        "quantization scheme or unsupported "
-                                        "quantization type. This model will "
-                                        "not run with DP enabled.")
+                    log_once(
+                        "WARNING",
+                        "MoE DP setup unable to determine "
+                        "quantization scheme or unsupported "
+                        "quantization type. This model will "
+                        "not run with DP enabled.")
         else:
             _quant_config = quant_config
 

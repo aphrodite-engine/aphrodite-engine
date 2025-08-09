@@ -9,6 +9,7 @@ from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.linear import LinearBase
 from aphrodite.platforms import current_platform
 from aphrodite.scalar_type import ScalarType, scalar_types
+from aphrodite.utils.log import log_once
 
 from .quant_utils import pack_cols, unpack_cols
 
@@ -338,7 +339,8 @@ def maybe_warn_marlin_atomic_add(device, dtype):
         return
     device_capability = torch.cuda.get_device_capability(device)
     if device_capability[0] < 9 and dtype == torch.bfloat16:
-        logger.info_once(
+        log_once(
+            "WARNING",
             "You are running Marlin kernel with bf16 on GPUs before SM90. "
             "You can consider change to fp16 to achieve better performance "
             "if possible.")
@@ -349,7 +351,8 @@ def maybe_warn_marlin_atomic_add_env():
         return
     if envs.APHRODITE_MARLIN_USE_ATOMIC_ADD:
         return
-    logger.info_once(
+    log_once(
+        "INFO",
         "Marlin kernel can achieve better performance for small size_n "
         "with experimental use_atomic_add feature. "
         "You can consider set environment variable "

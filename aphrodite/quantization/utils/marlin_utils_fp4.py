@@ -4,6 +4,7 @@ import torch
 from loguru import logger
 
 import aphrodite._custom_ops as ops
+from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.marlin_utils import (
     USE_FP32_REDUCE_DEFAULT, marlin_make_workspace_new, marlin_permute_scales,
@@ -19,7 +20,8 @@ def is_fp4_marlin_supported():
 
 def fp4_marlin_process_scales(marlin_scales):
     if not (marlin_scales >= 0).all():
-        logger.warning_once(
+        log_once(
+            "WARNING",
             "NVFP4 Marlin assumes the scales to be >=0, but has encountered "
             "negative scales. Accuracy will likely be degraded. This is "
             "because it changes the scales from FP8-S1E4M3 to a special "
@@ -109,7 +111,8 @@ def apply_fp4_marlin_linear(
 
 
 def prepare_fp4_layer_for_marlin(layer: torch.nn.Module) -> None:
-    logger.warning_once(
+    log_once(
+        "WARNING",
         "Your GPU does not have native support for FP4 computation but "
         "FP4 quantization is being used. Weight-only FP4 compression will "
         "be used leveraging the Marlin kernel. This may degrade "
@@ -157,7 +160,8 @@ def prepare_fp4_layer_for_marlin(layer: torch.nn.Module) -> None:
 
 
 def prepare_moe_fp4_layer_for_marlin(layer: torch.nn.Module) -> None:
-    logger.warning_once(
+    log_once(
+        "WARNING",
         "Your GPU does not have native support for FP4 computation but "
         "FP4 quantization is being used. Weight-only FP4 compression will "
         "be used leveraging the Marlin kernel. This may degrade "

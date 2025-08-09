@@ -17,8 +17,9 @@ from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType
 from aphrodite.attention.backends.flash_attn import (
     FlashAttentionBackend, FlashAttentionImpl, FlashAttentionMetadata,
     FlashAttentionMetadataBuilder)
-from aphrodite.utils import async_tensor_h2d
+from aphrodite.common.logger import log_once
 from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank
+from aphrodite.utils import async_tensor_h2d
 
 if TYPE_CHECKING:
     from aphrodite.worker.model_runner import ModelInputForGPUBuilder
@@ -326,7 +327,7 @@ class DualChunkFlashAttentionImpl(FlashAttentionImpl):
         self.sparse_attention_config = dual_chunk_attention_config.get(
             "sparse_attention_config", None)
         if not self.sparse_attention_config:
-            logger.warning_once("Sparse attention will not be enabled as "
+            log_once("WARNING", "Sparse attention will not be enabled as "
                                 "sparse attention config is not provided.")
         self.sparse_attention_enabled = dual_chunk_attention_config.get(
             "sparse_attention_enabled", self.sparse_attention_config

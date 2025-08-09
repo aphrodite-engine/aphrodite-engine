@@ -4,6 +4,7 @@ import torch
 from loguru import logger
 
 from aphrodite import _custom_ops as ops
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe.layer import FusedMoE
 from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
                                               UnquantizedLinearMethod)
@@ -86,9 +87,12 @@ class AWQConfig(QuantizationConfig):
             from .moe_wna16 import MoeWNA16Config
             from .utils.marlin_utils import check_moe_marlin_supports_layer
             if not check_moe_marlin_supports_layer(layer, self.group_size):
-                logger.warning_once(
-                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. "
-                    "Falling back to Moe WNA16 kernels.")
+                log_once(
+                    "WARNING",
+                    "Layer '{}' is not supported by AWQMoeMarlin. "
+                    "Falling back to Moe WNA16 kernels.",
+                    prefix,
+                )
                 config = {
                     "quant_method": "awq",
                     "bits": self.weight_bits,

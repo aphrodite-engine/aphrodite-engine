@@ -4,6 +4,7 @@ import torch
 from loguru import logger
 
 from aphrodite import _custom_ops as ops
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe import (FusedMoE, FusedMoEMethodBase,
                                                  FusedMoeWeightScaleSupported)
 from aphrodite.modeling.utils import set_weight_attrs
@@ -133,7 +134,8 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
                     "activation scales are None.")
             if (not all_close_1d(layer.w13_input_scale)
                     or not all_close_1d(layer.w2_input_scale)):
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     "Found input_scales that are not equal for "
                     "fp8 MoE layer. Using the maximum across experts "
                     "for each layer. ")
@@ -270,14 +272,16 @@ class QuarkW4A4MXFp4MoEMethod(QuarkMoEMethod):
 
         if not current_platform.supports_mx():
             self.emulate = True
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "The current platform does not support native MXFP4 "
                 "computation. Simulated weight dequantization and activation "
                 "QDQ (quantize and dequantize) will be used, with the linear "
                 "layers computed in high precision.")
         else:
             self.emulate = True
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "The current platform supports native MXFP4 "
                 "computation, but kernels are not yet integrated in vLLM. "
                 "Simulated weight dequantization and activation "

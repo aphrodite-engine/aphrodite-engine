@@ -17,6 +17,7 @@ from aphrodite.common.beam_search import (BeamSearchInstance, BeamSearchOutput,
                                           create_sort_beams_key_function)
 from aphrodite.common.config import (CompilationConfig, ModelDType,
                                      TokenizerMode, is_init_field)
+from aphrodite.common.logger import log_once
 from aphrodite.common.outputs import (ClassificationRequestOutput,
                                       EmbeddingRequestOutput,
                                       PoolingRequestOutput, RequestOutput,
@@ -25,8 +26,6 @@ from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import (BeamSearchParams,
                                               RequestOutputKind,
                                               SamplingParams)
-from aphrodite.utils import (Counter, Device, deprecate_kwargs,
-                                    is_list_of)
 from aphrodite.endpoints.chat_utils import (
     ChatCompletionMessageParam, ChatTemplateContentFormatOption,
     apply_hf_chat_template, apply_mistral_chat_template, parse_chat_messages,
@@ -52,6 +51,7 @@ from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
                                                     MistralTokenizer,
                                                     get_cached_tokenizer)
 from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.utils import Counter, Device, deprecate_kwargs, is_list_of
 
 if TYPE_CHECKING:
     from aphrodite.v1.metrics.reader import Metric
@@ -1074,8 +1074,9 @@ class LLM:
             else:
                 pooling_task = "encode"
 
-            logger.warning_once(
-                "`LLM.encode` is currently using `pooling_task = %s`.\n"
+            log_once(
+                "WARNING",
+                "`LLM.encode` is currently using `pooling_task = {}`.\n"
                 "Please use one of the more specific methods or set the "
                 "task directly when using `LLM.encode`:\n"
                 "  - For embeddings, use `LLM.embed(...)` "

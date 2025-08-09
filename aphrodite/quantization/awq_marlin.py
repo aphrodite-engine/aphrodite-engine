@@ -6,6 +6,7 @@ from torch.nn import Parameter
 
 import aphrodite.modeling.layers.fused_moe  # noqa
 from aphrodite import _custom_ops as ops
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe.layer import (
     FusedMoE, FusedMoEMethodBase, FusedMoeWeightScaleSupported)
 from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
@@ -125,8 +126,9 @@ class AWQMarlinConfig(QuantizationConfig):
                 return UnquantizedLinearMethod()
             # Check if the layer is supported by AWQMarlin.
             if not check_marlin_supports_layer(layer, self.group_size):
-                logger.warning_once(
-                    "Layer '%s' is not supported by AWQMarlin. Falling back to unoptimized AWQ kernels.",  # noqa: E501
+                log_once(
+                    "WARNING",
+                    "Layer '{}' is not supported by AWQMarlin. Falling back to unoptimized AWQ kernels.",  # noqa: E501
                     prefix,
                 )
                 return AWQConfig.from_config(
@@ -135,9 +137,12 @@ class AWQMarlinConfig(QuantizationConfig):
         elif isinstance(layer, FusedMoE):
             from aphrodite.quantization.moe_wna16 import MoeWNA16Config
             if not check_moe_marlin_supports_layer(layer, self.group_size):
-                logger.warning_once(
-                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. "
-                    "Falling back to Moe WNA16 kernels.")
+                log_once(
+                    "WARNING",
+                    "Layer '{}' is not supported by AWQMoeMarlin. "
+                    "Falling back to Moe WNA16 kernels.",
+                    prefix,
+                )
                 return MoeWNA16Config.from_config(
                     self.full_config).get_quant_method(layer, prefix)
             return AWQMoEMethod(self)

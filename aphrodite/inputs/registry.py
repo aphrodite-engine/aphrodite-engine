@@ -8,6 +8,7 @@ from transformers import BatchFeature, PretrainedConfig, ProcessorMixin
 from typing_extensions import TypeVar
 
 from aphrodite.common.jsontree import JSONTree, json_map_leaves
+from aphrodite.common.logger import log_once
 from aphrodite.utils import get_allowed_kwarg_only_overrides
 from aphrodite.transformers_utils.processor import cached_processor_from_config
 
@@ -177,7 +178,8 @@ class InputProcessingContext(InputContext):
 
             cast_output = json_map_leaves(maybe_cast_dtype, output)
 
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 f"{type(hf_processor).__name__} did not return `BatchFeature`. "
                 "Make sure to match the behaviour of `ProcessorMixin` when "
                 "implementing custom processors.")
@@ -220,7 +222,7 @@ class InputRegistry:
         The model is identified by ``model_config``.
         """
         # Avoid circular import
-        from aphrodite.sequence import SequenceData
+        from aphrodite.common.sequence import SequenceData
 
         if not model_config.is_multimodal_model:
             seq_data = SequenceData.from_prompt_token_counts((0, seq_len))

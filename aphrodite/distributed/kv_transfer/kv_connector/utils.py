@@ -11,9 +11,11 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
-from aphrodite.common.config import AphroditeConfig, get_current_aphrodite_config
+from aphrodite.common.config import (AphroditeConfig,
+                                     get_current_aphrodite_config)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase_V1)
+from aphrodite.utils.log import log_once
 from aphrodite.v1.outputs import KVConnectorOutput, ModelRunnerOutput
 
 
@@ -106,8 +108,11 @@ def get_kv_connector_cache_layout():
             KVConnectorBase_V1.get_required_kvcache_layout(aphrodite_config))
         if required_kvcache_layout is not None:
             return required_kvcache_layout
-        logger.info_once("Connectors do not specify a " \
-                         "kv cache layout, defaulting to NHD.")
+        log_once(
+            "INFO",
+            "Connectors do not specify a "
+            "kv cache layout, defaulting to NHD.",
+        )
     return "NHD"
 
 

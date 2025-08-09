@@ -12,6 +12,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 import aphrodite.common.envs as envs
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
                                               UnquantizedLinearMethod)
@@ -413,9 +414,11 @@ class CompressedTensorsConfig(QuantizationConfig):
                 ) or envs.APHRODITE_USE_NVFP4_CT_EMULATIONS:
                     return CompressedTensorsW4A4Fp4()
                 else:
-                    logger.warning_once(
+                    log_once(
+                        "WARNING",
                         "Current platform does not support cutlass NVFP4."
-                        " Running CompressedTensorsW4A16Fp4.")
+                        " Running CompressedTensorsW4A16Fp4.",
+                    )
                     return CompressedTensorsW4A16Fp4(
                         has_input_global_scale=True)
 
@@ -532,9 +535,12 @@ class CompressedTensorsConfig(QuantizationConfig):
                 model_compression_config=model_compression_config,
             )
         elif weight_quant is None:
-            logger.warning_once("Acceleration for non-quantized schemes is "
-                                "not supported by Compressed Tensors. "
-                                "Falling back to UnquantizedLinearMethod")
+            log_once(
+                "WARNING",
+                "Acceleration for non-quantized schemes is "
+                "not supported by Compressed Tensors. "
+                "Falling back to UnquantizedLinearMethod",
+            )
             return None
 
         else:

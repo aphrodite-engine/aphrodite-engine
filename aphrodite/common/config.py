@@ -14,7 +14,6 @@ from dataclasses import (MISSING, Field, asdict, field, fields, is_dataclass,
                          replace)
 from functools import cached_property, lru_cache
 from importlib.util import find_spec
-from pathlib import Path
 from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Literal, Optional,
                     Protocol, TypeVar, Union, cast, get_args)
 
@@ -2013,7 +2012,8 @@ class CacheConfig:
                 f"{self.gpu_memory_utilization}.")
 
         if self.kv_sharing_fast_prefill:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "--kv-sharing-fast-prefill is currently work in progress "
                 "and not functional yet (i.e. no prefill savings)")
 
@@ -4355,11 +4355,13 @@ class PassConfig:
     def __post_init__(self) -> None:
         if not self.enable_noop:
             if self.enable_fusion:
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     "Fusion enabled but reshape elimination disabled. "
                     "RMSNorm/SiluMul + quant (fp8) fusion might not work")
             if self.enable_attn_fusion:
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     "Fusion enabled but reshape elimination disabled. "
                     "Attention + quant (fp8) fusion might not work")
 

@@ -8,6 +8,7 @@ from torch.nn.parameter import Parameter
 import aphrodite.common.envs as envs
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEParallelConfig
 from aphrodite.modeling.layers.fused_moe.layer import (
     FusedMoE, FusedMoEMethodBase, FusedMoeWeightScaleSupported)
@@ -270,7 +271,8 @@ class ModelOptFp8MoEMethod(FusedMoEMethodBase):
         self.cutlass_fp8_supported = cutlass_fp8_supported()
         self.flashinfer_moe_enabled = False
         if envs.APHRODITE_USE_FLASHINFER_MOE_FP8 and has_flashinfer_moe():
-            logger.info_once(
+            log_once(
+                "INFO",
                 "Using FlashInfer MoE FP8 kernels for ModelOptFp8MoEMethod.")
             self.flashinfer_moe_enabled = True
 
@@ -1011,9 +1013,11 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
 
         if not torch.allclose(layer.w13_weight_scale_2[:, 0],
                               layer.w13_weight_scale_2[:, 1]):
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "w1_weight_scale_2 must match w3_weight_scale_2. "
-                "Accuracy may be affected.")
+                "Accuracy may be affected.",
+            )
 
         w13_weight_scale_2 = layer.w13_weight_scale_2[:, 0]
         layer.w13_weight_scale_2 = Parameter(w13_weight_scale_2,

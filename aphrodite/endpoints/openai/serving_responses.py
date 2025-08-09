@@ -11,9 +11,9 @@ from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 
 from aphrodite.common import envs
 from aphrodite.common.config import ModelConfig
+from aphrodite.common.logger import log_once
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.utils import random_uuid
 from aphrodite.endpoints.chat_utils import (ChatCompletionMessageParam,
                                             ChatTemplateContentFormatOption)
 from aphrodite.endpoints.logger import RequestLogger
@@ -31,6 +31,7 @@ from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+from aphrodite.utils import random_uuid
 
 
 class OpenAIServingResponses(OpenAIServing):
@@ -92,7 +93,8 @@ class OpenAIServingResponses(OpenAIServing):
         # Aphrodite's default behavior is not.
         self.enable_store = envs.APHRODITE_ENABLE_RESPONSES_API_STORE
         if self.enable_store:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "`APHRODITE_ENABLE_RESPONSES_API_STORE` is enabled. This may "
                 "cause a memory leak since we never remove responses from "
                 "the store.")

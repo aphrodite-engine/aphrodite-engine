@@ -4,6 +4,8 @@ from typing import Optional
 import torch
 from loguru import logger
 
+from aphrodite.common.logger import log_once
+
 try:
     import intel_extension_for_pytorch as ipex
 except ImportError as e:
@@ -324,7 +326,8 @@ class ipex_ops:
             pack_gqa=None,  # Can be tuned for speed
             sm_margin=0,  # Can be tuned if some SMs are used for communication
     ) -> None:
-        logger.warning_once(
+        log_once(
+            "WARNING",
             "get_scheduler_metadata is not implemented for ipex_ops, "
             "returning None.")
         return None

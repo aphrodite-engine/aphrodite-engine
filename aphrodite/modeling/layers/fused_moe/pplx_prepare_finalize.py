@@ -2,9 +2,9 @@ from typing import Any, Optional
 
 import pplx_kernels as pplx
 import torch
-from loguru import logger
 
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
 from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
     TopKWeightAndReduceDelegate)
@@ -103,7 +103,8 @@ class PplxPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
         # topk_indices_dtype() int32
         #
         if expert_map is not None:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "The PPLX backend does not support expert mapping. "
                 "The provided `expert_map` will be ignored.")
         expert_map = None  #noqa: F841

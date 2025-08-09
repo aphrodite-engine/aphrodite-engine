@@ -9,6 +9,7 @@ from torch.nn.parameter import Parameter
 
 import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
+from aphrodite.common.logger import log_once
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.fused_moe import (
     FusedMoE, FusedMoEActivationFormat, FusedMoEConfig, FusedMoEMethodBase,
@@ -482,7 +483,8 @@ class Fp8MoEMethod(FusedMoEMethodBase):
 
         self.flashinfer_moe_enabled = False
         if envs.APHRODITE_USE_FLASHINFER_MOE_FP8 and has_flashinfer_moe():
-            logger.info_once(
+            log_once(
+                "INFO",
                 "Using FlashInfer MoE FP8 kernels for Fp8MoEMethod.")
             self.flashinfer_moe_enabled = True
         # For GPUs that lack FP8 hardware support, we can leverage the Marlin
@@ -497,36 +499,48 @@ class Fp8MoEMethod(FusedMoEMethodBase):
         self.allow_deep_gemm = False
         if envs.APHRODITE_USE_DEEP_GEMM:
             if not has_deep_gemm():
-                logger.warning_once("Failed to import DeepGemm kernels.")
+                log_once(
+                    "WARNING",
+                    "Failed to import DeepGemm kernels.")
             elif not self.block_quant:
-                logger.warning_once("Model is not block quantized. Not using "
-                                    "DeepGemm kernels")
+                log_once(
+                    "WARNING",
+                    "Model is not block quantized. Not using DeepGemm kernels")
             elif (current_platform.is_cuda()
                   and current_platform.is_device_capability(90)):
-                logger.info_once("Using DeepGemm kernels for Fp8MoEMethod.")
+                log_once(
+                    "INFO",
+                    "Using DeepGemm kernels for Fp8MoEMethod.")
                 self.allow_deep_gemm = True
             elif (current_platform.is_cuda()
                   and is_blackwell_deep_gemm_used()):
-                logger.info_once("Using DeepGemm SM100 kernels for "
-                                 "Fp8MoEMethod.")
+                log_once(
+                    "INFO",
+                    "Using DeepGemm SM100 kernels for "
+                    "Fp8MoEMethod.")
                 self.allow_deep_gemm = True
             else:
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     "DeepGemm not supported on the current platform.")
 
         # Check for CutlassBlockScaledGroupedGemm support.
         self.allow_cutlass_block_scaled_grouped_gemm = False
         if not self.block_quant:
-            logger.debug_once("Model is not block quantized. Not using "
-                              "CutlassBlockScaledGroupedGemm kernels")
+            log_once(
+                "DEBUG",
+                "Model is not block quantized. Not using "
+                "CutlassBlockScaledGroupedGemm kernels")
         elif (current_platform.is_cuda()
               and current_platform.is_device_capability(100)):
-            logger.info_once(
+            log_once(
+                "INFO",
                 "Using CutlassBlockScaledGroupedGemm kernels for Fp8MoEMethod."
             )
             self.allow_cutlass_block_scaled_grouped_gemm = True
         else:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "CutlassBlockScaledGroupedGemm not supported on the current "
                 "platform.")
 
@@ -778,7 +792,8 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                         "activation scales are None.")
                 if (not all_close_1d(layer.w13_input_scale)
                         or not all_close_1d(layer.w2_input_scale)):
-                    logger.warning_once(
+                    log_once(
+                        "WARNING",
                         "Found input_scales that are not equal for "
                         "fp8 MoE layer. Using the maximum across experts "
                         "for each layer.")

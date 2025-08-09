@@ -8,6 +8,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEParallelConfig
 from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import (
     FlashInferExperts, is_valid_flashinfer_cutlass_fused_moe)
@@ -56,7 +57,10 @@ def build_flashinfer_fp4_cutlass_moe_kernel(
         tp_rank=moe_parallel_config.tp_rank,
         tp_size=moe_parallel_config.tp_size,
     )
-    logger.debug_once("FlashInferExperts (util)")
+    log_once(
+        "DEBUG",
+        "FlashInferExperts (utils.flashinfer_fp4_moe.py)",
+    )
     return mk.FusedMoEModularKernel(
         FlashInferCutlassMoEPrepareAndFinalize(quant_dtype=torch.uint8),
         experts,
@@ -134,7 +138,10 @@ def select_nvfp4_gemm_impl(
     assert all2all_manager is not None
 
     if allow_flashinfer_cutlass:
-        logger.debug_once("Using FlashInferExperts")
+        log_once(
+            "DEBUG",
+            "Using FlashInferExperts",
+        )
         return FlashInferExperts(
             use_nvfp4_w4a4=True,
             use_dp=moe.moe_parallel_config.dp_size > 1,

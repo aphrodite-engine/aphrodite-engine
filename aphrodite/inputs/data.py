@@ -262,7 +262,7 @@ class EncoderDecoderInputs(TypedDict):
 SingletonInputs = Union[TokenInputs, EmbedsInputs, "MultiModalInputs"]
 """
 A processed [`SingletonPrompt`][aphrodite.inputs.data.SingletonPrompt] which can be 
-passed to [`aphrodite.sequence.Sequence`][].
+passed to [`aphrodite.common.sequence.Sequence`][].
 """
 
 ProcessorInputs = Union[DecoderOnlyInputs, EncoderDecoderInputs]

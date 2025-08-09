@@ -36,7 +36,7 @@ from transformers import (PreTrainedTokenizer, PreTrainedTokenizerFast,
 from typing_extensions import Required, TypeAlias, TypedDict
 
 from aphrodite.common.config import ModelConfig
-from aphrodite.utils import random_uuid
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.models import SupportsMultiModal
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalDataDict
 from aphrodite.multimodal.utils import MediaConnector
@@ -47,6 +47,7 @@ from aphrodite.transformers_utils.chat_templates import (
 from aphrodite.transformers_utils.processor import cached_get_processor
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
                                                     MistralTokenizer)
+from aphrodite.utils import random_uuid
 
 MODALITY_PLACEHOLDERS_MAP = {
     "image": "<##IMAGE##>",
@@ -366,14 +367,17 @@ def resolve_mistral_chat_template(
     **kwargs: Any,
 ) -> Optional[str]:
     if chat_template is not None:
-        logger.warning_once(
+        log_once(
+            "WARNING",
             "'chat_template' cannot be overridden for mistral tokenizer.")
     if "add_generation_prompt" in kwargs:
-        logger.warning_once(
+        log_once(
+            "WARNING",
             "'add_generation_prompt' is not supported for mistral tokenizer, "
             "so it will be ignored.")
     if "continue_final_message" in kwargs:
-        logger.warning_once(
+        log_once(
+            "WARNING",
             "'continue_final_message' is not supported for mistral tokenizer, "
             "so it will be ignored.")
     return None

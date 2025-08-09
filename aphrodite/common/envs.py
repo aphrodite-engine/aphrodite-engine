@@ -151,6 +151,7 @@ if TYPE_CHECKING:
     APHRODITE_ENABLE_RESPONSES_API_STORE: bool = False
     APHRODITE_USE_TRTLLM_CONTEXT_ATTENTION: bool = False
     APHRODITE_USE_TRTLLM_DECODE_ATTENTION: bool = False
+    APHRODITE_USE_TRTLLM_ATTENTION: bool = False
     APHRODITE_KOBOLD_API: bool = False
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
@@ -1036,6 +1037,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set to 1, use the TRTLLM Decode Attention backend in flashinfer.
     "APHRODITE_USE_TRTLLM_DECODE_ATTENTION":
     lambda: bool(int(os.getenv("APHRODITE_USE_TRTLLM_DECODE_ATTENTION", "0"))),
+
+    # If set to 1, use the TRTLLM Attention backend in flashinfer.
+    "APHRODITE_USE_TRTLLM_ATTENTION":
+    lambda: bool(int(os.getenv("APHRODITE_USE_TRTLLM_ATTENTION", "0"))),
 
     # Controls garbage collection during CUDA graph capture.
     # If set to 0 (default), enables GC freezing to speed up capture time.
