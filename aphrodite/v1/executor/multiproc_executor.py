@@ -2,12 +2,11 @@ import multiprocessing
 import os
 import pickle
 import signal
-import sys
 import threading
 import time
 import traceback
 import weakref
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum, auto
 from functools import partial
@@ -19,26 +18,27 @@ from typing import Any, Callable, Optional, Union, cast
 import cloudpickle
 from loguru import logger
 
+import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.utils import (get_distributed_init_method,
-                                    get_mp_context, get_open_port)
 from aphrodite.distributed import (destroy_distributed_environment,
                                    destroy_model_parallel)
 from aphrodite.distributed.device_communicators.shm_broadcast import (
     Handle, MessageQueue)
+from aphrodite.distributed.kv_transfer.kv_connector.utils import (
+    KVOutputAggregator)
 from aphrodite.executor.multiproc_worker_utils import (
-    _add_prefix, set_multiprocessing_worker_envs)
+    set_multiprocessing_worker_envs)
+from aphrodite.utils import (decorate_logs, get_distributed_init_method,
+                             get_loopback_ip, get_mp_context, get_open_port,
+                             set_process_title)
 from aphrodite.v1.executor.abstract import Executor, FailureCallback
 from aphrodite.v1.outputs import ModelRunnerOutput
 from aphrodite.worker.worker_base import WorkerWrapperBase
 
-POLLING_TIMEOUT_MS = 5000
-POLLING_TIMEOUT_S = POLLING_TIMEOUT_MS // 1000
-
-EXECUTE_MODEL_TIMEOUT_S = 40
-
 
 class MultiprocExecutor(Executor):
+
+    supports_pp: bool = True
 
     def _init_executor(self) -> None:
         # Call self.shutdown at exit to clean up
@@ -47,26 +47,31 @@ class MultiprocExecutor(Executor):
         self.is_failed = False
         self.shutdown_event = threading.Event()
         self.failure_callback: Optional[FailureCallback] = None
+        self.io_thread_pool: Optional[ThreadPoolExecutor] = None
 
         self.world_size = self.parallel_config.world_size
         tensor_parallel_size = self.parallel_config.tensor_parallel_size
-        assert self.world_size == tensor_parallel_size, (
+        pp_parallel_size = self.parallel_config.pipeline_parallel_size
+        assert self.world_size == tensor_parallel_size * pp_parallel_size, (
             f"world_size ({self.world_size}) must be equal to the "
-            f"tensor_parallel_size ({tensor_parallel_size}). "
-            f"Pipeline parallelism is not yet implemented in v1")
+            f"tensor_parallel_size ({tensor_parallel_size}) x pipeline"
+            f"_parallel_size ({pp_parallel_size}). ")
 
         # Set multiprocessing envs that are common to V0 and V1
         set_multiprocessing_worker_envs(self.parallel_config)
 
         # Multiprocessing-based executor does not support multi-node setting.
         # Since it only works for single node, we can use the loopback address
-        # 127.0.0.1 for communication.
+        # get_loopback_ip() for communication.
         distributed_init_method = get_distributed_init_method(
-            "127.0.0.1", get_open_port())
+            get_loopback_ip(), get_open_port())
 
         # Initialize worker and set up message queues for SchedulerOutputs
         # and ModelRunnerOutputs
-        self.rpc_broadcast_mq = MessageQueue(self.world_size, self.world_size)
+        max_chunk_bytes = envs.APHRODITE_MQ_MAX_CHUNK_BYTES_MB * 1024 * 1024
+        self.rpc_broadcast_mq = MessageQueue(self.world_size,
+                                             self.world_size,
+                                             max_chunk_bytes=max_chunk_bytes)
         scheduler_output_handle = self.rpc_broadcast_mq.export_handle()
 
         # Create workers
@@ -98,8 +103,26 @@ class MultiprocExecutor(Executor):
         finally:
             if not success:
                 # Clean up the worker procs if there was a failure.
+                # Close death_writers first to signal workers to exit
+                for uw in unready_workers:
+                    if uw.death_writer is not None:
+                        uw.death_writer.close()
                 self._ensure_worker_termination(
-                    [w.proc for w in unready_workers])
+                    [uw.proc for uw in unready_workers])
+
+        # For pipeline parallel, we use a thread pool for asynchronous
+        # execute_model.
+        if self.max_concurrent_batches > 1:
+            # Note: must use only 1 IO thread to keep dequeue sequence
+            # from the response queue
+            # _async_aggregate_workers_output also assumes a single IO thread
+            self.io_thread_pool = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="mp_exec_io")
+
+        self.output_rank = self._get_output_rank()
+        self.has_connector = self.aphrodite_config.kv_transfer_config is not None
+        self.kv_output_aggregator = KVOutputAggregator(
+            self.parallel_config.world_size)
 
     def start_worker_monitor(self):
         workers = self.workers
@@ -118,7 +141,7 @@ class MultiprocExecutor(Executor):
             proc_name = next(h.proc.name for h in workers
                              if h.proc.sentinel == died[0])
             logger.error(
-                "Worker proc {} died unexpectedly, "
+                "Worker proc %s died unexpectedly, "
                 "shutting down executor.", proc_name)
             _self.shutdown()
             callback = _self.failure_callback
@@ -140,18 +163,38 @@ class MultiprocExecutor(Executor):
         self,
         scheduler_output,
     ) -> Union[ModelRunnerOutput, Future[ModelRunnerOutput]]:
-        (output, ) = self.collective_rpc("execute_model",
-                                         args=(scheduler_output, ),
-                                         rank0_reply_only=True,
-                                         timeout=EXECUTE_MODEL_TIMEOUT_S)
-        return output
+        non_block = self.max_concurrent_batches > 1
+
+        if not self.has_connector:
+            # get output only from a single worker (output_rank)
+            (output, ) = self.collective_rpc(
+                "execute_model",
+                args=(scheduler_output, ),
+                unique_reply_rank=self.output_rank,
+                non_block=non_block,
+                timeout=envs.APHRODITE_EXECUTE_MODEL_TIMEOUT_SECONDS)
+            return output
+
+        # get output from all workers
+        outputs = self.collective_rpc(
+            "execute_model",
+            args=(scheduler_output, ),
+            non_block=non_block,
+            timeout=envs.APHRODITE_EXECUTE_MODEL_TIMEOUT_SECONDS)
+
+        # aggregate all workers output to a single output
+        if non_block:
+            return self.kv_output_aggregator.async_aggregate(
+                outputs, self.output_rank)
+        return self.kv_output_aggregator.aggregate(outputs, self.output_rank)
 
     def collective_rpc(self,
                        method: Union[str, Callable],
                        timeout: Optional[float] = None,
                        args: tuple = (),
                        kwargs: Optional[dict] = None,
-                       rank0_reply_only: bool = False) -> list[Any]:
+                       non_block: bool = False,
+                       unique_reply_rank: Optional[int] = None) -> list[Any]:
         if self.is_failed:
             raise RuntimeError("Executor failed.")
 
@@ -168,22 +211,35 @@ class MultiprocExecutor(Executor):
                 send_method = cloudpickle.dumps(
                     method, protocol=pickle.HIGHEST_PROTOCOL)
             self.rpc_broadcast_mq.enqueue(
-                (send_method, args, kwargs, rank0_reply_only))
+                (send_method, args, kwargs, unique_reply_rank))
 
-            workers = (self.workers[0], ) if rank0_reply_only else self.workers
-            responses = [None] * len(workers)
-            for w in workers:
-                dequeue_timeout = None if deadline is None else (
-                    deadline - time.monotonic())
+            workers = (self.workers[unique_reply_rank],
+                       ) if unique_reply_rank is not None else self.workers
+            responses = []
+
+            def get_response(w: WorkerProcHandle,
+                             dequeue_timeout: Optional[float] = None,
+                             cancel_event: Optional[threading.Event] = None):
                 status, result = w.worker_response_mq.dequeue(
-                    timeout=dequeue_timeout, cancel=self.shutdown_event)
+                    timeout=dequeue_timeout, cancel=cancel_event)
 
                 if status != WorkerProc.ResponseStatus.SUCCESS:
                     raise RuntimeError(
                         f"Worker failed with error '{result}', please check the"
                         " stack trace above for the root cause")
+                return result
 
-                responses[w.rank] = result
+            for w in workers:
+                dequeue_timeout = None if deadline is None else (
+                    deadline - time.monotonic())
+
+                if non_block:
+                    result = self.io_thread_pool.submit(  # type: ignore
+                        get_response, w, dequeue_timeout, self.shutdown_event)
+                else:
+                    result = get_response(w, dequeue_timeout)
+
+                responses.append(result)
 
             return responses
         except TimeoutError as e:
@@ -222,15 +278,43 @@ class MultiprocExecutor(Executor):
         if not getattr(self, 'shutting_down', False):
             self.shutting_down = True
             self.shutdown_event.set()
-            for w in self.workers:
-                w.worker_response_mq = None
-            self._ensure_worker_termination([w.proc for w in self.workers])
+
+            if self.io_thread_pool is not None:
+                self.io_thread_pool.shutdown(wait=False, cancel_futures=True)
+                self.io_thread_pool = None
+
+            if workers := getattr(self, 'workers', None):
+                for w in workers:
+                    # Close death_writer to signal child processes to exit
+                    if w.death_writer is not None:
+                        w.death_writer.close()
+                        w.death_writer = None
+                    w.worker_response_mq = None
+                self._ensure_worker_termination([w.proc for w in workers])
 
         self.rpc_broadcast_mq = None
 
     def check_health(self) -> None:
         self.collective_rpc("check_health", timeout=10)
         return
+
+    @property
+    def max_concurrent_batches(self) -> int:
+        if self.scheduler_config.async_scheduling:
+            return 2
+        return self.parallel_config.pipeline_parallel_size
+
+    def _get_output_rank(self) -> int:
+        # Only returns ModelRunnerOutput from TP rank=0 and PP rank=-1
+        # (the first TP worker of the last PP stage).
+        # Example:
+        # Assuming TP=8, PP=4, then the world_size=32
+        # 0-7, PP rank 0
+        # 8-15, PP rank 1
+        # 16-23, PP rank 2
+        # 24-31, PP rank 3
+        # so world_size - tp_size = 32 - 8 = 24 should be PP rank = -1 (i.e. 3)
+        return self.world_size - self.parallel_config.tensor_parallel_size
 
 
 @dataclass
@@ -239,6 +323,7 @@ class UnreadyWorkerProcHandle:
     proc: BaseProcess
     rank: int
     ready_pipe: Connection
+    death_writer: Optional[Connection] = None
 
 
 @dataclass
@@ -246,6 +331,7 @@ class WorkerProcHandle:
     proc: BaseProcess
     rank: int
     worker_response_mq: MessageQueue  # The worker process writes to this MQ
+    death_writer: Optional[Connection] = None
 
     @classmethod
     def from_unready_handle(
@@ -255,6 +341,7 @@ class WorkerProcHandle:
             proc=unready_handle.proc,
             rank=unready_handle.rank,
             worker_response_mq=worker_response_mq,
+            death_writer=unready_handle.death_writer,
         )
 
 
@@ -272,27 +359,33 @@ class WorkerProc:
         input_shm_handle: Handle,
     ):
         self.rank = rank
-        wrapper = WorkerWrapperBase(aphrodite_config=aphrodite_config,
-                                    rpc_rank=rank)
+        wrapper = WorkerWrapperBase(aphrodite_config=aphrodite_config, rpc_rank=rank)
         # TODO: move `init_worker` to executor level as a collective rpc call
         all_kwargs: list[dict] = [
             {} for _ in range(aphrodite_config.parallel_config.world_size)
         ]
+        is_driver_worker = (
+            rank % aphrodite_config.parallel_config.tensor_parallel_size == 0)
         all_kwargs[rank] = {
             "aphrodite_config": aphrodite_config,
             "local_rank": local_rank,
             "rank": rank,
             "distributed_init_method": distributed_init_method,
-            "is_driver_worker": rank == 0,
+            "is_driver_worker": is_driver_worker,
         }
         wrapper.init_worker(all_kwargs)
         self.worker = wrapper
 
-        pid = os.getpid()
-        # Allow disabling multiprocessing prefixes via environment variable
-        if os.environ.get("APHRODITE_DISABLE_MP_PREFIXES", "1") != "1":
-            _add_prefix(sys.stdout, f"AphroditeWorker rank={rank}", pid)
-            _add_prefix(sys.stderr, f"AphroditeWorker rank={rank}", pid)
+        pp_size = aphrodite_config.parallel_config.pipeline_parallel_size
+        tp_size = aphrodite_config.parallel_config.tensor_parallel_size
+        pp_str = f"PP{rank // tp_size}" if pp_size > 1 else ""
+        tp_str = f"TP{rank % tp_size}" if tp_size > 1 else ""
+        suffix = f"{pp_str}{'_' if pp_str and tp_str else ''}{tp_str}"
+        process_name = "AphroditeWorker"
+        if suffix:
+            set_process_title(suffix, append=True)
+            process_name = f"{process_name} {suffix}"
+        decorate_logs(process_name)
 
         # Initialize MessageQueue for receiving SchedulerOutput
         self.rpc_broadcast_mq = MessageQueue.create_from_handle(
@@ -317,6 +410,9 @@ class WorkerProc:
         # (reader, writer)
         reader, writer = context.Pipe(duplex=False)
 
+        # Create death pipe to detect parent process exit
+        death_reader, death_writer = context.Pipe(duplex=False)
+
         process_kwargs = {
             "aphrodite_config": aphrodite_config,
             "local_rank": local_rank,
@@ -324,6 +420,7 @@ class WorkerProc:
             "distributed_init_method": distributed_init_method,
             "input_shm_handle": input_shm_handle,
             "ready_pipe": (reader, writer),
+            "death_pipe": death_reader,
         }
         # Run EngineCore busy loop in background process.
         proc = context.Process(target=WorkerProc.worker_main,
@@ -333,7 +430,9 @@ class WorkerProc:
 
         proc.start()
         writer.close()
-        return UnreadyWorkerProcHandle(proc, rank, reader)
+        # Keep death_writer open in parent - when parent exits,
+        # death_reader in child will get EOFError
+        return UnreadyWorkerProcHandle(proc, rank, reader, death_writer)
 
     @staticmethod
     def wait_for_ready(
@@ -367,7 +466,6 @@ class WorkerProc:
 
                 except EOFError:
                     e.__suppress_context__ = True
-                    logger.error("WorkerProc failed to start. Error: {}", e)
                     raise e from None
 
                 finally:
@@ -405,6 +503,28 @@ class WorkerProc:
         worker = None
         # tuple[Connection, Connection]
         reader, ready_writer = kwargs.pop("ready_pipe")
+        death_pipe = kwargs.pop("death_pipe", None)
+
+        # Start death monitoring thread if death_pipe is provided
+        if death_pipe is not None:
+
+            def monitor_parent_death():
+                try:
+                    # This will block until parent process exits (pipe closes)
+                    death_pipe.recv()
+                except EOFError:
+                    # Parent process has exited, terminate this worker
+                    logger.info("Parent process exited, terminating worker")
+                    # Send signal to self to trigger clean shutdown
+                    os.kill(os.getpid(), signal.SIGTERM)
+                except Exception as e:
+                    logger.warning("Death monitoring error: %s", e)
+
+            death_monitor = Thread(target=monitor_parent_death,
+                                   daemon=True,
+                                   name="WorkerDeathMonitor")
+            death_monitor.start()
+
         try:
             reader.close()
             worker = WorkerProc(*args, **kwargs)
@@ -426,17 +546,16 @@ class WorkerProc:
 
             worker.worker_busy_loop()
 
-        except Exception as e:
+        except Exception:
             # NOTE: if an Exception arises in busy_loop, we send
             # a FAILURE message over the MQ RPC to notify the Executor,
             # which triggers system shutdown.
-            # TODO: handle case where the MQ itself breaks.
+            # TODO(rob): handle case where the MQ itself breaks.
 
             if ready_writer is not None:
-                logger.exception(
-                    "WorkerProc failed to start. Error: {}", e)
+                logger.exception("WorkerProc failed to start.")
             else:
-                logger.exception("WorkerProc failed. Error: {}", e)
+                logger.exception("WorkerProc failed.")
 
             # The parent sends a SIGTERM to all worker processes if
             # any worker dies. Set this value so we don't re-throw
@@ -446,6 +565,8 @@ class WorkerProc:
         finally:
             if ready_writer is not None:
                 ready_writer.close()
+            if death_pipe is not None:
+                death_pipe.close()
             # Clean up once worker exits busy loop
             if worker is not None:
                 worker.shutdown()
@@ -457,7 +578,7 @@ class WorkerProc:
     def worker_busy_loop(self):
         """Main busy loop for Multiprocessing Workers"""
         while True:
-            method, args, kwargs, rank0_only = self.rpc_broadcast_mq.dequeue()
+            method, args, kwargs, output_rank = self.rpc_broadcast_mq.dequeue()
 
             try:
                 if isinstance(method, str):
@@ -469,14 +590,14 @@ class WorkerProc:
                 # Notes have been introduced in python 3.11
                 if hasattr(e, "add_note"):
                     e.add_note(traceback.format_exc())
-                logger.exception("WorkerProc hit an exception: {}", e)
+                logger.exception("WorkerProc hit an exception.")
                 # exception might not be serializable, so we convert it to
                 # string, only for logging purpose.
-                if not rank0_only or self.rank == 0:
+                if output_rank is None or self.rank == output_rank:
                     self.worker_response_mq.enqueue(
                         (WorkerProc.ResponseStatus.FAILURE, str(e)))
                 continue
 
-            if not rank0_only or self.rank == 0:
+            if output_rank is None or self.rank == output_rank:
                 self.worker_response_mq.enqueue(
                     (WorkerProc.ResponseStatus.SUCCESS, output))
