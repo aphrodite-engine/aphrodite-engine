@@ -14,11 +14,12 @@ import cpuinfo
 import psutil
 import requests
 import torch
+from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.utils import (cuda_device_count_stateless,
-                                    cuda_get_device_properties)
 from aphrodite.connections import global_http_connection
+from aphrodite.utils import (cuda_device_count_stateless,
+                             cuda_get_device_properties)
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
 _config_home = envs.APHRODITE_CONFIG_ROOT
@@ -33,7 +34,7 @@ _USAGE_ENV_VARS_TO_COLLECT = [
     "APHRODITE_USE_MODELSCOPE",
     "APHRODITE_USE_TRITON_FLASH_ATTN",
     "APHRODITE_ATTENTION_BACKEND",
-    "APHRODITE_USE_SAMPLING_KERNELS",
+    "APHRODITE_USE_FLASHINFER_SAMPLER",
     "APHRODITE_PP_LAYER_PARTITION",
     "APHRODITE_USE_TRITON_AWQ",
     "APHRODITE_USE_V1",
@@ -160,7 +161,7 @@ class UsageMessage:
                              usage_context: UsageContext,
                              extra_kvs: dict[str, Any]) -> None:
         self._report_usage_once(model_architecture, usage_context, extra_kvs)
-        self._report_continous_usage()
+        self._report_continuous_usage()
 
     def _report_usage_once(self, model_architecture: str,
                            usage_context: UsageContext,
@@ -181,7 +182,7 @@ class UsageMessage:
                 self.gpu_memory_per_device = (
                     torch_xla.core.xla_model.get_memory_info()["bytes_limit"])
             except Exception:
-                pass
+                logger.exception("Failed to collect TPU information")
         self.provider = _detect_cloud_provider()
         self.architecture = platform.machine()
         self.platform = platform.platform()
@@ -218,12 +219,11 @@ class UsageMessage:
         self._write_to_file(data)
         self._send_to_server(data)
 
-    def _report_continous_usage(self):
+    def _report_continuous_usage(self):
         """Report usage every 10 minutes.
 
-        This helps us to collect more data points for uptime of Aphrodite
-        usages. This function can also help send over performance metrics
-        over time.
+        This helps us to collect more data points for uptime of Aphrodite usages.
+        This function can also help send over performance metrics over time.
         """
         while True:
             time.sleep(600)
