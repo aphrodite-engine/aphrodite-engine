@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import torch
 from torch.nn import Module
@@ -14,7 +14,8 @@ from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
 from aphrodite.quantization.utils.marlin_utils_fp8 import (
     apply_fp8_marlin_linear, prepare_fp8_layer_for_marlin)
-from aphrodite.quantization.utils.quant_utils import is_layer_skipped
+from aphrodite.quantization.utils.quant_utils import (GroupShape,
+                                                      is_layer_skipped)
 from aphrodite.quantization.utils.w8a8_utils import (
     Fp8LinearOp, maybe_create_device_identity, normalize_e4m3fn_to_e4m3fnuz)
 
@@ -22,7 +23,7 @@ from aphrodite.quantization.utils.w8a8_utils import (
 class FBGEMMFp8Config(QuantizationConfig):
     """Config class for FBGEMM Fp8."""
 
-    def __init__(self, ignore_list: List[str], input_scale_ub: float):
+    def __init__(self, ignore_list: list[str], input_scale_ub: float):
         super().__init__()
         self.ignore_list = ignore_list if ignore_list else []
         self.input_scale_ub = input_scale_ub
@@ -30,14 +31,13 @@ class FBGEMMFp8Config(QuantizationConfig):
         # For GPUs that lack FP8 hardware support, we can leverage the Marlin
         # kernel for fast weight-only FP8 quantization
         self.use_marlin = not current_platform.has_device_capability(89)
-        self.fp8_linear = Fp8LinearOp()
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
         return "fbgemm_fp8"
 
     @classmethod
-    def get_supported_act_dtypes(cls) -> List[torch.dtype]:
+    def get_supported_act_dtypes(cls) -> list[torch.dtype]:
         return [torch.bfloat16, torch.float16]
 
     @classmethod
@@ -45,11 +45,11 @@ class FBGEMMFp8Config(QuantizationConfig):
         return 80
 
     @classmethod
-    def get_config_filenames(cls) -> List[str]:
+    def get_config_filenames(cls) -> list[str]:
         return []
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "FBGEMMFp8Config":
+    def from_config(cls, config: dict[str, Any]) -> "FBGEMMFp8Config":
         ignore_list = cls.get_from_keys(config, ["modules_to_not_convert"])
         input_scale_ub = cls.get_from_keys(config, ["activation_scale_ub"])
         return cls(ignore_list=ignore_list, input_scale_ub=input_scale_ub)
@@ -57,7 +57,9 @@ class FBGEMMFp8Config(QuantizationConfig):
     def get_quant_method(self, layer: torch.nn.Module,
                          prefix: str) -> Optional["QuantizeMethodBase"]:
         if isinstance(layer, LinearBase):
-            if is_layer_skipped(prefix, self.ignore_list):
+            if is_layer_skipped(prefix=prefix,
+                                ignored_layers=self.ignore_list,
+                                fused_mapping=self.packed_modules_mapping):
                 return UnquantizedLinearMethod()
             return FBGEMMFp8LinearMethod(self)
         return None
@@ -67,14 +69,15 @@ class FBGEMMFp8LinearMethod(LinearMethodBase):
 
     def __init__(self, quant_config: FBGEMMFp8Config):
         self.quant_config = quant_config
-        self.fp8_linear = Fp8LinearOp(use_per_token_if_dynamic=True)
+        self.fp8_linear = Fp8LinearOp(
+            act_quant_static=False, act_quant_group_shape=GroupShape.PER_TOKEN)
         self.out_dtype = torch.get_default_dtype()
 
     def create_weights(
         self,
         layer: torch.nn.Module,
         input_size_per_partition: int,
-        output_partition_sizes: List[int],
+        output_partition_sizes: list[int],
         input_size: int,
         output_size: int,
         params_dtype: torch.dtype,

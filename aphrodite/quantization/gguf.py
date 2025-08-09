@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 import gguf
 import torch
@@ -7,8 +7,6 @@ from loguru import logger
 from torch.nn.parameter import Parameter, UninitializedParameter
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common.logger import log_once
-from aphrodite.utils import direct_register_custom_op
 from aphrodite.modeling.layers.fused_moe.layer import (FusedMoE,
                                                        FusedMoEMethodBase)
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
@@ -18,6 +16,7 @@ from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
+from aphrodite.utils import direct_register_custom_op
 
 
 class GGUFConfig(QuantizationConfig):
@@ -32,7 +31,7 @@ class GGUFConfig(QuantizationConfig):
     def get_name(self) -> QuantizationMethods:
         return "gguf"
 
-    def get_supported_act_dtypes(self) -> List[torch.dtype]:
+    def get_supported_act_dtypes(self) -> list[torch.dtype]:
         return [torch.half, torch.bfloat16, torch.float32]
 
     @classmethod
@@ -40,11 +39,11 @@ class GGUFConfig(QuantizationConfig):
         return 60
 
     @classmethod
-    def get_config_filenames(cls) -> List[str]:
+    def get_config_filenames(cls) -> list[str]:
         return []  # no extra configs.
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "GGUFConfig":
+    def from_config(cls, config: dict[str, Any]) -> "GGUFConfig":
         return cls()
 
     def get_quant_method(self, layer: torch.nn.Module,
@@ -85,7 +84,7 @@ IMATRIX_QUANT_TYPES = {
     WeightType.IQ4_XS,
     WeightType.IQ4_NL,
 }
-# TODO: Currently, we don't have MMQ kernel for I-Matrix quantization.
+# TODO(Isotr0py): Currently, we don't have MMQ kernel for I-Matrix quantization.
 # Consolidate DEQUANT_TYPES, MMVQ_QUANT_TYPES and MMQ_QUANT_TYPES after we add
 # MMQ kernel for I-Matrix quantization.
 DEQUANT_TYPES = STANDARD_QUANT_TYPES | KQUANT_TYPES | IMATRIX_QUANT_TYPES
@@ -95,6 +94,10 @@ MMQ_QUANT_TYPES = STANDARD_QUANT_TYPES | KQUANT_TYPES
 
 def _fused_mul_mat_gguf(x: torch.Tensor, qweight: torch.Tensor,
                         qweight_type: int) -> torch.Tensor:
+    if qweight_type in IMATRIX_QUANT_TYPES:
+        mmvq_safe = 8 if qweight.shape[0] > 5120 else 16
+    else:
+        mmvq_safe = 2 if qweight.shape[0] > 5120 else 6
     # HACK: when doing chunked prefill we don't generate output tokens
     # so input to logits generator is empty which causes invalid parameter
     if x.shape[0] == 0:
@@ -106,7 +109,7 @@ def _fused_mul_mat_gguf(x: torch.Tensor, qweight: torch.Tensor,
     if qweight_type in UNQUANTIZED_TYPES:
         return x @ qweight.T
     # enable MMVQ in contiguous batching with batch_size=1
-    if x.shape[0] == 1 and qweight_type in MMVQ_QUANT_TYPES:
+    if x.shape[0] <= mmvq_safe and qweight_type in MMVQ_QUANT_TYPES:
         y = ops.ggml_mul_mat_vec_a8(qweight, x, qweight_type, qweight.shape[0])
     # Use MMQ Kernel if it's available (standard + k-quants)
     elif qweight_type in MMQ_QUANT_TYPES:
@@ -151,8 +154,6 @@ except AttributeError as error:
     raise error
 
 
-
-
 def _fused_moe_gguf(
     x: torch.Tensor,
     w1: torch.Tensor,
@@ -181,7 +182,9 @@ def _fused_moe_gguf(
         moe_align_block_size)
 
     out_hidden_states = torch.empty_like(x)
-    if qweight_type2 in MMQ_QUANT_TYPES and qweight_type in MMQ_QUANT_TYPES:
+    # unless we decent expert reuse we are better off running moe_vec kernel
+    if (qweight_type2 in MMQ_QUANT_TYPES and qweight_type in MMQ_QUANT_TYPES
+            and x.shape[0] > 64):
         num_tokens, _ = x.shape
         E, N, _ = w1.shape
         top_k = topk_ids.shape[1]
@@ -199,8 +202,22 @@ def _fused_moe_gguf(
         out = out.reshape(num_tokens, top_k, w2.shape[1]).mul_(
             topk_weights.view(num_tokens, top_k, 1))
         ops.moe_sum(out, out_hidden_states)
+    elif qweight_type2 in MMVQ_QUANT_TYPES and qweight_type in MMVQ_QUANT_TYPES:
+        num_tokens, _ = x.shape
+        E, N, _ = w1.shape
+        top_k = topk_ids.shape[1]
+
+        out = ops.ggml_moe_a8_vec(x, w1, topk_ids, top_k, qweight_type, N,
+                                  num_tokens)
+        out = act(out)
+
+        out = ops.ggml_moe_a8_vec(out, w2, topk_ids, 1, qweight_type2,
+                                  w2.shape[1], num_tokens * top_k)
+        out = out.reshape(num_tokens, top_k, w2.shape[1]).mul_(
+            topk_weights.view(num_tokens, top_k, 1))
+        ops.moe_sum(out, out_hidden_states)
     else:
-        log_once("WARNING", "There is no support for fast MoE kernel "
+        logger.warning_once("There is no support for fast MoE kernel "
                             "for current quantization method. "
                             "Falling back to slow implementation. ")
         for tok, (w, idx) in enumerate(zip(topk_weights, topk_ids)):
@@ -307,7 +324,7 @@ class GGUFLinearMethod(LinearMethodBase):
 
     def create_weights(self, layer: torch.nn.Module,
                        input_size_per_partition: int,
-                       output_partition_sizes: List[int], input_size: int,
+                       output_partition_sizes: list[int], input_size: int,
                        output_size: int, params_dtype: torch.dtype,
                        **extra_weight_attrs):
         self.params_dtype = params_dtype
@@ -392,7 +409,7 @@ class GGUFLinearMethod(LinearMethodBase):
               layer: torch.nn.Module,
               x: torch.Tensor,
               bias: Optional[torch.Tensor] = None) -> torch.Tensor:
-        shard_id = getattr(layer.qweight, "shard_id", None)
+        shard_id = layer.qweight.shard_id
 
         if shard_id:
             # dequantize shard weights respectively
@@ -498,7 +515,15 @@ class GGUFMoEMethod(FusedMoEMethodBase):
         e_score_correction_bias: Optional[torch.Tensor] = None,
         apply_router_weight_on_input: bool = False,
         activation: str = "silu",
+        enable_eplb: bool = False,
+        expert_load_view: Optional[torch.Tensor] = None,
+        logical_to_physical_map: Optional[torch.Tensor] = None,
+        logical_replica_count: Optional[torch.Tensor] = None,
     ):
+        if enable_eplb:
+            raise NotImplementedError(
+                "EPLB not supported for `GGUFMoEMethod` yet.")
+
         assert activation == "silu", "Only SiLU activation is supported."
         if apply_router_weight_on_input:
             raise NotImplementedError(
@@ -544,4 +569,4 @@ class GGUFEmbeddingMethod(GGUFLinearMethod):
 
 class GGUFUninitializedParameter(UninitializedParameter):
     cls_to_become = Parameter
-    data_container: List[torch.Tensor]
+    data_container: list[torch.Tensor]

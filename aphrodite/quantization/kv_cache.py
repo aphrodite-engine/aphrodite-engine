@@ -1,7 +1,6 @@
 import torch
 from loguru import logger
 
-from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
@@ -79,8 +78,7 @@ class BaseKVCacheMethod(QuantizeMethodBase):
                                  "for fp8 KV cache")
 
             if layer.q_scale < 0.0:
-                log_once(
-                    "WARNING",
+                logger.warning_once(
                     "Checkpoint does not provide a q scaling factor. "
                     "Setting it to k_scale. This only matters for "
                     "the flash-attn backend.")
@@ -93,8 +91,7 @@ class BaseKVCacheMethod(QuantizeMethodBase):
             layer._v_scale_float = v_scale
             if (k_scale == 1.0 and v_scale == 1.0
                     and "e5m2" not in layer.kv_cache_dtype):
-                log_once(
-                    "WARNING",
+                logger.warning_once(
                     "Using KV cache scaling factor 1.0 for fp8_e4m3. This "
                     "may cause accuracy issues. Please make sure k/v_scale "
                     "scaling factors are available in the fp8 checkpoint.")
@@ -123,12 +120,12 @@ class BaseKVCacheMethod(QuantizeMethodBase):
         # These are used in the final Attention.forward()
         layer._q_scale.copy_(q_scale)
         layer._prob_scale.copy_(prob_scale)
-        if q_scale == 1.0 or prob_scale == 1.0:
-            log_once(
-                "WARNING",
-                f"Using Q scale {q_scale} and prob scale {prob_scale} "
-                "with fp8 attention. This may cause accuracy issues. "
-                "Please make sure Q/prob scaling factors are "
+        if layer.kv_cache_dtype == "fp8" and (q_scale == 1.0
+                                              or prob_scale == 1.0):
+            logger.warning_once(
+                f"Using uncalibrated q_scale {q_scale} and/or prob_scale "
+                f"{prob_scale} with fp8 attention. This may cause accuracy "
+                "issues. Please make sure q/prob scaling factors are "
                 "available in the fp8 checkpoint.")
 
         del layer.k_scale

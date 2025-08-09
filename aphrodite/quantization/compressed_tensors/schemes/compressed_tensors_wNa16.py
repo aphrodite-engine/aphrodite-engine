@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional, Set
+from typing import Callable, Optional
 
 import torch
 from compressed_tensors.quantization import ActivationOrdering
@@ -31,7 +31,7 @@ WNA16_SUPPORTED_BITS = list(WNA16_SUPPORTED_TYPES_MAP.keys())
 
 
 class CompressedTensorsWNA16(CompressedTensorsScheme):
-    _kernel_backends_being_used: Set[str] = set()
+    _kernel_backends_being_used: set[str] = set()
 
     def __init__(self,
                  strategy: str,
@@ -66,7 +66,7 @@ class CompressedTensorsWNA16(CompressedTensorsScheme):
         return 80
 
     def create_weights(self, layer: torch.nn.Module, output_size: int,
-                       input_size: int, output_partition_sizes: List[int],
+                       input_size: int, output_partition_sizes: list[int],
                        input_size_per_partition: int,
                        params_dtype: torch.dtype, weight_loader: Callable,
                        **kwargs):
@@ -87,7 +87,7 @@ class CompressedTensorsWNA16(CompressedTensorsScheme):
         kernel_type = choose_mp_linear_kernel(mp_linear_kernel_config)
 
         if kernel_type.__name__ not in self._kernel_backends_being_used:
-            logger.info("Using {} for CompressedTensorsWNA16",
+            logger.info("Using %s for CompressedTensorsWNA16",
                         kernel_type.__name__)
             self._kernel_backends_being_used.add(kernel_type.__name__)
 

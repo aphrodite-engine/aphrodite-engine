@@ -1,6 +1,7 @@
-from typing import Literal, Type, get_args
+from typing import Literal, get_args
 
-from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.quantization.base_config import (
+    QuantizationConfig)
 
 QuantizationMethods = Literal[
     "aqlm",
@@ -11,7 +12,7 @@ QuantizationMethods = Literal[
     "ptpc_fp8",
     "fbgemm_fp8",
     "modelopt",
-    "nvfp4",
+    "modelopt_fp4",
     "marlin",
     "bitblas",
     "gguf",
@@ -30,6 +31,9 @@ QuantizationMethods = Literal[
     "quark",
     "moe_wna16",
     "torchao",
+    "auto-round",
+    "rtn",
+    "inc",
     "fp2",
     "fp3",
     "fp4",
@@ -79,7 +83,7 @@ def register_quantization_config(quantization: str):
     return _wrapper
 
 
-def get_quantization_config(quantization: str) -> Type[QuantizationConfig]:
+def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
     if quantization not in QUANTIZATION_METHODS:
         raise ValueError(f"Invalid quantization method: {quantization}")
 
@@ -87,6 +91,7 @@ def get_quantization_config(quantization: str) -> Type[QuantizationConfig]:
     from aphrodite.quantization.quark.quark import QuarkConfig
 
     from .aqlm import AQLMConfig
+    from .auto_round import AutoRoundConfig
     from .awq import AWQConfig
     from .awq_marlin import AWQMarlinConfig
     from .bitblas import BitBLASConfig
@@ -104,6 +109,7 @@ def get_quantization_config(quantization: str) -> Type[QuantizationConfig]:
     from .gptq_marlin import GPTQMarlinConfig
     from .gptq_marlin_24 import GPTQMarlin24Config
     from .hqq_marlin import HQQMarlinConfig
+    from .inc import INCConfig
     from .ipex_quant import IPEXConfig
     from .marlin import MarlinConfig
     from .modelopt import ModelOptFp8Config, ModelOptNvFp4Config
@@ -111,10 +117,11 @@ def get_quantization_config(quantization: str) -> Type[QuantizationConfig]:
     from .neuron_quant import NeuronQuantConfig
     from .ptpc_fp8 import PTPCFp8Config
     from .qqq import QQQConfig
+    from .rtn import RTNConfig
     from .torchao import TorchAOConfig
     from .tpu_int8 import Int8TpuConfig
 
-    method_to_config: dict[str, Type[QuantizationConfig]] = {
+    method_to_config: dict[str, type[QuantizationConfig]] = {
         "aqlm": AQLMConfig,
         "awq": AWQConfig,
         "deepspeedfp": DeepSpeedFPConfig,
@@ -122,7 +129,7 @@ def get_quantization_config(quantization: str) -> Type[QuantizationConfig]:
         "fp8": Fp8Config,
         "fbgemm_fp8": FBGEMMFp8Config,
         "modelopt": ModelOptFp8Config,
-        "nvfp4": ModelOptNvFp4Config,
+        "modelopt_fp4": ModelOptNvFp4Config,
         "marlin": MarlinConfig,
         "bitblas": BitBLASConfig,
         "gguf": GGUFConfig,
@@ -142,6 +149,9 @@ def get_quantization_config(quantization: str) -> Type[QuantizationConfig]:
         "quark": QuarkConfig,
         "moe_wna16": MoeWNA16Config,
         "torchao": TorchAOConfig,
+        "auto-round": AutoRoundConfig,
+        "rtn": RTNConfig,
+        "inc": INCConfig,
         "fp2": QuantLLMFPConfig,
         "fp3": QuantLLMFPConfig,
         "fp4": QuantLLMFPConfig,
