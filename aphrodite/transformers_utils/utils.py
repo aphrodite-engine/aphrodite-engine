@@ -2,7 +2,7 @@ import json
 from functools import cache
 from os import PathLike
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from loguru import logger
 
@@ -27,7 +27,7 @@ def check_gguf_file(model: Union[str, PathLike]) -> bool:
 
         return header == b"GGUF"
     except Exception as e:
-        logger.debug("Error reading file {}: {}", model, e)
+        logger.debug("Error reading file %s: %s", model, e)
         return False
 
 
@@ -35,7 +35,7 @@ def modelscope_list_repo_files(
     repo_id: str,
     revision: Optional[str] = None,
     token: Union[str, bool, None] = None,
-) -> List[str]:
+) -> list[str]:
     """List files in a modelscope repo."""
     from modelscope.hub.api import HubApi
     api = HubApi()
@@ -89,7 +89,7 @@ def maybe_model_redirect(model: str) -> str:
     redirect_dict = (_maybe_json_dict(model_redirect_path)
                      or _maybe_space_split_dict(model_redirect_path))
     if (redirect_model := redirect_dict.get(model)):
-        logger.info("model redirect: [ {} ] -> [ {} ]", model, redirect_model)
+        logger.info("model redirect: [ %s ] -> [ %s ]", model, redirect_model)
         return redirect_model
 
     return model

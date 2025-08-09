@@ -5,7 +5,6 @@ class MllamaTextConfig(mllama_hf_config.MllamaTextConfig):
     '''
     Use this class to override is_encoder_decoder:
     - transformers regards mllama as is_encoder_decoder=False
-
     - aphrodite needs is_encoder_decoder=True to enable cross-attention
     '''
 
