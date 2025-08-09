@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from mistral_common.tokens.tokenizers.mistral import (
         MistralTokenizer as PublicMistralTokenizer)
 
-    from aphrodite.entrypoints.chat_utils import ChatCompletionMessageParam
+    from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
 
 
 @dataclass
