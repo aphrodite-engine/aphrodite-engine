@@ -32,7 +32,7 @@ class NgramProposer:
         matching in the context. The function finds matches of the last n 
         tokens in the previous context, and returns k tokens that followed 
         that match.
-        
+
         Args:
             context_token_ids: Numpy array of token IDs representing the 
                                context sequence.

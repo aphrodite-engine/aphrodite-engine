@@ -2,17 +2,21 @@ import os
 
 import torch
 
+from loguru import logger
+
 # set some common config/environment variables that should be set
 # for all processes created by aphrodite and all processes
 # that interact with aphrodite workers.
 # they are executed whenever `import aphrodite` is called.
 
-if not os.path.exists('/dev/nvidia-caps-imex-channels'):
-    # normally, we disable NCCL_CUMEM_ENABLE because it
-    # will cost 1~2 GiB GPU memory with cudagraph+allreduce,
-    # see https://github.com/NVIDIA/nccl/issues/1234
-    # for more details.
-    # However, NCCL requires NCCL_CUMEM_ENABLE to work with
+if os.environ.get('NCCL_CUMEM_ENABLE', '0') != '0':
+    logger.warning(
+        "NCCL_CUMEM_ENABLE is set to {}, skipping override. "
+        "This may increase memory overhead with cudagraph+allreduce: "
+        "https://github.com/NVIDIA/nccl/issues/1234",
+        os.environ['NCCL_CUMEM_ENABLE'])
+elif not os.path.exists('/dev/nvidia-caps-imex-channels'):
+    # NCCL requires NCCL_CUMEM_ENABLE to work with
     # multi-node NVLink, typically on GB200-NVL72 systems.
     # The ultimate way to detect multi-node NVLink is to use
     # NVML APIs, which are too expensive to call here.

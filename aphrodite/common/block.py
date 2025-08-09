@@ -1,7 +1,7 @@
 """Token blocks."""
 from typing import List, Optional
 
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 
 DEFAULT_LAST_ACCESSED_TIME = -1
 

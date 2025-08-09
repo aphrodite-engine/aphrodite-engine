@@ -1,4 +1,5 @@
-from typing import Iterable, Set, Tuple
+from collections.abc import Iterable
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -7,6 +8,7 @@ from transformers import LlamaConfig
 
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
@@ -47,11 +49,13 @@ class LlamaModel(nn.Module):
         self.config = aphrodite_config. \
             speculative_config.draft_model_config.hf_config
         self.vocab_size = self.config.vocab_size
+
         self.embed_tokens = VocabParallelEmbedding(
             self.config.vocab_size,
             self.config.hidden_size,
             prefix=maybe_prefix(prefix, "embed_tokens"),
         )
+
         self.layers = nn.ModuleList([
             LlamaDecoderLayer(
                 self.config,
@@ -82,8 +86,8 @@ class LlamaModel(nn.Module):
         hidden_states = hidden_states + residual
         return hidden_states, hidden_states
 
-    def load_weights(self, weights: Iterable[Tuple[str,
-                                                   torch.Tensor]]) -> Set[str]:
+    def load_weights(self, weights: Iterable[tuple[str,
+                                                   torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             (".qkv_proj", ".q_proj", "q"),
@@ -93,7 +97,7 @@ class LlamaModel(nn.Module):
             (".gate_up_proj", ".up_proj", 1),
         ]
         params_dict = dict(self.named_parameters())
-        loaded_params: Set[str] = set()
+        loaded_params: set[str] = set()
         for name, loaded_weight in weights:
             for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:
@@ -104,6 +108,12 @@ class LlamaModel(nn.Module):
                 weight_loader(param, loaded_weight, shard_id)
                 break
             else:
+
+                # if PP disabled then draft will share embed with target
+                if get_pp_group().world_size == 1 and \
+                    "embed_tokens." in name:
+                    continue
+
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
@@ -114,13 +124,15 @@ class LlamaModel(nn.Module):
 
 class EagleLlamaForCausalLM(LlamaForCausalLM):
 
-    def __init__(self, *, aphrodite_config: AphroditeConfig, start_layer_id: int = 0):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         nn.Module.__init__(self)
         self.config = aphrodite_config. \
             speculative_config.draft_model_config.hf_config
+        target_layer_num = aphrodite_config.model_config.get_num_layers(
+            aphrodite_config.parallel_config)
         self.model = LlamaModel(aphrodite_config=aphrodite_config,
                                 prefix="model",
-                                start_layer_id=start_layer_id)
+                                start_layer_id=target_layer_num)
 
         logit_scale = getattr(self.config, "logit_scale", 1.0)
         self.logits_processor = LogitsProcessor(self.config.vocab_size,
@@ -131,14 +143,18 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
         input_ids: torch.Tensor,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
+        inputs_embeds: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if inputs_embeds is not None:
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support multimodal inputs yet."
+            )
         return self.model(input_ids, positions, hidden_states)
 
-    def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."]
-                           if self.config.tie_word_embeddings else None),
+            skip_prefixes=None,
         )
 
         model_weights = {}
@@ -146,5 +162,4 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
             if "lm_head" not in name:
                 name = "model." + name
             model_weights[name] = loaded_weight
-
         loader.load_weights(model_weights.items())

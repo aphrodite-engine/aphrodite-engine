@@ -1,60 +1,83 @@
 """A Neuron worker class."""
-from typing import List, Optional, Tuple
+import os
+from typing import List, Optional, Set, Tuple
 
-import torch
 import torch.distributed
 
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
+from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling import set_random_seed
-from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.platforms import current_platform
+from aphrodite.platforms.neuron import NeuronFramework
 from aphrodite.worker.neuron_model_runner import NeuronModelRunner
 from aphrodite.worker.worker_base import (LocalOrDistributedWorkerBase,
-                                          LoRANotSupportedWorkerBase,
                                           WorkerBase, WorkerInput)
 
 
-class NeuronWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
+class NeuronWorker(LocalOrDistributedWorkerBase):
     """A worker class that executes the model on a group of neuron cores.
     """
 
-    def __init__(
-        self,
-        aphrodite_config: AphroditeConfig,
-        local_rank: int,
-        rank: int,
-        distributed_init_method: str,
-        is_driver_worker: bool = True,
-    ) -> None:
+    model_runner: NeuronModelRunner
+
+    def __init__(self,
+                 aphrodite_config: AphroditeConfig,
+                 local_rank: int,
+                 rank: int,
+                 distributed_init_method: str,
+                 is_driver_worker: bool = False) -> None:
         WorkerBase.__init__(self, aphrodite_config=aphrodite_config)
         self.local_rank = local_rank
         self.rank = rank
         self.distributed_init_method = distributed_init_method
+        self.is_driver_worker = is_driver_worker
+        self.lora_config = aphrodite_config.lora_config
+
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
-            from aphrodite.common.utils import init_cached_hf_modules
+            from aphrodite.utils import init_cached_hf_modules
             init_cached_hf_modules()
 
-        self.model_runner: NeuronModelRunner = NeuronModelRunner(
-            aphrodite_config=aphrodite_config)
-        self.is_driver_worker = is_driver_worker
+        neuron_framework = current_platform.get_neuron_framework_to_use()
+        if neuron_framework == NeuronFramework.TRANSFORMERS_NEURONX:
+            self.model_runner = self.get_tnx_model_runner(aphrodite_config)
+        elif neuron_framework == NeuronFramework.NEURONX_DISTRIBUTED_INFERENCE:
+            self.model_runner = self.get_neuronx_distributed_model_runner(
+                aphrodite_config)
+        else:
+            raise NotImplementedError(
+                "Specified framework" +
+                f" {os.environ.get('APHRODITE_NEURON_FRAMEWORK')}" +
+                " is either not installed or not supported." +
+                " Supported frameworks: " +
+                "[transformers-neuronx, neuronx-distributed-inference]")
 
-    def execute_model(
-        self,
-        execute_model_req: Optional[ExecuteModelRequest] = None,
-    ) -> Optional[List[SamplerOutput]]:
-        assert execute_model_req is not None
-        assert (not execute_model_req.blocks_to_swap_in
-                and not execute_model_req.blocks_to_swap_out
-                and not execute_model_req.blocks_to_copy), (
-                    "Cache operations are not supported for Neuron backend.")
-        assert execute_model_req.num_lookahead_slots == 0, (
-            "lookahead not supported for Neuron backend.")
-        output = LocalOrDistributedWorkerBase.execute_model(
-            self, execute_model_req)
-        return output
+    def get_tnx_model_runner(self, aphrodite_config):
+        assert (self.lora_config
+                is None), ("LoRA is not supported for TransformersNeuronX "
+                           "framework.")
+        from aphrodite.worker.multi_step_neuron_model_runner import (
+            MultiStepNeuronModelRunner)
+        if self.speculative_config is not None:
+            return MultiStepNeuronModelRunner(aphrodite_config=aphrodite_config)
+        else:
+            return NeuronModelRunner(aphrodite_config=aphrodite_config)
+
+    def get_neuronx_distributed_model_runner(self, aphrodite_config):
+        from aphrodite.worker.multi_step_neuronx_distributed_model_runner import (
+            MultiStepNeuronxDistributedModelRunner)
+        from aphrodite.worker.neuronx_distributed_model_runner import (
+            NeuronxDistributedModelRunner)
+        if self.speculative_config is not None:
+            assert (self.lora_config
+                    is None), "LoRA is not supported for Speculative Decoding"
+            return MultiStepNeuronxDistributedModelRunner(
+                aphrodite_config=aphrodite_config)
+        else:
+            return NeuronxDistributedModelRunner(aphrodite_config=aphrodite_config)
 
     def init_device(self) -> None:
         self.init_distributed_environment()
@@ -120,18 +143,46 @@ class NeuronWorker(LoRANotSupportedWorkerBase, LocalOrDistributedWorkerBase):
 
     def init_distributed_environment(self):
         """Neuron uses transformers-neuronx for tensor parallelism.
-        It has only one process to control multiple devices.
-        Aphrodite still needs the environment initialized when TP/PP > 1,
-        so we initialize a distributed environment with one process.
+
+        Ahrodite still needs the environment initialized when TP/PP > 1
         """
         init_distributed_environment(
             world_size=1,
-            rank=0,
-            local_rank=0,
+            rank=self.rank,
+            local_rank=self.local_rank,
             distributed_init_method=self.distributed_init_method,
-            backend="gloo",
+            backend=current_platform.dist_backend,
         )
+
         ensure_model_parallel_initialized(
             1,
             1,
         )
+
+    def add_lora(self, lora_request: LoRARequest) -> bool:
+        if current_platform.use_transformers_neuronx():
+            raise NotImplementedError(
+                f"{type(self)} does not support LoRA with Neuron Framework "
+                f"Transformers NeuronX")
+        return self.model_runner.add_lora(lora_request)
+
+    def remove_lora(self, lora_id: int) -> bool:
+        if current_platform.use_transformers_neuronx():
+            raise NotImplementedError(
+                f"{type(self)} does not support LoRA with Neuron Framework "
+                f"Transformers NeuronX")
+        return self.model_runner.remove_lora(lora_id)
+
+    def pin_lora(self, lora_id: int) -> bool:
+        if current_platform.use_transformers_neuronx():
+            raise NotImplementedError(
+                f"{type(self)} does not support LoRA with Neuron Framework "
+                f"Transformers NeuronX")
+        return self.model_runner.pin_lora(lora_id)
+
+    def list_loras(self) -> Set[int]:
+        if current_platform.use_transformers_neuronx():
+            raise NotImplementedError(
+                f"{type(self)} does not support LoRA with Neuron Framework "
+                f"Transformers NeuronX")
+        return self.model_runner.list_loras()

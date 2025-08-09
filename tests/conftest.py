@@ -1035,7 +1035,7 @@ def aphrodite_runner():
 @pytest.fixture()
 def temporary_enable_log_propagate():
     import logging
-    logger = logging.getLogger("aphrodite")
+    logger = logging.getLogger("aphrodite-engine")
     logger.propagate = True
     yield
     logger.propagate = False

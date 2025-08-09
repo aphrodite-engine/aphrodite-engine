@@ -1,10 +1,10 @@
 """A layer that samples the next tokens from the model's outputs."""
 import itertools
-import warnings
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntEnum
 from math import inf
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import msgspec
 import torch
@@ -23,7 +23,6 @@ from aphrodite.modeling.layers.utils import apply_penalties
 from aphrodite.modeling.sampling_metadata import (SamplingMetadata,
                                                   SamplingTensors,
                                                   SequenceGroupToSample)
-from aphrodite.spec_decode.metrics import SpecDecodeWorkerMetrics
 
 
 def get_sampler() -> torch.nn.Module:
@@ -34,14 +33,14 @@ def get_sampler() -> torch.nn.Module:
     return Sampler()
 
 # (num_token_ids, num_parent_ids) per sequence group.
-SampleResultType = List[Tuple[List[int], List[int]]]
+SampleResultType = list[tuple[list[int], list[int]]]
 
 # Types of temporary data structures used for
 # computing sample_result
-SampleMetadataType = Dict[SamplingType, Tuple[List[int],
-                                              List[SequenceGroupToSample]]]
-MultinomialSamplesType = Dict[SamplingType, torch.Tensor]
-SampleResultsDictType = Dict[int, Tuple[List[int], List[int]]]
+SampleMetadataType = dict[SamplingType, tuple[list[int],
+                                              list[SequenceGroupToSample]]]
+MultinomialSamplesType = dict[SamplingType, torch.Tensor]
+SampleResultsDictType = dict[int, tuple[list[int], list[int]]]
 
 
 # Encapsulates temporary data structures for computing
@@ -68,7 +67,7 @@ class SampleResultArgsType:
 MaybeDeferredSampleResultType = Union[SampleResultType, SampleResultArgsType]
 
 # Abbreviation of the _sample() return type
-SampleReturnType = Tuple[MaybeDeferredSampleResultType, Optional[torch.Tensor]]
+SampleReturnType = tuple[MaybeDeferredSampleResultType, Optional[torch.Tensor]]
 
 
 class SamplerOutput(
@@ -81,7 +80,7 @@ class SamplerOutput(
     also has optional fields for device tensors.
     """
 
-    outputs: List[CompletionSequenceGroupOutput]
+    outputs: list[CompletionSequenceGroupOutput]
 
     # On-device tensor containing probabilities of each token.
     sampled_token_probs: Optional[torch.Tensor] = None
@@ -105,9 +104,6 @@ class SamplerOutput(
     # corresponding to the sampled token ids). Used when prompt embeddings are
     # specified in lieu of prompt token ids or text.
     sampled_token_embeds: Optional[torch.Tensor] = None
-
-    # Spec decode metrics populated by workers.
-    spec_decode_worker_metrics: Optional[SpecDecodeWorkerMetrics] = None
 
     # Optional last hidden states from the model.
     hidden_states: Optional[torch.Tensor] = None
@@ -146,11 +142,9 @@ class SamplerOutput(
                                     else self.sampled_token_probs.shape)
         sampled_token_ids_repr = ("None" if self.sampled_token_ids is None else
                                   self.sampled_token_ids.shape)
-        return (
-            f"SamplerOutput(outputs={self.outputs}, "
-            f"sampled_token_probs={sampled_token_probs_repr}, "
-            f"sampled_token_ids={sampled_token_ids_repr}, "
-            f"spec_decode_worker_metrics={self.spec_decode_worker_metrics})")
+        return (f"SamplerOutput(outputs={self.outputs}, "
+                f"sampled_token_probs={sampled_token_probs_repr}, "
+                f"sampled_token_ids={sampled_token_ids_repr})")
 
 # There isn't a "safe" temperature range for fp16 logits.
 # This value was chosen because 1/2e-5 is just under the 65k fp16 max, meaning
@@ -619,9 +613,9 @@ class Sampler(nn.Module):
 
 
 def _get_custom_token_bans(
-        sampling_metadata: SamplingMetadata) -> List[List[int]]:
+        sampling_metadata: SamplingMetadata) -> list[list[int]]:
     assert sampling_metadata.seq_groups is not None
-    banned_tokens: List[List[int]] = []
+    banned_tokens: list[list[int]] = []
     for i, seq_group in enumerate(sampling_metadata.seq_groups):
         sampling_params = sampling_metadata.seq_groups[i].sampling_params
         seq_ids = seq_group.seq_ids
@@ -651,7 +645,7 @@ def _get_custom_token_bans(
     return banned_tokens
 
 def _apply_token_bans(logits: torch.Tensor,
-                      banned_tokens: List[List[int]]) -> torch.Tensor:
+                      banned_tokens: list[list[int]]) -> torch.Tensor:
     for i, banned_token_ids in enumerate(banned_tokens):
         if i >= logits.size(0):
             break
@@ -1137,9 +1131,9 @@ def _apply_top_nsigma(
 
 
 def _greedy_sample(
-    selected_seq_groups: List[SequenceGroupToSample],
+    selected_seq_groups: list[SequenceGroupToSample],
     samples: torch.Tensor,
-) -> List[Tuple[List[int], List[int]]]:
+) -> list[tuple[list[int], list[int]]]:
     """Run greedy sampling on a given samples.
     Args:
         selected_seq_groups: A list of sequence groups batched.
@@ -1147,7 +1141,7 @@ def _greedy_sample(
             samples could be smaller than selected_seq_groups if
             seq_group.do_sample is False.
     Returns:
-        Tuple of (next_token_ids, parent_ids). The length of returned list is
+        tuple of (next_token_ids, parent_ids). The length of returned list is
         same as the length of selected_seq_groups. If the corresponding
         seq_group has do_sample=False, tuple contains ([], [])
     """
@@ -1171,9 +1165,9 @@ def _greedy_sample(
 
 
 def _random_sample(
-    selected_seq_groups: List[SequenceGroupToSample],
+    selected_seq_groups: list[SequenceGroupToSample],
     random_samples: torch.Tensor,
-) -> List[Tuple[List[int], List[int]]]:
+) -> list[tuple[list[int], list[int]]]:
     """Run random sampling on a given samples.
     Args:
         selected_seq_groups: A list of sequence groups batched.
@@ -1181,7 +1175,7 @@ def _random_sample(
             length of samples could be smaller than selected_seq_groups if
             seq_group.do_sample is False.
     Returns:
-        Tuple of (next_token_ids, parent_ids). The length of returned list is
+        tuple of (next_token_ids, parent_ids). The length of returned list is
         same as the length of selected_seq_groups. If the corresponding
         seq_group has do_sample=False, tuple contains ([], [])
     """
@@ -1221,7 +1215,7 @@ def _random_sample(
 def _multinomial(
     probs: torch.Tensor,
     num_samples: int,
-    seq_groups: Optional[List[SequenceGroupToSample]] = None,
+    seq_groups: Optional[list[SequenceGroupToSample]] = None,
 ) -> torch.Tensor:
     if num_samples > 1:
         probs = probs.repeat_interleave(num_samples, dim=0)
@@ -1242,39 +1236,18 @@ def _multinomial(
 
 def _top_k_top_p_multinomial_with_kernels(
         probs: torch.Tensor, top_ks: torch.Tensor, top_ps: torch.Tensor,
-        num_samples: int, seq_groups: Optional[List[SequenceGroupToSample]]):
-    max_top_k_round = 32
+        num_samples: int, seq_groups: Optional[list[SequenceGroupToSample]]):
+
     if num_samples > 1:
         probs = probs.repeat_interleave(num_samples, dim=0)
         top_ks = top_ks.repeat_interleave(num_samples)
         top_ps = top_ps.repeat_interleave(num_samples)
-    batch_size = probs.shape[0]
-    uniform_samples = torch.empty((max_top_k_round, batch_size),
-                                  device=probs.device)
-    if seq_groups is None:
-        uniform_samples.uniform_()
-    else:
-        sample_idx = 0
-        for seq_group in seq_groups:
-            seq_ids = seq_group.seq_ids
-            stride = len(seq_ids) * num_samples
-            assert seq_group.generator is not None
-            uniform_samples[:, sample_idx:sample_idx +
-                            stride].uniform_(generator=seq_group.generator)
-            sample_idx += stride
-    batch_next_token_ids, success = ops.top_k_top_p_sampling_from_probs(
+    batch_next_token_ids = ops.top_k_top_p_sampling_from_probs(
         probs,
-        uniform_samples,
         top_ks,
         top_ps,
     )
-    if not success.all():
-        warnings.warn("CUDA rejection sampling failed, fallback.",
-                      stacklevel=1)
-        probs = ops.top_k_renorm_prob(probs, top_ks)
-        probs = ops.top_p_renorm_prob(probs, top_ps)
-        batch_next_token_ids = ops.sampling_from_probs(
-            probs, uniform_samples[0])
+
     return batch_next_token_ids.view(-1, num_samples)
 
 
@@ -1481,7 +1454,7 @@ def _get_ranks(x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
     Args:
         x (torch.Tensor): 2D logprob tensor of shape (N, M)
                         where N is the no. of tokens and M is the vocab dim.
-        indices (torch.Tensor): List of chosen token indices.
+        indices (torch.Tensor): list of chosen token indices.
     Returns:
         torch.Tensor: 1D tensor of shape (N,) where N is the no. of tokens.
                     Each element in the returned tensor represents the rank
@@ -1495,8 +1468,8 @@ def _get_ranks(x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
 def get_logprobs(
     logprobs: torch.Tensor,
     sampling_metadata: SamplingMetadata,
-    sample_results: List[Tuple[List[int], List[int]]],
-) -> Tuple[List[Optional[PromptLogprobs]], List[SampleLogprobs]]:
+    sample_results: list[tuple[list[int], list[int]]],
+) -> tuple[list[Optional[PromptLogprobs]], list[SampleLogprobs]]:
     """Return sample lobprobs and prompt logprobs.
     The logic consists of 3 parts.
     - Select indices to compute logprob from, ranks of token ids, and
@@ -1522,9 +1495,9 @@ def get_logprobs(
     """
     # The index of query token to calculate logprobs. It includes both
     # prompt and sample logprob indices.
-    query_indices: List[int] = []
+    query_indices: list[int] = []
     # The next token ids to get the logprob value from.
-    next_token_ids: List[int] = []
+    next_token_ids: list[int] = []
     # The largest requested number of logprobs. We find logprobs as many as the
     # largest num logprobs in this API. If every logprobs is None, it will be
     # set to -1.
@@ -1606,8 +1579,8 @@ def get_logprobs(
         ranks = ranks.to('cpu')
 
     # Find prompt/sample logprobs.
-    prompt_logprobs_per_seq_group: List[Optional[PromptLogprobs]] = []
-    sample_logprobs_per_seq_group: List[SampleLogprobs] = []
+    prompt_logprobs_per_seq_group: list[Optional[PromptLogprobs]] = []
+    sample_logprobs_per_seq_group: list[SampleLogprobs] = []
     top_logprob_idx = 0
     selected_logprobs_idx = 0
 
@@ -1658,7 +1631,7 @@ def _get_prompt_logprob_if_needed(
         for idx, token_id in enumerate(next_prompt_tokens):
             # Calculate the prompt logprob of the real prompt tokens.
             # {token_id: (logprob, rank_from_vocab)}
-            prompt_logprobs_dict: Dict[int, Tuple[float, int]] = {
+            prompt_logprobs_dict: dict[int, tuple[float, int]] = {
                 token_id: (selected_logprob_items[idx], rank_items[idx])
             }
 
@@ -1690,7 +1663,7 @@ def _get_prompt_logprob_if_needed(
 
 def _get_sampled_logprob_if_needed(
     seq_group: SequenceGroupToSample,
-    sample_result: Tuple[List[int], List[int]],
+    sample_result: tuple[list[int], list[int]],
     selected_logprobs: torch.Tensor,
     ranks: torch.Tensor,
     top_token_ids: torch.Tensor,
@@ -1805,20 +1778,20 @@ def _modify_greedy_probs_inplace(logprobs: torch.Tensor, probs: torch.Tensor,
 def _build_sampler_output(
     maybe_deferred_sample_results: MaybeDeferredSampleResultType,
     sampling_metadata: SamplingMetadata,
-    prompt_logprobs: Optional[List[Optional[PromptLogprobs]]],
-    sample_logprobs: Optional[List[SampleLogprobs]],
-    on_device_tensors: Optional[Tuple[torch.Tensor, torch.Tensor,
+    prompt_logprobs: Optional[list[Optional[PromptLogprobs]]],
+    sample_logprobs: Optional[list[SampleLogprobs]],
+    on_device_tensors: Optional[tuple[torch.Tensor, torch.Tensor,
                                       torch.Tensor]],
     skip_sampler_cpu_output: bool = False,
 ) -> SamplerOutput:
     """Construct Python objects with the output of sampling.
     Args:
-        on_device_tensors: Tuple containing on-device tensors with the
+        on_device_tensors: tuple containing on-device tensors with the
             probabilities used in sampling and the sampled token ids. This
             allows post-processing without copies to CPU/serialization, e.g. in
             speculative decoding rejection sampling.
     """
-    sampler_output: List[CompletionSequenceGroupOutput] = []
+    sampler_output: list[CompletionSequenceGroupOutput] = []
 
     if skip_sampler_cpu_output:
         assert isinstance(maybe_deferred_sample_results, SampleResultArgsType)
@@ -1840,7 +1813,7 @@ def _build_sampler_output(
                                            prompt_logprobs, sample_logprobs):
             seq_ids = seq_group.seq_ids
             next_token_ids, parent_ids = sample_result
-            seq_outputs: List[SequenceOutput] = []
+            seq_outputs: list[SequenceOutput] = []
             for parent_id, next_token_id, logprobs in zip(
                     parent_ids, next_token_ids, group_sample_logprobs):
                 seq_outputs.append(
@@ -1897,7 +1870,7 @@ def _get_next_prompt_tokens(
 def _get_ngrams(
     ngram_size: int,
     prev_input_ids: torch.Tensor
-) -> Dict[Tuple[int, ...], List[int]]:
+) -> dict[tuple[int, ...], list[int]]:
     """Get dictionary of ngrams and the tokens that followed them.
 
     Args:
@@ -1921,11 +1894,11 @@ def _get_ngrams(
     return generated_ngrams
 
 def _get_generated_ngrams(
-    banned_ngrams: Dict[Tuple[int, ...], List[int]],
+    banned_ngrams: dict[tuple[int, ...], list[int]],
     prev_input_ids: torch.Tensor,
     ngram_size: int,
     cur_len: int
-) -> List[int]:
+) -> list[int]:
     """Get list of tokens that would create a repeated ngram if generated next.
 
     Args:
@@ -1936,7 +1909,7 @@ def _get_generated_ngrams(
         cur_len: Current position in sequence
 
     Returns:
-        List of token ids that would create a repeat ngram
+        list of token ids that would create a repeat ngram
     """
     start_idx = cur_len + 1 - ngram_size
     current_ngram = tuple(prev_input_ids[start_idx:cur_len].tolist())
@@ -1947,7 +1920,7 @@ def _calc_banned_ngram_tokens(
     ngram_size: int,
     prev_input_ids: torch.Tensor,
     cur_len: int
-) -> List[int]:
+) -> list[int]:
     """Calculate tokens that would create repeated ngrams if generated next.
 
     Args:
@@ -1956,7 +1929,7 @@ def _calc_banned_ngram_tokens(
         cur_len: Current position in sequence
 
     Returns:
-        List of token ids that should be banned to prevent ngram repetition
+        list of token ids that should be banned to prevent ngram repetition
     """
     if cur_len + 1 < ngram_size:
         return []
@@ -1999,7 +1972,7 @@ def _calc_banned_ngram_tokens(
 #     return logits
 
 # def _mirostat_store_args(logits: torch.Tensor, args: SamplingTensors,
-#                          sample_results: List[Tuple[List[int], List[int]]],
+#                          sample_results: list[tuple[list[int], list[int]]],
 #                          sampling_metadata: SamplingMetadata,
 #                          output_metadata: OutputMetadata) -> None:
 #     """Based on whichever token was finally sampled, we calculate the

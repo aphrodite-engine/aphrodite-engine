@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Optional, TypeVar
 from torch import nn
 from loguru import logger
 
-from aphrodite.common.utils import LRUCache
+from aphrodite.utils import LRUCache
 
 
 class AdapterModel(ABC):

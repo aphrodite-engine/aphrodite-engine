@@ -28,10 +28,8 @@ It supports page size >= 1.
 
 import logging
 
-import triton
-import triton.language as tl
-
 from aphrodite.platforms import current_platform
+from aphrodite.triton_utils import tl, triton
 
 is_hip_ = current_platform.is_rocm()
 

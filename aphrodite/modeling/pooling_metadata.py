@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import torch
 
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.utils import is_pin_memory_available
 
 
 class PoolingMetadata:
@@ -14,16 +14,16 @@ class PoolingMetadata:
     providing context for how to perform pooling and other related operations.
 
     Attributes:
-        seq_groups: List of (seq_ids, pooling_params).
+        seq_groups: list of (seq_ids, pooling_params).
         seq_data: A mapping of sequence ID to additional sequence data.
-        prompt_lens: List of the lengths of each prompt.
+        prompt_lens: list of the lengths of each prompt.
     """
 
     def __init__(
         self,
-        seq_groups: List[Tuple[List[int], PoolingParams]],
-        seq_data: Dict[int, Any],  # Specific data related to sequences
-        prompt_lens: List[int],
+        seq_groups: list[tuple[list[int], PoolingParams]],
+        seq_data: dict[int, Any],  # Specific data related to sequences
+        prompt_lens: list[int],
     ) -> None:
         self.seq_groups = seq_groups
         self.seq_data = seq_data
@@ -34,6 +34,13 @@ class PoolingMetadata:
                 f"seq_groups={self.seq_groups}, "
                 f"seq_data={self.seq_data}, "
                 f"prompt_lens={self.prompt_lens})")
+
+    def __getitem__(self, indices: slice):
+        return PoolingMetadata(
+            seq_groups=self.seq_groups[indices],
+            seq_data=dict(list(self.seq_data.items())[indices]),
+            prompt_lens=self.prompt_lens[indices],
+        )
 
 
 @dataclass

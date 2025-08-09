@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import torch
 from loguru import logger
@@ -16,10 +16,10 @@ from .MPLinearKernel import MPLinearKernel, MPLinearLayerConfig
 
 class BitBLASLinearKernel(MPLinearKernel):
 
-    OPT_FEATURES: List[int] = BITBLAS_OPTIMIZE_FEATURES
+    OPT_FEATURES: list[int] = BITBLAS_OPTIMIZE_FEATURES
     ENABLE_TUNING: bool = True
     MATMUL_LAYOUT: str = "nt"
-    BITBLAS_DTYPES: Dict[torch.dtype, str] = {
+    BITBLAS_DTYPES: dict[torch.dtype, str] = {
         torch.float32: "float32",
         torch.float16: "float16",
         torch.bfloat16: "bfloat16",
@@ -98,7 +98,7 @@ class BitBLASLinearKernel(MPLinearKernel):
 
     @classmethod
     def can_implement(cls,
-                      c: MPLinearLayerConfig) -> Tuple[bool, Optional[str]]:
+                      c: MPLinearLayerConfig) -> tuple[bool, Optional[str]]:
 
         is_bitblas_installed = True
 

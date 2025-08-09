@@ -1,7 +1,6 @@
 import torch
 
-from aphrodite.common.utils import (is_pin_memory_available,
-                                    make_tensor_with_pad)
+from aphrodite.utils import is_pin_memory_available, make_tensor_with_pad
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.ops.bad_words import apply_bad_words
 from aphrodite.v1.sample.ops.dry import apply_all_dry
@@ -9,8 +8,7 @@ from aphrodite.v1.sample.ops.epsilon_cutoff import epsilon_cutoff
 from aphrodite.v1.sample.ops.eta_cutoff import eta_cutoff
 from aphrodite.v1.sample.ops.min_p import min_p
 from aphrodite.v1.sample.ops.no_repeat_ngram import no_repeat_ngram
-from aphrodite.v1.sample.ops.penalties import (apply_all_penalties,
-                                               apply_min_token_penalties)
+from aphrodite.v1.sample.ops.penalties import apply_all_penalties
 from aphrodite.v1.sample.ops.quadratic import quadratic
 from aphrodite.v1.sample.ops.skew import skew
 from aphrodite.v1.sample.ops.tfs import tfs
@@ -28,10 +26,6 @@ class SamplingOps:
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
-        if sampling_metadata.min_tokens:
-            apply_min_token_penalties(logits,
-                                      sampling_metadata.output_token_ids,
-                                      sampling_metadata.min_tokens)
         if not sampling_metadata.no_penalties:
             assert sampling_metadata.prompt_token_ids is not None
             logits = apply_all_penalties(

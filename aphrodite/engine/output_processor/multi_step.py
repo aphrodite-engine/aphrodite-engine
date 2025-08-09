@@ -8,7 +8,7 @@ from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID,
                                        CompletionSequenceGroupOutput, Sequence,
                                        SequenceGroup, SequenceGroupOutput,
                                        SequenceOutput, SequenceStatus)
-from aphrodite.common.utils import Counter
+from aphrodite.utils import Counter
 from aphrodite.engine.output_processor.interfaces import (
     SequenceGroupOutputProcessor)
 from aphrodite.engine.output_processor.single_step import (
@@ -96,11 +96,6 @@ class MultiStepOutputProcessor(SequenceGroupOutputProcessor):
         if seqs is None:
             seqs = sequence_group.get_seqs(
                 status=SequenceStatus.FINISHED_ABORTED)
-
-        for output in outputs:
-            if output.samples[0].output_token != APHRODITE_INVALID_TOKEN_ID:
-                sequence_group.metrics.spec_token_acceptance_counts[
-                    output.step_index] += 1
 
         assert seqs, "Expected RUNNING or FINISHED_ABORTED sequences"
         assert len(seqs) == 1, (

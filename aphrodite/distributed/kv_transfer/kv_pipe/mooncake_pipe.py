@@ -12,6 +12,8 @@ from safetensors.torch import load as safetensors_load
 from safetensors.torch import save as safetensors_save
 
 from aphrodite.common.config import KVTransferConfig
+from aphrodite.utils import (join_host_port, make_zmq_path,
+                                    split_host_port)
 from aphrodite.distributed.kv_transfer.kv_pipe.base import KVPipeBase
 
 NONE_INT = -150886311
@@ -60,7 +62,7 @@ class MooncakeTransferEngine:
             raise ImportError(
                 "Please install mooncake by following the instructions at "
                 "https://github.com/kvcache-ai/Mooncake/blob/main/doc/en/build.md "  # noqa: E501
-                "to run Aphrodite with MooncakeConnector.") from e
+                "to run vLLM with MooncakeConnector.") from e
 
         self.engine = TransferEngine()
         self.local_rank = local_rank
@@ -75,18 +77,19 @@ class MooncakeTransferEngine:
             logger.error(
                 "An error occurred while loading the configuration: {}", exc)
             raise
-        prefill_host, base_prefill_port = self.config.prefill_url.split(':')
-        decode_host, base_decode_port = self.config.decode_url.split(':')
+        prefill_host, base_prefill_port = split_host_port(
+            self.config.prefill_url)
+        decode_host, base_decode_port = split_host_port(self.config.decode_url)
 
         # Avoid ports conflict when running prefill and decode on the same node
         if prefill_host == decode_host and \
                 base_prefill_port == base_decode_port:
-            base_decode_port = str(int(base_decode_port) + 100)
+            base_decode_port = base_decode_port + 100
 
-        prefill_port = int(base_prefill_port) + self.local_rank
-        decode_port = int(base_decode_port) + self.local_rank
-        self.prefill_url = ':'.join([prefill_host, str(prefill_port)])
-        self.decode_url = ':'.join([decode_host, str(decode_port)])
+        prefill_port = base_prefill_port + self.local_rank
+        decode_port = base_decode_port + self.local_rank
+        self.prefill_url = join_host_port(prefill_host, prefill_port)
+        self.decode_url = join_host_port(decode_host, decode_port)
 
         self.initialize(self.prefill_url if kv_rank == 0 else self.decode_url,
                         self.config.metadata_server, self.config.protocol,
@@ -106,22 +109,30 @@ class MooncakeTransferEngine:
         self._setup_metadata_sockets(kv_rank, prefill_host, base_prefill_port,
                                      decode_host, base_decode_port)
 
-    def _setup_metadata_sockets(self, kv_rank: int, p_host: str, p_port: str,
-                                d_host: str, d_port: str) -> None:
+    def _setup_metadata_sockets(self, kv_rank: int, p_host: str, p_port: int,
+                                d_host: str, d_port: int) -> None:
         """Set up ZeroMQ sockets for sending and receiving data."""
         # Offsets < 8 are left for initialization in case tp and pp are enabled
-        p_rank_offset = int(p_port) + 8 + self.local_rank * 2
-        d_rank_offset = int(d_port) + 8 + self.local_rank * 2
+        p_rank_offset = p_port + 8 + self.local_rank * 2
+        d_rank_offset = d_port + 8 + self.local_rank * 2
         if kv_rank == 0:
-            self.sender_socket.bind(f"tcp://{p_host}:{p_rank_offset + 1}")
-            self.receiver_socket.connect(f"tcp://{d_host}:{d_rank_offset + 1}")
-            self.sender_ack.connect(f"tcp://{d_host}:{d_rank_offset + 2}")
-            self.receiver_ack.bind(f"tcp://{p_host}:{p_rank_offset + 2}")
+            self.sender_socket.bind(
+                make_zmq_path("tcp", p_host, p_rank_offset + 1))
+            self.receiver_socket.connect(
+                make_zmq_path("tcp", d_host, d_rank_offset + 1))
+            self.sender_ack.connect(
+                make_zmq_path("tcp", d_host, d_rank_offset + 2))
+            self.receiver_ack.bind(
+                make_zmq_path("tcp", p_host, p_rank_offset + 2))
         else:
-            self.receiver_socket.connect(f"tcp://{p_host}:{p_rank_offset + 1}")
-            self.sender_socket.bind(f"tcp://{d_host}:{d_rank_offset + 1}")
-            self.receiver_ack.bind(f"tcp://{d_host}:{d_rank_offset + 2}")
-            self.sender_ack.connect(f"tcp://{p_host}:{p_rank_offset + 2}")
+            self.receiver_socket.connect(
+                make_zmq_path("tcp", p_host, p_rank_offset + 1))
+            self.sender_socket.bind(
+                make_zmq_path("tcp", d_host, d_rank_offset + 1))
+            self.receiver_ack.bind(
+                make_zmq_path("tcp", d_host, d_rank_offset + 2))
+            self.sender_ack.connect(
+                make_zmq_path("tcp", p_host, p_rank_offset + 2))
 
     def initialize(self, local_hostname: str, metadata_server: str,
                    protocol: str, device_name: str,

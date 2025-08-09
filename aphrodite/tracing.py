@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Optional
 
 from loguru import logger
-from aphrodite.common.utils import run_once
+from aphrodite.utils import run_once
 
 TRACE_HEADERS = ["traceparent", "tracestate"]
 

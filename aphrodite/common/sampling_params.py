@@ -8,12 +8,11 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import msgspec
 from loguru import logger
 from pydantic import BaseModel
-from typing_extensions import Annotated, deprecated
+from typing_extensions import Annotated
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import SchedulerConfig
-from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
-                                                    MistralTokenizer)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 _SAMPLING_EPS = 1e-5
 _MAX_TEMP = 1e-2
@@ -105,27 +104,6 @@ class GuidedDecodingParams:
             raise ValueError(
                 "You can only use one kind of guided decoding but multiple are "
                 f"specified: {self.__dict__}")
-
-        if self.backend is not None and ":" in self.backend:
-            self._extract_backend_options()
-
-    @deprecated(
-        "Passing guided decoding backend options inside backend in the format "
-        "'backend:...' is deprecated. This will be removed in v0.10.0. Please "
-        "use the dedicated arguments '--disable-fallback', "
-        "'--disable-any-whitespace' and '--disable-additional-properties' "
-        "instead.")
-    def _extract_backend_options(self):
-        """Extract backend options from the backend string."""
-        assert isinstance(self.backend, str)
-        self.backend, options = self.backend.split(":")
-        options_set = set(options.strip().split(","))
-        if "no-fallback" in options_set:
-            self.disable_fallback = True
-        if "disable-any-whitespace" in options_set:
-            self.disable_any_whitespace = True
-        if "no-additional-properties" in options_set:
-            self.disable_additional_properties = True
 
 
 class RequestOutputKind(Enum):
@@ -219,7 +197,7 @@ class SamplingParams(
         top_p: Float that controls the cumulative probability of the top tokens
             to consider. Must be in (0, 1]. Set to 1 to consider all tokens.
         top_k: Integer that controls the number of top tokens to consider. Set
-            to -1 to consider all tokens.
+            to 0 (or -1) to consider all tokens.
         top_a: Float that controls the cutoff for Top-A sampling.
             Exact cutoff is top_a*max_prob**2. Must be in [0,inf], 0 to disable.
         min_p: Float that controls the cutoff for min-p sampling.
@@ -279,6 +257,7 @@ class SamplingParams(
             Note that the implementation follows the OpenAI API: The API will
             always return the log probability of the sampled token, so there
             may be up to `logprobs+1` elements in the response.
+            When set to -1, return all `vocab_size` log probabilities.
         prompt_logprobs: Number of log probabilities to return per prompt token.
         detokenize: Whether to detokenize the output. Defaults to True.
         custom_token_bans: List of token IDs to ban from generating
@@ -356,7 +335,7 @@ class SamplingParams(
     dynatemp_exponent: float = 1.0
     temperature_last: bool = False
     top_p: float = 1.0
-    top_k: int = -1
+    top_k: int = 0
     top_a: float = 0.0
     min_p: float = 0.0
     tfs: float = 1.0
@@ -584,7 +563,7 @@ class SamplingParams(
         "dynatemp_exponent": 1.0,
         "temperature_last": False,
         "top_p": 1.0,
-        "top_k": -1,
+        "top_k": 0,
         "top_a": 0.0,
         "min_p": 0.0,
         "tfs": 1.0,
@@ -709,6 +688,17 @@ class SamplingParams(
                              f"type {type(self.n)}")
         if self.n < 1:
             raise ValueError(f"n must be at least 1, got {self.n}.")
+        if self.best_of is not None:
+            if not isinstance(self.best_of, int):
+                raise ValueError(
+                    f"best_of must be an integer, got {type(self.best_of)}")
+            if self.best_of < 1:
+                raise ValueError(
+                    f"best_of must be at least 1, got {self.best_of}")
+            if self.best_of < self.n:
+                raise ValueError(
+                    f"best_of must be greater than or equal to n, "
+                    f"got n={self.n} and best_of={self.best_of}.")
         if not -2.0 <= self.presence_penalty <= 2.0:
             raise ValueError("presence_penalty must be in [-2, 2], got "
                              f"{self.presence_penalty}.")
@@ -723,8 +713,9 @@ class SamplingParams(
                 f"temperature must be non-negative, got {self.temperature}.")
         if not 0.0 < self.top_p <= 1.0:
             raise ValueError(f"top_p must be in (0, 1], got {self.top_p}.")
-        if self.top_k < -1 or self.top_k == 0:
-            raise ValueError(f"top_k must be -1 (disable), or at least 1, "
+        # quietly accept -1 as disabled, but prefer 0
+        if self.top_k < -1:
+            raise ValueError(f"top_k must be 0 (disable), or at least 1, "
                              f"got {self.top_k}.")
         if self.top_a < 0:
             raise ValueError(f"top_a must be non negative, got {self.top_a}.")
@@ -752,9 +743,10 @@ class SamplingParams(
             raise ValueError(
                 f"min_tokens must be less than or equal to "
                 f"max_tokens={self.max_tokens}, got {self.min_tokens}.")
-        if self.logprobs is not None and self.logprobs < 0:
+        if (self.logprobs is not None and self.logprobs != -1
+                and self.logprobs < 0):
             raise ValueError(
-                f"logprobs must be non-negative, got {self.logprobs}.")
+                f"logprobs must be non-negative or -1, got {self.logprobs}.")
         if self.prompt_logprobs is not None and self.prompt_logprobs < 0:
             raise ValueError("prompt_logprobs must be non-negative, got "
                              f"{self.prompt_logprobs}.")
@@ -936,13 +928,8 @@ class SamplingParams(
             for add_prefix_space in [False, True]:
                 prefix = " " if add_prefix_space else ""
                 prompt = prefix + bad_word.lstrip()
-
-                if isinstance(tokenizer, MistralTokenizer):
-                    # Mistral tokenizers should not add special tokens
-                    prompt_token_ids = tokenizer.encode(text=prompt)
-                else:
-                    prompt_token_ids = tokenizer.encode(
-                        text=prompt, add_special_tokens=False)
+                prompt_token_ids = tokenizer.encode(text=prompt,
+                                                    add_special_tokens=False)
 
                 # If no space at the beginning
                 # or if prefix space produces a new word token

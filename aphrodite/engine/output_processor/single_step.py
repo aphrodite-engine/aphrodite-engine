@@ -3,7 +3,7 @@ from typing import List
 from aphrodite.common.config import SchedulerConfig
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
                                        SequenceGroup, SequenceGroupOutput)
-from aphrodite.common.utils import Counter
+from aphrodite.utils import Counter
 from aphrodite.engine.output_processor.interfaces import (
     SequenceGroupOutputProcessor)
 from aphrodite.engine.output_processor.stop_checker import StopChecker

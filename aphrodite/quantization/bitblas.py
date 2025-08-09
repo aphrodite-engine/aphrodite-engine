@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import torch
 from loguru import logger
@@ -58,6 +58,7 @@ class BitBLASConfig(QuantizationConfig):
             # (since we have only one group per output channel)
             desc_act = False
 
+        super().__init__()
         self.weight_bits = weight_bits
         self.group_size = group_size
         self.desc_act = desc_act
@@ -101,7 +102,7 @@ class BitBLASConfig(QuantizationConfig):
         return "bitblas"
 
     @classmethod
-    def get_supported_act_dtypes(cls) -> List[torch.dtype]:
+    def get_supported_act_dtypes(cls) -> list[torch.dtype]:
         return [torch.half, torch.bfloat16]
 
     @classmethod
@@ -110,12 +111,12 @@ class BitBLASConfig(QuantizationConfig):
         return 70
 
     @classmethod
-    def get_config_filenames(cls) -> List[str]:
+    def get_config_filenames(cls) -> list[str]:
         return ["quantize_config.json"]
 
     @staticmethod
-    def get_from_keys(config: Dict[str, Any],
-                      keys: List[str],
+    def get_from_keys(config: dict[str, Any],
+                      keys: list[str],
                       default: Any = None) -> Any:
         """Get a value from the model's quantization config."""
         for key in keys:
@@ -124,7 +125,7 @@ class BitBLASConfig(QuantizationConfig):
         return default
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "BitBLASConfig":
+    def from_config(cls, config: dict[str, Any]) -> "BitBLASConfig":
         weight_bits = cls.get_from_keys(config, ["bits"])
         group_size = cls.get_from_keys(config, ["group_size"], -1)
         desc_act = cls.get_from_keys(config, ["desc_act"], False)
@@ -189,7 +190,7 @@ class BitBLASLinearMethod(LinearMethodBase):
         self,
         layer: torch.nn.Module,
         input_size_per_partition: int,
-        output_partition_sizes: List[int],
+        output_partition_sizes: list[int],
         input_size: int,
         output_size: int,
         params_dtype: torch.dtype,
@@ -325,7 +326,7 @@ class BitBLASLinearMethod(LinearMethodBase):
         self,
         layer: torch.nn.Module,
         input_size_per_partition: int,
-        output_partition_sizes: List[int],
+        output_partition_sizes: list[int],
         input_size: int,
         output_size: int,
         params_dtype: torch.dtype,

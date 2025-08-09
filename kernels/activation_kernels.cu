@@ -172,6 +172,9 @@ __global__ void activation_kernel(
   dim3 grid(num_tokens);                                                 \
   dim3 block(std::min(d, 1024));                                         \
   const at::cuda::OptionalCUDAGuard device_guard(device_of(input));      \
+  if (num_tokens == 0) {                                                 \
+    return;                                                              \
+  }                                                                      \
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();          \
   APHRODITE_DISPATCH_FLOATING_TYPES(                                     \
       input.scalar_type(), "activation_kernel", [&] {                    \

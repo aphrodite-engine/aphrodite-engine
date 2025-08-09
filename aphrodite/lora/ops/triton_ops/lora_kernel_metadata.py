@@ -3,7 +3,7 @@ LoRA kernels metadata preparation utilities.
 """
 
 from dataclasses import dataclass
-from typing import Tuple, Union
+from typing import Union
 
 import torch
 
@@ -124,7 +124,7 @@ class LoRAKernelMeta:
 
     def meta_args(
         self, token_nums: int
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
                torch.Tensor, torch.Tensor]:
         """
         This function returns the kernel metadata required for the current

@@ -1,12 +1,12 @@
-import re
 from copy import deepcopy
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
+import regex as re
 import torch
 
 from aphrodite.common.config import QuantizationConfig
 from aphrodite.modeling.layers.linear import (LinearBase,
-                                               UnquantizedLinearMethod)
+                                              UnquantizedLinearMethod)
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, UnquantizedEmbeddingMethod)
 
@@ -51,7 +51,7 @@ def get_dynamic_override(
     layer_name: str,
     key: Optional[str] = None,
     default_value: Union[int, bool,
-                         None] = None) -> Union[Dict, int, bool, None]:
+                         None] = None) -> Union[dict, int, bool, None]:
     for pattern, pattern_dict in config.dynamic.items():
         # Negative match: matched modules are excluded from quantized init
         if pattern.startswith("-:"):

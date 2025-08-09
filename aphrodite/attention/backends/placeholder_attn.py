@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from aphrodite.worker.model_runner import (ModelInputForGPUBuilder,
                                           ModelInputForGPUWithSamplingMetadata)
 
-from aphrodite.common.utils import async_tensor_h2d
+from aphrodite.utils import async_tensor_h2d
 
 # Placeholder attention backend for models like Mamba and pooling models that
 # lack attention.

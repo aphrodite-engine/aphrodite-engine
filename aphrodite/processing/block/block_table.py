@@ -1,7 +1,7 @@
 import math
 from typing import List, Optional
 
-from aphrodite.common.utils import Device, cdiv, chunk_list
+from aphrodite.utils import Device, cdiv, chunk_list
 from aphrodite.processing.block.common import BlockList
 from aphrodite.processing.block.interfaces import (Block,
                                                    DeviceAwareBlockAllocator)

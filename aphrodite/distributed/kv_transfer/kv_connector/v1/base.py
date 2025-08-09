@@ -6,9 +6,15 @@ The class provides the following primitives:
     Scheduler-side: runs in the scheduler, binds metadata, which
     is used by the worker-side to load/save KV cache.
         get_num_new_matched_tokens() - get number of new tokens 
-            that exist in the remote KV cache
+            that exist in the remote KV cache. Might be called multiple
+            times for a given request and should be side-effect free.
         update_state_after_alloc() - update KVConnector state after
             temporary buffer alloc by the CacheManager.
+        request_finished() - called when a request is finished, with
+            the computed kv cache blocks for the request.
+            Returns whether KV cache should be freed now or will be
+            freed asynchronously and optionally returns KV transfer
+            params.
 
     Worker-side: runs in each worker, loads/saves KV cache to/from
     the Connector based on the metadata.
@@ -17,12 +23,14 @@ The class provides the following primitives:
 
         save_kv_layer() - starts saving KV for layer i (maybe async)
         wait_for_save() - blocks until all saves are done
+
+        get_finished() - called with ids of finished requests, returns
+            ids of requests that have completed async sending/recving.
 """
 
 import enum
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 
 import torch
 from loguru import logger
@@ -33,8 +41,14 @@ if TYPE_CHECKING:
     from aphrodite.attention.backends.abstract import AttentionMetadata
     from aphrodite.common.config import AphroditeConfig
     from aphrodite.forward_context import ForwardContext
+    from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
     from aphrodite.v1.request import Request
 
+# s_tensor_list, d_tensor_list, s_indices, d_indices, direction
+CopyBlocksOp = Callable[[
+    dict[str, torch.Tensor], dict[
+        str, torch.Tensor], list[int], list[int], Literal["h2d", "d2h"]
+], None]
 
 
 class KVConnectorRole(enum.Enum):
@@ -45,25 +59,34 @@ class KVConnectorRole(enum.Enum):
     WORKER = 1
 
 
-@dataclass
-class KVConnectorMetadata:
+class KVConnectorMetadata(ABC):  # noqa: B024
+    """
+    Abstract Metadata used to communicate between the
+    Scheduler KVConnector and Worker KVConnector.
+    """
     pass
 
 
 class KVConnectorBase_V1(ABC):
 
-    def __init__(self, aphrodite_config: "AphroditeConfig",
-                 role: KVConnectorRole):
+    def __init__(
+        self, aphrodite_config: "AphroditeConfig",
+        role: KVConnectorRole,
+    ):
         logger.warning(
             "Initializing KVConnectorBase_V1. This API is experimental and "
             "subject to change in the future as we iterate the design.")
-        self._connector_metadata = KVConnectorMetadata()
+        self._connector_metadata: Optional[KVConnectorMetadata] = None
         self._aphrodite_config = aphrodite_config
         self._role = role
 
     @property
     def role(self) -> KVConnectorRole:
         return self._role
+
+    # ==============================
+    # Worker-side methods
+    # ==============================
 
     def bind_connector_metadata(
             self, connector_metadata: KVConnectorMetadata) -> None:
@@ -84,7 +107,7 @@ class KVConnectorBase_V1(ABC):
         This function should be called by the model runner every time 
         after the model execution.
         """
-        self._connector_metadata = KVConnectorMetadata()
+        self._connector_metadata = None
 
     def _get_connector_metadata(self) -> KVConnectorMetadata:
         """Get the connector metadata.
@@ -94,11 +117,27 @@ class KVConnectorBase_V1(ABC):
         Returns:
             ConnectorMetadata: the connector metadata.
         """
+
+        # Should only be called while set to valid metadata.
+        assert self._connector_metadata is not None
         return self._connector_metadata
 
-    # ==============================
-    # Worker-side methods
-    # ==============================
+    def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]):
+        """
+        Initialize with the KV caches. Useful for pre-registering the
+        KV Caches in the KVConnector (e.g. for NIXL).
+
+        Args: kv_caches:
+            dictionary of layer names, kv cache
+        """
+        return
+
+    def set_host_xfer_buffer_ops(self, copy_operation: CopyBlocksOp):
+        """
+        Set the xPU-specific ops for copying KV between host and device.
+        Needed when host buffer is used for kv transfer (e.g., in NixlConnector)
+        """
+        return
 
     @abstractmethod
     def start_load_kv(self, forward_context: "ForwardContext",
@@ -115,7 +154,7 @@ class KVConnectorBase_V1(ABC):
         Note:
             The number of elements in kv_caches and layer_names should be 
             the same.
-            
+
         """
         pass
 
@@ -125,7 +164,7 @@ class KVConnectorBase_V1(ABC):
         Block until the KV for a specific layer is loaded into Aphrodite's
         paged buffer. This is called from within attention layer to ensure
         async copying from start_load_kv is complete.
-        
+
         This interface will be useful for layer-by-layer pipelining.
 
         Args:
@@ -161,15 +200,34 @@ class KVConnectorBase_V1(ABC):
         """
         pass
 
+    def get_finished(
+        self, finished_req_ids: set[str]
+    ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        """
+        Notifies worker-side connector ids of requests that have
+        finished generating tokens on the worker.
+        The scheduler process (via the Executors) will use this output
+        to track which workers are done.
+
+        Returns:
+            ids of requests that have finished asynchronous transfer
+            (requests that previously returned True from request_finished()),
+            tuple of (sending/saving ids, recving/loading ids).
+            The finished saves/sends req ids must belong to a set provided in a
+            call to this method (this call or a prior one).
+        """
+        return None, None
+
     # ==============================
     # Scheduler-side methods
     # ==============================
+
     @abstractmethod
     def get_num_new_matched_tokens(
         self,
         request: "Request",
         num_computed_tokens: int,
-    ) -> int:
+    ) -> tuple[int, bool]:
         """
         Get number of new tokens that can be loaded from the
         external KV cache beyond the num_computed_tokens.
@@ -180,16 +238,33 @@ class KVConnectorBase_V1(ABC):
                 computed tokens for this request
 
         Returns:
-            the number of tokens that can be loaded from the 
-            external KV cache beyond what is already computed.
+            A tuple with the following elements:
+                - The number of tokens that can be loaded from the 
+                  external KV cache beyond what is already computed.
+                - `True` if external KV cache tokens will be loaded
+                  asynchronously (between scheduler steps). Must be
+                  'False' if the first element is 0.
         """
         pass
 
     @abstractmethod
     def update_state_after_alloc(self, request: "Request",
+                                 blocks: "KVCacheBlocks",
                                  num_external_tokens: int):
         """
         Update KVConnector state after block allocation.
+
+        If get_num_new_matched_tokens previously returned True for a
+        request, this function may be called twice for that same request -
+        first when blocks are allocated for the connector tokens to be
+        asynchronously loaded into, and second when any additional blocks
+        are allocated, after the load/transfer is complete.
+
+        Args:
+            request (Request): the request object.
+            blocks (KVCacheBlocks): the blocks allocated for the request.
+            num_external_tokens (int): the number of tokens that will be
+                loaded from the external KV cache.
         """
         pass
 
@@ -206,3 +281,34 @@ class KVConnectorBase_V1(ABC):
             scheduler_output (SchedulerOutput): the scheduler output object.
         """
         pass
+
+    def request_finished(
+        self,
+        request: "Request",
+        block_ids: list[int],
+    ) -> tuple[bool, Optional[dict[str, Any]]]:
+        """
+        Called when a request has finished, before its blocks are freed.
+
+        Returns:
+            True if the request is being saved/sent asynchronously and blocks
+            should not be freed until the request_id is returned from
+            get_finished().
+            Optional KVTransferParams to be included in the request outputs
+            returned by the engine.
+        """
+        return False, None
+
+    @classmethod
+    def get_required_kvcache_layout(
+            cls, aphrodite_config: "AphroditeConfig") -> Optional[str]:
+        """
+        Get the required KV cache layout for this connector.
+        Args:
+            aphrodite_config (AphroditeConfig): the aphrodite config.
+
+        Returns:
+            str: the required KV cache layout. e.g. HND, or NHD.
+            None if the connector does not require a specific layout.
+        """
+        return None

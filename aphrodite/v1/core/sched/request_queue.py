@@ -166,14 +166,14 @@ class PriorityRequestQueue(RequestQueue):
 
     def prepend_request(self, request: Request) -> None:
         """Add a request to the queue according to priority policy.
-        
+
         Note: In a priority queue, there is no concept of prepending to the 
         front. Requests are ordered by (priority, arrival_time)."""
         self.add_request(request)
 
     def prepend_requests(self, requests: RequestQueue) -> None:
         """Add all requests from another queue according to priority policy.
-        
+
         Note: In a priority queue, there is no concept of prepending to the 
         front. Requests are ordered by (priority, arrival_time)."""
         for request in requests:
@@ -219,4 +219,3 @@ def create_request_queue(policy: SchedulingPolicy) -> RequestQueue:
         return FCFSRequestQueue()
     else:
         raise ValueError(f"Unknown scheduling policy: {policy}")
-    

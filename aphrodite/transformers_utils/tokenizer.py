@@ -12,17 +12,21 @@ from loguru import logger
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
 
-from aphrodite.common.envs import APHRODITE_USE_MODELSCOPE
-from aphrodite.common.utils import make_async
-from aphrodite.lora.request import LoRARequest
-from aphrodite.transformers_utils.tokenizer_base import (TokenizerBase,
-                                                         TokenizerRegistry)
+from aphrodite.common import envs
+from aphrodite.transformers_utils.config import (
+    get_sentence_transformer_tokenizer_config)
 from aphrodite.transformers_utils.tokenizers import MistralTokenizer
 from aphrodite.transformers_utils.utils import check_gguf_file
+from aphrodite.utils import make_async
 
 if TYPE_CHECKING:
     from aphrodite.common.config import ModelConfig
-
+    from aphrodite.lora.request import LoRARequest
+    from aphrodite.transformers_utils.tokenizer_base import TokenizerBase
+else:
+    ModelConfig = Any
+    LoRARequest = Any
+    TokenizerBase = Any
 
 AnyTokenizer = Union[PreTrainedTokenizer, PreTrainedTokenizerFast,
                      TokenizerBase]
@@ -36,16 +40,17 @@ def decode_tokens(
 ) -> str:
     """
     Backend-agnostic equivalent of HF's
-    :code:`tokenizer.decode(token_ids, ...)`.
+    `tokenizer.decode(token_ids, ...)`.
 
-    :code:`skip_special_tokens=None` means to use the backend's default
+    `skip_special_tokens=None` means to use the backend's default
     settings.
     """
+    decode_method = getattr(tokenizer, "_decode", tokenizer.decode)
     if skip_special_tokens is not None:
-        return tokenizer.decode(token_ids,
-                                skip_special_tokens=skip_special_tokens)
+        return decode_method(token_ids,
+                             skip_special_tokens=skip_special_tokens)
 
-    return tokenizer.decode(token_ids)
+    return decode_method(token_ids)
 
 
 def encode_tokens(
@@ -58,9 +63,9 @@ def encode_tokens(
 ) -> list[int]:
     """
     Backend-agnostic equivalent of HF's
-    :code:`tokenizer.encode(text, ...)`.
+    `tokenizer.encode(text, ...)`.
 
-    :code:`add_special_tokens=None` means to use the backend's default
+    `add_special_tokens=None` means to use the backend's default
     settings.
     """
 
@@ -165,14 +170,14 @@ def get_tokenizer(
 ) -> AnyTokenizer:
     """Gets a tokenizer for the given model name via HuggingFace or ModelScope.
     """
-    if APHRODITE_USE_MODELSCOPE:
+    if envs.APHRODITE_USE_MODELSCOPE:
         # download model from ModelScope hub,
         # lazy import so that modelscope is not required for normal use.
         # pylint: disable=C.
         from modelscope.hub.snapshot_download import snapshot_download
 
         # avoid circuit import
-        from aphrodite.modeling.model_loader.weight_utils import get_lock
+        from aphrodite.model_executor.model_loader.weight_utils import get_lock
 
         # Only set the tokenizer here, model will be downloaded on the workers.
         if not os.path.exists(tokenizer_name):
@@ -218,6 +223,8 @@ def get_tokenizer(
         tokenizer = MistralTokenizer.from_pretrained(str(tokenizer_name),
                                                      revision=revision)
     elif tokenizer_mode == "custom":
+        from aphrodite.transformers_utils.tokenizer_base import (
+            TokenizerRegistry)
         tokenizer = TokenizerRegistry.get_tokenizer(str(tokenizer_name),
                                                     *args,
                                                     revision=revision,
@@ -248,7 +255,19 @@ def get_tokenizer(
             else:
                 raise e
 
-        # NOTE: We can remove this after https://github.com/THUDM/ChatGLM3/issues/1324
+        # The special_tokens in tokenizer should also be
+        # controlled by do_lower_case in encoder_config
+        encoder_config = get_sentence_transformer_tokenizer_config(
+            tokenizer_name, revision)
+        if isinstance(encoder_config, dict) and encoder_config.get(
+                "do_lower_case", False):
+            special_tokens_map = {
+                k: v.lower()
+                for k, v in tokenizer.special_tokens_map.items()
+            }
+            tokenizer.add_special_tokens(special_tokens_map)
+
+        # NOTE: We can remove this after https://github.com/zai-org/ChatGLM3/issues/1324
         if type(tokenizer).__name__ in ("ChatGLMTokenizer",
                                         "ChatGLM4Tokenizer"):
             assert isinstance(tokenizer, PreTrainedTokenizer)
@@ -267,13 +286,13 @@ cached_get_tokenizer = lru_cache(get_tokenizer)
 
 
 def cached_tokenizer_from_config(
-    model_config: "ModelConfig",
+    model_config: ModelConfig,
     **kwargs: Any,
 ):
     return cached_get_tokenizer(
         model_config.tokenizer,
         tokenizer_mode=model_config.tokenizer_mode,
-        tokenizer_revision=model_config.tokenizer_revision,
+        revision=model_config.tokenizer_revision,
         trust_remote_code=model_config.trust_remote_code,
         **kwargs,
     )

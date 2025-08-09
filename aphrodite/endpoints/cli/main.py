@@ -1,40 +1,42 @@
-# The CLI entrypoint to Aphrodite.
-import signal
-import sys
+'''The CLI endpoint of Aphrodite
 
-import aphrodite.endpoints.cli.benchmark.main
-import aphrodite.endpoints.cli.collect_env
-import aphrodite.endpoints.cli.openai
-import aphrodite.endpoints.cli.run
-import aphrodite.version
-from aphrodite.common.utils import FlexibleArgumentParser
-from aphrodite.endpoints.utils import cli_env_setup
+Note that all future modules must be lazily loaded within main
+to avoid certain eager import breakage.'''
+from __future__ import annotations
 
-CMD_MODULES = [
-    aphrodite.endpoints.cli.openai,
-    aphrodite.endpoints.cli.run,
-    aphrodite.endpoints.cli.benchmark.main,
-    aphrodite.endpoints.cli.collect_env,
-]
-
-
-def register_signal_handlers():
-
-    def signal_handler(sig, frame):
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTSTP, signal_handler)
+import importlib.metadata
 
 
 def main():
+    import aphrodite.endpoints.cli.benchmark.main
+    import aphrodite.endpoints.cli.collect_env
+    import aphrodite.endpoints.cli.openai
+    import aphrodite.endpoints.cli.run_batch
+    import aphrodite.endpoints.cli.run
+    from aphrodite.utils import FlexibleArgumentParser
+    from aphrodite.endpoints.utils import (APHRODITE_SUBCMD_PARSER_EPILOG,
+                                           cli_env_setup)
+
+    CMD_MODULES = [
+        aphrodite.endpoints.cli.openai,
+        aphrodite.endpoints.cli.run,
+        aphrodite.endpoints.cli.benchmark.main,
+        aphrodite.endpoints.cli.collect_env,
+        aphrodite.endpoints.cli.run_batch,
+    ]
+
     cli_env_setup()
 
-    parser = FlexibleArgumentParser(description="Aphrodite CLI")
-    parser.add_argument('-v',
-                        '--version',
-                        action='version',
-                        version=aphrodite.version.__version__)
+    parser = FlexibleArgumentParser(
+        description="Aphrodite CLI",
+        epilog=APHRODITE_SUBCMD_PARSER_EPILOG,
+    )
+    parser.add_argument(
+        '-v',
+        '--version',
+        action='version',
+        version=importlib.metadata.version('aphrodite-engine'),
+    )
     subparsers = parser.add_subparsers(required=False, dest="subparser")
     cmds = {}
     for cmd_module in CMD_MODULES:

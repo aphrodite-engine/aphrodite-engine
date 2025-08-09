@@ -24,20 +24,20 @@ __device__ void rms_norm_dynamic_per_token_quant_vec(
       &rms, input, hidden_size, var_epsilon, residual);
 
   // Compute scale
-  aphrodite::vectorized::compute_dynamic_per_token_scales<
-      scalar_t, scalar_out_t, has_residual>(&token_scale, scales, input, weight,
-                                            rms, scale_ub, hidden_size,
-                                            residual);
+  aphrodite::vectorized::compute_dynamic_per_token_scales<scalar_t, scalar_out_t,
+                                                     has_residual>(
+      &token_scale, scales, input, weight, rms, scale_ub, hidden_size,
+      residual);
 
   // RMS Norm + Quant
   if constexpr (std::is_same_v<scalar_out_t, int8_t>) {
     aphrodite::vectorized::norm_and_quant<scalar_t, scalar_out_t, true,
-                                          has_residual>(
+                                     has_residual>(
         out, input, weight, rms, 1.0f / token_scale, hidden_size, residual);
   } else {
     // FP8 - Do not invert token_scale for exact match with FBGemm
     aphrodite::vectorized::norm_and_quant<scalar_t, scalar_out_t, false,
-                                          has_residual>(
+                                     has_residual>(
         out, input, weight, rms, token_scale, hidden_size, residual);
   }
 }
@@ -67,10 +67,9 @@ __global__ void rms_norm_dynamic_per_token_quant_kernel(
 
   // Compute RMS
   aphrodite::compute_rms<scalar_t, has_residual>(&rms, input, hidden_size,
-                                                 var_epsilon, residual);
+                                            var_epsilon, residual);
   // Compute Scale
-  aphrodite::compute_dynamic_per_token_scales<scalar_t, scalar_out_t,
-                                              has_residual>(
+  aphrodite::compute_dynamic_per_token_scales<scalar_t, scalar_out_t, has_residual>(
       &token_scale, scales, input, weight, rms, scale_ub, hidden_size,
       residual);
 
@@ -107,8 +106,8 @@ void rms_norm_dynamic_per_token_quant_dispatch(
   if (residual.has_value()) {
     APHRODITE_DISPATCH_QUANT_TYPES(
         out.scalar_type(), "rms_norm_dynamic_per_token_quant_kernel", [&] {
-          aphrodite::rms_norm_dynamic_per_token_quant_kernel<scalar_in_t,
-                                                             scalar_t, true>
+          aphrodite::rms_norm_dynamic_per_token_quant_kernel<scalar_in_t, scalar_t,
+                                                        true>
               <<<grid, block, 0, stream>>>(
                   out.data_ptr<scalar_t>(), scales.data_ptr<float>(),
                   input.data_ptr<scalar_in_t>(), weight.data_ptr<scalar_in_t>(),
@@ -119,8 +118,8 @@ void rms_norm_dynamic_per_token_quant_dispatch(
   } else {
     APHRODITE_DISPATCH_QUANT_TYPES(
         out.scalar_type(), "rms_norm_dynamic_per_token_quant_kernel", [&] {
-          aphrodite::rms_norm_dynamic_per_token_quant_kernel<scalar_in_t,
-                                                             scalar_t, false>
+          aphrodite::rms_norm_dynamic_per_token_quant_kernel<scalar_in_t, scalar_t,
+                                                        false>
               <<<grid, block, 0, stream>>>(
                   out.data_ptr<scalar_t>(), scales.data_ptr<float>(),
                   input.data_ptr<scalar_in_t>(), weight.data_ptr<scalar_in_t>(),

@@ -1,6 +1,6 @@
 import torch
-import triton
-import triton.language as tl
+
+from aphrodite.triton_utils import tl, triton
 
 AWQ_TRITON_SUPPORTED_GROUP_SIZES = [-1, 32, 64, 128]
 

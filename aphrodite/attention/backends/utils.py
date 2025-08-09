@@ -8,12 +8,13 @@ from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type,
 
 import numpy as np
 import torch
+from loguru import logger
 
 from aphrodite.attention import (AttentionMetadata, AttentionMetadataBuilder,
                                  AttentionState)
 from aphrodite.attention.backends.abstract import AttentionType
 from aphrodite.common.config import ModelConfig
-from aphrodite.common.utils import async_tensor_h2d, make_tensor_with_pad
+from aphrodite.utils import async_tensor_h2d, make_tensor_with_pad
 from aphrodite.multimodal import MultiModalPlaceholderMap
 
 if TYPE_CHECKING:
@@ -175,7 +176,7 @@ class CommonMetadataBuilder(AttentionMetadataBuilder[TAttentionMetadata]):
                 self.curr_seq_lens.append(curr_seq_len)
 
             # Compute block table.
-            # TODO: Combine chunked prefill and prefix caching by
+            # TODO(sang): Combine chunked prefill and prefix caching by
             # only allowing multiple of block_size chunk size.
             # NOTE: This only works for oooooooxxx style attention.
             block_table = []
@@ -341,10 +342,10 @@ class CommonAttentionState(AttentionState):
         if is_encoder_decoder_model:
             # The encoder decoder model works only with XFormers and
             # Flash Attention backend. Assert the same.
-            assert self.runner.attn_backend.get_name() in\
-                ["XFORMERS", "FLASH_ATTN"], \
-                f"Expected attn_backend name to be either 'XFORMERS' or " \
-                f"'FLASH_ATTN', but "\
+            assert self.runner.attn_backend.get_name() in \
+                   ["XFORMERS", "FLASH_ATTN", "ROCM_FLASH"], \
+                f"Expected attn_backend name to be either 'XFORMERS'," \
+                f"'ROCM_FLASH', or 'FLASH_ATTN', but " \
                 f"got '{self.runner.attn_backend.get_name()}'"
             self._update_captured_metadata_for_enc_dec_model(
                 batch_size=batch_size, attn_metadata=attn_metadata)
@@ -363,12 +364,12 @@ class CommonAttentionState(AttentionState):
         if is_encoder_decoder_model:
             # The encoder decoder model works only with XFormers and
             # Flash Attention backend. Assert the same.
-            assert self.runner.attn_backend.get_name() in\
-                ["XFORMERS", "FLASH_ATTN"], \
-                f"Expected attn_backend name to be either 'XFORMERS' or "\
-                f"'FLASH_ATTN', but "\
+            assert self.runner.attn_backend.get_name() in \
+                   ["XFORMERS", "FLASH_ATTN", "ROCM_FLASH"], \
+                f"Expected attn_backend name to be either 'XFORMERS'," \
+                f"'ROCM_FLASH', or 'FLASH_ATTN', but " \
                 f"got '{self.runner.attn_backend.get_name()}'"
-            self._add_additonal_input_buffers_for_enc_dec_model(
+            self._add_additional_input_buffers_for_enc_dec_model(
                 attn_metadata=attn_metadata, input_buffers=input_buffers)
         return input_buffers
 
@@ -422,7 +423,7 @@ class CommonAttentionState(AttentionState):
         attn_metadata.max_encoder_seq_len = self.runner.max_seq_len_to_capture
         attn_metadata.num_encoder_tokens = 0
 
-    def _add_additonal_input_buffers_for_enc_dec_model(
+    def _add_additional_input_buffers_for_enc_dec_model(
             self, attn_metadata, input_buffers: Dict[str, Any]):
         """
         Saves additional input buffers specific to the encoder-decoder model
@@ -546,7 +547,7 @@ def get_num_prefill_decode_query_kv_tokens(
     based on the attention metadata and the specified attention type.
 
     Args:
-        attn_metadata (FlashAttentionMetadata): Attention Metadata object.
+        attn_metadata (AttentionMetadata): Attention Metadata object.
         attn_type (AttentionType): The type of attention being used.
     Returns:
         Tuple[int, int, int]: A tuple containing three integers:

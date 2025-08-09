@@ -1,6 +1,6 @@
 """Block manager utils."""
 from aphrodite.common.sequence import SequenceGroup
-from aphrodite.common.utils import (STR_NOT_IMPL_ENC_DEC_PREFIX_CACHE,
+from aphrodite.utils import (STR_NOT_IMPL_ENC_DEC_PREFIX_CACHE,
                                     STR_NOT_IMPL_ENC_DEC_SWA)
 
 

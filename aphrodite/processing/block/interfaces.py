@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple
 
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 
 BlockId = int
 

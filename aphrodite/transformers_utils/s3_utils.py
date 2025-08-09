@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from aphrodite.common.utils import PlaceholderModule
+from aphrodite.utils import PlaceholderModule
 
 try:
     import boto3

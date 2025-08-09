@@ -42,10 +42,9 @@
 
 import copy
 import math
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import (Any, Iterable, List, Literal, Optional, Sequence, Tuple,
-                    TypedDict, Union)
+from typing import Annotated, Any, Literal, Optional, Union
 
 import torch
 from torch import nn
@@ -80,6 +79,7 @@ from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.transformers_utils.configs import KimiVLConfig, MoonViTConfig
 from aphrodite.transformers_utils.configs.deepseek_vl2 import DeepseekV2Config
+from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .utils import is_pp_missing_parameter, maybe_prefix
 
@@ -119,15 +119,22 @@ class KimiVLMultiModalProjector(nn.Module):
         return hidden_states
 
 
-class KimiVLImagePixelInputs(TypedDict):
-    type: Literal["pixel_values"]
-    pixel_values: Union[torch.Tensor, List[torch.Tensor]]
+class KimiVLImagePixelInputs(TensorSchema):
     """
-    Shape:`(num_patches, num_channels, patch_size, patch_size)`
+    Dimensions:
+        - nc: Number of channels
+        - np: Number of patches
+        - ps: Patch size
+        - ni: Number of images
     """
+    type: Literal["pixel_values"] = "pixel_values"
 
-    image_grid_hws: torch.Tensor
-    """Shape:`(num_images, 2)`"""
+    pixel_values: Annotated[
+        Union[torch.Tensor, list[torch.Tensor]],
+        TensorShape("np", 3, "ps", "ps"),
+    ]
+
+    image_grid_hws: Annotated[torch.Tensor, TensorShape("ni", 2)]
 
 
 # TODO: support embeds too
@@ -265,6 +272,13 @@ class KimiVLMultiModalProcessor(BaseMultiModalProcessor[KimiVLProcessingInfo]):
                                         dummy_inputs=KimiVLDummyInputsBuilder)
 class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal):
 
+    @classmethod
+    def get_placeholder_str(cls, modality: str, i: int) -> Optional[str]:
+        if modality.startswith("image"):
+            return "<|media_start|>image<|media_content|><|media_pad|><|media_end|>"
+
+        raise ValueError("Only image modality is supported")
+
     def __init__(
         self,
         aphrodite_config: AphroditeConfig,
@@ -342,8 +356,6 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal):
             pixel_values = pixel_values.reshape(-1, num_channels, patch_size,
                                                 patch_size)
         pixel_values = pixel_values.to(self.vision_tower.dtype)
-        # image_grid_hws.shape = (N, 2)
-        assert image_grid_hws.ndim == 2, f"unexpected shape for image_grid_hws: {image_grid_hws.shape}"
 
         return KimiVLImagePixelInputs(
             type="pixel_values",
@@ -394,7 +406,8 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal):
         # model as one of the requirements of basic vLLM model implementation.
         inputs_embeds = self.language_model.get_input_embeddings(input_ids)
 
-        if multimodal_embeddings is not None:
+        if multimodal_embeddings is not None and len(
+                multimodal_embeddings) != 0:
             inputs_embeds = merge_multimodal_embeddings(
                 input_ids=input_ids,
                 inputs_embeds=inputs_embeds,
@@ -448,7 +461,7 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal):
                                        sampling_metadata, **kwargs)
         return logits
 
-    def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         config = self.config.text_config
         _KEYS_TO_MODIFY_MAPPING = {
             "language_model.lm_head": "lm_head",

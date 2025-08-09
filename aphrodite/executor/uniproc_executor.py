@@ -5,9 +5,11 @@ import torch
 import torch.distributed as dist
 
 import aphrodite.common.envs as envs
-from aphrodite.common.utils import (get_distributed_init_method, get_ip,
+from aphrodite.utils import (get_distributed_init_method, get_ip,
                                     get_open_port, run_method)
 from aphrodite.executor.executor_base import ExecutorBase
+from aphrodite.v1.engine import (ReconfigureDistributedRequest,
+                                 ReconfigureRankType)
 from aphrodite.worker.worker_base import WorkerWrapperBase
 
 
@@ -56,6 +58,14 @@ class UniProcExecutor(ExecutorBase):
         # it's running.
         return
 
+    def reinitialize_distributed(
+            self, reconfig_request: ReconfigureDistributedRequest) -> None:
+        self.driver_worker.reinitialize_distributed(reconfig_request)
+        if reconfig_request.new_data_parallel_rank == \
+        ReconfigureRankType.SHUTDOWN_CURRENT_RANK:
+            self.shutdown()
+        return
+
 
 UniProcExecutorAsync = UniProcExecutor
 
@@ -81,9 +91,6 @@ class ExecutorWithExternalLauncher(UniProcExecutor):
     def _init_executor(self) -> None:
         """Initialize the worker and load the model.
         """
-        assert self.aphrodite_config.parallel_config.pipeline_parallel_size == 1, \
-            ("ExecutorWithExternalLauncher does not "
-            "support pipeline parallelism.")
         assert self.aphrodite_config.scheduler_config.delay_factor == 0.0, \
             ("ExecutorWithExternalLauncher needs deterministic "
             "execution, so it"

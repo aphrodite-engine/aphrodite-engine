@@ -5,7 +5,7 @@
 #!/usr/bin/env python3
 import abc
 import math
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 
 import numpy as np
 import torch
@@ -39,7 +39,7 @@ class ConformerEncoderLayer(nn.Module):
              for the last pointwise conv after swish activation.
         depthwise_seperable_out_channel: int
             if set different to 0, the number of 
-             depthwise_seperable_out_channel will be used as a 
+             depthwise_seperable_out_channel will be used as a
              channel_out of the second conv1d layer. 
              otherwise, it equal to 0, the second conv1d layer is skipped.
         depthwise_multiplier: int
@@ -90,9 +90,9 @@ class ConformerEncoderLayer(nn.Module):
             if set to True, use GLULinear module,
              otherwise, used GLUPointWiseConv module.
               default to False.
-        attention_innner_dim: int, optional
+        attention_inner_dim: int, optional
             if equal to -1, attention dim for linears k/q/v is
-            equal to d_model. otherwise attention_innner_dim is used.
+            equal to d_model. otherwise attention_inner_dim is used.
             default -1.
         attention_glu_type: str, optional
             activation function for glu used in the multihead attention,
@@ -124,7 +124,7 @@ class ConformerEncoderLayer(nn.Module):
             (Multi-Head Attention),
             1 = typical Multi-Head Attention,
             1 < attn_group_sizes < attention_heads = Grouped-Query Attention
-            attn_group_sizes = attenion_heads = Multi-Query Attention
+            attn_group_sizes = attention_heads = Multi-Query Attention
     """
 
     def __init__(
@@ -147,7 +147,7 @@ class ConformerEncoderLayer(nn.Module):
         conv_glu_type="sigmoid",
         bias_in_glu=True,
         linear_glu_in_convm=False,
-        attention_innner_dim=-1,
+        attention_inner_dim=-1,
         attention_glu_type="swish",
         activation_checkpointing="",
         export=False,
@@ -168,7 +168,7 @@ class ConformerEncoderLayer(nn.Module):
             n_head,
             d_model,
             dropout_rate,
-            attention_innner_dim,
+            attention_inner_dim,
             attention_glu_type,
             bias_in_glu,
             use_pt_scaled_dot_product_attention=
@@ -316,7 +316,7 @@ class TransformerEncoderBase(abc.ABC, nn.Module):
             1 = typical Multi-Head Attention,
             1 < attention_group_size < attention_heads = Grouped-Query 
             Attention
-            attention_group_size = attenion_heads = Multi-Query Attention
+            attention_group_size = attention_heads = Multi-Query Attention
     """
 
     def __init__(
@@ -742,10 +742,10 @@ class ConformerEncoder(TransformerEncoderBase):
             1 = typical Multi-Head Attention,
             1 < attention_group_size < attention_heads = Grouped-Query
             Attention
-            attention_group_size = attenion_heads = Multi-Query Attention
+            attention_group_size = attention_heads = Multi-Query Attention
     """
 
-    extra_multi_layer_output_idxs: List[int]
+    extra_multi_layer_output_idxs: list[int]
 
     def __init__(  # pylint: disable-all
         self,

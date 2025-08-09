@@ -10,17 +10,16 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch
-from loguru import logger
 from safetensors.torch import load as safetensors_load
 from safetensors.torch import save as safetensors_save
 
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer.kv_lookup_buffer.base import (
     KVStoreBufferBase)
+from loguru import logger
 
 DEFAULT_GLOBAL_SEGMENT_SIZE = 3355443200  # 3.125 GiB
 DEFAULT_LOCAL_BUFFER_SIZE = 1073741824  # 1.0 GiB
-
 
 
 @dataclass
@@ -73,7 +72,7 @@ class MooncakeStore(KVStoreBufferBase):
             raise ImportError(
                 "Please install mooncake by following the instructions at "
                 "https://github.com/kvcache-ai/Mooncake/blob/main/doc/en/build.md "  # noqa: E501
-                "to run Aphrodite with MooncakeConnector.") from e
+                "to run vLLM with MooncakeConnector.") from e
 
         try:
             self.store = MooncakeDistributedStore()

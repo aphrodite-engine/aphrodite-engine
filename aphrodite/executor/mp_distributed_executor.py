@@ -5,7 +5,7 @@ from typing import Any, Callable, List, Optional, Union
 import cloudpickle
 
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import (_run_task_with_lock,
+from aphrodite.utils import (_run_task_with_lock,
                                     cuda_device_count_stateless,
                                     get_distributed_init_method, get_ip,
                                     get_open_port, make_async, run_method,

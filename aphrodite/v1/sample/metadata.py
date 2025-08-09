@@ -1,9 +1,10 @@
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List, Optional
 
 import torch
 
 from aphrodite.common.sampling_params import SamplerID
+from aphrodite.v1.sample.logits_processor import LogitsProcessorManager
 
 
 @dataclass
@@ -21,7 +22,8 @@ class SamplingMetadata:
     # Alphabet sampling
     top_p: Optional[torch.Tensor]
     top_k: Optional[torch.Tensor]
-    min_p: Optional[torch.Tensor]
+    # min_p is done in the logits processor
+    # min_p: Optional[torch.Tensor]
     top_a: Optional[torch.Tensor]
 
     # DRY
@@ -76,17 +78,15 @@ class SamplingMetadata:
 
     output_token_ids: list[list[int]]
 
-    # req_index -> (min_tokens, stop_token_ids)
-    min_tokens: dict[int, tuple[int, set[int]]]
-
-    logit_bias: list[Optional[dict[int, float]]]
-
     # `allowed_token_ids_mask` is a 2D bool tensor of shape (max batch size,
     # vocab size).
     allowed_token_ids_mask: Optional[torch.Tensor]
 
     # req_index -> bad_words_token_ids
     bad_words_token_ids: dict[int, list[list[int]]]
+
+    # Loaded logits processors
+    logitsprocs: LogitsProcessorManager
 
     # Sampler priority and temperature_last for priority-based execution
     sampler_priority: Optional[List[SamplerID]] = None

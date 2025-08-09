@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
+from aphrodite.common.config import LogprobsMode
+from aphrodite.utils import is_pin_memory_available
 from aphrodite.common.logger import log_once
 from aphrodite.common.sampling_params import SamplerID
 from aphrodite.v1.outputs import LogprobsTensors, SamplerOutput
@@ -35,10 +37,12 @@ DEFAULT_SAMPLER_ORDER = [
 
 class Sampler(nn.Module):
 
-    def __init__(self):
+    def __init__(self, logprobs_mode: LogprobsMode = "raw_logprobs"):
         super().__init__()
         self.topk_topp_sampler = TopKTopPSampler()
         self.sampling_ops = SamplingOps()
+        self.pin_memory = is_pin_memory_available()
+        self.logprobs_mode = logprobs_mode
 
     def forward(
         self,
@@ -52,7 +56,10 @@ class Sampler(nn.Module):
         # TODO: provide option for logprobs post sampling.
         num_logprobs = sampling_metadata.max_num_logprobs
         if num_logprobs is not None:
-            raw_logprobs = self.compute_logprobs(logits)
+            if self.logprobs_mode == "raw_logprobs":
+                raw_logprobs = self.compute_logprobs(logits)
+            elif self.logprobs_mode == "raw_logits":
+                raw_logprobs = logits.clone()
 
         # Use float32 for the logits.
         logits = logits.to(torch.float32)
@@ -62,10 +69,23 @@ class Sampler(nn.Module):
         logits = self.sampling_ops.apply_allowed_token_ids(
             logits, sampling_metadata)
         logits = self.sampling_ops.apply_bad_words(logits, sampling_metadata)
-        logits = self.sampling_ops.apply_logits_bias(logits, sampling_metadata)
+
+        # Apply logits processors which can impact greedy sampling
+        for processor in (sampling_metadata.logitsprocs.non_argmax_invariant):
+            logits = processor.apply(logits)
 
         # Apply samplers in priority order
         logits = self._execute_samplers_in_order(logits, sampling_metadata)
+
+        for processor in sampling_metadata.logitsprocs.argmax_invariant:
+            logits = processor.apply(logits)
+
+        # Get the process logprobs or logits.
+        if num_logprobs is not None:
+            if self.logprobs_mode == "processed_logprobs":
+                raw_logprobs = self.compute_logprobs(logits)
+            elif self.logprobs_mode == "processed_logits":
+                raw_logprobs = logits.clone()
 
         # Sample the next token.
         sampled = self.sample(logits, sampling_metadata)
@@ -125,7 +145,7 @@ class Sampler(nn.Module):
                 if sampler_id == SamplerID.TEMPERATURE and do_temp_last:
                     continue
                 sampler_order.append(sampler_id)
-                
+
                 if sampler_id == SamplerID.XTC and do_temp_last:
                     sampler_order.append(SamplerID.TEMPERATURE)
         else:
@@ -149,13 +169,13 @@ class Sampler(nn.Module):
                 logger.debug("Applying DRY with dry_multiplier: "
                              f"{sampling_metadata.dry_multiplier}")
                 logits = self.sampling_ops.apply_dry(logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.PENALTIES and \
                 not sampling_metadata.no_penalties:
                 logger.debug("Applying penalties")
                 logits = self.sampling_ops.apply_penalties(
                     logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.NO_REPEAT_NGRAM and \
                 sampling_metadata.no_repeat_ngram_size is not None:
                 logger.debug(
@@ -163,13 +183,13 @@ class Sampler(nn.Module):
                     f"{sampling_metadata.no_repeat_ngram_size}")
                 logits = self.sampling_ops.apply_no_repeat_ngram(
                     logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.TEMPERATURE and \
                 sampling_metadata.temperature is not None:
                 logger.debug(
                     f"Applying temperature: {sampling_metadata.temperature}")
                 logits = self.apply_temperature(logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.TOP_NSIGMA and \
                 sampling_metadata.top_nsigma is not None:
                 logger.debug(
@@ -177,7 +197,7 @@ class Sampler(nn.Module):
                     f"{sampling_metadata.top_nsigma}")
                 logits = self.sampling_ops.apply_top_nsigma(
                     logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.TOP_P_TOP_K:
                 # Apply top-k and top-p filtering to logits
                 if sampling_metadata.top_k is not None:
@@ -195,7 +215,7 @@ class Sampler(nn.Module):
                                 logits[i] >= top_k_threshold, logits[i],
                                 torch.tensor(-float('inf'), device=logits.device,
                                              dtype=logits.dtype))
-                
+
                 if sampling_metadata.top_p is not None:
                     logger.debug(
                         f"Applying Top-p with top_p: "
@@ -215,54 +235,47 @@ class Sampler(nn.Module):
                             indices_to_remove = sorted_indices_to_remove.scatter(
                                 0, sorted_indices, sorted_indices_to_remove)
                             logits[i][indices_to_remove] = -float('inf')
-                
+
             elif sampler_id == SamplerID.TOP_A and \
                 sampling_metadata.top_a is not None:
                 logger.debug(f"Applying Top-a with top_a: "
                     f"{sampling_metadata.top_a}")
                 logits = self.sampling_ops.apply_top_a(
                     logits, sampling_metadata)
-                
-            elif sampler_id == SamplerID.MIN_P and \
-                sampling_metadata.min_p is not None:
-                logger.debug(f"Applying Min-p with min_p: "
-                    f"{sampling_metadata.min_p}")
-                logits = self.sampling_ops.apply_min_p(
-                    logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.TFS and \
                 sampling_metadata.tfs is not None:
                 logger.debug(f"Applying TFS with tfs: {sampling_metadata.tfs}")
                 logits = self.sampling_ops.apply_tfs(logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.ETA_CUTOFF and \
                 sampling_metadata.eta_cutoff is not None:
                 logger.debug(f"Applying ETA Cutoff with eta_cutoff: "
                     f"{sampling_metadata.eta_cutoff}")
                 logits = self.sampling_ops.apply_eta_cutoff(
                     logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.EPSILON_CUTOFF and \
                 sampling_metadata.epsilon_cutoff is not None:
                 logger.debug(f"Applying Epsilon Cutoff with epsilon_cutoff: "
                     f"{sampling_metadata.epsilon_cutoff}")
                 logits = self.sampling_ops.apply_epsilon_cutoff(
                     logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.TYPICAL_P and \
                 sampling_metadata.typical_p is not None:
                 logger.debug(f"Applying Typical P with typical_p: "
                     f"{sampling_metadata.typical_p}")
                 logits = self.sampling_ops.apply_typical_p(
                     logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.QUADRATIC and \
                 sampling_metadata.quadratic_smoothing_factor is not None:
                 logger.debug(f"Applying Quadratic with smoothing_factor: "
                     f"{sampling_metadata.quadratic_smoothing_factor}")
                 logits = self.sampling_ops.apply_quadratic(
                     logits, sampling_metadata)
-                
+
             elif sampler_id == SamplerID.XTC and \
                 sampling_metadata.xtc_threshold is not None:
                 logger.debug(f"Applying XTC with threshold: "
@@ -361,7 +374,7 @@ class Sampler(nn.Module):
         token_logprobs = logprobs.gather(-1, token_ids)
 
         # Compute the ranks of the actual token.
-        token_ranks = (logprobs >= token_logprobs).sum(-1)
+        token_ranks = batched_count_greater_than(logprobs, token_logprobs)
 
         # Concatenate together with the topk.
         indices = torch.cat((token_ids, topk_indices), dim=1)

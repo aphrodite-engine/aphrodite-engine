@@ -1,17 +1,14 @@
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Mapping, Optional, Union, overload
-
-from typing_extensions import deprecated
+from typing import List, Mapping, Optional, Union
 
 from aphrodite import PoolingParams
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import Device, deprecate_kwargs
+from aphrodite.utils import Device
 from aphrodite.inputs import PromptType
 from aphrodite.lora.request import LoRARequest
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 APHRODITE_RPC_SUCCESS_STR = "SUCCESS"
 
@@ -32,10 +29,8 @@ class RPCProcessRequest:
     request_id: str
     lora_request: Optional[LoRARequest] = None
     trace_headers: Optional[Mapping[str, str]] = None
-    prompt_adapter_request: Optional[PromptAdapterRequest] = None
     priority: int = 0
 
-    @overload
     def __init__(
         self,
         prompt: PromptType,
@@ -43,47 +38,8 @@ class RPCProcessRequest:
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
     ) -> None:
-        ...
-
-    @overload
-    @deprecated("'inputs' will be renamed to 'prompt")
-    def __init__(
-        self,
-        *,
-        inputs: PromptType,
-        params: Union[SamplingParams, PoolingParams],
-        request_id: str,
-        lora_request: Optional[LoRARequest] = None,
-        trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-        priority: int = 0,
-    ) -> None:
-        ...
-
-    @deprecate_kwargs(
-        "inputs",
-        additional_message="Please use the 'prompt' parameter instead.",
-    )
-    def __init__(
-            self,
-            prompt: Optional[PromptType] = None,
-            params: Optional[Union[SamplingParams, PoolingParams]] = None,
-            request_id: Optional[str] = None,
-            lora_request: Optional[LoRARequest] = None,
-            trace_headers: Optional[Mapping[str, str]] = None,
-            prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-            priority: int = 0,
-            *,
-            inputs: Optional[PromptType] = None,  # DEPRECATED
-    ) -> None:
-        if inputs is not None:
-            prompt = inputs
-        assert (prompt is not None and params is not None
-                and request_id is not None)
-
         super().__init__()
 
         self.prompt = prompt
@@ -91,7 +47,6 @@ class RPCProcessRequest:
         self.request_id = request_id
         self.lora_request = lora_request
         self.trace_headers = trace_headers
-        self.prompt_adapter_request = prompt_adapter_request
         self.priority = priority
 
 
@@ -119,6 +74,10 @@ class RPCStartupResponse:
 class RPCUProfileRequest(Enum):
     START_PROFILE = 1
     STOP_PROFILE = 2
+
+
+class RPCResetMultiModalCacheRequest(Enum):
+    RESET = 1
 
 
 @dataclass
@@ -166,8 +125,10 @@ class RPCAdapterLoadedResponse:
 
 RPC_REQUEST_T = Union[RPCProcessRequest, RPCAbortRequest, RPCStartupRequest,
                       RPCUProfileRequest, RPCLoadAdapterRequest,
+                      RPCResetMultiModalCacheRequest,
                       RPCResetPrefixCacheRequest, RPCSleepRequest,
-                      RPCWakeUpRequest, RPCIsSleepingRequest, RPCShutdownRequest]
+                      RPCWakeUpRequest, RPCIsSleepingRequest,
+                      RPCShutdownRequest]
 
 REQUEST_OUTPUTS_T = Union[List[RequestOutput], RPCAdapterLoadedResponse,
                           RPCIsSleepingResponse, RPCError]

@@ -4,9 +4,9 @@
 # ruff: noqa: E501,SIM102
 
 import torch
-import triton
-import triton.language as tl
 from packaging import version
+
+from aphrodite.triton_utils import tl, triton
 
 TRITON_22 = version.parse(triton.__version__) >= version.parse('2.2.0')
 
@@ -451,6 +451,7 @@ def _chunk_scan_fwd(
     chunk_indices=None,
     chunk_offsets=None,
     initial_states=None,
+    out=None,
 ):
     batch, seqlen, nheads, headdim = x.shape
     _, _, nchunks, chunk_size = dt.shape
@@ -473,34 +474,17 @@ def _chunk_scan_fwd(
             # with initial states, we need to take care of how
             # seq_idx crosses the boundaries
             assert batch == 1, "chunk scan only supports initial states with batch 1"
-
-            if initial_states.shape[0] == 1:
-                # no in this case no point to use initial states
-                initial_states = None
-            else:
-                assert chunk_indices is not None and chunk_offsets is not None, \
-                    (
-                        "chunk_indices and chunk_offsets should have been set"
-                    )
+            assert chunk_indices is not None and chunk_offsets is not None, \
+                "chunk_indices and chunk_offsets should have been set"
         else:
             chunk_indices, chunk_offsets = None, None
     else:
         chunk_indices, chunk_offsets = None, None
 
-    # Allocates output.
-    out = torch.empty(batch,
-                      seqlen,
-                      nheads,
-                      headdim,
-                      device=x.device,
-                      dtype=x.dtype)
+    assert out.shape == x.shape
+
     if z is not None:
-        out_x = torch.empty(batch,
-                            seqlen,
-                            nheads,
-                            headdim,
-                            device=x.device,
-                            dtype=x.dtype)
+        out_x = torch.empty_like(x)
         assert out_x.stride() == out.stride()
     else:
         out_x = None
@@ -583,4 +567,4 @@ def _chunk_scan_fwd(
         IS_TRITON_22=TRITON_22,
         HAS_INITSTATES=initial_states is not None,
     )
-    return out, out_x
+    return out_x

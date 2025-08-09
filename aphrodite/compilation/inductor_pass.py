@@ -4,12 +4,12 @@ import inspect
 import json
 import types
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import torch
 from torch import fx
 
-from aphrodite.common.utils import is_torch_equal_or_newer
+from aphrodite.utils import is_torch_equal_or_newer
 
 if is_torch_equal_or_newer("2.6"):
     from torch._inductor.custom_graph_pass import CustomGraphPass
@@ -74,15 +74,16 @@ class InductorPass(CustomGraphPass):
         for src in srcs:
             if isinstance(src, str):
                 src_str = src
-            elif isinstance(src, types.FunctionType):
+            elif isinstance(src, (types.FunctionType, type)):
                 src_str = inspect.getsource(src)
             else:
+                # object instance
                 src_str = inspect.getsource(src.__class__)
             hasher.update(src_str.encode("utf-8"))
         return hasher.hexdigest()
 
     @staticmethod
-    def hash_dict(dict_: Dict[Any, Any]):
+    def hash_dict(dict_: dict[Any, Any]):
         """
         Utility method to hash a dictionary, can alternatively be used for uuid.
         :return: A sha256 hash of the json rep of the dictionary.

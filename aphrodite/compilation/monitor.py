@@ -1,8 +1,6 @@
 import os
 import time
 
-from loguru import logger
-
 from aphrodite.common.config import (AphroditeConfig, CompilationConfig,
                                      CompilationLevel)
 
