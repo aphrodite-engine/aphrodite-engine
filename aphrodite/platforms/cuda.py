@@ -16,6 +16,7 @@ from typing_extensions import ParamSpec
 # import custom ops, trigger op registration
 import aphrodite._C  # noqa
 import aphrodite.common.envs as envs
+from aphrodite.common.logger import log_once
 from aphrodite.utils import cuda_device_count_stateless, import_pynvml
 
 from .interface import DeviceCapability, Platform, PlatformEnum, _Backend
@@ -209,7 +210,8 @@ class CudaPlatformBase(Platform):
             from transformers.utils import is_flash_attn_2_available
             if is_flash_attn_2_available():
                 return _Backend.FLASH_ATTN
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "Current `aphrodite-flash-attn` has a bug inside vision "
                 "module, so we use xformers backend instead. You can "
                 "run `pip install flash-attn` to use flash-attention "
@@ -226,7 +228,7 @@ class CudaPlatformBase(Platform):
             #  we should probably consider factoring out V1 here
             if selected_backend == _Backend.CUTLASS_MLA:
                 if use_v1:
-                    logger.info_once("Using Cutlass MLA backend on V1 engine.")
+                    log_once("INFO", "Using Cutlass MLA backend on V1 engine.")
                     return ("aphrodite.v1.attention.backends.mla."
                             "cutlass_mla.CutlassMLABackend")
                 else:
@@ -234,7 +236,7 @@ class CudaPlatformBase(Platform):
                         "Cutlass MLA backend is only supported on V1 engine")
             if selected_backend == _Backend.TRITON_MLA or block_size != 64:
                 if use_v1:
-                    logger.info_once("Using Triton MLA backend on V1 engine.")
+                    log_once("INFO", "Using Triton MLA backend on V1 engine.")
                     return ("aphrodite.v1.attention.backends.mla."
                             "triton_mla.TritonMLABackend")
                 else:
@@ -254,8 +256,7 @@ class CudaPlatformBase(Platform):
                         block_size)
                 else:
                     if use_v1:
-                        logger.info_once(
-                            "Using FlashMLA backend on V1 engine.")
+                        log_once("INFO", "Using FlashMLA backend on V1 engine.")
                         return ("aphrodite.v1.attention.backends.mla."
                                 "flashmla.FlashMLABackend")
                     else:
@@ -271,26 +272,26 @@ class CudaPlatformBase(Platform):
             XFORMERS_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
 
             if selected_backend == _Backend.FLASHINFER:
-                logger.info_once("Using FlashInfer backend on V1 engine.")
+                log_once("INFO", "Using FlashInfer backend on V1 engine.")
                 if cls.has_device_capability(100):
                     from aphrodite.v1.attention.backends.utils import (
                         set_kv_cache_layout)
                     set_kv_cache_layout("HND")
                 return FLASHINFER_V1
             elif selected_backend == _Backend.FLEX_ATTENTION:
-                logger.info_once("Using FlexAttention backend on V1 engine.")
+                log_once("INFO", "Using FlexAttention backend on V1 engine.")
                 return FLEX_ATTENTION_V1
             elif selected_backend == _Backend.TRITON_ATTN_APHRODITE_V1:
-                logger.info_once("Using Triton backend on V1 engine.")
+                log_once("INFO", "Using Triton backend on V1 engine.")
                 return TRITON_ATTN_APHRODITE_V1
             elif selected_backend == _Backend.FLASH_ATTN:
-                logger.info_once("Using Flash Attention backend on V1 engine.")
+                log_once("INFO", "Using Flash Attention backend on V1 engine.")
                 return FLASH_ATTN_V1
             elif selected_backend == _Backend.TREE_ATTN:
-                logger.info_once("Using Tree Attention backend on V1 engine.")
+                log_once("INFO", "Using Tree Attention backend on V1 engine.")
                 return TREE_ATTN_V1
             elif selected_backend == _Backend.XFORMERS_APHRODITE_V1:
-                logger.info_once("Using XFormers backend on V1 engine.")
+                log_once("INFO", "Using XFormers backend on V1 engine.")
                 return XFORMERS_V1
 
             from aphrodite.attention.selector import is_attn_backend_supported
@@ -303,7 +304,7 @@ class CudaPlatformBase(Platform):
                     from aphrodite.v1.attention.backends.utils import (
                         set_kv_cache_layout)
 
-                    logger.info_once(
+                    log_once("INFO",
                         "Using FlashInfer backend with HND KV cache layout on "
                         "V1 engine by default for Blackwell (SM 10.0) GPUs.")
                     set_kv_cache_layout("HND")
@@ -321,13 +322,13 @@ class CudaPlatformBase(Platform):
                 if is_default_backend_supported := is_attn_backend_supported(
                         FLASH_ATTN_V1, head_size, dtype,
                         allow_import_error=False):
-                    logger.info_once("Using Flash Attention backend on "
-                                     "V1 engine.")
+                    log_once("INFO", "Using Flash Attention backend on "
+                             "V1 engine.")
                     return FLASH_ATTN_V1
 
             # FlexAttention is the default for older GPUs
             else:
-                logger.info_once("Using FlexAttention backend on V1 engine.")
+                log_once("INFO", "Using FlexAttention backend on V1 engine.")
                 return FLEX_ATTENTION_V1
 
             assert not is_default_backend_supported
@@ -338,7 +339,7 @@ class CudaPlatformBase(Platform):
             if not is_default_backend_supported.dtype:
                 use_flex_attention_reason["dtype"] = dtype
 
-            logger.info_once(
+            log_once("INFO",
                 "Using FlexAttention backend for {} on V1 engine.",
                 ", ".join(f"{k}={v}"
                           for k, v in use_flex_attention_reason.items()),
@@ -351,7 +352,7 @@ class CudaPlatformBase(Platform):
             if cls.has_device_capability(100):
                 from aphrodite.v1.attention.backends.utils import (
                     set_kv_cache_layout)
-                logger.info_once(
+                log_once("INFO",
                     "Using HND KV cache layout on V1 engine by default for "
                     "Blackwell (SM 10.0) GPUs.")
                 set_kv_cache_layout("HND")

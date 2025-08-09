@@ -24,7 +24,7 @@ class RunBatchSubcommand(CLISubcommand):
         from aphrodite.endpoints.openai.run_batch import main as run_batch_main
 
         logger.info("Aphrodite batch processing API version {}",
-                    importlib.metadata.version("aphrodite"))
+                    importlib.metadata.version("aphrodite-engine"))
         logger.info("args: {}", args)
 
         # Start the Prometheus metrics server.

@@ -116,9 +116,9 @@ def with_retry(
             return func()
         except Exception as e:
             if attempt == max_retries - 1:
-                logger.error("%s: %s", log_msg, e)
+                logger.error("{}: {}", log_msg, e)
                 raise
-            logger.error("%s: %s, retrying %d of %d", log_msg, e, attempt + 1,
+            logger.error("{}: {}, retrying {} of {}", log_msg, e, attempt + 1,
                          max_retries)
             time.sleep(retry_delay)
             retry_delay *= 2
@@ -284,7 +284,7 @@ def _maybe_remap_hf_config_attrs(config: PretrainedConfig) -> PretrainedConfig:
             if not hasattr(config, new_attr):
                 config.update({new_attr: getattr(config, old_attr)})
             delattr(config, old_attr)
-            logger.debug("Remapped config attribute '%s' to '%s'", old_attr,
+            logger.debug("Remapped config attribute '{}' to '{}'", old_attr,
                          new_attr)
     return config
 
@@ -464,10 +464,10 @@ def get_config(
         config.quantization_config = quantization_config
 
     if hf_overrides_kw:
-        logger.debug("Overriding HF config with %s", hf_overrides_kw)
+        logger.debug("Overriding HF config with {}", hf_overrides_kw)
         config.update(hf_overrides_kw)
     if hf_overrides_fn:
-        logger.debug("Overriding HF config with %s", hf_overrides_fn)
+        logger.debug("Overriding HF config with {}", hf_overrides_fn)
         config = hf_overrides_fn(config)
 
     patch_rope_scaling(config)
@@ -529,7 +529,7 @@ def get_hf_file_to_dict(file_name: str,
         except HfHubHTTPError as e:
             logger.warning(
                 "Cannot connect to Hugging Face Hub. Skipping file "
-                "download for '%s':",
+                "download for '{}':",
                 file_name,
                 exc_info=e)
             return None

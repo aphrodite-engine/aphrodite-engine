@@ -934,7 +934,7 @@ class ProcessingCache:
             )
 
             if debug:
-                logger.debug("Calculated size of {} to be %.2f GiB",
+                logger.debug("Calculated size of {} to be {:.2f} GiB",
                              type(value), size / GiB_bytes)
 
             return size
@@ -966,9 +966,9 @@ class ProcessingCache:
 
         total = self.debug_cache_total
         if total > 0 and total % steps == 0:
-            logger.debug("ProcessingCache: hit_ratio = %.2f",
+            logger.debug("ProcessingCache: hit_ratio = {:.2f}",
                          self.debug_cache_hits / total)
-            logger.debug("ProcessingCache: size = %.2f / %.2f GiB",
+            logger.debug("ProcessingCache: size = {:.2f} / {:.2f} GiB",
                          self._cache.currsize / GiB_bytes,
                          self._cache.maxsize / GiB_bytes)
 

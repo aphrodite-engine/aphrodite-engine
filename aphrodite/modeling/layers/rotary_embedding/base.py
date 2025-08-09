@@ -96,7 +96,7 @@ class RotaryEmbedding(CustomOp):
         key: Optional[torch.Tensor] = None,
         offsets: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
-        from vllm import _custom_ops as ops
+        from aphrodite import _custom_ops as ops
 
         # __setattr__ in nn.Module (called by `self.cos_sin_cache = ...`)
         # is expensive, so avoid calling it if possible

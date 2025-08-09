@@ -85,9 +85,9 @@ class SamplingMetadata:
     # req_index -> bad_words_token_ids
     bad_words_token_ids: dict[int, list[list[int]]]
 
+    # Loaded logits processors
+    logitsprocs: LogitsProcessorManager
+
     # Sampler priority and temperature_last for priority-based execution
     sampler_priority: Optional[List[SamplerID]] = None
     temperature_last: bool = False
-
-    # Loaded logits processors
-    logitsprocs: LogitsProcessorManager

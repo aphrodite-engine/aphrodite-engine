@@ -20,7 +20,7 @@ def convert_to_pytorch_benchmark_format(args: argparse.Namespace,
     for name, benchmark_values in metrics.items():
         record = {
             "benchmark": {
-                "name": "vLLM benchmark",
+                "name": "Aphrodite benchmark",
                 "extra_info": {
                     "args": vars(args),
                 },

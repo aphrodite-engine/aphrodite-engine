@@ -9,7 +9,6 @@ from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.utils import Device
 from aphrodite.inputs import PromptType
 from aphrodite.lora.request import LoRARequest
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 APHRODITE_RPC_SUCCESS_STR = "SUCCESS"
 
@@ -30,7 +29,6 @@ class RPCProcessRequest:
     request_id: str
     lora_request: Optional[LoRARequest] = None
     trace_headers: Optional[Mapping[str, str]] = None
-    prompt_adapter_request: Optional[PromptAdapterRequest] = None
     priority: int = 0
 
     def __init__(
@@ -40,7 +38,6 @@ class RPCProcessRequest:
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
     ) -> None:
         super().__init__()
@@ -50,7 +47,6 @@ class RPCProcessRequest:
         self.request_id = request_id
         self.lora_request = lora_request
         self.trace_headers = trace_headers
-        self.prompt_adapter_request = prompt_adapter_request
         self.priority = priority
 
 

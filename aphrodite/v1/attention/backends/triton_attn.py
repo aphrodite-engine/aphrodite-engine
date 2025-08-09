@@ -7,7 +7,6 @@ import torch
 from loguru import logger
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common import envs
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionImpl,
                                                    AttentionMetadata,
@@ -15,7 +14,9 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.ops.chunked_prefill_paged_decode import (
     chunked_prefill_paged_decode)
 from aphrodite.attention.ops.paged_attn import PagedAttention
+from aphrodite.common import envs
 from aphrodite.common.config import AphroditeConfig
+from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 from aphrodite.v1.attention.backends.flash_attn import FlashAttentionMetadata
 from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
@@ -252,13 +253,15 @@ class TritonAttentionImpl(AttentionImpl):
             # If not using prefill decode attention, we use the Triton
             # unified attention implementation.
             if use_aiter_unified_attention():
-                logger.info_once(
+                log_once(
+                    "INFO",
                     "Using aiter unified attention for TritonAttentionImpl")
                 from aiter.ops.triton.unified_attention import (
                     unified_attention)
                 self.unified_attention = unified_attention
             else:
-                logger.info_once(
+                log_once(
+                    "INFO",
                     "Using aphrodite unified attention for TritonAttentionImpl")
                 from aphrodite.attention.ops.triton_unified_attention import (
                     unified_attention)

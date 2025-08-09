@@ -51,7 +51,7 @@ if HAS_TRITON:
         # Catch any other unexpected errors during the check.
         logger.warning(
             "An unexpected error occurred while checking Triton active drivers:"
-            " %s. Disabling Triton.", e)
+            " {}. Disabling Triton.", e)
         HAS_TRITON = False
 
 if not HAS_TRITON:

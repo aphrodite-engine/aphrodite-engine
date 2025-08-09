@@ -945,8 +945,6 @@ def graph_capture(device: torch.device):
         yield context
 
 
-logger = init_logger(__name__)
-
 _ENABLE_CUSTOM_ALL_REDUCE = True
 
 

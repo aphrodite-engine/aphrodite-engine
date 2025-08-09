@@ -14,7 +14,6 @@ from lmcache.v1.config import (
     LMCacheEngineConfig as V1Config,  # type: ignore[assignment]
 )
 
-logger = init_logger(__name__)
 ENGINE_NAME = "aphrodite-instance"
 
 

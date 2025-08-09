@@ -20,7 +20,7 @@ from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.platforms import current_platform
 
 APHRODITE_SUBCMD_PARSER_EPILOG = (
-    "Tip: Use `aphrodite [serve|run-batch|bench <bench_type>] "
+    "Tip: Use `aphrodite [run|run-batch|bench <bench_type>] "
     "--help=<keyword>` to explore arguments from help.\n"
     "   - To view a argument group:     --help=ModelConfig\n"
     "   - To view a single argument:    --help=max-num-seqs\n"

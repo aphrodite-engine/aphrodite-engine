@@ -19,7 +19,6 @@ from aphrodite.common.sequence import (Sequence, SequenceData, SequenceGroup,
 from aphrodite.utils import Device, PyObjectCache
 from aphrodite.lora.request import LoRARequest
 from aphrodite.processing.interfaces import AllocStatus, BlockSpaceManager
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 # Test-only. If configured, decode is preempted with
 # ARTIFICIAL_PREEMPTION_PROB% probability.
@@ -162,8 +161,6 @@ class SchedulerOutputs:
         if self.num_loras > 0:
             self._sort_by_lora_ids()
 
-        self.num_prompt_adapters: int = len(self.prompt_adapter_requests)
-
     def is_empty(self) -> bool:
         # NOTE: We do not consider the ignored sequence groups.
         return (not self.scheduled_seq_groups and not self.blocks_to_swap_in
@@ -189,14 +186,6 @@ class SchedulerOutputs:
             g.seq_group.lora_request
             for g in self.scheduled_seq_groups
             if g.seq_group.lora_request is not None
-        }
-
-    @property
-    def prompt_adapter_requests(self) -> Set[PromptAdapterRequest]:
-        return {
-            g.seq_group.prompt_adapter_request
-            for g in self.scheduled_seq_groups
-            if g.seq_group.prompt_adapter_request is not None
         }
 
 
@@ -1645,7 +1634,6 @@ class Scheduler:
                     multi_modal_placeholders=(
                         seq_group.multi_modal_placeholders
                         if scheduler_outputs.num_prefill_groups > 0 else None),
-                    prompt_adapter_request=seq_group.prompt_adapter_request,
                 )
             else:
                 # When SPMD mode is enabled, we only send delta data except for

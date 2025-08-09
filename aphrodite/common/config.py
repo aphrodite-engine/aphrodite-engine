@@ -3479,59 +3479,6 @@ class LoRAConfig:
 
 @config
 @dataclass
-class PromptAdapterConfig:
-    """Configuration for PromptAdapters."""
-
-    max_prompt_adapters: int = 1
-    """Max number of PromptAdapters in a batch."""
-    max_prompt_adapter_token: int = 0
-    """Max number of PromptAdapters tokens."""
-    max_cpu_prompt_adapters: Optional[int] = None
-    """Maximum number of PromptAdapters to store in CPU memory. Must be >= than
-    `max_prompt_adapters`."""
-    prompt_adapter_dtype: Union[torch.dtype, str] = "auto"
-    """Data type for PromptAdapter. If auto, will default to base model dtype.
-    """
-
-    def compute_hash(self) -> str:
-        """
-        WARNING: Whenever a new field is added to this config,
-        ensure that it is included in the factors list if
-        it affects the computation graph.
-
-        Provide a hash that uniquely identifies all the configs
-        that affect the structure of the computation
-        graph from input ids/embeddings to the final hidden states,
-        excluding anything before input ids/embeddings and after
-        the final hidden states.
-        """
-        # no factors to consider.
-        # this config will not affect the computation graph.
-        factors: list[Any] = []
-        hash_str = hashlib.md5(str(factors).encode(),
-                               usedforsecurity=False).hexdigest()
-        return hash_str
-
-    def __post_init__(self):
-
-        if self.max_prompt_adapters < 1:
-            raise ValueError(f"max_prompt_adapters "
-                             f"({self.max_prompt_adapters}) must be >= 1.")
-        if self.max_prompt_adapter_token == 0:
-            raise ValueError("max_prompt_adapter_token must be set.")
-        if self.max_cpu_prompt_adapters is None:
-            self.max_cpu_prompt_adapters = self.max_prompt_adapters
-
-    def verify_with_model_config(self, model_config: ModelConfig):
-        if self.prompt_adapter_dtype == "auto":
-            self.prompt_adapter_dtype = model_config.dtype
-        elif isinstance(self.prompt_adapter_dtype, str):
-            self.prompt_adapter_dtype = getattr(torch,
-                                                self.prompt_adapter_dtype)
-
-
-@config
-@dataclass
 class MultiModalConfig:
     """Controls the behavior of multimodal models."""
 
@@ -4419,6 +4366,7 @@ class CompilationConfig:
     # Top-level Compilation control
     level: Optional[int] = None
     """The level of compilation:
+
     - None: If None, we will select the default compilation level.
       For V1 engine this is 3, for V0 engine this is 0.
     - 0: no compilation.
@@ -4433,9 +4381,11 @@ class CompilationConfig:
     a cache directory."""
     backend: str = ""
     """The backend for compilation. It needs to be a string:
+
     - "" (empty string): use the default backend.
     - "eager"/"openxla"/...: use the specified backend registered in PyTorch.
     - "full.module.name": a qualified name which can be used to import the
+
     backend function.
     We use string to avoid serialization issues when using compilation in a
     distributed setting. When the compilation level is 1 or 2, the backend is
@@ -4447,8 +4397,10 @@ class CompilationConfig:
     to enable all, 'none' to disable all. Also specify a list of custom op
     names to enable (prefixed with a '+'), or disable (prefixed with a '-').
     Examples:
+
     - 'all,-op1' to enable all except op1
     - 'none,+op1,+op2' to enable only op1 and op2
+
     By default, all custom ops are enabled when running without Inductor and
     disabled when running with Inductor: level>=PIECEWISE and use_inductor=True.
     Inductor generates (fused) Triton kernels for disabled custom ops."""
@@ -4456,13 +4408,16 @@ class CompilationConfig:
     """A list of ops to split the full graph into subgraphs, used in piecewise
     compilation."""
 
-    # Inductor capture    use_inductor: bool = True
+    # Inductor capture
+    use_inductor: bool = True
     """Whether to use inductor compilation:
+
     - False: inductor compilation is not used. graph runs in eager
         (custom_ops enabled by default).
     - True: inductor compilation is used (custom_ops disabled by default).
         One graph for symbolic shape and one graph per size in compile_sizes
         are compiled using configurations in inductor_compile_config.
+
     This setting is ignored if level<PIECEWISE."""
     compile_sizes: Optional[list[Union[int, str]]] = None
     """Sizes to compile for inductor. In addition
@@ -4644,7 +4599,9 @@ class CompilationConfig:
             self.pass_config = PassConfig(**self.pass_config)
 
     def init_backend(
-            self, aphrodite_config: "AphroditeConfig") -> Union[str, Callable]:
+        self,
+        aphrodite_config: "AphroditeConfig"
+    ) -> Union[str, Callable]:
         if self.level == CompilationLevel.NO_COMPILATION:
             raise ValueError("No compilation level is set.")
 
@@ -4722,11 +4679,12 @@ class CompilationConfig:
             raise ValueError("full_cuda_graph cannot be used together with "
                              "splitting_ops, as Full CUDA graph will override "
                              f"the splitting_ops: {self.splitting_ops}")
+
         if not self.splitting_ops:
             self.splitting_ops = [] if self.full_cuda_graph else [
                 "aphrodite.unified_attention",
                 "aphrodite.unified_attention_with_output",
-                "aphrodite.mamba_mixer2"
+                "aphrodite.mamba_mixer2",
             ]
 
 
@@ -4759,8 +4717,6 @@ class AphroditeConfig:
     """Decoding configuration."""
     observability_config: Optional[ObservabilityConfig] = None
     """Observability configuration."""
-    prompt_adapter_config: Optional[PromptAdapterConfig] = None
-    """Prompt adapter configuration."""
     quant_config: Optional[QuantizationConfig] = None
     """Quantization configuration."""
     compilation_config: CompilationConfig = field(
@@ -4852,10 +4808,6 @@ class AphroditeConfig:
             aphrodite_factors.append("None")
         if self.observability_config:
             aphrodite_factors.append(self.observability_config.compute_hash())
-        else:
-            aphrodite_factors.append("None")
-        if self.prompt_adapter_config:
-            aphrodite_factors.append(self.prompt_adapter_config.compute_hash())
         else:
             aphrodite_factors.append("None")
         if self.quant_config:
@@ -4966,9 +4918,6 @@ class AphroditeConfig:
             self.lora_config.verify_with_cache_config(self.cache_config)
             self.lora_config.verify_with_model_config(self.model_config)
             self.lora_config.verify_lora_support()
-        if self.prompt_adapter_config is not None:
-            self.prompt_adapter_config.verify_with_model_config(
-                self.model_config)
 
         if self.quant_config is None and self.model_config is not None:
             self.quant_config = AphroditeConfig._get_quantization_config(

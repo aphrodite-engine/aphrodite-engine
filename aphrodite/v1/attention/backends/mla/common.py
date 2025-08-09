@@ -203,6 +203,7 @@ from aphrodite.attention.backends.utils import get_mla_dims
 from aphrodite.attention.ops.merge_attn_states import merge_attn_states
 from aphrodite.attention.utils.fa_utils import get_flash_attn_version
 from aphrodite.common.config import AphroditeConfig
+from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear, LinearBase,
                                               UnquantizedLinearMethod)
 from aphrodite.platforms import current_platform
@@ -773,18 +774,18 @@ class MLACommonImpl(MLAAttentionImpl[M], Generic[M]):
         self.kv_b_proj = kv_b_proj
 
         if use_flashinfer_prefill():
-            logger.debug_once("Using FlashInfer prefill for MLA")
+            log_once("DEBUG", "Using FlashInfer prefill for MLA")
             self._run_prefill_context_chunk = self._run_prefill_context_chunk_fi
             self._run_prefill_new_tokens = self._run_prefill_new_tokens_fi
             self._pad_v = False
         elif use_cudnn_prefill():
-            logger.debug_once("Using CUDNN prefill for MLA")
+            log_once("DEBUG", "Using CUDNN prefill for MLA")
             self._run_prefill_context_chunk = \
                 self._run_prefill_context_chunk_cudnn
             self._run_prefill_new_tokens = self._run_prefill_new_tokens_cudnn
             self._pad_v = False
         else:  # Use FlashAttention
-            logger.debug_once("Using FlashAttention prefill for MLA")
+            log_once("DEBUG", "Using FlashAttention prefill for MLA")
             self._run_prefill_context_chunk = self._run_prefill_context_chunk_fa
             self._run_prefill_new_tokens = self._run_prefill_new_tokens_fa
 

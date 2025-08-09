@@ -2007,7 +2007,6 @@ class BatchRequestInput(OpenAIBaseModel):
             return TypeAdapter(EmbeddingRequest).validate_python(value)
         if url.endswith("/score"):
             return ScoreRequest.model_validate(value)
-        return TypeAdapter(Union[ChatCompletionRequest, EmbeddingRequest,
         if url.endswith("/rerank"):
             return RerankRequest.model_validate(value)
         return TypeAdapter(BatchRequestInputBody).validate_python(value)

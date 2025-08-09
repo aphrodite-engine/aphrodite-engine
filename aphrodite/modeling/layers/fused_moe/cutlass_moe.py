@@ -16,7 +16,7 @@ from aphrodite.modeling.layers.fused_moe.utils import (_fp8_perm,
                                                        _resize_cache,
                                                        extract_required_args)
 from aphrodite.scalar_type import scalar_types
-from aphrodite.utils.log import log_once
+from aphrodite.common.logger import log_once
 
 
 def run_cutlass_moe_fp8(

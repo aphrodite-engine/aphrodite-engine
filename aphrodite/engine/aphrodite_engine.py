@@ -51,7 +51,6 @@ from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from aphrodite.multimodal.processing import EncDecMultiModalProcessor
 from aphrodite.processing.scheduler import (ScheduledSequenceGroup,
                                             SchedulerOutputs)
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.tracing import (SpanAttributes, SpanKind, extract_trace_context,
                                init_tracer)
 from aphrodite.transformers_utils.detokenizer import Detokenizer
@@ -148,8 +147,6 @@ class AphroditeEngine:
             decoding.
         executor_class: The model executor class for managing distributed
             execution.
-        prompt_adapter_config (Optional): The configuration related to serving
-            prompt adapters.
         log_stats: Whether to log statistics.
         usage_context: Specified entry point, used for usage info collection.
     """
@@ -233,7 +230,6 @@ class AphroditeEngine:
         self.load_config = aphrodite_config.load_config
         self.decoding_config = aphrodite_config.decoding_config or DecodingConfig(  # noqa
         )
-        self.prompt_adapter_config = aphrodite_config.prompt_adapter_config  # noqa
         self.observability_config = aphrodite_config.observability_config or ObservabilityConfig(  # noqa
         )
 
@@ -304,8 +300,6 @@ class AphroditeEngine:
                     # Feature flags
                     "enable_lora":
                     bool(self.lora_config),
-                    "enable_prompt_adapter":
-                    bool(self.prompt_adapter_config),
                     "enable_prefix_caching":
                     self.cache_config.enable_prefix_caching,
                     "enforce_eager":
@@ -554,9 +548,6 @@ class AphroditeEngine:
             self.lora_config.verify_with_model_config(self.model_config)
             self.lora_config.verify_with_scheduler_config(
                 self.scheduler_config)
-        if self.prompt_adapter_config:
-            self.prompt_adapter_config.verify_with_model_config(
-                self.model_config)
 
     def _add_processed_request(
         self,
@@ -565,7 +556,6 @@ class AphroditeEngine:
         params: Union[SamplingParams, PoolingParams],
         arrival_time: float,
         lora_request: Optional[LoRARequest],
-        prompt_adapter_request: Optional[PromptAdapterRequest],
         trace_headers: Optional[Mapping[str, str]] = None,
         priority: int = 0,
     ) -> Optional[SequenceGroup]:
@@ -581,7 +571,6 @@ class AphroditeEngine:
                 arrival_time=arrival_time,
                 lora_request=lora_request,
                 trace_headers=trace_headers,
-                prompt_adapter_request=prompt_adapter_request,
                 priority=priority,
             )
             return None
@@ -595,11 +584,11 @@ class AphroditeEngine:
         encoder_inputs, decoder_inputs = split_enc_dec_inputs(processed_inputs)
 
         seq = Sequence(seq_id, decoder_inputs, block_size, eos_token_id,
-                       lora_request, prompt_adapter_request)
+                       lora_request)
 
         encoder_seq = (None if encoder_inputs is None else Sequence(
             seq_id, encoder_inputs, block_size, eos_token_id, lora_request,
-            prompt_adapter_request))
+        ))
 
         # Create a SequenceGroup based on SamplingParams or PoolingParams
         if isinstance(params, SamplingParams):
@@ -610,7 +599,6 @@ class AphroditeEngine:
                 arrival_time=arrival_time,
                 lora_request=lora_request,
                 trace_headers=trace_headers,
-                prompt_adapter_request=prompt_adapter_request,
                 encoder_seq=encoder_seq,
                 priority=priority)
         elif isinstance(params, PoolingParams):
@@ -620,7 +608,6 @@ class AphroditeEngine:
                 params,
                 arrival_time=arrival_time,
                 lora_request=lora_request,
-                prompt_adapter_request=prompt_adapter_request,
                 encoder_seq=encoder_seq,
                 priority=priority)
         else:
@@ -649,7 +636,6 @@ class AphroditeEngine:
         lora_request: Optional[LoRARequest] = None,
         tokenization_kwargs: Optional[dict[str, Any]] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
     ) -> None:
         """Add a request to the engine's request pool.
@@ -669,7 +655,6 @@ class AphroditeEngine:
                 the current monotonic time.
             lora_request: The LoRA request to add.
             trace_headers: OpenTelemetry trace headers.
-            prompt_adapter_request: The prompt adapter request to add.
             priority: The priority of the request.
                 Only applicable with priority scheduling.
 
@@ -728,7 +713,6 @@ class AphroditeEngine:
             prompt,
             tokenization_kwargs=tokenization_kwargs,
             lora_request=lora_request,
-            prompt_adapter_request=prompt_adapter_request,
         )
 
         self._add_processed_request(
@@ -737,7 +721,6 @@ class AphroditeEngine:
             params=params,
             arrival_time=arrival_time,
             lora_request=lora_request,
-            prompt_adapter_request=prompt_adapter_request,
             trace_headers=trace_headers,
             priority=priority,
         )
@@ -750,7 +733,6 @@ class AphroditeEngine:
         arrival_time: float,
         lora_request: Optional[LoRARequest],
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         encoder_seq: Optional[Sequence] = None,
         priority: int = 0,
     ) -> SequenceGroup:
@@ -785,7 +767,6 @@ class AphroditeEngine:
             sampling_params=sampling_params,
             lora_request=lora_request,
             trace_headers=trace_headers,
-            prompt_adapter_request=prompt_adapter_request,
             encoder_seq=encoder_seq,
             priority=priority,
             draft_size=draft_size)
@@ -799,7 +780,6 @@ class AphroditeEngine:
         pooling_params: PoolingParams,
         arrival_time: float,
         lora_request: Optional[LoRARequest],
-        prompt_adapter_request: Optional[PromptAdapterRequest],
         encoder_seq: Optional[Sequence] = None,
         priority: int = 0,
     ) -> SequenceGroup:
@@ -813,7 +793,6 @@ class AphroditeEngine:
             arrival_time=arrival_time,
             lora_request=lora_request,
             pooling_params=pooling_params,
-            prompt_adapter_request=prompt_adapter_request,
             encoder_seq=encoder_seq,
             priority=priority)
         return seq_group
@@ -1851,16 +1830,6 @@ class AphroditeEngine:
 
     def pin_lora(self, lora_id: int) -> bool:
         return self.modeling.pin_lora(lora_id)
-
-    def add_prompt_adapter(
-            self, prompt_adapter_request: PromptAdapterRequest) -> bool:
-        return self.modeling.add_prompt_adapter(prompt_adapter_request)
-
-    def remove_prompt_adapter(self, prompt_adapter_id: int) -> bool:
-        return self.modeling.remove_prompt_adapter(prompt_adapter_id)
-
-    def list_prompt_adapters(self) -> List[int]:
-        return self.modeling.list_prompt_adapters()
 
     def start_profile(self) -> None:
         self.modeling.start_profile()

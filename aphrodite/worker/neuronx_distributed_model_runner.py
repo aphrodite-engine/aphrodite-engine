@@ -48,8 +48,8 @@ class NeuronxDistributedModelRunner(NeuronModelRunner):
         lora_ckpt_paths = self._get_lora_paths_strings(lora_modules)
         if self.lora_config.max_loras < len(lora_ckpt_paths):
             raise ValueError(
-                "Number of LoRAs (%s) exceeds maximum "
-                "allowed (%s)", len(lora_ckpt_paths),
+                "Number of LoRAs ({}) exceeds maximum "
+                "allowed ({})", len(lora_ckpt_paths),
                 self.lora_config.max_loras)
 
         return LoraServingConfig(

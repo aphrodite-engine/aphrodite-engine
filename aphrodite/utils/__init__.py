@@ -577,6 +577,7 @@ class AsyncMicrobatchTokenizer:
 
     async def _batch_encode_loop(self, queue: asyncio.Queue, can_batch: bool):
         """Batch incoming encode requests for efficiency."""
+
         while True:
             prompt, kwargs, result_future = await queue.get()
             prompts = [prompt]
@@ -1829,7 +1830,7 @@ class FlexibleArgumentParser(ArgumentParser):
             a for i, a in enumerate(processed_args) if i not in delete
         ]
         if duplicates:
-            logger.warning("Found duplicate keys %s", ", ".join(duplicates))
+            logger.warning("Found duplicate keys {}", ", ".join(duplicates))
 
         # Add the dict args back as if they were originally passed as JSON
         for dict_arg, dict_value in dict_args.items():
@@ -2229,7 +2230,7 @@ def import_from_path(module_name: str, file_path: Union[str, os.PathLike]):
 
 @cache
 def get_aphrodite_optional_dependencies():
-    metadata = importlib.metadata.metadata("aphrodite")
+    metadata = importlib.metadata.metadata("aphrodite-engine")
     requirements = metadata.get_all("Requires-Dist", [])
     extras = metadata.get_all("Provides-Extra", [])
 
@@ -2706,8 +2707,8 @@ def set_ulimit(target_soft_limit=65535):
                                (target_soft_limit, current_hard))
         except ValueError as e:
             logger.warning(
-                "Found ulimit of %s and failed to automatically increase "
-                "with error %s. This can cause fd limit errors like "
+                "Found ulimit of {} and failed to automatically increase "
+                "with error {}. This can cause fd limit errors like "
                 "`OSError: [Errno 24] Too many open files`. Consider "
                 "increasing with ulimit -n", current_soft, e)
 

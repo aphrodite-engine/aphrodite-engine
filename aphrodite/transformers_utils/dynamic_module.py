@@ -46,7 +46,7 @@ def try_get_class_from_dynamic_module(
 
         if warn_on_fail:
             logger.warning(
-                "Unable to load %s from %s on %s.",
+                "Unable to load {} from {} on {}.",
                 class_reference,
                 pretrained_model_name_or_path,
                 location,

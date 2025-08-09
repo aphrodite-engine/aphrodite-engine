@@ -354,7 +354,7 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
             mamba_padding_pct = 100 * (attn_page_size -
                                        mamba_page_size) / mamba_page_size
             logger.info(
-                "Padding mamba page size by %.2f%% to ensure "
+                "Padding mamba page size by {:.2f}% to ensure "
                 "that mamba page size and attention page size are "
                 "exactly equal.", mamba_padding_pct)
 

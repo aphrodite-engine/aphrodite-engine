@@ -12,7 +12,7 @@ from typing_extensions import Annotated
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import SchedulerConfig
-from aphrodite.transformers_utils.tokenizer import AnyTokenizer)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 _SAMPLING_EPS = 1e-5
 _MAX_TEMP = 1e-2

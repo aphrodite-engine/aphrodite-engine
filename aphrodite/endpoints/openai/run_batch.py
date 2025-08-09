@@ -90,7 +90,7 @@ def make_arg_parser(parser: FlexibleArgumentParser):
     parser.add_argument(
         "--port",
         type=int,
-        default=8000,
+        default=2242,
         help="Port number for the Prometheus metrics server "
         "(only needed if enable-metrics is set).",
     )

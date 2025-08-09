@@ -30,7 +30,6 @@ from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.processing.scheduler import SchedulerOutputs
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.usage.usage_lib import UsageContext
 
@@ -432,7 +431,6 @@ class _AsyncLLMEngine(AphroditeEngine):
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
         data_parallel_rank: Optional[int] = None,
         tokenization_kwargs: Optional[dict[str, Any]] = None,
@@ -466,7 +464,6 @@ class _AsyncLLMEngine(AphroditeEngine):
         processed_inputs = await self.input_preprocessor.preprocess_async(
             prompt,
             lora_request=lora_request,
-            prompt_adapter_request=prompt_adapter_request,
             tokenization_kwargs=tokenization_kwargs,
         )
 
@@ -476,7 +473,6 @@ class _AsyncLLMEngine(AphroditeEngine):
             params=params,
             arrival_time=arrival_time,
             lora_request=lora_request,
-            prompt_adapter_request=prompt_adapter_request,
             trace_headers=trace_headers,
             priority=priority,
         )
@@ -810,7 +806,6 @@ class AsyncAphrodite(EngineClient):
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
         data_parallel_rank: Optional[int] = None,
         tokenization_kwargs: Optional[dict[str, Any]] = None,
@@ -839,7 +834,6 @@ class AsyncAphrodite(EngineClient):
             arrival_time=arrival_time or time.time(),
             lora_request=lora_request,
             trace_headers=trace_headers,
-            prompt_adapter_request=prompt_adapter_request,
             priority=priority,
             data_parallel_rank=data_parallel_rank,
             tokenization_kwargs=tokenization_kwargs,
@@ -854,7 +848,6 @@ class AsyncAphrodite(EngineClient):
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
         data_parallel_rank: Optional[int] = None,
     ) -> AsyncGenerator[RequestOutput, None]:
@@ -871,8 +864,6 @@ class AsyncAphrodite(EngineClient):
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
             trace_headers: OpenTelemetry trace headers.
-            prompt_adapter_request: Prompt Adapter request to use
-                                            for generation, if any.
             priority: The priority of the request.
                 Only applicable with priority scheduling.
             data_parallel_rank: The (global) data parallel rank that must
@@ -933,7 +924,6 @@ class AsyncAphrodite(EngineClient):
                     sampling_params,
                     lora_request=lora_request,
                     trace_headers=trace_headers,
-                    prompt_adapter_request=prompt_adapter_request,
                     priority=priority,
                     data_parallel_rank=data_parallel_rank,
             ):
@@ -1098,7 +1088,7 @@ class AsyncAphrodite(EngineClient):
             raise AsyncEngineDeadError("Background loop is stopped.")
 
         await self.engine.check_health_async()
-        logger.debug("Health check took %fs", time.perf_counter() - t)
+        logger.debug("Health check took {:.2f}s", time.perf_counter() - t)
 
     async def is_tracing_enabled(self) -> bool:
         return self.engine.is_tracing_enabled()

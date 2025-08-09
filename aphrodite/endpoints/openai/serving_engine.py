@@ -548,7 +548,8 @@ class OpenAIServing:
         input_ids = encoded.input_ids
         input_text = prompt
 
-        return self._validate_input(request, input_ids, input_text)
+        result = self._validate_input(request, input_ids, input_text)
+        return result
 
     async def _normalize_prompt_tokens_to_input(
         self,
@@ -668,20 +669,22 @@ class OpenAIServing:
         """
         for text in prompt_inputs:
             if isinstance(text, str):
-                yield await self._normalize_prompt_text_to_input(
+                result = await self._normalize_prompt_text_to_input(
                     request,
                     tokenizer,
                     prompt=text,
                     truncate_prompt_tokens=truncate_prompt_tokens,
                     add_special_tokens=add_special_tokens,
                 )
+                yield result
             else:
-                yield await self._normalize_prompt_tokens_to_input(
+                result = await self._normalize_prompt_tokens_to_input(
                     request,
                     tokenizer,
                     prompt_ids=text,
                     truncate_prompt_tokens=truncate_prompt_tokens,
                 )
+                yield result
 
     async def _tokenize_prompt_input_or_inputs_async(
         self,
@@ -742,8 +745,8 @@ class OpenAIServing:
         # Wait for all tokenization tasks to complete
         results = await asyncio.gather(*tasks)
         inputs_text.extend(results)
-
-        return inputs_text, inputs_embeds
+        result = (inputs_text, inputs_embeds)
+        return result
 
     @overload
     async def _preprocess_completion(

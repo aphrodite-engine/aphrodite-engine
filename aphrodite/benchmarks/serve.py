@@ -703,7 +703,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
     )
     # Use 127.0.0.1 here instead of localhost to force the use of ipv4
     parser.add_argument("--host", type=str, default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=2242)
     parser.add_argument(
         "--endpoint",
         type=str,

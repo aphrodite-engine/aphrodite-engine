@@ -18,8 +18,7 @@ from aphrodite.common.config import config
 from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.endpoints.chat_utils import (ChatTemplateContentFormatOption,
                                             validate_chat_template)
-from aphrodite.endpoints.openai.serving_models import (LoRAModulePath,
-                                                       PromptAdapterPath)
+from aphrodite.endpoints.openai.serving_models import LoRAModulePath
 from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
 from aphrodite.engine.args_tools import AsyncEngineArgs, optional_type
 
@@ -60,34 +59,13 @@ class LoRAParserAction(argparse.Action):
         setattr(namespace, self.dest, lora_list)
 
 
-class PromptAdapterParserAction(argparse.Action):
-
-    def __call__(
-        self,
-        parser: argparse.ArgumentParser,
-        namespace: argparse.Namespace,
-        values: Optional[Union[str, Sequence[str]]],
-        option_string: Optional[str] = None,
-    ):
-        if values is None:
-            values = []
-        if isinstance(values, str):
-            raise TypeError("Expected values to be a list")
-
-        adapter_list: list[PromptAdapterPath] = []
-        for item in values:
-            name, path = item.split('=')
-            adapter_list.append(PromptAdapterPath(name, path))
-        setattr(namespace, self.dest, adapter_list)
-
-
 @config
 @dataclass
 class FrontendArgs:
     """Arguments for the OpenAI-compatible frontend server."""
     host: Optional[str] = None
     """Host name."""
-    port: int = 8000
+    port: int = 2242
     """Port number."""
     uvicorn_log_level: Literal["debug", "info", "warning", "error", "critical",
                                "trace"] = "info"
@@ -200,11 +178,6 @@ schema. Example: `[{"type": "text", "text": "Hello world!"}]`"""
         # optional_type(str)
         frontend_kwargs["lora_modules"]["type"] = optional_type(str)
         frontend_kwargs["lora_modules"]["action"] = LoRAParserAction
-
-        # Special case: prompt_adapters need custom parser action
-        frontend_kwargs["prompt_adapters"]["type"] = optional_type(str)
-        frontend_kwargs["prompt_adapters"]["action"] = \
-            PromptAdapterParserAction
 
         # Special case: Middleware needs append action
         frontend_kwargs["middleware"]["action"] = "append"

@@ -44,8 +44,6 @@ if TYPE_CHECKING:
     from aphrodite.v1.core.sched.output import NewRequestData
     from aphrodite.v1.request import Request
 
-logger = init_logger(__name__)
-
 
 @dataclass
 class LoadSpec:

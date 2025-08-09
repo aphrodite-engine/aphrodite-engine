@@ -9,6 +9,7 @@ from torch.distributed import PrefixStore, ProcessGroup
 from torch.distributed.distributed_c10d import is_nccl_available
 
 import aphrodite.common.envs as envs
+from aphrodite.common.logger import log_once
 from aphrodite.utils import cuda_device_count_stateless
 
 from .interface import DeviceCapability, Platform, PlatformEnum, _Backend
@@ -198,8 +199,8 @@ class RocmPlatform(Platform):
             if selected_backend == _Backend.TRITON_MLA:
                 if block_size != 1:
                     if use_v1:
-                        logger.info_once(
-                            "Using Triton MLA backend on V1 engine.")
+                        log_once(
+                            "INFO", "Using Triton MLA backend on V1 engine.")
                         return ("aphrodite.v1.attention.backends.mla."
                                 "triton_mla.TritonMLABackend")
                     else:

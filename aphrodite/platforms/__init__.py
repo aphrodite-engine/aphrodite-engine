@@ -19,7 +19,7 @@ def aphrodite_version_matches_substr(substr: str) -> bool:
     """
     from importlib.metadata import PackageNotFoundError, version
     try:
-        aphrodite_version = version("aphrodite")
+        aphrodite_version = version("aphrodite-engine")
     except PackageNotFoundError as e:
         logger.warning(
             "The Aphrodite package was not found, so its version could not be "

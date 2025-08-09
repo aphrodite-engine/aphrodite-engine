@@ -77,6 +77,9 @@ class Sampler(nn.Module):
         # Apply samplers in priority order
         logits = self._execute_samplers_in_order(logits, sampling_metadata)
 
+        for processor in sampling_metadata.logitsprocs.argmax_invariant:
+            logits = processor.apply(logits)
+
         # Get the process logprobs or logits.
         if num_logprobs is not None:
             if self.logprobs_mode == "processed_logprobs":
@@ -239,15 +242,6 @@ class Sampler(nn.Module):
                     f"{sampling_metadata.top_a}")
                 logits = self.sampling_ops.apply_top_a(
                     logits, sampling_metadata)
-
-            elif sampler_id == SamplerID.MIN_P and \
-                sampling_metadata.min_p is not None:
-                logger.debug(f"Applying Min-p with min_p: "
-                    f"{sampling_metadata.min_p}")
-                # Apply logits processors that only apply to random sampling
-                # (argmax invariant)
-                for processor in sampling_metadata.logitsprocs.argmax_invariant:
-                    logits = processor.apply(logits)
 
             elif sampler_id == SamplerID.TFS and \
                 sampling_metadata.tfs is not None:

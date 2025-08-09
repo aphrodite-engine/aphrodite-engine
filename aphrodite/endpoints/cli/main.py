@@ -35,7 +35,7 @@ def main():
         '-v',
         '--version',
         action='version',
-        version=importlib.metadata.version('aphrodite'),
+        version=importlib.metadata.version('aphrodite-engine'),
     )
     subparsers = parser.add_subparsers(required=False, dest="subparser")
     cmds = {}

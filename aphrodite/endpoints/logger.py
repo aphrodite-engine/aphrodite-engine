@@ -6,7 +6,6 @@ from loguru import logger
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.lora.request import LoRARequest
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 
 
 class RequestLogger:
@@ -24,7 +23,6 @@ class RequestLogger:
         prompt_embeds: Optional[torch.Tensor],
         params: Optional[Union[SamplingParams, PoolingParams]],
         lora_request: Optional[LoRARequest],
-        prompt_adapter_request: Optional[PromptAdapterRequest],
     ) -> None:
         max_log_len = self.max_log_len
         if max_log_len is not None:
@@ -39,6 +37,5 @@ class RequestLogger:
                     f"params: {params}, "
                     f"prompt_token_ids: {prompt_token_ids}, "
                     f"lora_request: {lora_request}, "
-                    f"prompt_adapter_request: {prompt_adapter_request}, "
                     "prompt_embeds shape: {}",
                     prompt_embeds.shape if prompt_embeds is not None else None)

@@ -269,8 +269,8 @@ class Worker(WorkerBase):
             GiB(free_gpu_memory - unrequested_memory),
         )
         logger.debug(profile_result)
-        logger.info("Available KV cache memory: {:.2f} GiB",
-                    GiB(available_kv_cache_memory))
+        logger.debug("Available KV cache memory: {:.2f} GiB",
+                     GiB(available_kv_cache_memory))
         gc.collect()
 
         return int(available_kv_cache_memory)

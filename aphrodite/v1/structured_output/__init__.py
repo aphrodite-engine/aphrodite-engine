@@ -1,46 +1,42 @@
-# SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from __future__ import annotations
 
 import multiprocessing
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Optional
 
-from vllm.config import VllmConfig
-from vllm.logger import init_logger
-from vllm.reasoning import ReasoningParserManager
-from vllm.transformers_utils.tokenizer_group import init_tokenizer_from_configs
-from vllm.utils import LazyLoader
-from vllm.v1.structured_output.backend_guidance import GuidanceBackend
-from vllm.v1.structured_output.backend_types import (StructuredOutputBackend,
-                                                     StructuredOutputGrammar)
-from vllm.v1.structured_output.backend_xgrammar import XgrammarBackend
+from aphrodite.common.config import AphroditeConfig
+from aphrodite.reasoning import ReasoningParserManager
+from aphrodite.transformers_utils.tokenizer_group import (
+    init_tokenizer_from_configs)
+from aphrodite.utils import LazyLoader
+from aphrodite.v1.structured_output.backend_guidance import GuidanceBackend
+from aphrodite.v1.structured_output.backend_types import (
+    StructuredOutputBackend, StructuredOutputGrammar)
+from aphrodite.v1.structured_output.backend_xgrammar import XgrammarBackend
 
 if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
     import torch
 
-    from vllm.reasoning import ReasoningParser
-    from vllm.v1.request import Request
+    from aphrodite.reasoning import ReasoningParser
+    from aphrodite.v1.request import Request
 else:
     torch = LazyLoader("torch", globals(), "torch")
-
-logger = init_logger(__name__)
 
 
 class StructuredOutputManager:
     """Engine-level manager for structured output requests."""
 
-    def __init__(self, vllm_config: VllmConfig):
+    def __init__(self, aphrodite_config: AphroditeConfig):
         self.backend: Optional[StructuredOutputBackend] = None
         self.reasoner: Optional[ReasoningParser] = None
-        self.vllm_config = vllm_config
+        self.aphrodite_config = aphrodite_config
 
         self._grammar_bitmask: Optional[torch.Tensor] = None
         self._full_mask = torch.tensor(-1, dtype=torch.int32)
 
-        max_batch_size = self.vllm_config.scheduler_config.max_num_seqs
+        max_batch_size = self.aphrodite_config.scheduler_config.max_num_seqs
         self.fill_bitmask_parallel_threshold = 128
         if self.fill_bitmask_parallel_threshold < max_batch_size:
             self.fill_bitmask_parallel_batch_size = 16
@@ -51,7 +47,7 @@ class StructuredOutputManager:
             self.executor_for_fillmask = ThreadPoolExecutor(
                 max_workers=max_workers)
 
-        if not self.vllm_config.model_config.skip_tokenizer_init:
+        if not self.aphrodite_config.model_config.skip_tokenizer_init:
             # The default max_workers if not specified is the number of
             # CPUs * 5, which is way too high since these tasks are CPU-bound,
             # not I/O bound. We also know we would never dominate CPU usage
@@ -60,12 +56,12 @@ class StructuredOutputManager:
             max_workers = max(1, (multiprocessing.cpu_count() + 1) // 2)
             self.executor = ThreadPoolExecutor(max_workers=max_workers)
             self.tokenizer = init_tokenizer_from_configs(
-                model_config=self.vllm_config.model_config,
-                scheduler_config=self.vllm_config.scheduler_config,
-                lora_config=self.vllm_config.lora_config,
+                model_config=self.aphrodite_config.model_config,
+                scheduler_config=self.aphrodite_config.scheduler_config,
+                lora_config=self.aphrodite_config.lora_config,
             ).get_lora_tokenizer(None)
             reasoning_backend = \
-                    self.vllm_config.decoding_config.reasoning_backend
+                    self.aphrodite_config.decoding_config.reasoning_backend
             if reasoning_backend:
                 reasoner_cls = ReasoningParserManager.get_reasoning_parser(
                     reasoning_backend)
@@ -86,25 +82,25 @@ class StructuredOutputManager:
         if self.backend is None:
             assert request.sampling_params is not None
             backend = request.sampling_params.guided_decoding.backend
-            vocab_size = self.vllm_config.model_config.get_vocab_size()
+            vocab_size = self.aphrodite_config.model_config.get_vocab_size()
             if backend == "xgrammar":
                 self.backend = XgrammarBackend(
-                    self.vllm_config,
+                    self.aphrodite_config,
                     tokenizer=self.tokenizer,
                     vocab_size=vocab_size,
                 )
             elif backend == "guidance":
                 self.backend = GuidanceBackend(
-                    self.vllm_config,
+                    self.aphrodite_config,
                     tokenizer=self.tokenizer,
                     vocab_size=vocab_size,
                 )
             elif backend == "outlines":
-                from vllm.v1.structured_output.backend_outlines import (
+                from aphrodite.v1.structured_output.backend_outlines import (
                     OutlinesBackend)
 
                 self.backend = OutlinesBackend(
-                    self.vllm_config,
+                    self.aphrodite_config,
                     tokenizer=self.tokenizer,
                     vocab_size=vocab_size,
                 )
@@ -162,13 +158,13 @@ class StructuredOutputManager:
             return None
 
         max_num_spec_tokens = 0
-        if self.vllm_config.speculative_config is not None:
+        if self.aphrodite_config.speculative_config is not None:
             max_num_spec_tokens = \
-                self.vllm_config.speculative_config.num_speculative_tokens
+                self.aphrodite_config.speculative_config.num_speculative_tokens
 
         if self._grammar_bitmask is None:
             assert self.backend is not None
-            max_batch_size = self.vllm_config.scheduler_config.max_num_seqs
+            max_batch_size = self.aphrodite_config.scheduler_config.max_num_seqs
 
             # Allocate a bitmask for each token needing to be checked:
             # one for each speculative position, and one more for the

@@ -15,7 +15,7 @@ from aphrodite.common.config import (AphroditeConfig,
                                      get_current_aphrodite_config)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase_V1)
-from aphrodite.utils.log import log_once
+from aphrodite.common.logger import log_once
 from aphrodite.v1.outputs import KVConnectorOutput, ModelRunnerOutput
 
 

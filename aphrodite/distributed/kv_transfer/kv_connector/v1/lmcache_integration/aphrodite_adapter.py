@@ -42,8 +42,6 @@ from .utils import ENGINE_NAME, lmcache_get_config
 # FIXME(Jiayi): temporarily comment this out
 # from lmcache_aphrodite.blend_adapter import remove_request_id_indices
 
-logger = init_logger(__name__)
-
 LMCACHE_CUDA_STREAM = torch.cuda.Stream()
 
 SUPPORTED_BACKEND_METADATA = (
@@ -980,8 +978,6 @@ def build_partial_prefill_input(
         lora_mapping=model_input.lora_mapping,
         lora_requests=model_input.lora_requests,
         attn_metadata=rebuilt_attn_metadata,
-        prompt_adapter_mapping=model_input.prompt_adapter_mapping,
-        prompt_adapter_requests=model_input.prompt_adapter_requests,
         multi_modal_kwargs=model_input.multi_modal_kwargs,
         request_ids_to_seq_ids=model_input.request_ids_to_seq_ids,
         finished_requests_ids=model_input.finished_requests_ids,

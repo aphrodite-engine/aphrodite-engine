@@ -205,7 +205,7 @@ class MultiConnector(KVConnectorBase_V1):
         """
         Get the required KV cache layout for this connector.
         Args:
-            aphrodite_config (AphroditeConfig): the vllm config.
+            aphrodite_config (AphroditeConfig): the aphrodite config.
 
         Returns:
             str: the required KV cache layout. e.g. HND, or NHD.

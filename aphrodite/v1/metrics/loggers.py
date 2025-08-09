@@ -739,8 +739,8 @@ class StatLoggerManager:
         if custom_stat_loggers is not None:
             factories = custom_stat_loggers
         else:
-            factories = []
-            if logger.isEnabledFor(logging.INFO):
+            factories = [PrometheusStatLogger]
+            if logging.getLogger().isEnabledFor(logging.INFO):
                 factories.append(LoggingStatLogger)
 
         # engine_idx: StatLogger

@@ -448,7 +448,7 @@ class P2pNcclEngine:
         if response != b"0":
             logger.error(
                 "🔴Send Tensor, Peer Out Of Memory/Threshold, {} 👉 {}, "
-                "MyRank:{}, data:{}, tensor:{}, size:%fGB, response:{}",
+                "MyRank:{}, data:{}, tensor:{}, size:{:.2f}GB, response:{}",
                 self.zmq_address, item.remote_address, rank, data,
                 tensor.shape,
                 tensor.element_size() * tensor.numel() / 1024**3,

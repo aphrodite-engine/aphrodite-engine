@@ -305,7 +305,7 @@ def download_weights_from_hf(
         )
         time_taken = time.perf_counter() - start_time
         if time_taken > 0.5:
-            logger.info("Time spent downloading weights for {}: %.6f seconds",
+            logger.info("Time spent downloading weights for {}: {:.2f} seconds",
                         model_name_or_path, time_taken)
     return hf_folder
 
@@ -463,7 +463,7 @@ def safetensors_weights_iterator(
     for st_file in tqdm(
             hf_weights_files,
             desc="Loading safetensors checkpoint shards",
-            disable=not enable_tqdm(use_tqdm_on_load),
+            disable=True,
             bar_format=_BAR_FORMAT,
     ):
         with safe_open(st_file, framework="pt") as f:

@@ -31,20 +31,19 @@ from aphrodite.common.config import (AphroditeConfig, BlockSize, CacheConfig,
                                      ModelConfig, ModelDType, ModelImpl,
                                      MultiModalConfig, ObservabilityConfig,
                                      ParallelConfig, PoolerConfig,
-                                     PrefixCachingHashAlgo,
-                                     PromptAdapterConfig, RunnerOption,
+                                     PrefixCachingHashAlgo, RunnerOption,
                                      SchedulerConfig, SchedulerPolicy,
                                      SpeculativeConfig, TaskOption,
                                      TokenizerMode, get_attr_docs, get_field)
 from aphrodite.common.test_utils import MODEL_WEIGHTS_S3_BUCKET, MODELS_ON_S3
-from aphrodite.utils import (STR_DUAL_CHUNK_FLASH_ATTN_VAL,
-                                    FlexibleArgumentParser, GiB_bytes, get_ip,
-                                    is_in_ray_actor)
 from aphrodite.platforms import CpuArchEnum, current_platform
 from aphrodite.plugins import load_general_plugins
 from aphrodite.ray.lazy_utils import is_ray_initialized
 from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.transformers_utils.utils import check_gguf_file
+from aphrodite.utils import (STR_DUAL_CHUNK_FLASH_ATTN_VAL,
+                             FlexibleArgumentParser, GiB_bytes, get_ip,
+                             is_in_ray_actor)
 
 # yapf: enable
 
@@ -441,8 +440,6 @@ class EngineArgs:
         ParallelConfig.enable_multimodal_encoder_data_parallel
 
     async_scheduling: bool = SchedulerConfig.async_scheduling
-    # DEPRECATED
-    enable_prompt_adapter: bool = False
 
     kv_sharing_fast_prefill: bool = \
         CacheConfig.kv_sharing_fast_prefill
@@ -757,23 +754,6 @@ class EngineArgs:
                                 **lora_kwargs["fully_sharded_loras"])
         lora_group.add_argument("--default-mm-loras",
                                 **lora_kwargs["default_mm_loras"])
-
-        # PromptAdapter related configs
-        prompt_adapter_kwargs = get_kwargs(PromptAdapterConfig)
-        prompt_adapter_group = parser.add_argument_group(
-            title="PromptAdapterConfig",
-            description=PromptAdapterConfig.__doc__,
-        )
-        prompt_adapter_group.add_argument(
-            "--enable-prompt-adapter",
-            action=argparse.BooleanOptionalAction,
-            help="If True, enable handling of PromptAdapters.")
-        prompt_adapter_group.add_argument(
-            "--max-prompt-adapters",
-            **prompt_adapter_kwargs["max_prompt_adapters"])
-        prompt_adapter_group.add_argument(
-            "--max-prompt-adapter-token",
-            **prompt_adapter_kwargs["max_prompt_adapter_token"])
 
         # Device arguments
         device_kwargs = get_kwargs(DeviceConfig)
@@ -1366,11 +1346,6 @@ class EngineArgs:
 
         load_config = self.create_load_config()
 
-        prompt_adapter_config = PromptAdapterConfig(
-            max_prompt_adapters=self.max_prompt_adapters,
-            max_prompt_adapter_token=self.max_prompt_adapter_token) \
-                                        if self.enable_prompt_adapter else None
-
         decoding_config = DecodingConfig(
             backend=self.guided_decoding_backend,
             disable_fallback=self.guided_decoding_disable_fallback,
@@ -1398,7 +1373,6 @@ class EngineArgs:
             load_config=load_config,
             decoding_config=decoding_config,
             observability_config=observability_config,
-            prompt_adapter_config=prompt_adapter_config,
             compilation_config=self.compilation_config,
             kv_transfer_config=self.kv_transfer_config,
             kv_events_config=self.kv_events_config,
@@ -1465,12 +1439,6 @@ class EngineArgs:
                 _raise_or_fallback(feature_name="--kv-cache-dtype",
                                    recommend_to_remove=False)
                 return False
-
-        # No Prompt Adapter so far.
-        if self.enable_prompt_adapter:
-            _raise_or_fallback(feature_name="--enable-prompt-adapter",
-                               recommend_to_remove=False)
-            return False
 
         # No text embedding inputs so far.
         if self.enable_prompt_embeds:
@@ -1598,7 +1566,6 @@ class EngineArgs:
 
                 if (is_gpu and not use_sliding_window and not use_spec_decode
                         and not self.enable_lora
-                        and not self.enable_prompt_adapter
                         and model_config.runner_type != "pooling"):
                     self.enable_chunked_prefill = True
                     logger.warning(

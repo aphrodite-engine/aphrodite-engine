@@ -2,7 +2,7 @@ from loguru import logger
 
 from aphrodite.platforms import current_platform
 from aphrodite.utils import resolve_obj_by_qualname
-from aphrodite.utils.log import log_once
+from aphrodite.common.logger import log_once
 
 from .punica_base import PunicaWrapperBase
 

@@ -193,6 +193,6 @@ class ReasoningParserManager:
         try:
             import_from_path(module_name, plugin_path)
         except Exception:
-            logger.exception("Failed to load module '%s' from %s.",
+            logger.exception("Failed to load module '{}' from {}.",
                              module_name, plugin_path)
             return

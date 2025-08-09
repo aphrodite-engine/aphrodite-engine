@@ -155,6 +155,7 @@ if TYPE_CHECKING:
     APHRODITE_KOBOLD_API: bool = False
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
+    APHRODITE_NO_DEPRECATION_WARNING: bool = False
 
 
 def get_default_cache_root():
@@ -1093,6 +1094,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, aphrodite will use custom sampling kernels
     "APHRODITE_USE_SAMPLING_KERNELS":
     lambda: bool(int(os.getenv("APHRODITE_USE_SAMPLING_KERNELS", "0"))),
+
+    # If set, aphrodite will not show deprecation warnings
+    "APHRODITE_NO_DEPRECATION_WARNING":
+    lambda: bool(int(os.getenv("APHRODITE_NO_DEPRECATION_WARNING", "0"))),
 }
 
 # --8<-- [end:env-vars-definition]

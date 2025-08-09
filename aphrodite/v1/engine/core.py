@@ -1,3 +1,4 @@
+import logging
 import os
 import queue
 import signal
@@ -67,8 +68,8 @@ class EngineCore:
         load_general_plugins()
 
         self.aphrodite_config = aphrodite_config
-        logger.info("Initializing a V1 LLM engine (v{}) with config: {}",
-                    APHRODITE_VERSION, aphrodite_config)
+        logger.debug("Initializing a V1 LLM engine (v{}) with config: {}",
+                     APHRODITE_VERSION, aphrodite_config)
 
         self.log_stats = log_stats
 
@@ -706,7 +707,7 @@ class EngineCoreProc(EngineCore):
 
         waited = False
         while not self.engines_running and not self.scheduler.has_requests():
-            if logger.isEnabledFor(DEBUG) and self.input_queue.empty():
+            if logging.getLogger().isEnabledFor(logging.DEBUG) and self.input_queue.empty():
                 logger.debug("EngineCore waiting for work.")
                 waited = True
             req = self.input_queue.get()

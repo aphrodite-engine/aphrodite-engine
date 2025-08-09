@@ -32,7 +32,6 @@ class CustomOp(nn.Module):
                          str(op_cls_to_instantiate))
         return super().__new__(op_cls_to_instantiate)
 
-
     def __init__(self):
         super().__init__()
         self._forward_method = self.dispatch_forward()
@@ -81,7 +80,7 @@ class CustomOp(nn.Module):
         return self.forward_native(*args, **kwargs)
 
     def dispatch_forward(self):
-        # NOTE: Here we assume that Aphrodite was built for only one
+        # NOTE: Here we assume that aphrodite was built for only one
         # specific backend. Currently, we do not support dynamic dispatching.
         compilation_config = get_cached_compilation_config()
         enabled = self.enabled()
@@ -162,7 +161,6 @@ class CustomOp(nn.Module):
             return op_cls
 
         return decorator
-
 
     # Decorator to register out-of-tree(oot) custom ops.
     # For OOT custom ops:

@@ -11,6 +11,7 @@ import torch
 from aphrodite.attention.layer import Attention
 from aphrodite.common.config import (AphroditeConfig,
                                      get_layers_from_aphrodite_config)
+from aphrodite.common.logger import log_once
 from aphrodite.utils import cdiv
 
 if TYPE_CHECKING:
@@ -259,8 +260,8 @@ def get_kv_cache_layout():
         else:
             cache_layout = get_kv_connector_cache_layout()
     else:
-        logger.info_once("`APHRODITE_KV_CACHE_LAYOUT` environment variable " \
-        "detected. Setting KV cache layout to {}.", cache_layout)
+        log_once("INFO", "`APHRODITE_KV_CACHE_LAYOUT` environment variable "
+                 "detected. Setting KV cache layout to {}.", cache_layout)
     if _KV_CACHE_LAYOUT_OVERRIDE is not None:
         cache_layout = _KV_CACHE_LAYOUT_OVERRIDE
     return cache_layout

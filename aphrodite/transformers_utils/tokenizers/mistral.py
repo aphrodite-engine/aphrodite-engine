@@ -72,7 +72,7 @@ def truncate_tool_call_ids(request: "ChatCompletionRequest"):
             for tool_call in tool_calls:
                 if len(tool_call["id"]) > 9:
                     logger.warning(
-                        "Truncating tool call ID: %s to %s",
+                        "Truncating tool call ID: {} to {}",
                         tool_call["id"],
                         tool_call["id"][-9:],
                     )
@@ -86,7 +86,7 @@ def truncate_tool_call_ids(request: "ChatCompletionRequest"):
 
                 if len(tool_call_id) > 9:
                     logger.warning(
-                        "Truncating tool_call_id: %s to %s",
+                        "Truncating tool_call_id: {} to {}",
                         tool_call_id,
                         tool_call_id[-9:],
                     )
@@ -425,7 +425,7 @@ class MistralTokenizer(TokenizerBase):
                             self.tokenizer._tekken_token2id_nospecial[t_bytes]
                     except KeyError:
                         logger.warning(
-                            "Failed to convert token %s to id,"
+                            "Failed to convert token {} to id,"
                             " replacing with <unk>", t_bytes)
                         return self.tokenizer.unk_id
 

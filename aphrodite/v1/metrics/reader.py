@@ -29,7 +29,7 @@ class Vector(Metric):
     """An ordered array of integer counters.
 
     This type - which doesn't exist in Prometheus - models one very
-    specific metric, vllm:spec_decode_num_accepted_tokens_per_pos.
+    specific metric, aphrodite:spec_decode_num_accepted_tokens_per_pos.
     """
     values: list[int]
 
@@ -78,7 +78,7 @@ def get_metrics_snapshot() -> list[Metric]:
     """
     collected: list[Metric] = []
     for metric in REGISTRY.collect():
-        if not metric.name.startswith("vllm:"):
+        if not metric.name.startswith("aphrodite:"):
             continue
         if metric.type == "gauge":
             samples = _get_samples(metric)
@@ -87,9 +87,9 @@ def get_metrics_snapshot() -> list[Metric]:
                     Gauge(name=metric.name, labels=s.labels, value=s.value))
         elif metric.type == "counter":
             samples = _get_samples(metric, "_total")
-            if metric.name == "vllm:spec_decode_num_accepted_tokens_per_pos":
+            if metric.name == "aphrodite:spec_decode_num_accepted_tokens_per_pos":
                 #
-                # Ugly vllm:num_accepted_tokens_per_pos special case.
+                # Ugly aphrodite:num_accepted_tokens_per_pos special case.
                 #
                 # This metric is a vector of counters - for each spec
                 # decoding token position, we observe the number of

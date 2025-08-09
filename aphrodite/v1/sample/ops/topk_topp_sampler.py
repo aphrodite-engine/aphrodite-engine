@@ -252,7 +252,7 @@ def apply_top_k_only(
 
 
 def random_sample(
-    logits: torch.Tensor,
+    probs: torch.Tensor,
     generators: dict[int, torch.Generator],
 ) -> torch.Tensor:
     """Randomly sample from the probabilities.
@@ -276,7 +276,7 @@ def random_sample(
 
 
 def flashinfer_sample(
-    probs: torch.Tensor,
+    logits: torch.Tensor,
     k: Optional[torch.Tensor],
     p: Optional[torch.Tensor],
     generators: dict[int, torch.Generator],

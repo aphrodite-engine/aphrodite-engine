@@ -46,7 +46,6 @@ from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.processing.scheduler import SchedulerOutputs
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.transformers_utils.tokenizer_group import (
     init_tokenizer_from_configs)
 
@@ -454,7 +453,6 @@ class MQAphroditeEngineClient(EngineClient):
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
     ) -> AsyncGenerator[RequestOutput, None]:
         """Generate outputs for a request.
@@ -470,8 +468,6 @@ class MQAphroditeEngineClient(EngineClient):
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
             trace_headers: OpenTelemetry trace headers.
-            prompt_adapter_request: Prompt Adapter request to use
-                                            for generation, if any.
             priority: Priority of the request (lower means earlier handling).
                 Any priority other than 0 will lead to an error if the
                 scheduling policy is not "priority".
@@ -480,7 +476,7 @@ class MQAphroditeEngineClient(EngineClient):
             AsyncGenerator[RequestOutput, None],
             self._process_request(prompt, sampling_params, request_id,
                                   lora_request, trace_headers,
-                                  prompt_adapter_request, priority))
+                                  priority))
 
     def encode(
         self,
@@ -526,7 +522,6 @@ class MQAphroditeEngineClient(EngineClient):
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
     ) -> Union[AsyncGenerator[RequestOutput, None], AsyncGenerator[
             PoolingRequestOutput, None]]:
@@ -564,7 +559,6 @@ class MQAphroditeEngineClient(EngineClient):
                     request_id=request_id,
                     lora_request=lora_request,
                     trace_headers=trace_headers,
-                    prompt_adapter_request=prompt_adapter_request,
                     priority=priority,
                 ))
 

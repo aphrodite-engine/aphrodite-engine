@@ -520,7 +520,7 @@ class NixlConnectorWorker:
         self._handshake_initiation_executor = ThreadPoolExecutor(
             # NIXL is not guaranteed to be thread-safe, limit 1 worker.
             max_workers=1,
-            thread_name_prefix="vllm-nixl-handshake-initiator")
+            thread_name_prefix="aphrodite-nixl-handshake-initiator")
         self._ready_requests = queue.Queue[tuple[ReqId, ReqMeta]]()
         self._handshake_futures: dict[EngineId, Future[dict[int, str]]] = {}
         # Protects _handshake_futures and _remote_agents.
@@ -997,7 +997,7 @@ class NixlConnectorWorker:
         local_block_ids = meta.local_block_ids
         self.copy_blocks(self.host_xfer_buffers, self.device_kv_caches,
                          local_block_ids, local_block_ids, "h2d")
-        if logger.isEnabledFor(logging.DEBUG):
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
             logger.debug(
                 "synced recved kv of request[{}] to device kv buffer,"
                 "local_block_ids: {}. ", req_id,
@@ -1009,7 +1009,7 @@ class NixlConnectorWorker:
         assert self.copy_blocks is not None
 
         for req_id, meta in metadata.reqs_to_save.items():
-            if logger.isEnabledFor(logging.DEBUG):
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
                 logger.debug(
                     "save_load_kv for request[{}] to host xfer buffer."
                     "local_block_ids: {}. ", req_id,

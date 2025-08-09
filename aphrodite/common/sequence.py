@@ -186,7 +186,7 @@ class SequenceData(msgspec.Struct,
     def from_prompt_token_counts(
             *token_counts: tuple[int, int]) -> "SequenceData":
         """
-        Construct a [`SequenceData`][aphrodite.sequence.SequenceData] instance
+        Construct a [`SequenceData`][aphrodite.common.sequence.SequenceData] instance
         by concatenating prompt token sequences.
 
         Each tuple represents one token sequence, expressed in the form
@@ -210,7 +210,7 @@ class SequenceData(msgspec.Struct,
         prompt_embeds: Optional[torch.Tensor] = None,
     ) -> "SequenceData":
         """
-        Construct a [`SequenceData`][aphrodite.sequence.SequenceData] instance
+        Construct a [`SequenceData`][aphrodite.common.sequence.SequenceData] instance
         from prompt and output token sequences.
         """
         prompt_token_ids_arr = array(APHRODITE_TOKEN_ID_ARRAY_TYPE,

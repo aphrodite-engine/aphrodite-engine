@@ -9,7 +9,7 @@ from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.linear import LinearBase
 from aphrodite.platforms import current_platform
 from aphrodite.scalar_type import ScalarType, scalar_types
-from aphrodite.utils.log import log_once
+from aphrodite.common.logger import log_once
 
 from .quant_utils import pack_cols, unpack_cols
 

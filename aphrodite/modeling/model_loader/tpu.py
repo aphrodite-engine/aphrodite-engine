@@ -45,7 +45,7 @@ class TPUModelLoader(DefaultModelLoader):
                 loaded_weights = model.load_weights(all_weights)
                 self.counter_after_loading_weights = time.perf_counter()
                 logger.info(
-                    "Loading weights took %.2f seconds",
+                    "Loading weights took {:.2f} seconds",
                     self.counter_after_loading_weights -
                     self.counter_before_loading_weights)
                 # We only enable strict check for non-quantized models
@@ -67,7 +67,7 @@ class TPUModelLoader(DefaultModelLoader):
         model = model.to('xla')
         shard_model(model, mesh)
         counter_after_partition = time.perf_counter()
-        logger.info("Partition model took %.2f seconds",
+        logger.info("Partition model took {:.2f} seconds",
                     counter_after_partition - counter_before_partition)
 
         # Ensure the model is properly loaded.
