@@ -1,15 +1,14 @@
 from array import array
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import torch
 
 from aphrodite.common.sampling_params import SamplingParams, SamplingType
 from aphrodite.common.sequence import SequenceData, SequenceGroupMetadata
-from aphrodite.utils import (PyObjectCache, async_tensor_h2d,
-                                    is_pin_memory_available,
-                                    make_tensor_with_pad)
 from aphrodite.constants import APHRODITE_TOKEN_ID_ARRAY_TYPE
+from aphrodite.utils import (PyObjectCache, async_tensor_h2d,
+                             is_pin_memory_available, make_tensor_with_pad)
 
 _SAMPLING_EPS = 1e-5
 
@@ -23,10 +22,10 @@ class SequenceGroupToSample:
     # |-------------------- seq_len ----------------------|
     #                                   |-- query_len ---|
     # Sequence ids for the sequence group in a previous step.
-    seq_ids: List[int]
+    seq_ids: list[int]
     sampling_params: SamplingParams
     # seq_id -> sequence data.
-    seq_data: Dict[int, SequenceData]
+    seq_data: dict[int, SequenceData]
     # The length of the sequence (all tokens seen in the past + new token to
     # compute attention) of the sequence group. None if it is in a decode
     # stage.
@@ -42,9 +41,9 @@ class SequenceGroupToSample:
     is_prompt: bool
     # Query token indices from logits. to compute prompt logprob. Empty if
     # prompt logprob is not required.
-    prompt_logprob_indices: List[int]
+    prompt_logprob_indices: list[int]
     # Sample token indices from logits. Empty if sampling is not required.
-    sample_indices: List[int]
+    sample_indices: list[int]
 
     @property
     def do_sample(self):
@@ -76,7 +75,7 @@ class SamplingMetadataCache:
     """
 
     def __init__(self):
-        self._seq_group_to_sample_cache: Dict[int, PyObjectCache] = {}
+        self._seq_group_to_sample_cache: dict[int, PyObjectCache] = {}
 
     def get_cached_seq_group_to_sample(self, num_seqs):
         if num_seqs not in self._seq_group_to_sample_cache:
@@ -105,7 +104,7 @@ class SamplingMetadata:
     ```
 
     Args:
-        seq_groups: List of batched sequence groups.
+        seq_groups: list of batched sequence groups.
         selected_token_indices: (num_query_tokens_to_logprob). Indices to find
             logits from the initial model output hidden states.
         categorized_sample_indices: SamplingType -> token indices to sample.
@@ -127,9 +126,9 @@ class SamplingMetadata:
 
     def __init__(
         self,
-        seq_groups: List[SequenceGroupToSample],
+        seq_groups: list[SequenceGroupToSample],
         selected_token_indices: torch.Tensor,
-        categorized_sample_indices: Dict[SamplingType, torch.Tensor],
+        categorized_sample_indices: dict[SamplingType, torch.Tensor],
         num_prompts: int,
         skip_sampler_cpu_output: bool = False,
         reuse_sampling_tensors: bool = False,
@@ -143,12 +142,12 @@ class SamplingMetadata:
 
     @staticmethod
     def prepare(
-        seq_group_metadata_list: List[SequenceGroupMetadata],
-        seq_lens: List[int],
-        query_lens: List[int],
+        seq_group_metadata_list: list[SequenceGroupMetadata],
+        seq_lens: list[int],
+        query_lens: list[int],
         device: str,
         pin_memory: bool,
-        generators: Optional[Dict[str, torch.Generator]] = None,
+        generators: Optional[dict[str, torch.Generator]] = None,
         cache: Optional[SamplingMetadataCache] = None
     ) -> "SamplingMetadata":
         (
@@ -189,14 +188,14 @@ class SamplingMetadata:
 
 
 def _prepare_seq_groups(
-    seq_group_metadata_list: List[SequenceGroupMetadata],
-    seq_lens: List[int],
-    query_lens: List[int],
+    seq_group_metadata_list: list[SequenceGroupMetadata],
+    seq_lens: list[int],
+    query_lens: list[int],
     device: str,
-    generators: Optional[Dict[str, torch.Generator]] = None,
+    generators: Optional[dict[str, torch.Generator]] = None,
     cache: Optional[SamplingMetadataCache] = None,
-) -> Tuple[List[SequenceGroupToSample], List[int], Dict[SamplingType,
-                                                        List[int]], int, ]:
+) -> tuple[list[SequenceGroupToSample], list[int], dict[SamplingType,
+                                                        list[int]], int, ]:
     """Prepare sequence groups and indices for sampling.
 
     Args:
@@ -217,17 +216,17 @@ def _prepare_seq_groups(
         num_prompts: Total number of prompts from `seq_group_metadata_list`.
     """
     # Batched sequence groups for the current model forward stsep.
-    seq_groups: List[SequenceGroupToSample] = []
+    seq_groups: list[SequenceGroupToSample] = []
     # A list of token indices to sample/compute logprob. It is used to
     # prune the outcome logits from the model for the performance.
-    selected_token_indices: List[int] = []
+    selected_token_indices: list[int] = []
     # Used for selected_token_indices.
     model_output_idx = 0
 
     # Sampling type -> (
     # indices to sample/prompt logprob within pruned output logits,
     # indices to sample within pruned logits)
-    categorized_sample_indices: Dict[SamplingType, List[int]] = {
+    categorized_sample_indices: dict[SamplingType, list[int]] = {
         t: []
         for t in SamplingType
     }
@@ -254,9 +253,9 @@ def _prepare_seq_groups(
         # If the current seq group is in decode stage, it is None.
         seq_len: Optional[int] = None
         query_len: Optional[int] = None
-        prompt_logprob_indices: List[int] = (sample_obj.prompt_logprob_indices
+        prompt_logprob_indices: list[int] = (sample_obj.prompt_logprob_indices
                                              if cache is not None else [])
-        sample_indices: List[int] = (sample_obj.sample_indices
+        sample_indices: list[int] = (sample_obj.sample_indices
                                      if cache is not None else [])
         do_sample = seq_group_metadata.do_sample
 
@@ -400,41 +399,41 @@ class SamplingTensors:
         vocab_size: int,
         device: torch.device,
         dtype: torch.dtype,
-    ) -> Tuple["SamplingTensors", bool, bool, bool, bool, bool, bool, bool,
+    ) -> tuple["SamplingTensors", bool, bool, bool, bool, bool, bool, bool,
                bool, bool, bool, bool, bool, bool, bool, bool, bool]:
-        prompt_tokens: List[array] = []
-        output_tokens: List[array] = []
-        top_ks: List[int] = []
-        temperatures: List[float] = []
-        dynatemp_mins: List[float] = []
-        dynatemp_maxs: List[float] = []
-        dynatemp_exps: List[float] = []
-        temperature_lasts: List[bool] = []
-        top_ps: List[float] = []
-        top_as: List[float] = []
-        min_ps: List[float] = []
-        presence_penalties: List[float] = []
-        frequency_penalties: List[float] = []
-        repetition_penalties: List[float] = []
-        no_repeat_ngram_sizes: List[int] = []
-        tfss: List[float] = []
-        eta_cutoffs: List[float] = []
-        epsilon_cutoffs: List[float] = []
-        typical_ps: List[float] = []
-        smoothing_factors: List[float] = []
-        smoothing_curves: List[float] = []
-        xtc_thresholds: List[float] = []
-        xtc_probabilities: List[float] = []
-        nsigmas: List[float] = []
-        dry_multipliers: List[float] = []
-        dry_bases: List[float] = []
-        dry_allowed_lengths: List[int] = []
-        dry_sequence_breaker_ids: List[List[int]] = []
-        dry_ranges: List[int] = []
-        dry_max_ngram: List[int] = []
-        dry_max_occurrences: List[int] = []
-        dry_early_exit_match_len: List[int] = []
-        skews: List[float] = []
+        prompt_tokens: list[array] = []
+        output_tokens: list[array] = []
+        top_ks: list[int] = []
+        temperatures: list[float] = []
+        dynatemp_mins: list[float] = []
+        dynatemp_maxs: list[float] = []
+        dynatemp_exps: list[float] = []
+        temperature_lasts: list[bool] = []
+        top_ps: list[float] = []
+        top_as: list[float] = []
+        min_ps: list[float] = []
+        presence_penalties: list[float] = []
+        frequency_penalties: list[float] = []
+        repetition_penalties: list[float] = []
+        no_repeat_ngram_sizes: list[int] = []
+        tfss: list[float] = []
+        eta_cutoffs: list[float] = []
+        epsilon_cutoffs: list[float] = []
+        typical_ps: list[float] = []
+        smoothing_factors: list[float] = []
+        smoothing_curves: list[float] = []
+        xtc_thresholds: list[float] = []
+        xtc_probabilities: list[float] = []
+        nsigmas: list[float] = []
+        dry_multipliers: list[float] = []
+        dry_bases: list[float] = []
+        dry_allowed_lengths: list[int] = []
+        dry_sequence_breaker_ids: list[list[int]] = []
+        dry_ranges: list[int] = []
+        dry_max_ngram: list[int] = []
+        dry_max_occurrences: list[int] = []
+        dry_early_exit_match_len: list[int] = []
+        skews: list[float] = []
 
         do_penalties = False
         do_no_repeat_ngrams = False
@@ -460,7 +459,7 @@ class SamplingTensors:
 
             # k should not be greater than the vocab size.
             top_k = min(params.top_k, vocab_size)
-            top_k = vocab_size if top_k == -1 else top_k
+            top_k = vocab_size if top_k < 1 else top_k
 
             temperature = params.temperature
             if temperature < _SAMPLING_EPS:
@@ -615,39 +614,39 @@ class SamplingTensors:
     @classmethod
     def from_lists(
         cls,
-        temperatures: List[float],
-        dynatemp_mins: List[float],
-        dynatemp_maxs: List[float],
-        dynatemp_exps: List[float],
-        temperature_lasts: List[bool],
-        top_ps: List[float],
-        top_ks: List[int],
-        top_as: List[float],
-        min_ps: List[float],
-        presence_penalties: List[float],
-        frequency_penalties: List[float],
-        repetition_penalties: List[float],
-        no_repeat_ngram_sizes: List[int],
-        tfss: List[float],
-        eta_cutoffs: List[float],
-        epsilon_cutoffs: List[float],
-        typical_ps: List[float],
-        smoothing_factors: List[float],
-        smoothing_curves: List[float],
-        xtc_thresholds: List[float],
-        xtc_probabilities: List[float],
-        nsigmas: List[float],
-        dry_multipliers: List[float],
-        dry_bases: List[float],
-        dry_allowed_lengths: List[int],
-        dry_sequence_breaker_ids: List[List[int]],
-        dry_ranges: List[int],
-        dry_max_ngram: List[int],
-        dry_max_occurrences: List[int],
-        dry_early_exit_match_len: List[int],
-        skews: List[float],
-        prompt_tokens: List[array],
-        output_tokens: List[array],
+        temperatures: list[float],
+        dynatemp_mins: list[float],
+        dynatemp_maxs: list[float],
+        dynatemp_exps: list[float],
+        temperature_lasts: list[bool],
+        top_ps: list[float],
+        top_ks: list[int],
+        top_as: list[float],
+        min_ps: list[float],
+        presence_penalties: list[float],
+        frequency_penalties: list[float],
+        repetition_penalties: list[float],
+        no_repeat_ngram_sizes: list[int],
+        tfss: list[float],
+        eta_cutoffs: list[float],
+        epsilon_cutoffs: list[float],
+        typical_ps: list[float],
+        smoothing_factors: list[float],
+        smoothing_curves: list[float],
+        xtc_thresholds: list[float],
+        xtc_probabilities: list[float],
+        nsigmas: list[float],
+        dry_multipliers: list[float],
+        dry_bases: list[float],
+        dry_allowed_lengths: list[int],
+        dry_sequence_breaker_ids: list[list[int]],
+        dry_ranges: list[int],
+        dry_max_ngram: list[int],
+        dry_max_occurrences: list[int],
+        dry_early_exit_match_len: list[int],
+        skews: list[float],
+        prompt_tokens: list[array],
+        output_tokens: list[array],
         vocab_size: int,
         device: torch.device,
         dtype: torch.dtype) -> "SamplingTensors":

@@ -1,5 +1,5 @@
-from typing import (TYPE_CHECKING, Optional, Protocol, Type, Union, overload,
-                    runtime_checkable)
+from typing import (TYPE_CHECKING, Any, ClassVar, Literal, Optional, Protocol,
+                    Union, overload, runtime_checkable)
 
 import torch
 import torch.nn as nn
@@ -10,13 +10,16 @@ from aphrodite.utils import supports_kw
 
 if TYPE_CHECKING:
     from aphrodite.common.config import AphroditeConfig
-    from aphrodite.modeling.layers.pooler import PoolerOutput
-    from aphrodite.modeling.pooling_metadata import PoolingMetadata
+    from aphrodite.modeling.layers.pooler import Pooler
     from aphrodite.modeling.sampling_metadata import SamplingMetadata
+else:
+    AphroditeConfig = Any
+    Pooler = Any
+    SamplingMetadata = Any
 
 # The type of hidden states
 # Currently, T = torch.Tensor for all models except for Medusa
-# which has T = List[torch.Tensor]
+# which has T = list[torch.Tensor]
 T = TypeVar("T", default=torch.Tensor)
 T_co = TypeVar("T_co", default=torch.Tensor, covariant=True)
 
@@ -31,7 +34,7 @@ class AphroditeModel(Protocol[T_co]):
 
     def __init__(
         self,
-        aphrodite_config: "AphroditeConfig",
+        aphrodite_config: AphroditeConfig,
         prefix: str = "",
     ) -> None:
         ...
@@ -44,12 +47,12 @@ class AphroditeModel(Protocol[T_co]):
         ...
 
 
-def _check_aphrodite_model_init(model: Union[Type[object], object]) -> bool:
+def _check_aphrodite_model_init(model: Union[type[object], object]) -> bool:
     model_init = model.__init__
     return supports_kw(model_init, "aphrodite_config")
 
 
-def _check_aphrodite_model_forward(model: Union[Type[object], object]) -> bool:
+def _check_aphrodite_model_forward(model: Union[type[object], object]) -> bool:
     model_forward = getattr(model, "forward", None)
     if not callable(model_forward):
         return False
@@ -61,8 +64,8 @@ def _check_aphrodite_model_forward(model: Union[Type[object], object]) -> bool:
     if missing_kws and (isinstance(model, type)
                         and issubclass(model, nn.Module)):
         logger.warning(
-            "The model ({}) is missing "
-            "vLLM-specific keywords from its `forward` method: {}",
+            "The model (%s) is missing "
+            "vLLM-specific keywords from its `forward` method: %s",
             model,
             missing_kws,
         )
@@ -71,7 +74,7 @@ def _check_aphrodite_model_forward(model: Union[Type[object], object]) -> bool:
 
 
 @overload
-def is_aphrodite_model(model: Type[object]) -> TypeIs[Type[AphroditeModel]]:
+def is_aphrodite_model(model: type[object]) -> TypeIs[type[AphroditeModel]]:
     ...
 
 
@@ -81,8 +84,8 @@ def is_aphrodite_model(model: object) -> TypeIs[AphroditeModel]:
 
 
 def is_aphrodite_model(
-    model: Union[Type[object], object],
-) -> Union[TypeIs[Type[AphroditeModel]], TypeIs[AphroditeModel]]:
+    model: Union[type[object], object],
+) -> Union[TypeIs[type[AphroditeModel]], TypeIs[AphroditeModel]]:
     return _check_aphrodite_model_init(model) and _check_aphrodite_model_forward(model)
 
 
@@ -93,7 +96,7 @@ class AphroditeModelForTextGeneration(AphroditeModel[T], Protocol[T]):
     def compute_logits(
         self,
         hidden_states: T,
-        sampling_metadata: "SamplingMetadata",
+        sampling_metadata: SamplingMetadata,
     ) -> Optional[T]:
         """Return `None` if TP rank > 0."""
         ...
@@ -101,7 +104,7 @@ class AphroditeModelForTextGeneration(AphroditeModel[T], Protocol[T]):
 
 @overload
 def is_text_generation_model(
-        model: Type[object]) -> TypeIs[Type[AphroditeModelForTextGeneration]]:
+        model: type[object]) -> TypeIs[type[AphroditeModelForTextGeneration]]:
     ...
 
 
@@ -112,8 +115,8 @@ def is_text_generation_model(
 
 
 def is_text_generation_model(
-    model: Union[Type[object], object],
-) -> Union[TypeIs[Type[AphroditeModelForTextGeneration]],
+    model: Union[type[object], object],
+) -> Union[TypeIs[type[AphroditeModelForTextGeneration]],
            TypeIs[AphroditeModelForTextGeneration]]:
     if not is_aphrodite_model(model):
         return False
@@ -125,20 +128,24 @@ def is_text_generation_model(
 
 
 @runtime_checkable
-class AphroditeModelForPooling(AphroditeModel[T], Protocol[T]):
+class AphroditeModelForPooling(AphroditeModel[T_co], Protocol[T_co]):
     """The interface required for all pooling models in vLLM."""
 
-    def pooler(
-        self,
-        hidden_states: T,
-        pooling_metadata: "PoolingMetadata",
-    ) -> "PoolerOutput":
-        """Only called on TP rank 0."""
-        ...
+    is_pooling_model: ClassVar[Literal[True]] = True
+    """
+    A flag that indicates this model supports pooling.
+
+    Note:
+        There is no need to redefine this flag if this class is in the
+        MRO of your model class.
+    """
+
+    pooler: Pooler
+    """The pooler is only called on TP rank 0."""
 
 
 @overload
-def is_pooling_model(model: Type[object]) -> TypeIs[Type[AphroditeModelForPooling]]:
+def is_pooling_model(model: type[object]) -> TypeIs[type[AphroditeModelForPooling]]:
     ...
 
 
@@ -148,12 +155,9 @@ def is_pooling_model(model: object) -> TypeIs[AphroditeModelForPooling]:
 
 
 def is_pooling_model(
-    model: Union[Type[object], object],
-) -> Union[TypeIs[Type[AphroditeModelForPooling]], TypeIs[AphroditeModelForPooling]]:
+    model: Union[type[object], object],
+) -> Union[TypeIs[type[AphroditeModelForPooling]], TypeIs[AphroditeModelForPooling]]:
     if not is_aphrodite_model(model):
         return False
 
-    if isinstance(model, type):
-        return isinstance(model, AphroditeModelForPooling)
-
-    return isinstance(model, AphroditeModelForPooling)
+    return getattr(model, "is_pooling_model", False)

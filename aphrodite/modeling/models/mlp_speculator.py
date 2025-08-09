@@ -1,11 +1,11 @@
 import math
-from typing import Iterable, List, Set, Tuple
+from collections.abc import Iterable
 
 import torch
 import torch.nn as nn
 
 from aphrodite.common.config import AphroditeConfig
-from aphrodite.modeling.sampling_metadata import SamplingMetadata
+from aphrodite.modeling import SamplingMetadata
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.sampler import SamplerOutput, get_sampler
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
@@ -146,7 +146,7 @@ class MLPSpeculator(nn.Module):
         previous_hidden_states: torch.Tensor,
         num_predict_tokens: int,
         sampling_metadata: SamplingMetadata,
-    ) -> List[SamplerOutput]:
+    ) -> list[SamplerOutput]:
         if num_predict_tokens > self.max_speculative_tokens:
             raise ValueError(f"Max speculative tokens for model is "
                              f"{self.max_speculative_tokens}, but "
@@ -188,10 +188,10 @@ class MLPSpeculator(nn.Module):
 
         return next_tokens
 
-    def load_weights(self, weights: Iterable[Tuple[str,
-                                                   torch.Tensor]]) -> Set[str]:
+    def load_weights(self, weights: Iterable[tuple[str,
+                                                   torch.Tensor]]) -> set[str]:
         params_dict = dict(self.named_parameters())
-        loaded_params: Set[str] = set()
+        loaded_params: set[str] = set()
         for name, loaded_weight in weights:
             name = name.replace("speculator.", "")
             param = params_dict.get(name)

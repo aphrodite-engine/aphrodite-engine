@@ -1,8 +1,9 @@
 # Adapted from
-# https://github.com/THUDM/ChatGLM2-6B
+# https://github.com/zai-org/ChatGLM2-6B
 """Inference-only ChatGLM model compatible with THUDM weights."""
 import json
-from typing import Iterable, Optional, Set, Tuple, Union
+from collections.abc import Iterable
+from typing import Optional, Union
 
 import torch
 from torch import nn
@@ -84,10 +85,10 @@ class GLMAttention(nn.Module):
             prefix=f"{prefix}.dense",
         )
 
-        # https://huggingface.co/THUDM/chatglm3-6b-32k/blob/e210410255278dd9d74463cf396ba559c0ef801c/modeling_chatglm.py#L141
+        # https://huggingface.co/zai-org/chatglm3-6b-32k/blob/e210410255278dd9d74463cf396ba559c0ef801c/modeling_chatglm.py#L141
         rope_ratio = getattr(config, "rope_ratio", 1.0)
         max_positions = getattr(config, "seq_length", 8192)
-        # NOTE: THUDM/cogagent-9b-20241220 uses original_rope=False,
+        # NOTE: zai-org/cogagent-9b-20241220 uses original_rope=False,
         # which is equivalent to is_neox_style=True
         is_neox_style = not config.original_rope
         self.rotary_emb = get_rope(
@@ -358,15 +359,15 @@ class ChatGLMModel(nn.Module, SupportsQuant):
 
         return hidden_states
 
-    def load_weights(self, weights: Iterable[Tuple[str,
-                                                   torch.Tensor]]) -> Set[str]:
+    def load_weights(self, weights: Iterable[tuple[str,
+                                                   torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("linear_proj.merged_proj", "linear_proj.gate_proj", 0),
             ("linear_proj.merged_proj", "linear_proj.dense_h_to_4h", 1),
         ]
         params_dict = dict(self.named_parameters())
-        loaded_params: Set[str] = set()
+        loaded_params: set[str] = set()
 
         for name, loaded_weight in weights:
             for (param_name, weight_name, shard_id) in stacked_params_mapping:
@@ -440,7 +441,7 @@ class ChatGLMBaseModel(nn.Module):
                                        sampling_metadata)
         return logits
 
-    def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
 
