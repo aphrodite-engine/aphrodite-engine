@@ -247,7 +247,7 @@ def get_sparse_attention_config(
     # Load the sparse attention config.
     with open(config_file) as f:
         config = json.load(f)
-    logger.info("Loaded sparse attention config from %s", config_file)
+    logger.info("Loaded sparse attention config from {}", config_file)
 
     return config
 
@@ -289,7 +289,7 @@ def download_weights_from_hf(
                 allow_patterns = [pattern]
                 break
 
-    logger.info("Using model weights format %s", allow_patterns)
+    logger.info("Using model weights format {}", allow_patterns)
     # Use file lock to prevent multiple processes from
     # downloading the same model weights at the same time.
     with get_lock(model_name_or_path, cache_dir):
@@ -305,7 +305,7 @@ def download_weights_from_hf(
         )
         time_taken = time.perf_counter() - start_time
         if time_taken > 0.5:
-            logger.info("Time spent downloading weights for %s: %.6f seconds",
+            logger.info("Time spent downloading weights for {}: %.6f seconds",
                         model_name_or_path, time_taken)
     return hf_folder
 
@@ -340,9 +340,9 @@ def download_safetensors_index_file_from_hf(
         # If file not found on remote or locally, we should not fail since
         # only some models will have index_file.
         except huggingface_hub.utils.LocalEntryNotFoundError:
-            logger.info("No %s found in local cache.", index_file)
+            logger.info("No {} found in local cache.", index_file)
         except huggingface_hub.utils.EntryNotFoundError:
-            logger.info("No %s found in remote.", index_file)
+            logger.info("No {} found in remote.", index_file)
 
 
 # For models like Mistral-7B-v0.3, there are both sharded
@@ -755,7 +755,7 @@ def maybe_remap_kv_scale_name(name: str, params_dict: dict) -> Optional[str]:
         if remapped_name not in params_dict:
             log_once(
                 "WARNING",
-                "Found kv_scale in the checkpoint (e.g. %s), but not found the expected name in the model (e.g. %s). kv_scale is not loaded.",  #  noqa: E501
+                "Found kv_scale in the checkpoint (e.g. {}), but not found the expected name in the model (e.g. {}). kv_scale is not loaded.",  #  noqa: E501
                 name,
                 remapped_name,
             )

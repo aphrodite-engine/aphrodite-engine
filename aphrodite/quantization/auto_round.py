@@ -189,7 +189,7 @@ class AutoRoundConfig(QuantizationConfig):
                 return None
 
         logger.debug(
-            "[%s] Type: %s, Bits: %s, Group Size: %s, Sym: %s",
+            "[{}] Type: {}, Bits: {}, Group Size: {}, Sym: {}",
             prefix,
             layer.__class__.__name__,
             weight_bits,
@@ -270,7 +270,7 @@ class AutoRoundConfig(QuantizationConfig):
                 return None
 
         logger.debug(
-            "[%s] Type: %s, Bits: %s, Group Size: %s, Sym: %s",
+            "[{}] Type: {}, Bits: {}, Group Size: {}, Sym: {}",
             prefix,
             layer.__class__.__name__,
             weight_bits,

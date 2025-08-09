@@ -56,7 +56,7 @@ class GraniteToolParser(ToolParser):
                 raise Exception(
                     f"Expected dict or list, got {type(raw_function_calls)}")
 
-            logger.debug("Extracted %d tool calls", len(raw_function_calls))
+            logger.debug("Extracted {} tool calls", len(raw_function_calls))
             tool_calls = [
                 ToolCall(
                     type="function",
@@ -168,7 +168,7 @@ class GraniteToolParser(ToolParser):
                 self.current_tool_id = len(tool_call_arr) - 1
                 self.current_tool_name_sent = False
                 self.streamed_args_for_tool.append("")
-                logger.debug("starting on new tool %d", self.current_tool_id)
+                logger.debug("starting on new tool {}", self.current_tool_id)
                 return delta
 
             # if the current tool name hasn't been sent, send if available

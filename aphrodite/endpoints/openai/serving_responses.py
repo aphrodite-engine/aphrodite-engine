@@ -83,7 +83,7 @@ class OpenAIServingResponses(OpenAIServing):
         if self.default_sampling_params:
             source = self.model_config.generation_config
             source = "model" if source == "auto" else source
-            logger.info("Using default chat sampling params from %s: %s",
+            logger.info("Using default chat sampling params from {}: {}",
                         source, self.default_sampling_params)
 
         # If False (default), the "store" option is (silently) ignored and the
@@ -118,7 +118,7 @@ class OpenAIServingResponses(OpenAIServing):
     ) -> Union[AsyncGenerator[str, None], ResponsesResponse, ErrorResponse]:
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
-            logger.error("Error with model %s", error_check_ret)
+            logger.error("Error with model {}", error_check_ret)
             return error_check_ret
 
         # If the engine is dead, raise the engine's DEAD_ERROR.
@@ -413,7 +413,7 @@ class OpenAIServingResponses(OpenAIServing):
             response = await self.responses_full_generator(
                 request, *args, **kwargs)
         except Exception as e:
-            logger.exception("Background request failed for %s",
+            logger.exception("Background request failed for {}",
                              request.request_id)
             response = self.create_error_response(str(e))
 
@@ -468,7 +468,7 @@ class OpenAIServingResponses(OpenAIServing):
             try:
                 await task
             except asyncio.CancelledError:
-                logger.exception("Background task for %s was cancelled",
+                logger.exception("Background task for {} was cancelled",
                                  response_id)
         return response
 

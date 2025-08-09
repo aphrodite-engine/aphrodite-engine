@@ -727,7 +727,7 @@ class Phi4FlashForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsV0Only):
         for name, param in self.named_parameters():
             weight = adjusted_weights.get(name)
             if weight is not None and weight.shape != param.shape:
-                logger.warning("Shape mismatch: %s %s %s", name, weight.shape,
+                logger.warning("Shape mismatch: {} {} {}", name, weight.shape,
                                param.shape)
             loaded_params.add(name)
         missing_keys, unexpected_keys = self.load_state_dict(adjusted_weights,

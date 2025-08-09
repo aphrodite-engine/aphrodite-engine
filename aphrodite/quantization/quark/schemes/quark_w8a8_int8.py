@@ -42,7 +42,7 @@ class QuarkW8A8Int8(QuarkScheme):
             scaled_mm_linear_kernel_config)
 
         if kernel_type.__name__ not in self._kernel_backends_being_used:
-            logger.info("Using %s for QuarkW8A8Int8", kernel_type.__name__)
+            logger.info("Using {} for QuarkW8A8Int8", kernel_type.__name__)
             self._kernel_backends_being_used.add(kernel_type.__name__)
 
         # WEIGHT

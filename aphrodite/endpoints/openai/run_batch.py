@@ -204,7 +204,7 @@ async def upload_data(output_url: str, data_or_file: str,
         except Exception as e:
             if attempt < max_retries:
                 logger.error(
-                    "Failed to upload data (attempt %d). Error message: %s.\nRetrying in %d seconds...",  # noqa: E501
+                    "Failed to upload data (attempt {}). Error message: {}.\nRetrying in {} seconds...",  # noqa: E501
                     attempt,
                     e,
                     delay,
@@ -232,7 +232,7 @@ async def write_file(path_or_url: str, batch_outputs: list[BatchRequestOutput],
             for o in batch_outputs:
                 print(o.model_dump_json(), file=output_buffer)
             output_buffer.seek(0)
-            logger.info("Uploading outputs to %s", path_or_url)
+            logger.info("Uploading outputs to {}", path_or_url)
             await upload_data(
                 path_or_url,
                 output_buffer.read().strip().encode("utf-8"),
@@ -247,13 +247,13 @@ async def write_file(path_or_url: str, batch_outputs: list[BatchRequestOutput],
                     prefix="tmp_batch_output_",
                     suffix=".jsonl",
             ) as f:
-                logger.info("Writing outputs to temporary local file %s",
+                logger.info("Writing outputs to temporary local file {}",
                             f.name)
                 await write_local_file(f.name, batch_outputs)
-                logger.info("Uploading outputs to %s", path_or_url)
+                logger.info("Uploading outputs to {}", path_or_url)
                 await upload_data(path_or_url, f.name, from_file=True)
     else:
-        logger.info("Writing outputs to local file %s", path_or_url)
+        logger.info("Writing outputs to local file {}", path_or_url)
         await write_local_file(path_or_url, batch_outputs)
 
 
@@ -338,7 +338,7 @@ async def run_batch(
     else:
         supported_tasks = model_config.supported_tasks
 
-    logger.info("Supported_tasks: %s", supported_tasks)
+    logger.info("Supported_tasks: {}", supported_tasks)
 
     # Create the openai serving objects.
     openai_serving_models = OpenAIServingModels(
@@ -377,7 +377,7 @@ async def run_batch(
     ) if ("embed" in supported_tasks or enable_serving_reranking) else None
 
     tracker = BatchProgressTracker()
-    logger.info("Reading batch from %s...", args.input_file)
+    logger.info("Reading batch from {}...", args.input_file)
 
     # Submit all requests in the file to the engine "concurrently".
     response_futures: list[Awaitable[BatchRequestOutput]] = []

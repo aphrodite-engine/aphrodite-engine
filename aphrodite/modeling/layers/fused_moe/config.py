@@ -323,7 +323,7 @@ class FusedMoEConfig:
         if self.dp_size > 1:
             log_once(
                 "DEBUG",
-                "Using FusedMoEConfig::max_num_tokens=%d",
+                "Using FusedMoEConfig::max_num_tokens={}",
                 self.max_num_tokens,
             )
 

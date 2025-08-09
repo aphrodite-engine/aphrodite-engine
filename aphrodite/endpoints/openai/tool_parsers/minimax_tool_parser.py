@@ -269,7 +269,7 @@ class MinimaxToolParser(ToolParser):
                 self.current_tool_id = len(tool_call_arr) - 1
                 self.current_tool_name_sent = False
                 self.streamed_args_for_tool.append("")
-                logger.debug("starting on new tool %d", self.current_tool_id)
+                logger.debug("starting on new tool {}", self.current_tool_id)
                 return delta
 
             # Send tool name if not sent yet

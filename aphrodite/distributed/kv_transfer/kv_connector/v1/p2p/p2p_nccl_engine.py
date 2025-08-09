@@ -161,7 +161,7 @@ class P2pNcclEngine:
             self._ping_thread.start()
 
         logger.info(
-            "💯P2pNcclEngine init, rank:%d, local_rank:%d, http_address:{}, "
+            "💯P2pNcclEngine init, rank:{}, local_rank:{}, http_address:{}, "
             "zmq_address:{}, proxy_address:{}, send_type:{}, buffer_size_"
             "threshold:{:.2f}, nccl_num_channels:{}", self.rank, self.local_rank,
             self.http_address, self.zmq_address, self.proxy_address,
@@ -234,16 +234,16 @@ class P2pNcclEngine:
                 ) * oldest_tenser.numel()
                 self.buffer_size -= oldest_tenser_size
                 logger.info(
-                    "⛔[GET]Send to {}, tensor_id:{}, tensor_size:%d,"
-                    " buffer_size:%d, oldest_tenser_size:%d, rank:%d",
+                    "⛔[GET]Send to {}, tensor_id:{}, tensor_size:{},"
+                    " buffer_size:{}, oldest_tenser_size:{}, rank:{}",
                     remote_address, tensor_id, tensor_size, self.buffer_size,
                     oldest_tenser_size, self.rank)
 
             self.send_store[tensor_id] = tensor
             self.buffer_size += tensor_size
             logger.debug(
-                "🔵[GET]Send to {}, tensor_id:{}, tensor_size:%d, "
-                "shape:{}, rank:%d, buffer_size:%d({:.2f}%%)", remote_address,
+                "🔵[GET]Send to {}, tensor_id:{}, tensor_size:{}, "
+                "shape:{}, rank:{}, buffer_size:{}({:.2f}%%)", remote_address,
                 tensor_id, tensor_size, tensor.shape, self.rank,
                 self.buffer_size,
                 self.buffer_size / self.buffer_size_threshold * 100)
@@ -273,7 +273,7 @@ class P2pNcclEngine:
                 duration = time.time() - start_time
                 logger.warning(
                     "🔴[PUT]Recv From {}, tensor_id:{}, duration:{:.3f}ms, "
-                    "rank:%d", remote_address, tensor_id, duration * 1000,
+                    "rank:{}", remote_address, tensor_id, duration * 1000,
                     self.rank)
             return tensor
 
@@ -293,7 +293,7 @@ class P2pNcclEngine:
         message = sock.recv()
         data = msgpack.loads(message)
         if data["ret"] != 0:
-            logger.warning("🔴[GET]Recv From {}, tensor_id: {}, ret: %d",
+            logger.warning("🔴[GET]Recv From {}, tensor_id: {}, ret: {}",
                            remote_address, tensor_id, data["ret"])
             return None
 
@@ -345,7 +345,7 @@ class P2pNcclEngine:
                         tensor = (addr, tensor.dtype, tensor.shape)
                         logger.warning(
                             "🔴[PUT]Recv Tensor, Out Of Threshold, "
-                            "{}👈{}, data:{}, addr:%d", self.zmq_address,
+                            "{}👈{}, data:{}, addr:{}", self.zmq_address,
                             remote_address.decode(), data, addr)
                     else:
                         self.buffer_size += tensor_size
@@ -422,7 +422,7 @@ class P2pNcclEngine:
             duration = time.time() - start_time
             logger.debug(
                 "🚧[PUT_ASYNC]It took {:.3f}ms to wait for the send_queue"
-                " to be empty, rank:%d", duration * 1000, self.rank)
+                " to be empty, rank:{}", duration * 1000, self.rank)
 
     def send_sync(self, item: SendQueueItem) -> bool:
         if item.remote_address is None:

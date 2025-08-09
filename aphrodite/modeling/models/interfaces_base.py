@@ -64,8 +64,8 @@ def _check_aphrodite_model_forward(model: Union[type[object], object]) -> bool:
     if missing_kws and (isinstance(model, type)
                         and issubclass(model, nn.Module)):
         logger.warning(
-            "The model (%s) is missing "
-            "vLLM-specific keywords from its `forward` method: %s",
+            "The model ({}) is missing "
+            "vLLM-specific keywords from its `forward` method: {}",
             model,
             missing_kws,
         )

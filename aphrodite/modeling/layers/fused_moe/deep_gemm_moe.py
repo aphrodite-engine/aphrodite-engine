@@ -58,7 +58,7 @@ def _valid_deep_gemm(hidden_states: torch.Tensor, w1: torch.Tensor,
             "DEBUG",
             "DeepGemm disabled due to unaligned problem size. "
             "M: {}, N: {}, K: {}. M should >= align size "
-            "and N and K must be multiples of %s."
+            "and N and K must be multiples of {}."
             "This is not an error and we will fall back to triton.",
             M,
             N,

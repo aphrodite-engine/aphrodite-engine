@@ -127,7 +127,7 @@ class NomicBertModelConfig(VerifyAndUpdateConfig):
             aphrodite_config.recalculate_max_model_len(max_model_len)
             logger.warning(
                 "Nomic context extension is disabled. "
-                "Changing max_model_len from %s to %s. "
+                "Changing max_model_len from {} to {}. "
                 "To enable context extension, see: "
                 "https://github.com/aphrodite-project/aphrodite/tree/main/examples/offline_inference/context_extension.html",
                 max_model_len_before, aphrodite_config.model_config.max_model_len)
@@ -238,7 +238,7 @@ class GraniteMoeHybridModelConfig(VerifyAndUpdateConfig):
         config = aphrodite_config.model_config
         config.max_seq_len_to_capture = config.max_model_len
         logger.info(
-            "Setting max_seq_len_to_capture to %d "
+            "Setting max_seq_len_to_capture to {} "
             "to ensure that CUDA graph capture "
             "covers sequences of length up to max_model_len.",
             config.max_model_len)
@@ -269,7 +269,7 @@ class GptOssForCausalLMConfig(VerifyAndUpdateConfig):
                 scheduler_config.cuda_graph_sizes = cuda_graph_sizes
                 logger.info(
                     "Overriding max cuda graph capture size to "
-                    "%d for performance.", 1024)
+                    "{} for performance.", 1024)
 
 
 class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
@@ -333,7 +333,7 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
                 or cache_config.block_size < attn_block_size):
             cache_config.block_size = attn_block_size
             logger.info(
-                "Setting attention block size to %d tokens "
+                "Setting attention block size to {} tokens "
                 "to ensure that attention page size is >= mamba page size.",
                 attn_block_size)
 

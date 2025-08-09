@@ -396,7 +396,7 @@ def _try_load_model_cls(
     try:
         return model.load_model_cls()
     except Exception:
-        logger.exception("Error in loading model architecture '%s'",
+        logger.exception("Error in loading model architecture '{}'",
                          model_arch)
         return None
 
@@ -409,7 +409,7 @@ def _try_inspect_model_cls(
     try:
         return model.inspect_model_cls()
     except Exception:
-        logger.exception("Error in inspecting model architecture '%s'",
+        logger.exception("Error in inspecting model architecture '{}'",
                          model_arch)
         return None
 
@@ -444,8 +444,8 @@ class _ModelRegistry:
 
         if model_arch in self.models:
             logger.warning(
-                "Model architecture %s is already registered, and will be "
-                "overwritten by the new model class %s.", model_arch,
+                "Model architecture {} is already registered, and will be "
+                "overwritten by the new model class {}.", model_arch,
                 model_cls)
 
         if isinstance(model_cls, str):

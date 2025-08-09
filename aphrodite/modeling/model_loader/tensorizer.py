@@ -526,10 +526,10 @@ def deserialize_tensorizer_model(model: nn.Module,
     per_second = convert_bytes(deserializer.total_tensor_bytes / duration)
     after_mem = get_mem_usage()
     deserializer.close()
-    logger.info("Deserialized %s in %0.2fs, %s/s", total_bytes_str,
+    logger.info("Deserialized {} in %0.2fs, {}/s", total_bytes_str,
                 end - start, per_second)
-    logger.info("Memory usage before: %s", before_mem)
-    logger.info("Memory usage after: %s", after_mem)
+    logger.info("Memory usage before: {}", before_mem)
+    logger.info("Memory usage after: {}", after_mem)
 
     _check_tensors_on_meta_device(model)
     _resize_lora_embeddings(model)
@@ -603,7 +603,7 @@ def serialize_extra_artifacts(
                     f"{tensorizer_args.tensorizer_dir}/{artifact.name}",
                     mode="wb+",
                     **tensorizer_args.stream_kwargs) as stream:
-                logger.info("Writing artifact %s", artifact.name)
+                logger.info("Writing artifact {}", artifact.name)
                 stream.write(f.read())
 
 
@@ -639,7 +639,7 @@ def serialize_aphrodite_model(
 
     serialize_extra_artifacts(tensorizer_args, model_config.served_model_name)
 
-    logger.info("Successfully serialized model to %s", str(output_file))
+    logger.info("Successfully serialized model to {}", str(output_file))
     return model
 
 
@@ -716,7 +716,7 @@ def tensorize_lora_adapter(lora_path: str,
     elif tensor_path.endswith(".bin"):
         tensors = torch.load(tensor_path)
     else:
-        raise ValueError("Unsupported file: %s", tensor_path)
+        raise ValueError("Unsupported file: {}", tensor_path)
 
     with open(config_path) as f:
         config = json.load(f)
@@ -737,5 +737,5 @@ def tensorize_lora_adapter(lora_path: str,
         serializer.write_state_dict(tensors)
         serializer.close()
 
-    logger.info("Successfully serialized LoRA files to %s",
+    logger.info("Successfully serialized LoRA files to {}",
                 str(tensorizer_config.tensorizer_dir))

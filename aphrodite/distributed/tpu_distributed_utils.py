@@ -109,7 +109,7 @@ def partition_column_parallel_linear(layer: torch.nn.Module,
                                      mesh: xs.Mesh) -> torch.nn.Module:
     assert isinstance(layer, ColumnParallelLinear)
     xs.mark_sharding(layer.weight, mesh, ('x', None))
-    logger.debug("Applied column-parallel sharding to %s", layer)
+    logger.debug("Applied column-parallel sharding to {}", layer)
     return layer
 
 
@@ -117,7 +117,7 @@ def partition_row_parallel_linear(layer: torch.nn.Module,
                                   mesh: xs.Mesh) -> torch.nn.Module:
     assert isinstance(layer, RowParallelLinear)
     xs.mark_sharding(layer.weight, mesh, (None, 'x'))
-    logger.debug("Applied row-parallel sharding to %s", layer)
+    logger.debug("Applied row-parallel sharding to {}", layer)
     return layer
 
 
@@ -125,7 +125,7 @@ def partition_qkv_parallel_linear(layer: torch.nn.Module,
                                   mesh: xs.Mesh) -> torch.nn.Module:
     assert isinstance(layer, QKVParallelLinear)
     xla_layer = XlaQKVParallelLinear(layer, mesh)
-    logger.debug("Applied qkv parallel sharding to %s", layer)
+    logger.debug("Applied qkv parallel sharding to {}", layer)
     return xla_layer
 
 
@@ -162,7 +162,7 @@ def shard_model(model: torch.nn.Module, mesh: "xs.Mesh") -> None:
                     # Wrapped module and module are different py object.
                     # The original module should be replaced by the
                     # wrapped_module.
-                    logger.debug("replace %s with %s", module, wrapped_module)
+                    logger.debug("replace {} with {}", module, wrapped_module)
                     setattr(parent, name, wrapped_module)
 
                 module = wrapped_module

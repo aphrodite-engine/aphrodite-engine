@@ -81,7 +81,7 @@ ALL_ATTENTION_FUNCTIONS["aphrodite"] = aphrodite_flash_attention_forward
 
 
 def log_replacement(name: str, old_module: nn.Module, new_module: nn.Module):
-    logger.debug("%s: %s -> %s", name, old_module, new_module)
+    logger.debug("{}: {} -> {}", name, old_module, new_module)
 
 
 def replace_linear_class(

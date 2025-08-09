@@ -118,7 +118,7 @@ def get_pp_indices(num_hidden_layers: int, pp_rank: int,
             for i in range(2, remaining_layers + 2):
                 partitions[-i] += 1
             logger.info(
-                "Hidden layers were unevenly partitioned: [%s]. "
+                "Hidden layers were unevenly partitioned: [{}]. "
                 "This can be manually overridden using the "
                 "APHRODITE_PP_LAYER_PARTITION environment variable",
                 ",".join(str(p) for p in partitions))
@@ -273,7 +273,7 @@ class StatelessProcessGroup:
             # Check for timeout
             cur_time = time.time()
             if cur_time - start_time > timeout:
-                raise RuntimeError("Barrier timed out after %f seconds",
+                raise RuntimeError("Barrier timed out after {} seconds",
                                    timeout)
 
             # Check for each process
@@ -291,7 +291,7 @@ class StatelessProcessGroup:
                     # Key doesn't exist yet
                     pass
                 except Exception as check_e:
-                    logger.debug("Error checking key existence: %s", check_e)
+                    logger.debug("Error checking key existence: {}", check_e)
                     sched_yield()
 
             # Short sleep to avoid tight polling
@@ -321,7 +321,7 @@ class StatelessProcessGroup:
         while len(processes_departed) < self.world_size:
             # Check for timeout
             if time.time() - start_time > timeout:
-                raise RuntimeError("Barrier departure timed out after %f s",
+                raise RuntimeError("Barrier departure timed out after {} s",
                                    timeout)
 
             # Check for each process
@@ -339,7 +339,7 @@ class StatelessProcessGroup:
                     # Key doesn't exist yet
                     pass
                 except Exception as check_e:
-                    logger.debug("Error checking key existence: %s", check_e)
+                    logger.debug("Error checking key existence: {}", check_e)
                     sched_yield()
 
             # Short sleep to avoid tight polling
@@ -351,13 +351,13 @@ class StatelessProcessGroup:
             try:
                 self.store.delete_key(f"arrival_{barrier_id}_{i}")
             except Exception:
-                logger.debug("Error deleting key: %s",
+                logger.debug("Error deleting key: {}",
                              f'arrival_{barrier_id}_{i}')
 
             try:
                 self.store.delete_key(f"departure_{barrier_id}_{i}")
             except Exception:
-                logger.debug("Error deleting key: %s",
+                logger.debug("Error deleting key: {}",
                              f'departure_{barrier_id}_{i}')
 
     @staticmethod

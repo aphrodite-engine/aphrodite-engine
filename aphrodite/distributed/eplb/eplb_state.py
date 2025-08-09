@@ -379,7 +379,7 @@ class EplbState:
 
             if ep_group.rank() == 0:
                 logger.info(
-                    "EPLB step: avg_tokens={:.2f}, max_tokens=%d, "
+                    "EPLB step: avg_tokens={:.2f}, max_tokens={}, "
                     "balancedness={:.4f}", avg_tokens, max_tokens, balancedness)
 
         # Update the expert load sliding window

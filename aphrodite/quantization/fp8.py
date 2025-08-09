@@ -902,8 +902,8 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 prepare_finalize.max_num_tokens_per_rank())
             assert max_num_tokens_per_rank is not None
             logger.debug(
-                "BatchedTritonOrDeepGemmExperts(%s): "
-                "max_tokens_per_rank=%s, block_size=%s, per_act_token=%s",
+                "BatchedTritonOrDeepGemmExperts({}): "
+                "max_tokens_per_rank={}, block_size={}, per_act_token={}",
                 self.__class__.__name__, max_num_tokens_per_rank,
                 self.quant_config.weight_block_size, False)
             return BatchedTritonOrDeepGemmExperts(
@@ -916,7 +916,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
             )
         else:
             logger.debug(
-                "TritonOrDeepGemmExperts(%s): block_size=%s, per_act_token=%s",
+                "TritonOrDeepGemmExperts({}): block_size={}, per_act_token={}",
                 self.__class__.__name__, self.quant_config.weight_block_size,
                 False)
             return TritonOrDeepGemmExperts(

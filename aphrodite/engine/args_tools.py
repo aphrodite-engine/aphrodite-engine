@@ -1209,7 +1209,7 @@ class EngineArgs:
             if self.data_parallel_backend == "ray":
                 host_ip = get_ip()
                 logger.info(
-                    "Using host IP %s as ray-based data parallel address",
+                    "Using host IP {} as ray-based data parallel address",
                     host_ip)
                 data_parallel_address = host_ip
             else:

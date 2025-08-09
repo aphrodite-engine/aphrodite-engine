@@ -1,22 +1,23 @@
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, cast
 
 import torch
 from loguru import logger
+from tpu_info import device
 
-import aphrodite.common.envs as envs
 from aphrodite.common.sampling_params import SamplingParams, SamplingType
 from aphrodite.inputs import ProcessorInputs, PromptType
+from aphrodite.utils import DEFAULT_MAX_NUM_BATCHED_TOKENS
 
 from .interface import Platform, PlatformEnum, _Backend
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig, ModelConfig
+    from aphrodite.common.config import AphroditeConfig, BlockSize, ModelConfig
     from aphrodite.common.pooling_params import PoolingParams
 else:
+    BlockSize = None
     ModelConfig = None
     AphroditeConfig = None
     PoolingParams = None
-
 
 
 class TpuPlatform(Platform):
@@ -25,9 +26,13 @@ class TpuPlatform(Platform):
     device_type: str = "tpu"
     dispatch_key: str = "XLA"
     ray_device_key: str = "TPU"
+    dist_backend: str = "gloo"
     device_control_env_var: str = "TPU_VISIBLE_CHIPS"
+    simple_compile_backend: str = "openxla"
 
-    supported_quantization: list[str] = ["tpu_int8", "compressed-tensors"]
+    supported_quantization: list[str] = [
+        "fp8", "tpu_int8", "compressed-tensors"
+    ]
 
     additional_env_vars: list[str] = [
         "TPU_CHIPS_PER_HOST_BOUNDS", "TPU_HOST_BOUNDS"
@@ -42,16 +47,22 @@ class TpuPlatform(Platform):
                 and selected_backend != _Backend.PALLAS_APHRODITE_V1):
             logger.info("Cannot use {} backend on TPU.", selected_backend)
 
-        if use_v1:
-            logger.info("Using Pallas V1 backend.")
-            return "aphrodite.v1.attention.backends.pallas.PallasAttentionBackend"  # noqa
-        else:
-            logger.info("Using Pallas backend.")
-            return "aphrodite.attention.backends.pallas.PallasAttentionBackend"
+        if not use_v1:
+            raise ValueError("TPU backend only supports V1.")
+        logger.info("Using Pallas V1 backend.")
+        return "aphrodite.v1.attention.backends.pallas.PallasAttentionBackend"
+
+    @classmethod
+    def set_device(cls, device: torch.device) -> None:
+        """
+        Set the device for the current platform.
+        """
+        torch.tpu.set_device(device)
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
-        return "tpu"
+        chip_type, _ = device.get_local_chips()
+        return f"TPU {chip_type.name}"
 
     @classmethod
     def get_device_total_memory(cls, device_id: int = 0) -> int:
@@ -59,7 +70,23 @@ class TpuPlatform(Platform):
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
-        return not envs.APHRODITE_USE_V1
+        return False
+
+    @classmethod
+    def get_punica_wrapper(cls) -> str:
+        return "aphrodite.lora.punica_wrapper.punica_tpu.PunicaWrapperTPU"
+
+    @classmethod
+    def get_infinity_values(cls, dtype: torch.dtype) -> tuple[float, float]:
+        return torch.finfo(dtype).min, torch.finfo(dtype).max
+
+    @classmethod
+    def can_update_inplace(cls):
+        return False
+
+    @classmethod
+    def get_lora_vocab_padding_size(cls) -> int:
+        return 1
 
     @classmethod
     def inference_mode(cls):
@@ -70,9 +97,9 @@ class TpuPlatform(Platform):
         from aphrodite.common.config import CompilationLevel
 
         cache_config = aphrodite_config.cache_config
+        # For v0, the default block size is 16.
         if cache_config and cache_config.block_size is None:
-            cache_config.block_size = 16
-
+            cache_config.block_size = cast(BlockSize, 16)
         compilation_config = aphrodite_config.compilation_config
 
         # TPU only supports DYNAMO_ONCE compilation level
@@ -86,46 +113,28 @@ class TpuPlatform(Platform):
         assert aphrodite_config.speculative_config is None, \
             "TPU does not support speculative decoding"
 
-        if aphrodite_config.model_config.dtype in (torch.float16,
-                                                   torch.float32):
+        model_config = aphrodite_config.model_config
+        if model_config is not None and model_config.dtype in (torch.float16,
+                                                               torch.float32):
             logger.warning(
                 "The TPU backend currently does not support {}. "
-                "Using bfloat16 instead.", aphrodite_config.model_config.dtype)
-            aphrodite_config.model_config.dtype = torch.bfloat16
+                "Using bfloat16 instead.", model_config.dtype)
+            model_config.dtype = torch.bfloat16
 
-        if envs.APHRODITE_USE_V1:
-            from aphrodite.v1.attention.backends.pallas import (
-                PallasAttentionBackend)
-            min_page_size = PallasAttentionBackend.get_min_page_size(
-                aphrodite_config)
-            if min_page_size > aphrodite_config.cache_config.block_size:
-                logger.warning(
-                    "Increase the page size from {} to {} to make sure there's"
-                    "no SMEM OOM",
-                    aphrodite_config.cache_config.block_size,
-                    min_page_size,
-                )
-                aphrodite_config.cache_config.block_size = min_page_size
+        from aphrodite.v1.attention.backends.pallas import (
+            PallasAttentionBackend)
+        cache_config.block_size = PallasAttentionBackend.get_page_size(
+            aphrodite_config)  # type: ignore[assignment]
 
         parallel_config = aphrodite_config.parallel_config
         scheduler_config = aphrodite_config.scheduler_config
         if parallel_config.worker_cls == "auto":
             if scheduler_config.is_multi_step:
-                if envs.APHRODITE_USE_V1:
-                    raise NotImplementedError(
-                        "Multi-step scheduling is not supported (and not "
-                        "needed) on Aphrodite V1. Please launch without "
-                        "--num-scheduler-steps.")
-                else:
-                    parallel_config.worker_cls = \
-                        "aphrodite.worker.multi_step_tpu_worker.MultiStepTPUWorker"
-            else:
-                if envs.APHRODITE_USE_V1:
-                    parallel_config.worker_cls = \
-                        "aphrodite.v1.worker.tpu_worker.TPUWorker"
-                else:
-                    parallel_config.worker_cls = \
-                        "aphrodite.worker.tpu_worker.TPUWorker"
+                raise NotImplementedError(
+                    "Multi-step scheduling is not supported (and not "
+                    "needed) on Aphrodite V1. Please launch without "
+                    "--num-scheduler-steps.")
+            parallel_config.worker_cls = "aphrodite.v1.worker.tpu_worker.TPUWorker"
 
         assert not aphrodite_config.speculative_config, (
             "Speculative decoding is not yet supported for TPU backend")
@@ -136,6 +145,16 @@ class TpuPlatform(Platform):
             " without setting `--disable_chunked_mm_input`. " \
             "Forcing --disable_chunked_mm_input.")
             scheduler_config.disable_chunked_mm_input = True
+
+        if model_config and model_config.use_mla:
+            logger.info(
+                "MLA is enabled on a non-GPU platform; forcing chunked "
+                "prefill and prefix caching to be disabled.")
+            aphrodite_config.scheduler_config.enable_chunked_prefill = False
+            aphrodite_config.scheduler_config.chunked_prefill_enabled = False
+            aphrodite_config.scheduler_config.max_num_batched_tokens = max(
+                aphrodite_config.scheduler_config.max_model_len,
+                DEFAULT_MAX_NUM_BATCHED_TOKENS)
 
     @classmethod
     def is_pin_memory_available(cls):
@@ -163,10 +182,18 @@ class TpuPlatform(Platform):
         processed_inputs: ProcessorInputs,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
-        if isinstance(params, SamplingParams):
-            if params.guided_decoding is not None and not envs.APHRODITE_USE_V1:
-                raise ValueError("Structured output is not supported on "
-                                 f"{cls.device_name} V0.")
-            if params.sampling_type == SamplingType.RANDOM_SEED:
-                raise ValueError(
-                    "Torch XLA does not support per-request seed.")
+        if (isinstance(params, SamplingParams)
+                and params.sampling_type == SamplingType.RANDOM_SEED):
+            raise ValueError("Torch XLA does not support per-request seed.")
+
+    @classmethod
+    def is_kv_cache_dtype_supported(cls, kv_cache_dtype: str) -> bool:
+        return True
+
+
+try:
+    from tpu_commons.platforms import TpuPlatform as TpuCommonsPlatform
+    TpuPlatform = TpuCommonsPlatform  # type: ignore
+except ImportError:
+    logger.info("tpu_commons not found, using Aphrodite's TpuPlatform")
+    pass

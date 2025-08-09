@@ -267,15 +267,15 @@ def supports_lora(
         if getattr(model, "supports_lora", False):
             if missing_attrs:
                 logger.warning(
-                    "The model (%s) sets `supports_lora=True`, "
-                    "but is missing LoRA-specific attributes: %s",
+                    "The model ({}) sets `supports_lora=True`, "
+                    "but is missing LoRA-specific attributes: {}",
                     model,
                     missing_attrs,
                 )
         else:
             if not missing_attrs:
                 logger.warning(
-                    "The model (%s) contains all LoRA-specific attributes, "
+                    "The model ({}) contains all LoRA-specific attributes, "
                     "but does not set `supports_lora=True`.", model)
 
     return result
@@ -365,7 +365,7 @@ def supports_pp(
 
     if supports_attributes and not supports_inspect:
         logger.warning(
-            "The model (%s) sets `supports_pp=True`, but does not accept "
+            "The model ({}) sets `supports_pp=True`, but does not accept "
             "`intermediate_tensors` in its `forward` method", model)
 
     if not supports_attributes:
@@ -376,15 +376,15 @@ def supports_pp(
         if getattr(model, "supports_pp", False):
             if missing_attrs:
                 logger.warning(
-                    "The model (%s) sets `supports_pp=True`, "
-                    "but is missing PP-specific attributes: %s",
+                    "The model ({}) sets `supports_pp=True`, "
+                    "but is missing PP-specific attributes: {}",
                     model,
                     missing_attrs,
                 )
         else:
             if not missing_attrs:
                 logger.warning(
-                    "The model (%s) contains all PP-specific attributes, "
+                    "The model ({}) contains all PP-specific attributes, "
                     "but does not set `supports_pp=True`.", model)
 
     return supports_attributes and supports_inspect
@@ -734,8 +734,8 @@ class SupportsTranscription(Protocol):
             return language
         elif language in cls.get_other_languages():
             logger.warning(
-                "Language %r is not natively supported by %s; "
-                "results may be less accurate. Supported languages: %r",
+                "Language {} is not natively supported by {}; "
+                "results may be less accurate. Supported languages: {}",
                 language,
                 cls.__name__,
                 list(cls.supported_languages.keys()),

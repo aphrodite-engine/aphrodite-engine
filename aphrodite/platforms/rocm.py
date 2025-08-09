@@ -1,11 +1,15 @@
 import os
+from datetime import timedelta
 from functools import cache, lru_cache, wraps
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from loguru import logger
+from torch.distributed import PrefixStore, ProcessGroup
+from torch.distributed.distributed_c10d import is_nccl_available
 
 import aphrodite.common.envs as envs
+from aphrodite.utils import cuda_device_count_stateless
 
 from .interface import DeviceCapability, Platform, PlatformEnum, _Backend
 
@@ -18,21 +22,21 @@ try:
                         amdsmi_get_processor_handles, amdsmi_init,
                         amdsmi_shut_down, amdsmi_topo_get_link_type)
 except ImportError as e:
-    logger.warning("Failed to import from amdsmi with {!r}", e)
+    logger.warning("Failed to import from amdsmi with {}", e)
 
 try:
     import aphrodite._C  # noqa: F401
 except ImportError as e:
-    logger.warning("Failed to import from aphrodite._C with {!r}", e)
+    logger.warning("Failed to import from aphrodite._C with {}", e)
 
 # import custom ops, trigger op registration
 try:
     import aphrodite._rocm_C  # noqa: F401
 except ImportError as e:
-    logger.warning("Failed to import from aphrodite._rocm_C with {!r}", e)
+    logger.warning("Failed to import from aphrodite._rocm_C with {}", e)
 
 # Models not supported by ROCm.
-_ROCM_UNSUPPORTED_MODELS: List[str] = []
+_ROCM_UNSUPPORTED_MODELS: list[str] = []
 
 # Models partially supported by ROCm.
 # Architecture -> Reason.
@@ -40,7 +44,7 @@ _ROCM_SWA_REASON = ("Sliding window attention (SWA) is not yet supported in "
                     "Triton flash attention. For half-precision SWA support, "
                     "please use CK flash attention by setting "
                     "`APHRODITE_USE_TRITON_FLASH_ATTN=0`")
-_ROCM_PARTIALLY_SUPPORTED_MODELS: Dict[str, str] = {
+_ROCM_PARTIALLY_SUPPORTED_MODELS: dict[str, str] = {
     "Qwen2ForCausalLM":
     _ROCM_SWA_REASON,
     "MistralForCausalLM":
@@ -54,6 +58,15 @@ _ROCM_PARTIALLY_SUPPORTED_MODELS: Dict[str, str] = {
     ("ROCm Triton flash attention may run into compilation errors due to "
      "excessive use of shared memory. If this happens, disable Triton FA "
      "by setting `APHRODITE_USE_TRITON_FLASH_ATTN=0`")
+}
+_ROCM_DEVICE_ID_NAME_MAP: dict[str, str] = {
+    "0x74a0": "AMD_Instinct_MI300A",
+    "0x74a1": "AMD_Instinct_MI300X",
+    "0x74b5": "AMD_Instinct_MI300X",  # MI300X VF
+    "0x74a5": "AMD_Instinct_MI325X",
+    "0x74b9": "AMD_Instinct_MI325X",  # MI325X VF
+    "0x74a9": "AMD_Instinct_MI300X_HF",
+    "0x74bd": "AMD_Instinct_MI300X_HF",
 }
 
 # Prevent use of clashing `{CUDA/HIP}_VISIBLE_DEVICES``
@@ -83,41 +96,63 @@ def with_amdsmi_context(fn):
     return wrapper
 
 
-def device_id_to_physical_device_id(device_id: int) -> int:
-    if "CUDA_VISIBLE_DEVICES" in os.environ:
-        device_ids = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
-        physical_device_id = device_ids[device_id]
-        return int(physical_device_id)
-    else:
-        return device_id
-
-
-def on_mi250_mi300() -> bool:
+@cache
+def on_gfx1x() -> bool:
     GPU_ARCH = torch.cuda.get_device_properties("cuda").gcnArchName
-    return any(arch in GPU_ARCH for arch in ["gfx90a", "gfx942"])
+    return any(arch in GPU_ARCH for arch in ["gfx11", "gfx12"])
 
 
 @cache
-def use_rocm_custom_paged_attention(qtype: torch.dtype, head_size: int,
-                                    block_size: int, gqa_ratio: int,
-                                    max_seq_len: int,
-                                    sliding_window: int) -> bool:
+def on_mi3xx() -> bool:
+    GPU_ARCH = torch.cuda.get_device_properties("cuda").gcnArchName
+    return any(arch in GPU_ARCH for arch in ["gfx942", "gfx950"])
+
+
+@cache
+def on_gfx9() -> bool:
+    GPU_ARCH = torch.cuda.get_device_properties("cuda").gcnArchName
+    return any(arch in GPU_ARCH for arch in ["gfx90a", "gfx942", "gfx950"])
+
+
+@cache
+def use_rocm_custom_paged_attention(
+        qtype: torch.dtype,
+        head_size: int,
+        block_size: int,
+        gqa_ratio: int,
+        max_seq_len: int,
+        sliding_window: int,
+        kv_cache_dtype: str,
+        alibi_slopes: Optional[torch.Tensor] = None,
+        sinks: Optional[torch.Tensor] = None) -> bool:
 
     GPU_ARCH = torch.cuda.get_device_properties("cuda").gcnArchName
     ON_GFX9 = any(arch in GPU_ARCH for arch in ["gfx90a", "gfx942", "gfx950"])
+    ON_GFX11_GFX12 = any(arch in GPU_ARCH for arch in ["gfx11", "gfx12"])
 
-    # rocm custom page attention not support on gfx1*
     # custom paged attn always supported on V0. On V1, requires sliding window
     # disabled due to observed numerical discrepancy.
-    return (ON_GFX9 and (not envs.APHRODITE_USE_V1 or sliding_window == 0
-                         or sliding_window == (-1, -1))
-            and (qtype == torch.half or qtype == torch.bfloat16)
-            and (head_size == 64 or head_size == 128)
-            and (block_size == 16 or block_size == 32)
-            and (gqa_ratio >= 1 and gqa_ratio <= 16) and max_seq_len <= 32768
-            and (envs.APHRODITE_ROCM_CUSTOM_PAGED_ATTN)
-            and not (envs.APHRODITE_ROCM_USE_AITER_PAGED_ATTN
-                     and envs.APHRODITE_ROCM_USE_AITER))
+    if ON_GFX9:
+        return ((not envs.APHRODITE_USE_V1 or sliding_window == 0
+                 or sliding_window == (-1, -1))
+                and (qtype == torch.half or qtype == torch.bfloat16)
+                and (head_size == 64 or head_size == 128)
+                and (block_size == 16 or block_size == 32)
+                and (gqa_ratio >= 1 and gqa_ratio <= 16)
+                and max_seq_len <= 128 * 1024
+                and (envs.APHRODITE_ROCM_CUSTOM_PAGED_ATTN)
+                and not (envs.APHRODITE_ROCM_USE_AITER_PAGED_ATTN
+                         and envs.APHRODITE_ROCM_USE_AITER) and sinks is None)
+
+    else:
+        return (ON_GFX11_GFX12 and (not envs.APHRODITE_USE_V1 or sliding_window == 0
+                                    or sliding_window == (-1, -1))
+                and (qtype == torch.half or qtype == torch.bfloat16)
+                and head_size == 128 and block_size == 16
+                and (gqa_ratio >= 3 and gqa_ratio <= 16)
+                and max_seq_len <= 128 * 1024 and alibi_slopes is None
+                and kv_cache_dtype == "auto"
+                and envs.APHRODITE_ROCM_CUSTOM_PAGED_ATTN and sinks is None)
 
 
 class RocmPlatform(Platform):
@@ -126,13 +161,26 @@ class RocmPlatform(Platform):
     device_type: str = "cuda"
     dispatch_key: str = "CUDA"
     ray_device_key: str = "GPU"
+    dist_backend: str = "nccl"
     # rocm shares the same device control env var as CUDA
     device_control_env_var: str = "CUDA_VISIBLE_DEVICES"
 
     supported_quantization: list[str] = [
         "awq", "gptq", "fp8", "compressed-tensors", "fbgemm_fp8", "gguf",
-        "quark", "ptpc_fp8"
+        "quark", "ptpc_fp8", "mxfp4"
     ]
+
+    @classmethod
+    def get_vit_attn_backend(cls, support_fa: bool = False) -> _Backend:
+        if support_fa:
+            if (envs.APHRODITE_ROCM_USE_AITER and envs.APHRODITE_ROCM_USE_AITER_MHA
+                    and on_gfx9()):
+                # Note: AITER FA is only supported for Qwen-VL models.
+                # TODO: Add support for other VL models in their model class.
+                return _Backend.ROCM_AITER_FA
+            if on_gfx9():
+                return _Backend.FLASH_ATTN
+        return _Backend.TORCH_SDPA
 
     @classmethod
     def get_attn_backend_cls(cls, selected_backend, head_size, dtype,
@@ -149,16 +197,27 @@ class RocmPlatform(Platform):
 
             if selected_backend == _Backend.TRITON_MLA:
                 if block_size != 1:
-                    logger.info("Using Triton MLA backend.")
-                    return "aphrodite.attention.backends.triton_mla.TritonMLABackend"  # noqa: E501
+                    if use_v1:
+                        logger.info_once(
+                            "Using Triton MLA backend on V1 engine.")
+                        return ("aphrodite.v1.attention.backends.mla."
+                                "triton_mla.TritonMLABackend")
+                    else:
+                        logger.info("Using Triton MLA backend.")
+                        return "aphrodite.attention.backends.triton_mla.TritonMLABackend"  # noqa: E501
                 else:
                     raise ValueError(
                         f" The selected backend, {selected_backend.name},"
                         f"does not support block size {block_size}.")
-            elif selected_backend == _Backend.ROCM_AITER_MLA:
+            elif selected_backend == _Backend.ROCM_AITER_MLA \
+                or selected_backend == _Backend.ROCM_AITER_MLA_APHRODITE_V1:
                 if block_size == 1:
-                    logger.info("Using AITER MLA backend.")
-                    return "aphrodite.attention.backends.rocm_aiter_mla.AiterMLABackend"  # noqa: E501
+                    if use_v1:
+                        logger.info("Using AITER MLA backend on V1 engine.")
+                        return "aphrodite.v1.attention.backends.mla.rocm_aiter_mla.AiterMLABackend"  # noqa: E501
+                    else:
+                        logger.info("Using AITER MLA backend")
+                        return "aphrodite.attention.backends.rocm_aiter_mla.AiterMLABackend"  # noqa: E501
                 else:
                     raise ValueError(
                         f" The selected backend, {selected_backend.name},"
@@ -169,12 +228,19 @@ class RocmPlatform(Platform):
                     f" The selected backend, {selected_backend.name},"
                     f"is not MLA type while requested for MLA backend.")
 
-        selected_backend = (_Backend.ROCM_FLASH if selected_backend
-                            == _Backend.FLASH_ATTN else selected_backend)
+        if selected_backend is None or selected_backend == _Backend.FLASH_ATTN:
+            selected_backend = _Backend.ROCM_FLASH
+
         if envs.APHRODITE_USE_V1:
-            logger.info("Using Triton Attention backend on V1 engine.")
-            return ("aphrodite.v1.attention.backends."
-                    "triton_attn.TritonAttentionBackend")
+            if envs.APHRODITE_ROCM_USE_AITER and envs.APHRODITE_ROCM_USE_AITER_MHA \
+                and on_gfx9():
+                logger.info("Using Flash Attention backend on V1 engine.")
+                return ("aphrodite.v1.attention.backends."
+                        "rocm_aiter_fa.AiterFlashAttentionBackend")
+            else:
+                logger.info("Using Triton Attention backend on V1 engine.")
+                return ("aphrodite.v1.attention.backends."
+                        "triton_attn.TritonAttentionBackend")
         if selected_backend == _Backend.ROCM_FLASH:
             if not cls.has_device_capability(90):
                 # not Instinct series GPUs.
@@ -185,6 +251,13 @@ class RocmPlatform(Platform):
         return "aphrodite.attention.backends.rocm_flash_attn.ROCmFlashAttentionBackend"  # noqa: E501
 
     @classmethod
+    def set_device(cls, device: torch.device) -> None:
+        """
+        Set the device for the current platform.
+        """
+        torch.cuda.set_device(device)
+
+    @classmethod
     @lru_cache(maxsize=8)
     def get_device_capability(cls,
                               device_id: int = 0
@@ -192,9 +265,9 @@ class RocmPlatform(Platform):
         major, minor = torch.cuda.get_device_capability(device_id)
         return DeviceCapability(major=major, minor=minor)
 
-    @staticmethod
+    @classmethod
     @with_amdsmi_context
-    def is_fully_connected(physical_device_ids: List[int]) -> bool:
+    def is_fully_connected(cls, physical_device_ids: list[int]) -> bool:
         """
         Query if the set of gpus are fully connected by xgmi (1 hop)
         """
@@ -220,9 +293,13 @@ class RocmPlatform(Platform):
     @with_amdsmi_context
     @lru_cache(maxsize=8)
     def get_device_name(cls, device_id: int = 0) -> str:
-        physical_device_id = device_id_to_physical_device_id(device_id)
+        physical_device_id = cls.device_id_to_physical_device_id(device_id)
         handle = amdsmi_get_processor_handles()[physical_device_id]
-        return amdsmi_get_gpu_asic_info(handle)["market_name"]
+        asic_info = amdsmi_get_gpu_asic_info(handle)
+        device_name: str = asic_info["device_id"]
+        if device_name in _ROCM_DEVICE_ID_NAME_MAP:
+            return _ROCM_DEVICE_ID_NAME_MAP[device_name]
+        return asic_info["market_name"]
 
     @classmethod
     def get_device_total_memory(cls, device_id: int = 0) -> int:
@@ -231,7 +308,7 @@ class RocmPlatform(Platform):
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
-        if enforce_eager:
+        if enforce_eager and not envs.APHRODITE_USE_V1:
             logger.warning(
                 "To see benefits of async output processing, enable CUDA "
                 "graph. Since, enforce-eager is enabled, async output "
@@ -240,8 +317,7 @@ class RocmPlatform(Platform):
         return True
 
     @classmethod
-    def check_and_update_config(cls,
-                                aphrodite_config: "AphroditeConfig") -> None:
+    def check_and_update_config(cls, aphrodite_config: "AphroditeConfig") -> None:
         cache_config = aphrodite_config.cache_config
         if cache_config and cache_config.block_size is None:
             cache_config.block_size = 16
@@ -259,22 +335,16 @@ class RocmPlatform(Platform):
                     parallel_config.worker_cls = \
                         "aphrodite.worker.multi_step_worker.MultiStepWorker"
             elif aphrodite_config.speculative_config:
-                if envs.APHRODITE_USE_V1:
+                if not envs.APHRODITE_USE_V1:
                     raise NotImplementedError(
-                        "Speculative decoding is not yet supported on Aphrodite"
-                        " V1."
-                    )
-                else:
-                    parallel_config.worker_cls = \
-                        "aphrodite.spec_decode.spec_decode_worker.create_spec_worker"
-                    parallel_config.sd_worker_cls = \
-                        "aphrodite.worker.worker.Worker"
+                        "Speculative decoding is not supported on Aphrodite V0.")
+                parallel_config.worker_cls = "aphrodite.v1.worker.gpu_worker.Worker"
             else:
                 if envs.APHRODITE_USE_V1:
                     parallel_config.worker_cls = \
                             "aphrodite.v1.worker.gpu_worker.Worker"
                 else:
-                    parallel_config.worker_cls = "aphrodite.worker.worker.Worker"  # noqa
+                    parallel_config.worker_cls = "aphrodite.worker.worker.Worker"
 
     @classmethod
     def verify_model_arch(cls, model_arch: str) -> None:
@@ -314,6 +384,11 @@ class RocmPlatform(Platform):
         return "aphrodite.distributed.device_communicators.cuda_communicator.CudaCommunicator"  # noqa
 
     @classmethod
+    def supports_mx(cls) -> bool:
+        gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
+        return any(gfx in gcn_arch for gfx in ["gfx95"])
+
+    @classmethod
     def supports_fp8(cls) -> bool:
         gcn_arch = torch.cuda.get_device_properties(0).gcnArchName
         return any(gfx in gcn_arch for gfx in ['gfx94', 'gfx95', 'gfx12'])
@@ -346,3 +421,49 @@ class RocmPlatform(Platform):
     def get_cu_count(cls, device_id: int = 0) -> int:
         return torch.cuda.get_device_properties(
             device_id).multi_processor_count
+
+    @classmethod
+    def is_navi(cls) -> bool:
+        return 'gfx1' in torch.cuda.get_device_properties(0).gcnArchName
+
+    @classmethod
+    def get_piecewise_backend_cls(cls) -> str:
+        return "aphrodite.compilation.cuda_piecewise_backend.CUDAPiecewiseBackend"  # noqa
+
+    @classmethod
+    def stateless_init_device_torch_dist_pg(
+        cls,
+        backend: str,
+        prefix_store: PrefixStore,
+        group_rank: int,
+        group_size: int,
+        timeout: timedelta,
+    ) -> ProcessGroup:
+        assert is_nccl_available()
+        pg: ProcessGroup = ProcessGroup(
+            prefix_store,
+            group_rank,
+            group_size,
+        )
+        from torch.distributed.distributed_c10d import ProcessGroupNCCL
+
+        backend_options = ProcessGroupNCCL.Options()
+        backend_options._timeout = timeout
+
+        backend_class = ProcessGroupNCCL(prefix_store, group_rank, group_size,
+                                         backend_options)
+        backend_type = ProcessGroup.BackendType.NCCL
+        device = torch.device("cuda")
+        pg._set_default_backend(backend_type)
+        backend_class._set_sequence_number_for_group()
+
+        pg._register_backend(device, backend_type, backend_class)
+        return pg
+
+    @classmethod
+    def device_count(cls) -> int:
+        return cuda_device_count_stateless()
+
+    @classmethod
+    def is_kv_cache_dtype_supported(cls, kv_cache_dtype: str) -> bool:
+        return True

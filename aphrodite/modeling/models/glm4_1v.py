@@ -1085,8 +1085,8 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
                 if metadata["total_num_frames"] != len(video_array):
                     logger.warning(
                         "Total frames in metadata "
-                        "(%s) does not match the length of "
-                        "video array %s. This can "
+                        "({}) does not match the length of "
+                        "video array {}. This can "
                         "be because the video is resampled "
                         "in advance. This may cause "
                         "a divergence with HF implementation.",

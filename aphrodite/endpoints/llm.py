@@ -124,7 +124,7 @@ class LLM:
             sequence length of the encoder input is larger than this, we fall
             back to the eager mode.
         disable_custom_all_reduce: See
-            [ParallelConfig][aphrodite.config.ParallelConfig].
+            [ParallelConfig][aphrodite.common.config.ParallelConfig].
         disable_async_output_proc: Disable async output processing.
             This may result in lower performance.
         hf_token: The token to use as HTTP bearer authorization for remote files
@@ -217,7 +217,7 @@ class LLM:
             except ValidationError as e:
                 logger.error(
                     "Failed to convert 'kv_transfer_config' dict to "
-                    "KVTransferConfig object. Dict: %s. Error: %s",
+                    "KVTransferConfig object. Dict: {}. Error: {}",
                     raw_config_dict, e)
                 # Consider re-raising a more specific Aphrodite error or ValueError
                 # to provide better context to the user.
@@ -286,7 +286,7 @@ class LLM:
         else:
             supported_tasks = self.llm_engine.model_config.supported_tasks
 
-        logger.info("Supported_tasks: %s", supported_tasks)
+        logger.info("Supported_tasks: {}", supported_tasks)
 
         self.supported_tasks = supported_tasks
 
@@ -539,7 +539,7 @@ class LLM:
                 "Multiple modality specific loras were registered and would be"
                 " used by a single prompt consuming several modalities; "
                 " currently we only support one lora per request; as such,"
-                " lora(s) registered with modalities: %s"
+                " lora(s) registered with modalities: {}"
                 " will be skipped", intersection)
             return lora_request
 

@@ -297,7 +297,7 @@ class GPTQBitBLASLinearMethod(LinearMethodBase):
         )
 
         if kernel_type.__name__ not in self._kernel_backends_being_used:
-            logger.info("Using %s for GPTQBitBLASLinearMethod",
+            logger.info("Using {} for GPTQBitBLASLinearMethod",
                         kernel_type.__name__)
             self._kernel_backends_being_used.add(kernel_type.__name__)
 

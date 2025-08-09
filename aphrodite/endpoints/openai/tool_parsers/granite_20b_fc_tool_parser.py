@@ -52,7 +52,7 @@ class Granite20bFCToolParser(ToolParser):
         dec = JSONDecoder()
         try:
             matches = list(self.tool_call_regex.finditer(model_output))
-            logger.debug("Found %d tool call matches", len(matches))
+            logger.debug("Found {} tool call matches", len(matches))
 
             raw_function_calls = []
 
@@ -69,7 +69,7 @@ class Granite20bFCToolParser(ToolParser):
                         model_output[start_of_json:next_function_call_start])
                     [0])
 
-            logger.debug("Extracted %d tool calls", len(raw_function_calls))
+            logger.debug("Extracted {} tool calls", len(raw_function_calls))
             tool_calls = [
                 ToolCall(
                     type="function",
@@ -186,7 +186,7 @@ class Granite20bFCToolParser(ToolParser):
                 self.current_tool_id = len(tool_call_arr) - 1
                 self.current_tool_name_sent = False
                 self.streamed_args_for_tool.append("")
-                logger.debug("starting on new tool %d", self.current_tool_id)
+                logger.debug("starting on new tool {}", self.current_tool_id)
                 return delta
 
             # if the current tool name hasn't been sent, send if available

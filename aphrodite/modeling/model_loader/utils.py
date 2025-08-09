@@ -67,7 +67,7 @@ def initialize_model(
     warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
     logger.warning(
-        "Trying to guess the arguments for old-style model class %s",
+        "Trying to guess the arguments for old-style model class {}",
         model_class,
     )
     # try to be compatible with old-style model class

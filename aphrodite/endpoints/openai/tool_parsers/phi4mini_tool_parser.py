@@ -60,7 +60,7 @@ class Phi4MiniJsonToolParser(ToolParser):
                 json_content = '[' + matches.group(1) + ']'
 
                 function_call_arr = json.loads(json_content)
-                logger.debug("Successfully extracted %d function calls",
+                logger.debug("Successfully extracted {} function calls",
                              len(function_call_arr))
             except json.JSONDecodeError as e:
                 logger.error(

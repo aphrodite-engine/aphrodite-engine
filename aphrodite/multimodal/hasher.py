@@ -43,7 +43,7 @@ class MultiModalHasher:
             })
 
         logger.warning(
-            "No serialization method found for %s. "
+            "No serialization method found for {}. "
             "Falling back to pickle.", type(obj))
 
         return pickle.dumps(obj)

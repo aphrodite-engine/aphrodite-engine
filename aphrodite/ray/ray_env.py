@@ -57,13 +57,13 @@ def get_env_vars_to_copy(exclude_vars: Optional[set[str]] = None,
 
     to_destination = " to " + destination if destination is not None else ""
 
-    logger.info("RAY_NON_CARRY_OVER_ENV_VARS from config: %s",
+    logger.info("RAY_NON_CARRY_OVER_ENV_VARS from config: {}",
                 RAY_NON_CARRY_OVER_ENV_VARS)
-    logger.info("Copying the following environment variables%s: %s",
+    logger.info("Copying the following environment variables{}: {}",
                 to_destination,
                 [v for v in env_vars_to_copy if v in os.environ])
     logger.info(
         "If certain env vars should NOT be copied, add them to "
-        "%s file", RAY_NON_CARRY_OVER_ENV_VARS_FILE)
+        "{} file", RAY_NON_CARRY_OVER_ENV_VARS_FILE)
 
     return env_vars_to_copy

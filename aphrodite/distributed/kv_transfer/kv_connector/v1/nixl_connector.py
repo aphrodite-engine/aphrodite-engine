@@ -1048,7 +1048,7 @@ class NixlConnectorWorker:
             count = self.consumer_notification_counts_by_req.pop(req_id, 0)
             logger.warning(
                 "Releasing expired KV blocks for request {} which were "
-                "retrieved by %d decode worker(s) within %d seconds.", req_id,
+                "retrieved by {} decode worker(s) within {} seconds.", req_id,
                 count, envs.APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT)
             del self._reqs_to_send[req_id]
             done_sending.add(req_id)

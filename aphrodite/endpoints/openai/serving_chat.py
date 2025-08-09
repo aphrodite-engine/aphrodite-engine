@@ -125,7 +125,7 @@ class OpenAIServingChat(OpenAIServing):
         if self.default_sampling_params:
             source = self.model_config.generation_config
             source = "model" if source == "auto" else source
-            logger.info("Using default chat sampling params from %s: %s",
+            logger.info("Using default chat sampling params from {}: {}",
                         source, self.default_sampling_params)
 
         self.use_harmony = model_config.hf_config.model_type == "gpt_oss"
@@ -160,7 +160,7 @@ class OpenAIServingChat(OpenAIServing):
         """
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
-            logger.error("Error with model %s", error_check_ret)
+            logger.error("Error with model {}", error_check_ret)
             return error_check_ret
 
         # If the engine is dead, raise the engine's DEAD_ERROR.

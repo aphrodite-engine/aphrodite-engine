@@ -156,7 +156,7 @@ class OpenAIServingModels:
                                              status_code=status_code)
 
             self.lora_requests[lora_name] = lora_request
-            logger.info("Loaded new LoRA adapter: name '%s', path '%s'",
+            logger.info("Loaded new LoRA adapter: name '{}', path '{}'",
                         lora_name, lora_path)
             return f"Success: LoRA adapter '{lora_name}' added successfully."
 
@@ -174,7 +174,7 @@ class OpenAIServingModels:
 
             # Safe to delete now since we hold the lock
             del self.lora_requests[lora_name]
-            logger.info("Removed LoRA adapter: name '%s'", lora_name)
+            logger.info("Removed LoRA adapter: name '{}'", lora_name)
             return f"Success: LoRA adapter '{lora_name}' removed successfully."
 
     async def _check_load_lora_adapter_request(
@@ -252,12 +252,12 @@ class OpenAIServingModels:
                         await self.engine_client.add_lora(lora_request)
                         self.lora_requests[lora_name] = lora_request
                         logger.info(
-                            "Resolved and loaded LoRA adapter '%s' using %s",
+                            "Resolved and loaded LoRA adapter '{}' using {}",
                             lora_name, resolver.__class__.__name__)
                         return lora_request
                     except BaseException as e:
                         logger.warning(
-                            "Failed to load LoRA '%s' resolved by %s: %s. "
+                            "Failed to load LoRA '{}' resolved by {}: {}. "
                             "Trying next resolver.", lora_name,
                             resolver.__class__.__name__, e)
                         continue

@@ -202,7 +202,7 @@ class TensorSchema:
 
     def print_shapes(self) -> None:
         """Print TensorShape annotations for debugging."""
-        logger.debug("Shapes in %s:", self.__class__.__name__)
+        logger.debug("Shapes in {}:", self.__class__.__name__)
         type_hints = get_type_hints(self.__class__, include_extras=True)
 
         for field_name, field_type in type_hints.items():
@@ -210,4 +210,4 @@ class TensorSchema:
                 args = get_args(field_type)
                 for arg in args:
                     if isinstance(arg, TensorShape):
-                        logger.debug("  %s: %s", field_name, str(arg))
+                        logger.debug("  {}: {}", field_name, str(arg))

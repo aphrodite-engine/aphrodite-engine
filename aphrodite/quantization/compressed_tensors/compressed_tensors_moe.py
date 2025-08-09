@@ -621,7 +621,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
             num_experts = (moe.num_local_experts
                            if use_batched_format else moe.num_experts)
 
-            logger.debug("CutlassExpertsFp8(%s)", self.__class__.__name__)
+            logger.debug("CutlassExpertsFp8({})", self.__class__.__name__)
 
             experts = CutlassExpertsFp8(
                 num_experts,
@@ -644,7 +644,7 @@ class CompressedTensorsW8A8Fp8MoEMethod(CompressedTensorsMoEMethod):
 
         assert not self.rocm_aiter_moe_enabled and not self.use_marlin
 
-        logger.debug("BatchedTritonExperts(%s)", self.__class__.__name__)
+        logger.debug("BatchedTritonExperts({})", self.__class__.__name__)
 
         if (prepare_finalize.activation_format ==
                 FusedMoEActivationFormat.BatchedExperts):

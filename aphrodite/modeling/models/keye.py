@@ -65,7 +65,7 @@ def smart_resize(
 ):
     if height < factor:
         logger.warning(
-            "smart_resize: height=%s < factor=%s, reset height=factor",
+            "smart_resize: height={} < factor={}, reset height=factor",
             height,
             factor,
         )
@@ -74,7 +74,7 @@ def smart_resize(
 
     if width < factor:
         logger.warning(
-            "smart_resize: width=%s < factor=%s, reset width=factor",
+            "smart_resize: width={} < factor={}, reset width=factor",
             width,
             factor,
         )

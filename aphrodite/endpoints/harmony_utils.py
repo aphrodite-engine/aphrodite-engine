@@ -40,7 +40,7 @@ def get_system_message(
             REASONING_EFFORT[reasoning_effort])
     if start_date is None:
         # NOTE(woosuk): This brings non-determinism in vLLM. Be careful.
-        start_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        start_date = datetime.datetime.now().strftime("%Y-%m-{}")
     sys_msg_content = sys_msg_content.with_conversation_start_date(start_date)
     if browser_description is not None:
         sys_msg_content = sys_msg_content.with_tools(browser_description)

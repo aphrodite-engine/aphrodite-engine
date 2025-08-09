@@ -130,8 +130,8 @@ class ShardedStateLoader(BaseModelLoader):
                     param_data = param_data.narrow(dim, 0, size)
             if tensor.shape != param_shape:
                 logger.warning(
-                    "loading tensor of shape %s into "
-                    "parameter '%s' of shape %s",
+                    "loading tensor of shape {} into "
+                    "parameter '{}' of shape {}",
                     tensor.shape,
                     key,
                     param_shape,

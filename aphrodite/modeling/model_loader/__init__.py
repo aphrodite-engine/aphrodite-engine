@@ -82,14 +82,14 @@ def register_model_loader(load_format: str):
     def _wrapper(model_loader_cls):
         if load_format in _LOAD_FORMAT_TO_MODEL_LOADER:
             logger.warning(
-                "Load format `%s` is already registered, and will be "
-                "overwritten by the new loader class `%s`.", load_format,
+                "Load format `{}` is already registered, and will be "
+                "overwritten by the new loader class `{}`.", load_format,
                 model_loader_cls)
         if not issubclass(model_loader_cls, BaseModelLoader):
             raise ValueError("The model loader must be a subclass of "
                              "`BaseModelLoader`.")
         _LOAD_FORMAT_TO_MODEL_LOADER[load_format] = model_loader_cls
-        logger.info("Registered model loader `%s` with load format `%s`",
+        logger.info("Registered model loader `{}` with load format `{}`",
                     model_loader_cls, load_format)
         return model_loader_cls
 

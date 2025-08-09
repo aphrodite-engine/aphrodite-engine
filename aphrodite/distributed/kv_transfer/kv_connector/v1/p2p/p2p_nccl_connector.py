@@ -151,8 +151,8 @@ class P2pNcclConnector(KVConnectorBase_V1):
                     dst_kv_cache_layer[slot_mapping[:num_token],
                                        ...] = src_kv_cache
                     logger.warning(
-                        "🚧src_kv_cache does not match, num_slot:%d, "
-                        "num_token:%d, request_id:{}", len(slot_mapping),
+                        "🚧src_kv_cache does not match, num_slot:{}, "
+                        "num_token:{}, request_id:{}", len(slot_mapping),
                         num_token, request_id)
 
                 dst_kv_cache_layer.reshape(dst_kv_cache_layer_shape)
@@ -170,8 +170,8 @@ class P2pNcclConnector(KVConnectorBase_V1):
                     dst_kv_cache_layer[:, slot_mapping[:num_token],
                                        ...] = src_kv_cache
                     logger.warning(
-                        "🚧src_kv_cache does not match, num_slot:%d, "
-                        "num_token:%d, request_id:{}", len(slot_mapping),
+                        "🚧src_kv_cache does not match, num_slot:{}, "
+                        "num_token:{}, request_id:{}", len(slot_mapping),
                         num_token, request_id)
 
                 dst_kv_cache_layer.reshape(dst_kv_cache_layer_shape)

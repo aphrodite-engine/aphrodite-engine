@@ -934,7 +934,7 @@ class ProcessingCache:
             )
 
             if debug:
-                logger.debug("Calculated size of %s to be %.2f GiB",
+                logger.debug("Calculated size of {} to be %.2f GiB",
                              type(value), size / GiB_bytes)
 
             return size

@@ -209,8 +209,8 @@ class MultiModalProfiler(Generic[_I]):
         elif total_len > seq_len and not envs.APHRODITE_USE_V1:
             # `max_num_batched_tokens` is defined by `SchedulerConfig`
             logger.warning_once(
-                "The encoder sequence length used for profiling (max_num_batched_tokens / max_num_seqs = %d) "  # noqa: E501
-                "is too short to hold the multi-modal embeddings in the worst case (%d tokens in total, out of which %s are reserved for multi-modal embeddings). "  # noqa: E501
+                "The encoder sequence length used for profiling (max_num_batched_tokens / max_num_seqs = {}) "  # noqa: E501
+                "is too short to hold the multi-modal embeddings in the worst case ({} tokens in total, out of which {} are reserved for multi-modal embeddings). "  # noqa: E501
                 "This may cause certain multi-modal inputs to fail during inference, even when the input text is short. "  # noqa: E501
                 "To avoid this, you should increase `max_model_len`, reduce `max_num_seqs`, and/or reduce `mm_counts`.",  # noqa: E501
                 seq_len,
@@ -234,8 +234,8 @@ class MultiModalProfiler(Generic[_I]):
         if total_len > seq_len and not envs.APHRODITE_USE_V1:
             # `max_num_batched_tokens` is defined by `SchedulerConfig`
             logger.warning_once(
-                "The sequence length used for profiling (max_num_batched_tokens / max_num_seqs = %d) "  # noqa: E501
-                "is too short to hold the multi-modal embeddings in the worst case (%d tokens in total, out of which %s are reserved for multi-modal embeddings). "  # noqa: E501
+                "The sequence length used for profiling (max_num_batched_tokens / max_num_seqs = {}) "  # noqa: E501
+                "is too short to hold the multi-modal embeddings in the worst case ({} tokens in total, out of which {} are reserved for multi-modal embeddings). "  # noqa: E501
                 "This may cause certain multi-modal inputs to fail during inference, even when the input text is short. "  # noqa: E501
                 "To avoid this, you should increase `max_model_len`, reduce `max_num_seqs`, and/or reduce `mm_counts`.",  # noqa: E501
                 seq_len,
@@ -274,8 +274,8 @@ class MultiModalProfiler(Generic[_I]):
                                       & mm_counts.keys())
             if total_mm_tokens > seq_len:
                 logger.warning_once(
-                    "The sequence length (%d) is smaller than the pre-defined"
-                    " worst-case total number of multimodal tokens (%d). "
+                    "The sequence length ({}) is smaller than the pre-defined"
+                    " worst-case total number of multimodal tokens ({}). "
                     "This may cause certain multi-modal inputs to fail during "
                     "inference. To avoid this, you should increase "
                     "`max_model_len` or reduce `mm_counts`.",

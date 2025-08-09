@@ -408,13 +408,13 @@ def resolve_hf_chat_template(
                 processor.chat_template is not None:
                 return processor.chat_template
         except Exception:
-            logger.debug("Failed to load AutoProcessor chat template for %s", tokenizer.name_or_path, exc_info=True)  # noqa: E501
+            logger.debug("Failed to load AutoProcessor chat template for {}", tokenizer.name_or_path, exc_info=True)  # noqa: E501
 
     # 3rd priority: AutoTokenizer chat template
     try:
         return tokenizer.get_chat_template(chat_template, tools=tools)
     except Exception:
-        logger.debug("Failed to load AutoTokenizer chat template for %s",
+        logger.debug("Failed to load AutoTokenizer chat template for {}",
                      tokenizer.name_or_path, exc_info=True)
 
     # 4th priority: Predefined fallbacks
@@ -423,11 +423,11 @@ def resolve_hf_chat_template(
         tokenizer_name_or_path=model_config.tokenizer,
     )
     if path is not None:
-        logger.info("Loading chat template fallback for %s as there isn't one "
+        logger.info("Loading chat template fallback for {} as there isn't one "
                     "defined on HF Hub.", tokenizer.name_or_path)
         chat_template = load_chat_template(path)
     else:
-        logger.debug("There is no chat template fallback for %s",
+        logger.debug("There is no chat template fallback for {}",
                      tokenizer.name_or_path)
 
     return chat_template
@@ -466,15 +466,15 @@ def _log_chat_template_content_format(
     detected_format: ChatTemplateContentFormatOption,
 ):
     logger.info(
-        "Detected the chat template content format to be '%s'. "
+        "Detected the chat template content format to be '{}'. "
         "You can set `--chat-template-content-format` to override this.",
         detected_format,
     )
 
     if given_format != "auto" and given_format != detected_format:
         logger.warning(
-            "You specified `--chat-template-content-format %s` "
-            "which is different from the detected format '%s'. "
+            "You specified `--chat-template-content-format {}` "
+            "which is different from the detected format '{}'. "
             "If our automatic detection is incorrect, please consider "
             "opening a GitHub issue so that we can improve it: "
             "https://github.com/aphrodite-project/aphrodite/issues/new/choose",
@@ -913,10 +913,10 @@ def _get_full_multimodal_text_prompt(placeholder_storage: dict[str, list],
             logger.error(
                 "Placeholder count is negative! "
                 "Ensure that the 'interleave_strings' flag is disabled "
-                "(current value: %s) "
+                "(current value: {}) "
                 "when manually placing image placeholders.", interleave_strings
             )
-            logger.debug("Input prompt: %s", text_prompt)
+            logger.debug("Input prompt: {}", text_prompt)
             raise ValueError(
                 f"Found more '{placeholder}' placeholders in input prompt than "
                 "actual multimodal data items.")
@@ -1096,7 +1096,7 @@ def _parse_chat_message_content_part(
     # content is None, log a warning and skip
     if part_type in VALID_MESSAGE_CONTENT_MM_PART_TYPES and content is None:
         logger.warning(
-            "Skipping multimodal part '%s' (type: '%s') "
+            "Skipping multimodal part '{}' (type: '{}') "
             "with empty / unparsable content.", part, part_type)
         return None
 

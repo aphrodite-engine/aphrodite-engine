@@ -1180,7 +1180,7 @@ async def scale_elastic_ep(raw_request: Request):
                             detail="Scale failed due to request drain timeout "
                             f"after {drain_timeout} seconds") from e
     except Exception as e:
-        logger.error("Scale failed: %s", e)
+        logger.error("Scale failed: {}", e)
         raise HTTPException(status_code=500, detail="Scale failed") from e
     finally:
         _scaling_elastic_ep = False
@@ -1544,7 +1544,7 @@ def load_log_config(log_config_file: Optional[str]) -> Optional[dict]:
         with open(log_config_file) as f:
             return json.load(f)
     except Exception as e:
-        logger.warning("Failed to load log config from file %s: error %s",
+        logger.warning("Failed to load log config from file {}: error {}",
                        log_config_file, e)
         return None
 
@@ -1781,7 +1781,7 @@ def _log_non_streaming_response(response_body: list) -> None:
     """Log non-streaming response."""
     try:
         decoded_body = response_body[0].decode()
-        logger.info("response_body={%s}", decoded_body)
+        logger.info("response_body={{}}", decoded_body)
     except UnicodeDecodeError:
         logger.info("response_body={<binary_data>}")
 

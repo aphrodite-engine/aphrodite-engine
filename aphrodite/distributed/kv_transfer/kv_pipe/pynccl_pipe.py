@@ -206,7 +206,7 @@ class PyNcclPipe(KVPipeBase):
             with self.buffer_size_lock:
                 self.buffer_size -= tensor_size
         except Exception as e:
-            logger.error("[rank%d]: Exception when trying to send {}, msg: {}",
+            logger.error("[rank{}]: Exception when trying to send {}, msg: {}",
                          torch.distributed.get_rank(), str(tensor), str(e))
             import traceback
             traceback.print_exc()

@@ -203,8 +203,8 @@ class MultiModalRegistry:
         def wrapper(model_cls: N) -> N:
             if self._processor_factories.contains(model_cls, strict=True):
                 logger.warning(
-                    "Model class %s already has a multi-modal processor "
-                    "registered to %s. It is overwritten by the new one.",
+                    "Model class {} already has a multi-modal processor "
+                    "registered to {}. It is overwritten by the new one.",
                     model_cls, self)
 
             self._processor_factories[model_cls] = _ProcessorFactories(
@@ -294,7 +294,7 @@ class MultiModalRegistry:
         token_ids = dummy_data.prompt_token_ids
         if len(token_ids) < seq_len:
             logger.warning_once(
-                "Expected at least %d dummy encoder tokens for profiling, but found %d tokens instead.",  # noqa: E501
+                "Expected at least {} dummy encoder tokens for profiling, but found {} tokens instead.",  # noqa: E501
                 seq_len,
                 len(token_ids),
             )

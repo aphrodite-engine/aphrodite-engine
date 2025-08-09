@@ -13,7 +13,7 @@ from typing_extensions import assert_never
 
 from aphrodite.common.outputs import PoolingOutput, PoolingRequestOutput
 from aphrodite.utils import merge_async_iterators
-from aphrodite.config import ModelConfig
+from aphrodite.common.config import ModelConfig
 from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (ErrorResponse,

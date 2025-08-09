@@ -187,7 +187,7 @@ class FusedMoEMethodBase(QuantizeMethodBase):
 
         self.topk_indices_dtype = None
         if prepare_finalize is not None:
-            logger.debug("%s", prepare_finalize.__class__.__name__)
+            logger.debug("{}", prepare_finalize.__class__.__name__)
             self.topk_indices_dtype = prepare_finalize.topk_indices_dtype()
             experts = self.select_gemm_impl(prepare_finalize, self.moe)
             self.fused_experts = FusedMoEModularKernel(
@@ -262,13 +262,13 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
     ) -> FusedMoEPermuteExpertsUnpermute:
         if (prepare_finalize.activation_format ==
                 FusedMoEActivationFormat.BatchedExperts):
-            logger.debug("BatchedTritonExperts %s", self.moe)
+            logger.debug("BatchedTritonExperts {}", self.moe)
             return BatchedTritonExperts(
                 max_num_tokens=self.moe.max_num_tokens,
                 num_dispatchers=prepare_finalize.num_dispatchers(),
             )
         else:
-            logger.debug("TritonExperts %s", self.moe)
+            logger.debug("TritonExperts {}", self.moe)
             return TritonExperts()
 
     def create_weights(self, layer: torch.nn.Module, num_experts: int,

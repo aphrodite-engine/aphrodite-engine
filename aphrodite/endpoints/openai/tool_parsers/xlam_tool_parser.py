@@ -143,7 +143,7 @@ class xLAMToolParser(ToolParser):
             for idx, call in enumerate(tool_calls_data):
                 if (not isinstance(call, dict) or "name" not in call
                         or "arguments" not in call):
-                    logger.debug("Invalid tool call format at index %d", idx)
+                    logger.debug("Invalid tool call format at index {}", idx)
                     continue
 
                 tool_call = ToolCall(

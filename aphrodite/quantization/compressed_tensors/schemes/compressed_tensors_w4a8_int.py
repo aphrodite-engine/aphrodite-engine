@@ -81,7 +81,7 @@ class CompressedTensorsW4A8Int(CompressedTensorsScheme):
 
         kernel_type = choose_mp_linear_kernel(mp_linear_kernel_config)
         if kernel_type.__name__ not in self._kernel_backends_being_used:
-            logger.info("Using %s for CompressedTensorsW4A8Int",
+            logger.info("Using {} for CompressedTensorsW4A8Int",
                         kernel_type.__name__)
             self._kernel_backends_being_used.add(kernel_type.__name__)
 

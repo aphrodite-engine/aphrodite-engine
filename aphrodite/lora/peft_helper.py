@@ -101,7 +101,7 @@ class PEFTHelper:
                              **tensorizer_args.stream_kwargs) as f:
                 config = json.load(f)
 
-            logger.info("Successfully deserialized LoRA config from %s",
+            logger.info("Successfully deserialized LoRA config from {}",
                         tensorizer_config.tensorizer_dir)
 
         else:

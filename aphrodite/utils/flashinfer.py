@@ -134,14 +134,14 @@ def has_nvidia_artifactory() -> bool:
         else:
             log_once(
                 "WARNING",
-                "NVIDIA artifactory returned failed status code: %d",
+                "NVIDIA artifactory returned failed status code: {}",
                 response.status_code,
             )
         return accessible
     except Exception as e:
         log_once(
             "WARNING",
-            "Failed to connect to NVIDIA artifactory: %s",
+            "Failed to connect to NVIDIA artifactory: {}",
             e,
         )
         return False

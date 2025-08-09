@@ -67,7 +67,7 @@ class OpenAISpeechToText(OpenAIServing):
 
         if self.default_sampling_params:
             logger.info(
-                "Overwriting default completion sampling param with: %s",
+                "Overwriting default completion sampling param with: {}",
                 self.default_sampling_params)
 
     @cached_property
@@ -306,7 +306,7 @@ class OpenAISpeechToText(OpenAIServing):
 
         except Exception as e:
             # TODO: Use a aphrodite-specific Validation Error
-            logger.exception("Error in %s stream generator.", self.task_type)
+            logger.exception("Error in {} stream generator.", self.task_type)
             data = self.create_streaming_error_response(str(e))
             yield f"data: {data}\n\n"
         # Send the final done message after all response.n are finished
