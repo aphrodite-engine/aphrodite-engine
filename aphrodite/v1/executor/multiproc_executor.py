@@ -141,7 +141,7 @@ class MultiprocExecutor(Executor):
             proc_name = next(h.proc.name for h in workers
                              if h.proc.sentinel == died[0])
             logger.error(
-                "Worker proc %s died unexpectedly, "
+                "Worker proc {} died unexpectedly, "
                 "shutting down executor.", proc_name)
             _self.shutdown()
             callback = _self.failure_callback
@@ -518,7 +518,7 @@ class WorkerProc:
                     # Send signal to self to trigger clean shutdown
                     os.kill(os.getpid(), signal.SIGTERM)
                 except Exception as e:
-                    logger.warning("Death monitoring error: %s", e)
+                    logger.warning("Death monitoring error: {}", e)
 
             death_monitor = Thread(target=monitor_parent_death,
                                    daemon=True,

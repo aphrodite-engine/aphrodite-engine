@@ -71,6 +71,6 @@ def shutdown_prometheus():
     try:
         pid = os.getpid()
         multiprocess.mark_process_dead(pid, path)
-        logger.debug("Marked Prometheus metrics for process %d as dead", pid)
+        logger.debug("Marked Prometheus metrics for process {} as dead", pid)
     except Exception as e:
-        logger.error("Error during metrics cleanup: %s", str(e))
+        logger.error("Error during metrics cleanup: {}", str(e))

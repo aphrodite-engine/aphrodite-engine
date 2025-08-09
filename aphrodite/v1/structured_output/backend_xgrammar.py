@@ -155,8 +155,8 @@ class XgrammarGrammar(StructuredOutputGrammar):
         for token in tokens:
             if not self.matcher.accept_token(token):
                 logger.error(
-                    "Failed to advance FSM for request %s "
-                    "for tokens %s. Please file an issue.", request_id, token)
+                    "Failed to advance FSM for request {} "
+                    "for tokens {}. Please file an issue.", request_id, token)
                 return False
             self.num_processed_tokens += 1
         self._is_terminated = self.matcher.is_terminated()

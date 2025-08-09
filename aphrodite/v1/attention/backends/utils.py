@@ -260,7 +260,7 @@ def get_kv_cache_layout():
             cache_layout = get_kv_connector_cache_layout()
     else:
         logger.info_once("`APHRODITE_KV_CACHE_LAYOUT` environment variable " \
-        "detected. Setting KV cache layout to %s.", cache_layout)
+        "detected. Setting KV cache layout to {}.", cache_layout)
     if _KV_CACHE_LAYOUT_OVERRIDE is not None:
         cache_layout = _KV_CACHE_LAYOUT_OVERRIDE
     return cache_layout

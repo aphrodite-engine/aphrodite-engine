@@ -768,8 +768,8 @@ def get_num_blocks(aphrodite_config: AphroditeConfig, num_layers: int,
         num_gpu_blocks_override = \
             aphrodite_config.cache_config.num_gpu_blocks_override
         logger.info(
-            "Overriding num_gpu_blocks=%d with "
-            "num_gpu_blocks_override=%d", num_blocks, num_gpu_blocks_override)
+            "Overriding num_gpu_blocks={} with "
+            "num_gpu_blocks_override={}", num_blocks, num_gpu_blocks_override)
         num_blocks = num_gpu_blocks_override
     return num_blocks
 
@@ -823,11 +823,11 @@ def _get_kv_cache_config_uniform_type(aphrodite_config: AphroditeConfig,
 
     num_tokens = num_blocks * aphrodite_config.cache_config.block_size
     num_tokens_str = f"{num_tokens:,}"
-    logger.info("GPU KV cache size: %s tokens", num_tokens_str)
+    logger.info("GPU KV cache size: {} tokens", num_tokens_str)
     max_model_len_str = f"{aphrodite_config.model_config.max_model_len:,}"
     max_concurrency = get_max_concurrency_for_kv_cache_config(
         aphrodite_config, kv_cache_config)
-    logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+    logger.info("Maximum concurrency for {} tokens per request: {:.2f}x",
                 max_model_len_str, max_concurrency)
     return kv_cache_config
 
@@ -946,7 +946,7 @@ def _get_kv_cache_config_uniform_page_size(
         num_padding_layers = group_size - len(layers) % group_size
         if num_padding_layers != group_size:
             logger.warning(
-                "Add %d padding layers, may waste at most %.2f%% KV cache memory",  # noqa
+                "Add {} padding layers, may waste at most {:.2f}% KV cache memory",  # noqa
                 num_padding_layers,
                 num_padding_layers / len(layers) * 100,
             )
@@ -987,11 +987,11 @@ def _get_kv_cache_config_uniform_page_size(
     # Print the KV cache size and maximum concurrency.
     num_tokens = num_blocks // len(grouped_layers) * min_block_size
     num_tokens_str = f"{num_tokens:,}"
-    logger.info("GPU KV cache size: %s tokens", num_tokens_str)
+    logger.info("GPU KV cache size: {} tokens", num_tokens_str)
     max_model_len_str = f"{aphrodite_config.model_config.max_model_len:,}"
     max_concurrency = get_max_concurrency_for_kv_cache_config(
         aphrodite_config, kv_cache_config)
-    logger.info("Maximum concurrency for %s tokens per request: %.2fx",
+    logger.info("Maximum concurrency for {} tokens per request: {:.2f}x",
                 max_model_len_str, max_concurrency)
     return kv_cache_config
 

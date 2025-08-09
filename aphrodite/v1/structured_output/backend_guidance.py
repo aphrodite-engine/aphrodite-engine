@@ -103,7 +103,7 @@ class GuidanceGrammar(StructuredOutputGrammar):
             err = self.ll_matcher.get_error()
             if err:
                 self.printed_error = True
-                logger.warning("LLMatcher error: %s", err)
+                logger.warning("LLMatcher error: {}", err)
 
     def accept_tokens(self, request_id: str, tokens: list[int]) -> bool:
         """Accepts a list of tokens and advances the parser.

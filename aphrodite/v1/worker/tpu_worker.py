@@ -1,6 +1,6 @@
 """A TPU worker class."""
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import torch.distributed
@@ -11,17 +11,24 @@ import torch_xla.runtime as xr
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig, ParallelConfig
-from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.common.config import AphroditeConfig
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
+from aphrodite.distributed.kv_transfer import (ensure_kv_transfer_initialized,
+                                               has_kv_transfer_group)
+from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling import set_random_seed
+from aphrodite.platforms import current_platform
+from aphrodite.tasks import SupportedTask
+from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE, cdiv
+from aphrodite.v1.attention.backends.pallas import TPU_HEAD_SIZE_ALIGNMENT
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.kv_cache_interface import (AttentionSpec, KVCacheConfig,
                                              KVCacheSpec)
 from aphrodite.v1.outputs import ModelRunnerOutput
-from aphrodite.v1.utils import bind_kv_cache, report_usage_stats
+from aphrodite.v1.utils import report_usage_stats
 from aphrodite.v1.worker.tpu_model_runner import TPUModelRunner
+from aphrodite.v1.worker.utils import bind_kv_cache
 
 
 class TPUWorker:
@@ -41,10 +48,18 @@ class TPUWorker:
         self.lora_config = aphrodite_config.lora_config
         self.load_config = aphrodite_config.load_config
         self.parallel_config = aphrodite_config.parallel_config
+        self.use_spmd = envs.APHRODITE_XLA_USE_SPMD
+        self.original_parallel_config = None
+        if self.use_spmd:
+            # Under SPMD mode, distributed env is initialized as if there is
+            # only one worker/device.
+            self.original_parallel_config = self.parallel_config
+            self.parallel_config.tensor_parallel_size = 1
+            self.parallel_config.pipeline_parallel_size = 1
+            self.parallel_config.world_size = 1
         self.scheduler_config = aphrodite_config.scheduler_config
         self.device_config = aphrodite_config.device_config
         self.speculative_config = aphrodite_config.speculative_config
-        self.prompt_adapter_config = aphrodite_config.prompt_adapter_config
         self.observability_config = aphrodite_config.observability_config
 
         self.parallel_config.rank = rank
@@ -79,6 +94,11 @@ class TPUWorker:
         if self.model_config.seed is None:
             self.model_config.seed = 0
 
+    def initialize_cache(self, num_gpu_blocks: int,
+                         num_cpu_blocks: int) -> None:
+        self.cache_config.num_gpu_blocks = num_gpu_blocks
+        self.cache_config.num_cpu_blocks = num_cpu_blocks
+
     def init_device(self):
         os.environ["PJRT_DEVICE"] = "TPU"
         # Note: Currently the XLA compiler wrongly uses 2D ring strategy on 1D
@@ -86,15 +106,18 @@ class TPUWorker:
         # `xla_tpu_force_1d_allreduce_at_chunk_count` is a temporary solution to
         # fix this. It will be removed after the bug in XLA compiler is fixed.
         os.environ["LIBTPU_INIT_ARGS"] = (
-            "--xla_tpu_force_1d_allreduce_at_chunk_count=1")
+            os.environ.get("LIBTPU_INIT_ARGS", "") +
+            " --xla_tpu_force_1d_allreduce_at_chunk_count=1"
+            " --xla_jf_conv_input_fusion=False")
+        # --xla_jf_conv_input_fusion=False is used to improve the perf of
+        # quantized matmul.
         torch.set_grad_enabled(False)
         torch.set_default_dtype(self.model_config.dtype)
 
         # Initialize the distributed environment.
-        init_tpu_worker_distributed_environment(self.parallel_config,
-                                                self.rank,
-                                                self.distributed_init_method,
-                                                self.local_rank)
+        self._init_tpu_worker_distributed_environment(
+            self.aphrodite_config, self.rank, self.distributed_init_method,
+            self.local_rank)
 
         # Device initialization should happen after initializing
         # the distributed runtime.
@@ -112,7 +135,7 @@ class TPUWorker:
         # Re-evaluate limit, with MM we may get close to this limit.
         torch._dynamo.config.cache_size_limit = 128
         # Use persistent cache to avoid XLA recompilation.
-        # NOTE: Set per-rank cache path since different ranks
+        # NOTE(woosuk): Set per-rank cache path since different ranks
         # can have slightly different XLA graphs.
         world_size = self.parallel_config.world_size
         rank = xr.global_ordinal()
@@ -128,7 +151,9 @@ class TPUWorker:
             xr.initialize_cache(per_rank_path, readonly=False)
 
         # Init ModelRunner here, so that we have access to self.device.
-        self.model_runner = TPUModelRunner(self.aphrodite_config, self.device)
+        self.model_runner = \
+            TPUModelRunner(self.aphrodite_config, self.device,
+                           self.original_parallel_config)
 
         if rank == 0:
             # If usage stat is enabled, collect relevant info.
@@ -143,9 +168,7 @@ class TPUWorker:
 
                 # Use an empty tensor instead of `None`` to force Dynamo to pass
                 # it by reference, rather by specializing on the value ``None``.
-                tpu_kv_cache = torch.tensor([],
-                                            dtype=dtype,
-                                            device=self.device)
+                tpu_kv_cache = torch.tensor([], dtype=dtype).to(self.device)
                 kv_caches[layer_name] = tpu_kv_cache
             else:
                 raise NotImplementedError(
@@ -158,7 +181,8 @@ class TPUWorker:
             runner_kv_caches)
 
         # `max_num_tokens >= max_num_batched_tokens` due to padding.
-        self.model_runner.profile_run(self.model_runner.max_num_tokens)
+        with self.model_runner.maybe_setup_dummy_loras(self.lora_config):
+            self.model_runner.profile_run(self.model_runner.max_num_tokens)
 
         # Synchronize before measuring the memory usage.
         xm.wait_device_ops()
@@ -173,9 +197,20 @@ class TPUWorker:
 
         # Get the maximum amount of memory used by the model weights and
         # intermediate activations.
-        m = xm.get_memory_info(self.device)
-        total_memory_size = m["bytes_limit"]
-        current_mem = m["bytes_used"]
+        if self.use_spmd:
+            # This is a workaround for the TPU SPMD mode. The get_memory_info
+            # API doesn't work with SPMD mode in PyTorch/XLA.
+            # TODO: use xm.get_memory_info for SPMD once it's supported in
+            # PyTorch/XLA.
+            import tpu_info
+            chip_type, _ = tpu_info.device.get_local_chips()
+            device_usage = tpu_info.metrics.get_chip_usage(chip_type)
+            total_memory_size = device_usage[0].total_memory
+            current_mem = device_usage[0].memory_usage
+        else:
+            m = xm.get_memory_info(self.device)
+            total_memory_size = m["bytes_limit"]
+            current_mem = m["bytes_used"]
         # Ideally we would use profiled = m["peak_bytes_used"] to
         # get weights + activations. But there is memory used during
         # compilation / weight loading that impacts the peak and
@@ -187,7 +222,17 @@ class TPUWorker:
         usable_memory_size = int(total_memory_size *
                                  self.cache_config.gpu_memory_utilization)
         tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
-
+        head_size = self.model_config.get_head_size()
+        if head_size > 0:
+            padded_head_size = cdiv(
+                head_size, TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
+            if padded_head_size != head_size:
+                logger.warning_once("head size is padded to {}",
+                                    padded_head_size)
+            # We adjust the usable memory size for the KV cache to prevent OOM
+            # errors, even after padding the head_size.
+            tpu_kv_cache_bytes = (tpu_kv_cache_bytes * head_size //
+                                  padded_head_size)
         return int(tpu_kv_cache_bytes)
 
     def execute_model(
@@ -195,7 +240,9 @@ class TPUWorker:
         scheduler_output: "SchedulerOutput",
     ) -> Optional[ModelRunnerOutput]:
         output = self.model_runner.execute_model(scheduler_output)
-        return output if self.is_driver_worker else None
+        # every worker's output is needed when kv_transfer_group is setup
+        return output if self.is_driver_worker or has_kv_transfer_group(
+        ) else None
 
     def profile(self, is_start: bool = True):
         if self.rank < 1:
@@ -208,8 +255,17 @@ class TPUWorker:
             else:
                 xp.stop_trace()
 
+    def add_lora(self, lora_request: LoRARequest) -> bool:
+        return self.model_runner.add_lora(lora_request)
+
     def load_model(self) -> None:
         self.model_runner.load_model()
+
+    def update_config(self, overrides: dict[str, Any]) -> None:
+        self.model_runner.update_config(overrides)
+
+    def reload_weights(self) -> None:
+        self.model_runner.reload_weights()
 
     def compile_or_warm_up_model(self) -> None:
         if not self.model_config.enforce_eager:
@@ -222,6 +278,9 @@ class TPUWorker:
     def get_model(self) -> nn.Module:
         return self.model_runner.get_model()
 
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        return self.model_runner.get_supported_tasks()
+
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         return self.model_runner.get_kv_cache_spec()
 
@@ -233,25 +292,38 @@ class TPUWorker:
         # worker will always be healthy as long as it's running.
         return
 
+    def _init_tpu_worker_distributed_environment(
+        self,
+        aphrodite_config: AphroditeConfig,
+        rank: int,
+        distributed_init_method: Optional[str] = None,
+        local_rank: int = -1,
+    ) -> None:
+        """Initialize the distributed environment."""
+        if self.use_spmd:
+            xr.use_spmd()
+        # NOTE(woosuk): This is just to initialize the TP group and broadcast
+        # the input objects on CPU. The all-reduce and all-gather ops on TPU
+        # are invoked by `xm.all_reduce` and `xm.all_gather` which use their
+        # own context.
+        parallel_config = aphrodite_config.parallel_config
+        init_distributed_environment(
+            world_size=parallel_config.world_size,
+            rank=rank,
+            local_rank=local_rank,
+            distributed_init_method=distributed_init_method,
+            backend=current_platform.dist_backend,
+        )
+        ensure_model_parallel_initialized(
+            parallel_config.tensor_parallel_size,
+            parallel_config.pipeline_parallel_size)
 
-def init_tpu_worker_distributed_environment(
-    parallel_config: ParallelConfig,
-    rank: int,
-    distributed_init_method: Optional[str] = None,
-    local_rank: int = -1,
-) -> None:
-    """Initialize the distributed environment."""
+        ensure_kv_transfer_initialized(aphrodite_config)
 
-    # NOTE: This is just to initialize the TP group and broadcast
-    # the input objects on CPU. The all-reduce and all-gather ops on TPU
-    # are invoked by `xm.all_reduce` and `xm.all_gather` which use their
-    # own context.
-    init_distributed_environment(
-        world_size=parallel_config.world_size,
-        rank=rank,
-        local_rank=local_rank,
-        distributed_init_method=distributed_init_method,
-        backend="gloo",
-    )
-    ensure_model_parallel_initialized(parallel_config.tensor_parallel_size,
-                                      parallel_config.pipeline_parallel_size)
+
+try:
+    from tpu_commons.worker import TPUWorker as TPUCommonsWorker
+    TPUWorker = TPUCommonsWorker  # type: ignore
+except ImportError:
+    logger.info("tpu_commons not found, using Aphrodite's TPUWorker.")
+    pass
