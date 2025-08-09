@@ -1,8 +1,6 @@
-# SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Compatibility wrapper for FlashInfer API changes.
 
-Users of vLLM should always import **only** these wrappers.
+Users of Aphrodite should always import **only** these wrappers.
 """
 from __future__ import annotations
 
@@ -15,11 +13,9 @@ from typing import Any, Callable, NoReturn, Optional
 
 import requests
 
-import vllm.envs as envs
-from vllm.logger import init_logger
-from vllm.platforms import current_platform
-
-logger = init_logger(__name__)
+import aphrodite.common.envs as envs
+from loguru import logger
+from aphrodite.platforms import current_platform
 
 # This is the storage path for the cubins, it can be replaced
 # with a local path for testing.
@@ -162,9 +158,9 @@ def use_trtllm_attention(
             or num_qo_heads % num_kv_heads != 0 or attn_head_size != 128):
         return False
 
-    env_value = envs.VLLM_USE_TRTLLM_ATTENTION
+    env_value = envs.APHRODITE_USE_TRTLLM_ATTENTION
     if env_value is not None:
-        logger.info_once("VLLM_USE_TRTLLM_ATTENTION is set to %s", env_value)
+        logger.info_once("APHRODITE_USE_TRTLLM_ATTENTION is set to %s", env_value)
         # Environment variable is set - respect it
         # Making the conditional check for zero because
         # the path is automatically enabled if the batch size condition

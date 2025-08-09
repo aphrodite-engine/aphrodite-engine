@@ -1,8 +1,6 @@
-# SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Compatibility wrapper for DeepGEMM API changes.
 
-Users of vLLM should always import **only** these wrappers.
+Users of Aphrodite should always import **only** these wrappers.
 """
 from __future__ import annotations
 
@@ -13,9 +11,9 @@ from typing import Any, Callable, NoReturn
 
 import torch
 
-import vllm.envs as envs
-from vllm.platforms import current_platform
-from vllm.utils import cdiv, has_deep_gemm
+import aphrodite.common.envs as envs
+from aphrodite.platforms import current_platform
+from aphrodite.utils import cdiv, has_deep_gemm
 
 
 @functools.cache
@@ -34,7 +32,7 @@ def is_blackwell_deep_gemm_used() -> bool:
     """Return ``True`` if vLLM is configured to use DeepGEMM on a
     Blackwell-class GPU.
     """
-    if not (envs.VLLM_USE_DEEP_GEMM and has_deep_gemm()):
+    if not (envs.APHRODITE_USE_DEEP_GEMM and has_deep_gemm()):
         return False
 
     _lazy_init()
@@ -82,7 +80,7 @@ def _lazy_init() -> None:
     DEEP_GEMM_JIT_CACHE_ENV_NAME = 'DG_JIT_CACHE_DIR'
     if not os.environ.get(DEEP_GEMM_JIT_CACHE_ENV_NAME, None):
         os.environ[DEEP_GEMM_JIT_CACHE_ENV_NAME] = os.path.join(
-            envs.VLLM_CACHE_ROOT, "deep_gemm")
+            envs.APHRODITE_CACHE_ROOT, "deep_gemm")
 
     _dg = importlib.import_module("deep_gemm")
 

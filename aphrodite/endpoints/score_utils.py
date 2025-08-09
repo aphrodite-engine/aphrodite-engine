@@ -138,7 +138,7 @@ def apply_score_template(
     prompt_2: str,
 ) -> str:
     # NOTE(Simon): lazy import to avoid bring in all dependencies (e.g. gguf)
-    from aphrodite.model_executor.model_loader import get_model_cls
+    from aphrodite.modeling.model_loader import get_model_cls
 
     model = get_model_cls(model_config)
     if supports_score_template(model):
@@ -162,7 +162,7 @@ def post_process_tokens(
         This is an in-place operation.
     """
     # NOTE(Simon): lazy import to avoid bring in all dependencies (e.g. gguf)
-    from aphrodite.model_executor.model_loader import get_model_cls
+    from aphrodite.modeling.model_loader import get_model_cls
 
     model = get_model_cls(model_config)
     if supports_score_template(model):
