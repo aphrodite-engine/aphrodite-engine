@@ -7,7 +7,6 @@
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.platforms import _current_platform
 from aphrodite.platforms.rocm import use_rocm_custom_paged_attention
 from aphrodite.triton_utils import tl, triton
 
@@ -57,6 +56,7 @@ def kernel_paged_attention_2d(
         stride_v_cache_3: tl.int64,  # int
         filter_by_query_len: tl.constexpr,  # bool
         query_start_len_ptr,  # [num_seqs+1]
+        USE_SINKS: tl.constexpr,  # bool
 ):
     seq_idx = tl.program_id(0)
     kv_head_idx = tl.program_id(1)
@@ -93,7 +93,7 @@ def kernel_paged_attention_2d(
 
     block_table_offset = seq_idx * block_table_stride
 
-    if sink_ptr is None:
+    if not USE_SINKS:
         M = tl.full([num_queries_per_kv_padded],
                     float("-inf"),
                     dtype=tl.float32)
@@ -382,4 +382,5 @@ def chunked_prefill_paged_decode(
             stride_v_cache_3=value_cache.stride(3),
             filter_by_query_len=True,
             query_start_len_ptr=query_start_loc,
+            USE_SINKS=sinks is not None,
         )
