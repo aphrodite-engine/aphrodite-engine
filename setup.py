@@ -10,6 +10,8 @@ from pathlib import Path
 from shutil import which
 
 import torch
+from typing import Optional
+from contextlib import suppress
 from packaging.version import Version, parse
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
@@ -84,6 +86,67 @@ elif (sys.platform.startswith("linux") and torch.version.cuda is None
 MAIN_CUDA_VERSION = "12.8"
 
 
+def _get_available_memory_bytes() -> Optional[int]:
+    """Return available system memory in bytes, or None if unknown.
+
+    Tries multiple strategies in order:
+    - psutil (if available)
+    - POSIX sysconf with SC_AVPHYS_PAGES
+    - /proc/meminfo on Linux (MemAvailable)
+    - vm_stat on macOS (free + inactive pages)
+    """
+    # Try psutil if available
+    with suppress(Exception):
+        import psutil  # type: ignore
+        return int(psutil.virtual_memory().available)
+
+    # Try POSIX sysconf for available pages
+    with suppress(Exception):
+        page_size = os.sysconf('SC_PAGE_SIZE')  # type: ignore[arg-type]
+        avail_pages = os.sysconf('SC_AVPHYS_PAGES')  # type: ignore[arg-type]
+        return int(page_size) * int(avail_pages)
+
+    # Linux fallback: /proc/meminfo
+    with suppress(Exception):
+        if sys.platform.startswith("linux"):
+            with open("/proc/meminfo", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("MemAvailable:"):
+                        parts = line.split()
+                        # Value is in kB
+                        return int(parts[1]) * 1024
+
+    # macOS fallback: vm_stat
+    with suppress(Exception):
+        if sys.platform.startswith("darwin"):
+            out = subprocess.check_output(["vm_stat"], encoding="utf-8")
+            page_size_bytes = 4096
+            for line in out.splitlines():
+                if "page size of" in line and "bytes" in line:
+                    # e.g., "Mach VM Stats: (page size of 16384 bytes)"
+                    with suppress(Exception):
+                        page_size_bytes = int(
+                            line.split("page size of")[1]
+                            .split("bytes")[0]
+                            .strip()
+                        )
+                    break
+            pages_free = 0
+            pages_inactive = 0
+            for line in out.splitlines():
+                if line.strip().startswith("Pages free"):
+                    pages_free = int(
+                        line.split(":")[1].strip().strip(". ")
+                    )
+                elif line.strip().startswith("Pages inactive"):
+                    pages_inactive = int(
+                        line.split(":")[1].strip().strip(". ")
+                    )
+            return (pages_free + pages_inactive) * page_size_bytes
+
+    return None
+
+
 def is_sccache_available() -> bool:
     return which("sccache") is not None
 
@@ -124,21 +187,39 @@ class cmake_build_ext(build_ext):
     #
     def compute_num_jobs(self):
         # `num_jobs` is either the value of the MAX_JOBS environment variable
-        # (if defined) or the number of CPUs available.
+        # (if defined) or computed from available RAM (6 GiB per job),
+        # falling back to the number of CPUs available.
         num_jobs = envs.MAX_JOBS
         if num_jobs is not None:
             num_jobs = int(num_jobs)
             logger.info(f"Using MAX_JOBS={num_jobs} as the number of jobs.")
         else:
-            try:
-                # os.sched_getaffinity() isn't universally available, so fall
-                #  back to os.cpu_count() if we get an error here.
-                num_jobs = len(os.sched_getaffinity(0))
-                logger.info(f"Using {num_jobs} CPUs as the number of jobs.")
-            except AttributeError:
-                num_jobs = os.cpu_count()
-                logger.info(f"Using os.cpu_count()={num_jobs} as the number of"
-                            " jobs.")
+            available_bytes = _get_available_memory_bytes()
+            if available_bytes is not None and available_bytes > 0:
+                available_gib = max(0, available_bytes // (1024**3))
+                # Heuristic: 6 GiB per job
+                num_jobs = max(1, int(available_gib // 4))
+                logger.info(
+                    (
+                        f"RAM heuristic: ~{available_gib} GiB avail -> "
+                        f"num_jobs={num_jobs} (4 GiB/job). If you think this "
+                        "is too low or too high, set MAX_JOBS to a higher "
+                        "value."
+                    )
+                )
+            else:
+                try:
+                    # os.sched_getaffinity() not always available; fallback to
+                    # os.cpu_count() when needed.
+                    num_jobs = len(os.sched_getaffinity(0))
+                    logger.info(
+                        f"CPU heuristic: {num_jobs} jobs (RAM unknown)."
+                    )
+                except AttributeError:
+                    num_jobs = os.cpu_count()
+                    logger.info(
+                        f"CPU heuristic: os.cpu_count()={num_jobs} (RAM unk)."
+                    )
 
         nvcc_threads = None
         if _is_cuda() and get_nvcc_cuda_version() >= Version("11.2"):
@@ -302,12 +383,12 @@ class cmake_build_ext(build_ext):
 
 
 def _is_hpu() -> bool:
-    # if APHRODITE_TARGET_DEVICE env var was set explicitly, skip HPU autodetection
+    # if APHRODITE_TARGET_DEVICE env var was set explicitly, skip autodetection
     if os.getenv("APHRODITE_TARGET_DEVICE", None) == APHRODITE_TARGET_DEVICE:
         return APHRODITE_TARGET_DEVICE == "hpu"
 
-    # if APHRODITE_TARGET_DEVICE was not set explicitly, check if hl-smi succeeds,
-    # and if it doesn't, check if habanalabs driver is loaded
+    # if APHRODITE_TARGET_DEVICE was not set explicitly, check if hl-smi works;
+    # otherwise, check if habanalabs driver is loaded
     is_hpu_available = False
     try:
         out = subprocess.run(["hl-smi"], capture_output=True, check=True)
@@ -345,16 +426,15 @@ def _is_hip() -> bool:
 
 
 def _is_neuron() -> bool:
-    torch_neuronx_installed = True
+    # When APHRODITE_TARGET_DEVICE is explicitly set to "neuron", return True.
+    # Otherwise, attempt a lightweight probe to see if Neuron is available.
+    if APHRODITE_TARGET_DEVICE == "neuron":
+        return True
     try:
         subprocess.run(["neuron-ls"], capture_output=True, check=True)
+        return True
     except (FileNotFoundError, PermissionError, subprocess.CalledProcessError):
-        torch_neuronx_installed = False
-    return torch_neuronx_installed
-
-
-def _is_neuron() -> bool:
-    return APHRODITE_TARGET_DEVICE == "neuron"
+        return False
 
 
 def _is_tpu() -> bool:
