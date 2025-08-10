@@ -191,6 +191,7 @@ async def test_server_load(server: RemoteOpenAIServer):
             server.url_for("v1/completions"),
             headers={"Content-Type": "application/json"},
             json={
+                "model": MODEL_NAME,
                 "prompt": "Give me a long story",
                 "max_tokens": 1000,
                 "temperature": 0,

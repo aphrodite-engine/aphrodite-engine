@@ -15,22 +15,23 @@ from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer,
                           BatchEncoding, BatchFeature)
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
-from tests.models.utils import (TokensTextLogprobs,
-                                TokensTextLogprobsPromptLogprobs)
 from aphrodite import LLM, SamplingParams
 from aphrodite.assets.audio import AudioAsset
 from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
-from aphrodite.common.config import TaskOption, _get_and_verify_dtype
-from aphrodite.common.connections import global_http_connection
-from aphrodite.distributed import (cleanup_dist_env_and_memory,
-                              init_distributed_environment,
-                              initialize_model_parallel)
-from aphrodite.inputs import (ExplicitEncoderDecoderPrompt, TextPrompt,
-                         to_enc_dec_tuple_list, zip_enc_dec_prompts)
+from aphrodite.common.config import (ConvertOption, RunnerOption,
+                                     _get_and_verify_dtype)
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams
-from aphrodite.common.utils import cuda_device_count_stateless
+from aphrodite.connections import global_http_connection
+from aphrodite.distributed import (cleanup_dist_env_and_memory,
+                                   init_distributed_environment,
+                                   initialize_model_parallel)
+from aphrodite.inputs import (ExplicitEncoderDecoderPrompt, TextPrompt,
+                              to_enc_dec_tuple_list, zip_enc_dec_prompts)
+from aphrodite.transformers_utils.utils import maybe_model_redirect
+from tests.models.utils import (TokensTextLogprobs,
+                                TokensTextLogprobsPromptLogprobs)
 
 _TEST_DIR = os.path.dirname(__file__)
 _TEST_PROMPTS = [os.path.join(_TEST_DIR, "prompts", "example.txt")]
@@ -108,11 +109,11 @@ class AudioTestAssets(list[AudioAsset]):
 
 
 IMAGE_ASSETS = ImageTestAssets()
-"""Singleton instance of :class:`ImageTestAssets`."""
+"""Singleton instance of {class}`ImageTestAssets`."""
 VIDEO_ASSETS = VideoTestAssets()
-"""Singleton instance of :class:`VideoTestAssets`."""
+"""Singleton instance of {class}`VideoTestAssets`."""
 AUDIO_ASSETS = AudioTestAssets()
-"""Singleton instance of :class:`AudioTestAssets`."""
+"""Singleton instance of {class}`AudioTestAssets`."""
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -140,6 +141,7 @@ def run_with_both_engines(request, monkeypatch):
     # Automatically runs tests twice, once with V1 and once without
     use_v1 = request.param
     # Tests decorated with `@skip_v1` are only run without v1
+    skip_v0 = request.node.get_closest_marker("skip_v0")
     skip_v1 = request.node.get_closest_marker("skip_v1")
 
     if use_v1:
@@ -147,6 +149,8 @@ def run_with_both_engines(request, monkeypatch):
             pytest.skip("Skipping test on aphrodite V1")
         monkeypatch.setenv('APHRODITE_USE_V1', '1')
     else:
+        if skip_v0:
+            pytest.skip("Skipping test on aphrodite V0")
         monkeypatch.setenv('APHRODITE_USE_V1', '0')
 
     yield
@@ -307,19 +311,26 @@ class HfRunner:
         dtype: str = "auto",
         *,
         model_kwargs: Optional[dict[str, Any]] = None,
+        trust_remote_code: bool = True,
         is_sentence_transformer: bool = False,
         is_cross_encoder: bool = False,
         skip_tokenizer_init: bool = False,
         auto_cls: type[_BaseAutoModelClass] = AutoModelForCausalLM,
     ) -> None:
+        model_name = maybe_model_redirect(model_name)
         self.model_name = model_name
 
         self.config = AutoConfig.from_pretrained(
             model_name,
-            trust_remote_code=True,
+            trust_remote_code=trust_remote_code,
         )
         self.device = self.get_default_device()
-        self.dtype = torch_dtype = _get_and_verify_dtype(self.config, dtype)
+        self.dtype = torch_dtype = _get_and_verify_dtype(
+            self.model_name,
+            self.config,
+            dtype=dtype,
+            is_pooling_model=is_sentence_transformer or is_cross_encoder,
+        )
 
         model_kwargs = model_kwargs if model_kwargs is not None else {}
         model_kwargs.setdefault("torch_dtype", torch_dtype)
@@ -332,7 +343,7 @@ class HfRunner:
                 model_name,
                 device=self.device,
                 model_kwargs=model_kwargs,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code,
             )
         elif is_cross_encoder:
             # Lazy init required for AMD CI
@@ -342,19 +353,25 @@ class HfRunner:
                 model_name,
                 device=self.device,
                 automodel_args=model_kwargs,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code,
             )
         else:
             model = auto_cls.from_pretrained(
                 model_name,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code,
                 **model_kwargs,
             )
+
+            # in case some unquantized custom models are not in same dtype
+            if (getattr(model, "quantization_method", None) is None
+                    and any(p.dtype != self.dtype
+                            for p in model.parameters())):
+                model = model.to(dtype=self.dtype)
 
             if (getattr(model, "quantization_method", None) != "bitsandbytes"
                     and len({p.device
                              for p in model.parameters()}) < 2):
-                model = model.to(self.device)
+                model = model.to(device=self.device)
 
             self.model = model
 
@@ -362,7 +379,7 @@ class HfRunner:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 model_name,
                 torch_dtype=torch_dtype,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code,
             )
 
         # don't put this import at the top level
@@ -371,7 +388,7 @@ class HfRunner:
         self.processor = AutoProcessor.from_pretrained(
             model_name,
             torch_dtype=torch_dtype,
-            trust_remote_code=True,
+            trust_remote_code=trust_remote_code,
         )
         if skip_tokenizer_init:
             self.tokenizer = self.processor.tokenizer
@@ -419,6 +436,15 @@ class HfRunner:
             all_inputs.append(inputs)
 
         return all_inputs
+
+    def get_prompt_embeddings(self, prompts: list[str]) -> list[torch.Tensor]:
+        all_inputs = self.get_inputs(prompts)
+        embeddings = []
+        for inputs in all_inputs:
+            input_ids = self.wrap_device(inputs)["input_ids"]
+            embedding = self.model.get_input_embeddings()(input_ids).squeeze(0)
+            embeddings.append(embedding)
+        return embeddings
 
     def classify(self, prompts: list[str]) -> list[str]:
         # output is final logits
@@ -701,8 +727,12 @@ class HfRunner:
                **kwargs) -> list[list[torch.Tensor]]:
         return self.model.encode(prompts, *args, **kwargs)
 
-    def predict(self, prompts: list[list[str]]) -> torch.Tensor:
-        return self.model.predict(prompts, convert_to_tensor=True)
+    def predict(self, prompts: list[list[str]], *args,
+                **kwargs) -> torch.Tensor:
+        return self.model.predict(prompts,
+                                  *args,
+                                  convert_to_tensor=True,
+                                  **kwargs)
 
     def __enter__(self):
         return self
@@ -720,12 +750,13 @@ def hf_runner():
 class AphroditeRunner:
     """
     The default value of some arguments have been modified from
-    :class:`~aphrodite.LLM` as follows:
+    {class}`~aphrodite.LLM` as follows:
 
     - `trust_remote_code`: Set to `True` instead of `False` for convenience.
     - `seed`: Set to `0` instead of `None` for test reproducibility.
     - `max_model_len`: Set to `1024` instead of `None` to reduce memory usage.
-    - `block_size`: Set to `16` instead of `None` to reduce memory usage.
+    - `block_size`: To reduce memory usage, set default to `64` if on XPU
+        devices, otherwise default to `16`.
     - `enable_chunked_prefill`: Set to `False` instead of `None` for
       test reproducibility.
     - `enforce_eager`: Set to `False` to test CUDA graph.
@@ -734,24 +765,26 @@ class AphroditeRunner:
     def __init__(
         self,
         model_name: str,
-        task: TaskOption = "auto",
+        runner: RunnerOption = "auto",
+        convert: ConvertOption = "auto",
         tokenizer_name: Optional[str] = None,
         tokenizer_mode: str = "auto",
         trust_remote_code: bool = True,
         seed: Optional[int] = 0,
-        max_model_len: int = 1024,
+        max_model_len: Optional[int] = 1024,
         dtype: str = "auto",
         disable_log_stats: bool = True,
         tensor_parallel_size: int = 1,
-        block_size: int = 16,
+        block_size: int = 16 if not torch.xpu.is_available() else 64,
         enable_chunked_prefill: Optional[bool] = False,
         swap_space: int = 4,
         enforce_eager: Optional[bool] = False,
         **kwargs,
     ) -> None:
-        self.model = LLM(
+        self.llm = LLM(
             model=model_name,
-            task=task,
+            runner=runner,
+            convert=convert,
             tokenizer=tokenizer_name,
             tokenizer_mode=tokenizer_mode,
             trust_remote_code=trust_remote_code,
@@ -769,7 +802,7 @@ class AphroditeRunner:
 
     def get_inputs(
         self,
-        prompts: Union[list[str], list[torch.Tensor]],
+        prompts: Union[list[str], list[torch.Tensor], list[int]],
         images: Optional[PromptImageInput] = None,
         videos: Optional[PromptVideoInput] = None,
         audios: Optional[PromptAudioInput] = None,
@@ -791,11 +824,16 @@ class AphroditeRunner:
             if audios is not None and (audio := audios[i]) is not None:
                 multi_modal_data["audio"] = audio
 
-            text_prompt_kwargs = {
-                ("prompt" if isinstance(prompt, str) else "prompt_embeds"):
-                prompt,
+            text_prompt_kwargs: dict[str, Any] = {
                 "multi_modal_data": multi_modal_data or None
             }
+            if isinstance(prompt, str):
+                text_prompt_kwargs["prompt"] = prompt
+            elif isinstance(prompt, list):
+                text_prompt_kwargs["prompt_token_ids"] = prompt
+            else:
+                text_prompt_kwargs["prompt_embeds"] = prompt
+
             inputs.append(TextPrompt(**text_prompt_kwargs))
 
         return inputs
@@ -814,9 +852,9 @@ class AphroditeRunner:
                                  videos=videos,
                                  audios=audios)
 
-        req_outputs = self.model.generate(inputs,
-                                          sampling_params=sampling_params,
-                                          **kwargs)
+        req_outputs = self.llm.generate(inputs,
+                                        sampling_params=sampling_params,
+                                        **kwargs)
 
         outputs: list[tuple[list[list[int]], list[str]]] = []
         for req_output in req_outputs:
@@ -862,9 +900,9 @@ class AphroditeRunner:
                                  videos=videos,
                                  audios=audios)
 
-        req_outputs = self.model.generate(inputs,
-                                          sampling_params=sampling_params,
-                                          **kwargs)
+        req_outputs = self.llm.generate(inputs,
+                                        sampling_params=sampling_params,
+                                        **kwargs)
 
         toks_str_logsprobs_prompt_logprobs = (
             self._final_steps_generate_w_logprobs(req_outputs))
@@ -884,8 +922,8 @@ class AphroditeRunner:
         '''
 
         assert sampling_params.logprobs is not None
-        req_outputs = self.model.generate(encoder_decoder_prompts,
-                                          sampling_params=sampling_params)
+        req_outputs = self.llm.generate(encoder_decoder_prompts,
+                                        sampling_params=sampling_params)
         toks_str_logsprobs_prompt_logprobs = (
             self._final_steps_generate_w_logprobs(req_outputs))
         # Omit prompt logprobs if not required by sampling params
@@ -978,7 +1016,7 @@ class AphroditeRunner:
                                  videos=videos,
                                  audios=audios)
 
-        outputs = self.model.beam_search(
+        outputs = self.llm.beam_search(
             inputs,
             BeamSearchParams(beam_width=beam_width, max_tokens=max_tokens))
         returned_outputs = []
@@ -989,41 +1027,60 @@ class AphroditeRunner:
         return returned_outputs
 
     def classify(self, prompts: list[str]) -> list[list[float]]:
-        req_outputs = self.model.classify(prompts)
+        req_outputs = self.llm.classify(prompts)
         return [req_output.outputs.probs for req_output in req_outputs]
 
-    def encode(self,
-               prompts: list[str],
-               images: Optional[PromptImageInput] = None,
-               videos: Optional[PromptVideoInput] = None,
-               audios: Optional[PromptAudioInput] = None,
-               *args,
-               **kwargs) -> list[list[float]]:
+    def embed(self,
+              prompts: list[str],
+              images: Optional[PromptImageInput] = None,
+              videos: Optional[PromptVideoInput] = None,
+              audios: Optional[PromptAudioInput] = None,
+              *args,
+              **kwargs) -> list[list[float]]:
         inputs = self.get_inputs(prompts,
                                  images=images,
                                  videos=videos,
                                  audios=audios)
 
-        req_outputs = self.model.embed(inputs, *args, **kwargs)
+        req_outputs = self.llm.embed(inputs, *args, **kwargs)
         return [req_output.outputs.embedding for req_output in req_outputs]
+
+    def encode(self, prompts: list[str]) -> list[list[float]]:
+        req_outputs = self.llm.encode(prompts)
+        return [req_output.outputs.data for req_output in req_outputs]
+
+    def reward(self, prompts: list[str]) -> list[list[float]]:
+        req_outputs = self.llm.reward(prompts)
+        return [req_output.outputs.data for req_output in req_outputs]
 
     def score(
         self,
         text_1: Union[str, list[str]],
         text_2: Union[str, list[str]],
+        *args,
+        **kwargs,
     ) -> list[float]:
-        req_outputs = self.model.score(text_1, text_2)
+        req_outputs = self.llm.score(text_1, text_2, *args, **kwargs)
         return [req_output.outputs.score for req_output in req_outputs]
 
     def apply_model(self, func: Callable[[nn.Module], _R]) -> list[_R]:
-        executor = self.model.llm_engine.model_executor
-        return executor.apply_model(func)
+        if hasattr(self.llm.llm_engine, "model_executor"):
+            # This works either in V0 or in V1 with
+            # APHRODITE_ENABLE_V1_MULTIPROCESSING=0
+            executor = self.llm.llm_engine.model_executor
+            return executor.apply_model(func)
+
+        # This works in V1 with APHRODITE_ALLOW_INSECURE_SERIALIZATION=1
+        def _apply_model(self):
+            return func(self.get_model())
+
+        return self.llm.llm_engine.collective_rpc(_apply_model)
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        del self.model
+        del self.llm
         cleanup_dist_env_and_memory()
 
 
@@ -1035,7 +1092,7 @@ def aphrodite_runner():
 @pytest.fixture()
 def temporary_enable_log_propagate():
     import logging
-    logger = logging.getLogger("aphrodite-engine")
+    logger = logging.getLogger("aphrodite")
     logger.propagate = True
     yield
     logger.propagate = False
@@ -1053,7 +1110,8 @@ def num_gpus_available():
     """Get number of GPUs without initializing the CUDA context
     in current process."""
 
-    return cuda_device_count_stateless()
+    from aphrodite.platforms import current_platform
+    return current_platform.device_count()
 
 
 temp_dir = tempfile.gettempdir()

@@ -1,18 +1,16 @@
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
+from typing import Any, NamedTuple, Optional, Union
 
 import torch
 import torch.nn.functional as F
+from transformers import PretrainedConfig
 
-from aphrodite.common.config import ModelConfig, TaskOption
+from aphrodite.common.config import ModelConfig, RunnerOption
 from aphrodite.inputs import InputContext
 from aphrodite.common.sequence import Logprob, PromptLogprobs, SampleLogprobs
 
 from .registry import HF_EXAMPLE_MODELS
-
-if TYPE_CHECKING:
-    from ..conftest import HfRunner
 
 TokensText = tuple[list[int], str]
 
@@ -255,7 +253,7 @@ def check_logprobs_close(
 
 def build_model_context(
     model_id: str,
-    task: TaskOption = "auto",
+    runner: RunnerOption = "auto",
     dtype: Union[str, torch.dtype] = "auto",
     model_config_kwargs: Optional[dict[str, Any]] = None,
     mm_processor_kwargs: Optional[dict[str, Any]] = None,
@@ -280,9 +278,10 @@ def build_model_context(
     model_config_kwargs = model_config_kwargs or {}
     model_config = ModelConfig(
         model_id,
-        task=task,
+        runner=runner,
         tokenizer=model_info.tokenizer or model_id,
         tokenizer_mode=model_info.tokenizer_mode,
+        revision=model_info.revision,
         trust_remote_code=model_info.trust_remote_code,
         dtype=dtype,
         seed=0,
@@ -315,6 +314,7 @@ def check_embeddings_close(
                                   dim=0)
 
         fail_msg = (f"Test{prompt_idx}:"
+                    f"\nCosine similarity: \t{sim:.4f}"
                     f"\n{name_0}:\t{embeddings_0[:16]!r}"
                     f"\n{name_1}:\t{embeddings_1[:16]!r}")
 
@@ -328,28 +328,84 @@ def matryoshka_fy(tensor: torch.Tensor, dimensions: int):
     return tensor
 
 
+def softmax(data):
+    if data.shape[-1] == 1:
+        return F.sigmoid(data)
+    else:
+        return F.softmax(data, dim=-1)
+
+
 class EmbedModelInfo(NamedTuple):
     name: str
-    is_matryoshka: bool
+    is_matryoshka: bool = False
     matryoshka_dimensions: Optional[list[int]] = None
     architecture: str = ""
+    dtype: str = "auto"
     enable_test: bool = True
 
 
-def run_embedding_correctness_test(
-    hf_model: "HfRunner",
-    inputs: list[str],
-    aphrodite_outputs: Sequence[list[float]],
-    dimensions: Optional[int] = None,
-):
-    hf_outputs = hf_model.encode(inputs)
-    if dimensions:
-        hf_outputs = matryoshka_fy(hf_outputs, dimensions)
+class RerankModelInfo(NamedTuple):
+    name: str
+    architecture: str = ""
+    dtype: str = "auto"
+    enable_test: bool = True
 
-    check_embeddings_close(
-        embeddings_0_lst=hf_outputs,
-        embeddings_1_lst=aphrodite_outputs,
-        name_0="hf",
-        name_1="aphrodite",
-        tol=1e-2,
-    )
+
+def dummy_hf_overrides(
+    hf_config: PretrainedConfig,
+    model_arch: str,
+    exist_overrides: Optional[dict[str, Any]] = None,
+) -> PretrainedConfig:
+    """
+    Dummy HF overrides function used to create dummy model
+    with only minimum nums of layer.
+    """
+    hf_config.update(exist_overrides or {})
+
+    text_config = hf_config.get_text_config()
+
+    # Ensure at least 2 expert per group
+    # Since `grouped_topk` assumes top-2
+    n_group = getattr(text_config, 'n_group', None)
+    num_experts = n_group * 2 if n_group is not None else 2
+
+    # we use three layers for Gemma-3n to check
+    # both normal layer and kv_shared_layer
+    num_hidden_layers = (3 if model_arch == "Gemma3nForConditionalGeneration"
+                         else 1)
+    text_config.update({
+        "num_layers": 1,
+        "num_hidden_layers": num_hidden_layers,
+        "num_experts": num_experts,
+        "num_experts_per_tok": 2,
+        "num_local_experts": num_experts,
+        # Otherwise there will not be any expert layers
+        "first_k_dense_replace": 0,
+        # To avoid OOM on DeepSeek-V3
+        "n_routed_experts": num_experts,
+        # For Gemma-3n
+        "num_kv_shared_layers": 1,
+    })
+
+    if hasattr(hf_config, "vision_config"):
+        hf_config.vision_config.update({
+            "num_layers": 1,
+            "num_hidden_layers": 1,
+        })
+
+    # e.g.: ibm-granite/granite-speech-3.3-2b
+    if hasattr(hf_config, "encoder_config"):
+        hf_config.encoder_config.update({
+            "num_layers": 1,
+            "num_hidden_layers": 1,
+        })
+
+    # e.g.: Qwen/Qwen2-Audio-7B-Instruct
+    if hasattr(hf_config, "audio_config"):
+        hf_config.audio_config.update({
+            "num_layers": 1,
+            "num_hidden_layers": 1,
+            "encoder_layers": 1,
+        })
+
+    return hf_config

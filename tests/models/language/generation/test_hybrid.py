@@ -1,10 +1,14 @@
 import pytest
 
+from tests.models.registry import HF_EXAMPLE_MODELS
 from tests.utils import multi_gpu_test
 from aphrodite.engine.args_tools import EngineArgs
-from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.sampling_params import SamplingParams
 
 from ...utils import check_logprobs_close, check_outputs_equal
+
+# Mark all tests as hybrid
+pytestmark = pytest.mark.hybrid_model
 
 # NOTE: The first model in each list is taken as the primary model,
 # meaning that it will be used in all tests in this file
@@ -13,10 +17,7 @@ from ...utils import check_logprobs_close, check_outputs_equal
 SSM_MODELS = [
     "state-spaces/mamba-130m-hf",
     "tiiuae/falcon-mamba-tiny-dev",
-    # TODO: Compare to a Mamba2 model. The HF transformers implementation of
-    # Mamba2 is buggy for Codestral as it doesn't handle n_groups.
-    # See https://github.com/huggingface/transformers/pull/35943
-    # "mistralai/Mamba-Codestral-7B-v0.1",
+    "mistralai/Mamba-Codestral-7B-v0.1",
 ]
 
 HYBRID_MODELS = [
@@ -26,7 +27,35 @@ HYBRID_MODELS = [
     # not compatible with pip-compile.
     "pfnet/plamo-2-1b",
     "Zyphra/Zamba2-1.2B-instruct",
-    "hmellor/bamba-tiny-random",
+    "hmellor/tiny-random-BambaForCausalLM",
+    "ibm-ai-platform/Bamba-9B-v1",
+    "nvidia/Nemotron-H-8B-Base-8K",
+    "ibm-granite/granite-4.0-tiny-preview",
+    "tiiuae/Falcon-H1-0.5B-Base",
+]
+
+HF_UNSUPPORTED_MODELS = [
+    # The HF transformers implementation of
+    # Mamba2 is buggy for Codestral as it doesn't handle n_groups, so the test
+    # doesn't compare Aphrodite output with HF output.
+    # See https://github.com/huggingface/transformers/pull/35943
+    "mistralai/Mamba-Codestral-7B-v0.1",
+    # Note: I'm not seeing the same output from Aphrodite V0 vs. HF transformers
+    # for Nemotron-H-8B; currently only compare Aphrodite V0 vs. Aphrodite V1
+    "nvidia/Nemotron-H-8B-Base-8K",
+    # NOTE: Currently the test fails due to HF transformers issue fixed in:
+    # https://github.com/huggingface/transformers/pull/39033
+    # We will enable Aphrodite test for Granite after next HF transformers release.
+    "ibm-granite/granite-4.0-tiny-preview",
+]
+
+V1_SUPPORTED_MODELS = [
+    "mistralai/Mamba-Codestral-7B-v0.1",
+    "ibm-ai-platform/Bamba-9B-v1",
+    "Zyphra/Zamba2-1.2B-instruct",
+    "nvidia/Nemotron-H-8B-Base-8K",
+    "ibm-granite/granite-4.0-tiny-preview",
+    "tiiuae/Falcon-H1-0.5B-Base",
 ]
 
 # Avoid OOM
@@ -40,24 +69,60 @@ def test_models(
     hf_runner,
     aphrodite_runner,
     example_prompts,
+    monkeypatch,
     model: str,
     max_tokens: int,
     num_logprobs: int,
 ) -> None:
+
+    try:
+        model_info = HF_EXAMPLE_MODELS.find_hf_info(model)
+        model_info.check_available_online(on_fail="skip")
+        model_info.check_transformers_version(on_fail="skip")
+    except ValueError:
+        pass
+
     with hf_runner(model) as hf_model:
-        hf_outputs = hf_model.generate_greedy_logprobs_limit(
-            example_prompts, max_tokens, num_logprobs)
+        if model not in HF_UNSUPPORTED_MODELS:
+            hf_outputs = hf_model.generate_greedy_logprobs_limit(
+                example_prompts, max_tokens, num_logprobs)
+        else:
+            hf_outputs = None
 
     with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.generate_greedy_logprobs(
+        aphrodite_v0_outputs = aphrodite_model.generate_greedy_logprobs(
             example_prompts, max_tokens, num_logprobs)
 
-    check_logprobs_close(
-        outputs_0_lst=hf_outputs,
-        outputs_1_lst=aphrodite_outputs,
-        name_0="hf",
-        name_1="aphrodite",
-    )
+    if model in V1_SUPPORTED_MODELS:
+        with monkeypatch.context() as m:
+            m.setenv("APHRODITE_USE_V1", "1")
+            if model in HYBRID_MODELS:
+                # required due to reorder_batch behaviour
+                m.setenv("APHRODITE_ATTENTION_BACKEND", "FLASHINFER")
+            with aphrodite_runner(model,
+                             max_num_seqs=MAX_NUM_SEQS,
+                             enable_prefix_caching=False) as aphrodite_model:
+                aphrodite_v1_outputs = aphrodite_model.generate_greedy_logprobs(
+                    example_prompts, max_tokens, num_logprobs)
+    else:
+        aphrodite_v1_outputs = None
+
+    if hf_outputs is not None:
+        check_logprobs_close(
+            outputs_0_lst=hf_outputs,
+            outputs_1_lst=aphrodite_v0_outputs,
+            name_0="hf",
+            name_1="aphrodite-v0",
+        )
+
+    if model in V1_SUPPORTED_MODELS:
+        ref_outputs = hf_outputs if hf_outputs is not None else aphrodite_v0_outputs
+        check_logprobs_close(
+            outputs_0_lst=ref_outputs,
+            outputs_1_lst=aphrodite_v1_outputs,
+            name_0="hf" if hf_outputs is not None else "aphrodite-v0",
+            name_1="aphrodite-v1",
+        )
 
 
 @pytest.mark.parametrize("model", SSM_MODELS + HYBRID_MODELS)
@@ -70,6 +135,14 @@ def test_batching(
     max_tokens: int,
     num_logprobs: int,
 ) -> None:
+
+    try:
+        model_info = HF_EXAMPLE_MODELS.find_hf_info(model)
+        model_info.check_available_online(on_fail="skip")
+        model_info.check_transformers_version(on_fail="skip")
+    except ValueError:
+        pass
+
     for_loop_outputs = []
     with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS) as aphrodite_model:
         for prompt in example_prompts:
@@ -198,7 +271,7 @@ def test_models_preemption_recompute(
     Tests that outputs are identical with and w/o preemptions (recompute).
     """
     with aphrodite_runner(model, max_num_seqs=MAX_NUM_SEQS) as aphrodite_model:
-        scheduler = aphrodite_model.model.llm_engine.scheduler[0]
+        scheduler = aphrodite_model.llm.llm_engine.scheduler[0]
         scheduler.ENABLE_ARTIFICIAL_PREEMPT = True
         preempt_aphrodite_outputs = aphrodite_model.generate_greedy(
             example_prompts, max_tokens)

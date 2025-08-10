@@ -1,23 +1,22 @@
 """Core test implementation to be shared across modalities."""
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional
 
 import torch
-from PIL.Image import Image
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
-from aphrodite.common.config import TaskOption
+from aphrodite.common.config import RunnerOption
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 from .....conftest import HfRunner, AphroditeRunner
 from ....registry import HF_EXAMPLE_MODELS
-from .types import RunnerOutput
+from .types import PromptWithMultiModalInput, RunnerOutput
 
 
 def run_test(
     *,
     hf_runner: type[HfRunner],
     aphrodite_runner: type[AphroditeRunner],
-    inputs: list[tuple[list[str], list[Union[list[Image], Image]]]],
+    inputs: list[PromptWithMultiModalInput],
     model: str,
     dtype: str,
     max_tokens: int,
@@ -36,8 +35,7 @@ def run_test(
     aphrodite_runner_kwargs: Optional[dict[str, Any]],
     hf_model_kwargs: Optional[dict[str, Any]],
     patch_hf_runner: Optional[Callable[[HfRunner], HfRunner]],
-    task: TaskOption = "auto",
-    runner_mm_key: str = "images",
+    runner: RunnerOption = "auto",
     distributed_executor_backend: Optional[str] = None,
     tensor_parallel_size: int = 1,
     aphrodite_embeddings: Optional[torch.Tensor] = None,
@@ -83,9 +81,9 @@ def run_test(
                      tensor_parallel_size=tensor_parallel_size,
                      distributed_executor_backend=distributed_executor_backend,
                      enforce_eager=enforce_eager,
-                     task=task,
+                     runner=runner,
                      **aphrodite_runner_kwargs_) as aphrodite_model:
-        tokenizer = aphrodite_model.model.get_tokenizer()
+        tokenizer = aphrodite_model.llm.get_tokenizer()
 
         aphrodite_kwargs: dict[str, Any] = {}
         if get_stop_token_ids is not None:
@@ -93,10 +91,16 @@ def run_test(
         if stop_str:
             aphrodite_kwargs["stop"] = stop_str
 
-        for prompts, media in aphrodite_inputs:
-            aphrodite_kwargs[runner_mm_key] = media
+        for prompts, image_data, video_data, audio_data in aphrodite_inputs:
+            mm_data = dict(images=image_data,
+                           videos=video_data,
+                           audios=audio_data)
+            aphrodite_kwargs_with_mm_data = aphrodite_kwargs | mm_data
             aphrodite_output = aphrodite_model.generate_greedy_logprobs(
-                prompts, max_tokens, num_logprobs=num_logprobs, **aphrodite_kwargs)
+                prompts,
+                max_tokens,
+                num_logprobs=num_logprobs,
+                **aphrodite_kwargs_with_mm_data)
             aphrodite_outputs_per_mm.append(aphrodite_output)
 
     hf_model = hf_runner(model,
@@ -121,14 +125,17 @@ def run_test(
         if stop_str:
             hf_kwargs["stop_strings"] = stop_str
 
-        for prompts, media in inputs:
-            hf_kwargs[runner_mm_key] = media
+        for prompts, image_data, video_data, audio_data in inputs:
+            mm_data = dict(images=image_data,
+                           videos=video_data,
+                           audios=audio_data)
+            hf_kwargs_with_mm_data = hf_kwargs | mm_data
             hf_output = hf_model.generate_greedy_logprobs_limit(
                 prompts,
                 max_tokens,
                 num_logprobs=num_logprobs,
                 tokenizer=tokenizer,
-                **hf_kwargs)
+                **hf_kwargs_with_mm_data)
             hf_outputs_per_mm.append(hf_output)
 
     # Apply output processing / sanitation to the Aphrodite and HF runner results

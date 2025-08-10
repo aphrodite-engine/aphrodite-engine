@@ -28,8 +28,8 @@ TEST_IMAGE_URLS = [
 @pytest.fixture(scope="module")
 def server():
     args = [
-        "--task",
-        "embed",
+        "--runner",
+        "pooling",
         "--max-model-len",
         "2048",
         "--max-num-seqs",

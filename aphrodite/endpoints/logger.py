@@ -33,9 +33,8 @@ class RequestLogger:
                 prompt_token_ids = prompt_token_ids[:max_log_len]
 
         logger.info(f"Received request {request_id}: "
-                    f"prompt: {prompt}, "
                     f"params: {params}, "
-                    f"prompt_token_ids: {prompt_token_ids}, "
+                    f"num_prompt_tokens: {len(prompt_token_ids)}, "
                     f"lora_request: {lora_request}, "
                     "prompt_embeds shape: {}",
                     prompt_embeds.shape if prompt_embeds is not None else None)

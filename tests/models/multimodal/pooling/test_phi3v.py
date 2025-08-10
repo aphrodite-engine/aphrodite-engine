@@ -41,9 +41,9 @@ def _run_test(
     # Aphrodite needs a fresh new process without cuda initialization.
     # if we run HF first, the cuda initialization will be done and it
     # will hurt multiprocessing backend with fork method (the default method).
-    with aphrodite_runner(model, task="embed", dtype=dtype,
+    with aphrodite_runner(model, runner="pooling", dtype=dtype,
                      enforce_eager=True) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.encode(input_texts, images=input_images)
+        aphrodite_outputs = aphrodite_model.embed(input_texts, images=input_images)
 
     # use eager mode for hf runner, since phi3_v didn't work with flash_attn
     hf_model_kwargs = {"_attn_implementation": "eager"}

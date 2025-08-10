@@ -390,14 +390,16 @@ class AsyncLLM(EngineClient):
                         log_stats and num_outputs) else None
 
                     # Split outputs into chunks of at most
-                    # APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE, so that we don't block the
-                    # event loop for too long.
+                    # APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE, so that we don't
+                    # block the event loop for too long.
                     if num_outputs <= APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE:
                         slices = (outputs.outputs, )
                     else:
                         slices = np.array_split(
                             outputs.outputs,
-                            cdiv(num_outputs, APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE))
+                            cdiv(
+                                num_outputs,
+                                APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE))
 
                     for i, outputs_slice in enumerate(slices):
                         # 2) Process EngineCoreOutputs.
@@ -416,7 +418,8 @@ class AsyncLLM(EngineClient):
 
                     # 4) Logging.
                     # TODO(rob): make into a coroutine and launch it in
-                    # background thread once Prometheus overhead is non-trivial.
+                    # background thread once Prometheus overhead is
+                    # non-trivial.
                     if logger_manager:
                         logger_manager.record(
                             engine_idx=outputs.engine_index,
@@ -424,7 +427,7 @@ class AsyncLLM(EngineClient):
                             iteration_stats=iteration_stats,
                         )
             except Exception as e:
-                logger.exception("AsyncLLM output_handler failed.")
+                logger.exception("AsyncLLM output_handler failed: {}", e)
                 output_processor.propagate_error(e)
 
         self.output_handler = asyncio.create_task(output_handler())

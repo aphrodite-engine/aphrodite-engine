@@ -143,7 +143,7 @@ def parser():
 @pytest.fixture
 def parser_with_config():
     parser = FlexibleArgumentParser()
-    parser.add_argument('serve')
+    parser.add_argument('run')
     parser.add_argument('model_tag', nargs='?')
     parser.add_argument('--model', type=str)
     parser.add_argument('--served-model-name', type=str)
@@ -203,18 +203,18 @@ def test_missing_required_argument(parser):
 
 def test_cli_override_to_config(parser_with_config, cli_config_file):
     args = parser_with_config.parse_args([
-        'serve', 'mymodel', '--config', cli_config_file,
+        'run', 'mymodel', '--config', cli_config_file,
         '--tensor-parallel-size', '3'
     ])
     assert args.tensor_parallel_size == 3
     args = parser_with_config.parse_args([
-        'serve', 'mymodel', '--tensor-parallel-size', '3', '--config',
+        'run', 'mymodel', '--tensor-parallel-size', '3', '--config',
         cli_config_file
     ])
     assert args.tensor_parallel_size == 3
     assert args.port == 12312
     args = parser_with_config.parse_args([
-        'serve', 'mymodel', '--tensor-parallel-size', '3', '--config',
+        'run', 'mymodel', '--tensor-parallel-size', '3', '--config',
         cli_config_file, '--port', '666'
     ])
     assert args.tensor_parallel_size == 3
@@ -223,7 +223,7 @@ def test_cli_override_to_config(parser_with_config, cli_config_file):
 
 def test_config_args(parser_with_config, cli_config_file):
     args = parser_with_config.parse_args(
-        ['serve', 'mymodel', '--config', cli_config_file])
+        ['run', 'mymodel', '--config', cli_config_file])
     assert args.tensor_parallel_size == 2
     assert args.trust_remote_code
     assert not args.multi_step_stream_outputs
@@ -232,22 +232,22 @@ def test_config_args(parser_with_config, cli_config_file):
 def test_config_file(parser_with_config):
     with pytest.raises(FileNotFoundError):
         parser_with_config.parse_args(
-            ['serve', 'mymodel', '--config', 'test_config.yml'])
+            ['run', 'mymodel', '--config', 'test_config.yml'])
 
     with pytest.raises(ValueError):
         parser_with_config.parse_args(
-            ['serve', 'mymodel', '--config', './data/test_config.json'])
+            ['run', 'mymodel', '--config', './data/test_config.json'])
 
     with pytest.raises(ValueError):
         parser_with_config.parse_args([
-            'serve', 'mymodel', '--tensor-parallel-size', '3', '--config',
+            'run', 'mymodel', '--tensor-parallel-size', '3', '--config',
             '--batch-size', '32'
         ])
 
 
 def test_no_model_tag(parser_with_config, cli_config_file):
     with pytest.raises(ValueError):
-        parser_with_config.parse_args(['serve', '--config', cli_config_file])
+        parser_with_config.parse_args(['run', '--config', cli_config_file])
 
 
 # yapf: enable
@@ -610,35 +610,35 @@ def test_model_specification(parser_with_config,
                              cli_config_file_with_model):
     # Test model in CLI takes precedence over config
     args = parser_with_config.parse_args([
-        'serve', 'cli-model', '--config', cli_config_file_with_model
+        'run', 'cli-model', '--config', cli_config_file_with_model
     ])
     assert args.model_tag == 'cli-model'
     assert args.served_model_name == 'mymodel'
 
     # Test model from config file works
     args = parser_with_config.parse_args([
-        'serve', '--config', cli_config_file_with_model,
+        'run', '--config', cli_config_file_with_model,
     ])
     assert args.model == 'config-model'
     assert args.served_model_name == 'mymodel'
 
     # Test no model specified anywhere raises error
     with pytest.raises(ValueError, match="No model specified!"):
-        parser_with_config.parse_args(['serve', '--config', cli_config_file])
+        parser_with_config.parse_args(['run', '--config', cli_config_file])
 
     # Test using --model option raises error
     with pytest.raises(
         ValueError,
         match=(
-            "With `aphrodite serve`, you should provide the model as a positional "
+            "With `aphrodite run`, you should provide the model as a positional "
             "argument or in a config file instead of via the `--model` option."
         ),
     ):
-        parser_with_config.parse_args(['serve', '--model', 'my-model'])
+        parser_with_config.parse_args(['run', '--model', 'my-model'])
 
     # Test other config values are preserved
     args = parser_with_config.parse_args([
-        'serve', 'cli-model', '--config', cli_config_file_with_model,
+        'run', 'cli-model', '--config', cli_config_file_with_model,
     ])
     assert args.tensor_parallel_size == 2
     assert args.trust_remote_code is True

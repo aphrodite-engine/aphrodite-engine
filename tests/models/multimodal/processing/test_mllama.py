@@ -17,7 +17,8 @@ def test_profiling(
     max_model_len: int,
     max_num_seqs: int,
 ):
-    from aphrodite.modeling.models.mllama import calc_token_per_chunk
+    # regression test for https://github.com/aphrodite-project/aphrodite/issues/13929
+    from aphrodite.model_executor.models.mllama import calc_token_per_chunk
 
     model_config_kwargs = {
         "max_model_len": max_model_len,
@@ -47,7 +48,7 @@ def test_profiling(
                         ] * max_num_seqs
 
     mm_kwargs = processor.apply(
-        prompt=dummy_mm_data.prompt_text,
+        prompt=dummy_mm_data.prompt,
         mm_data=dummy_mm_data.mm_data,
         hf_processor_mm_kwargs=dict(),
     )["mm_kwargs"]

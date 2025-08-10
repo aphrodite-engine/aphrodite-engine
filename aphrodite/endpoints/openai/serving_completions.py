@@ -174,6 +174,7 @@ class OpenAIServingCompletion(OpenAIServing):
                         max_tokens, self.default_sampling_params)
                 else:
                     sampling_params = request.to_sampling_params(
+                        tokenizer,
                         max_tokens,
                         self.model_config.logits_processor_pattern,
                         self.default_sampling_params,

@@ -8,7 +8,7 @@ from aphrodite import LLM, SamplingParams
 from aphrodite.attention.backends.flash_attn import FlashAttentionMetadata
 from aphrodite.attention.selector import (_Backend, _cached_get_attn_backend,
                                      global_force_attn_backend_context_manager)
-from aphrodite.modeling.models.mllama import MllamaForConditionalGeneration
+from aphrodite.model_executor.models.mllama import MllamaForConditionalGeneration
 from aphrodite.multimodal.image import rescale_image_size
 from aphrodite.common.sequence import SampleLogprobs
 
@@ -542,6 +542,8 @@ def test_regression(aphrodite_runner, image_assets, model, dtype, max_tokens,
             tensor_parallel_size=1,
             limit_mm_per_prompt={"image":
                                  _LIMIT_IMAGE_PER_PROMPT}) as aphrodite_model:
+
+        # Regression tests for https://github.com/aphrodite-project/aphrodite/issues/10648
 
         # Number of groups of image tokens is greater than the number of images
         # provided (the whitespace between the tags is necessary)

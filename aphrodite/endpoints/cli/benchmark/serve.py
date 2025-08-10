@@ -5,9 +5,9 @@ from aphrodite.endpoints.cli.benchmark.base import BenchmarkSubcommandBase
 
 
 class BenchmarkServingSubcommand(BenchmarkSubcommandBase):
-    """ The `serve` subcommand for aphrodite bench. """
+    """ The `run` subcommand for aphrodite bench. """
 
-    name = "serve"
+    name = "run"
     help = "Benchmark the online serving throughput."
 
     @classmethod

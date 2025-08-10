@@ -1,5 +1,3 @@
-import math
-
 import pytest
 import torch
 import torch.nn.functional as F
@@ -37,14 +35,16 @@ def test_cross_encoder_1_to_1(aphrodite_runner, hf_runner, model_name):
     with hf_runner(model_name, dtype=DTYPE, is_cross_encoder=True) as hf_model:
         hf_outputs = hf_model.predict([text_pair]).tolist()
 
-    with aphrodite_runner(model_name, task="score", dtype=DTYPE,
+    with aphrodite_runner(model_name,
+                     runner="pooling",
+                     dtype=DTYPE,
                      max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(text_pair[0], text_pair[1])
 
     assert len(aphrodite_outputs) == 1
     assert len(hf_outputs) == 1
 
-    assert math.isclose(hf_outputs[0], aphrodite_outputs[0], rel_tol=0.01)
+    assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.01)
 
 
 def test_cross_encoder_1_to_N(aphrodite_runner, hf_runner, model_name):
@@ -56,15 +56,17 @@ def test_cross_encoder_1_to_N(aphrodite_runner, hf_runner, model_name):
     with hf_runner(model_name, dtype=DTYPE, is_cross_encoder=True) as hf_model:
         hf_outputs = hf_model.predict(text_pairs).tolist()
 
-    with aphrodite_runner(model_name, task="score", dtype=DTYPE,
+    with aphrodite_runner(model_name,
+                     runner="pooling",
+                     dtype=DTYPE,
                      max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(TEXTS_1[0], TEXTS_2)
 
     assert len(aphrodite_outputs) == 2
     assert len(hf_outputs) == 2
 
-    assert math.isclose(hf_outputs[0], aphrodite_outputs[0], rel_tol=0.01)
-    assert math.isclose(hf_outputs[1], aphrodite_outputs[1], rel_tol=0.01)
+    assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.01)
+    assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.01)
 
 
 def test_cross_encoder_N_to_N(aphrodite_runner, hf_runner, model_name):
@@ -76,15 +78,17 @@ def test_cross_encoder_N_to_N(aphrodite_runner, hf_runner, model_name):
     with hf_runner(model_name, dtype=DTYPE, is_cross_encoder=True) as hf_model:
         hf_outputs = hf_model.predict(text_pairs).tolist()
 
-    with aphrodite_runner(model_name, task="score", dtype=DTYPE,
+    with aphrodite_runner(model_name,
+                     runner="pooling",
+                     dtype=DTYPE,
                      max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(TEXTS_1, TEXTS_2)
 
     assert len(aphrodite_outputs) == 2
     assert len(hf_outputs) == 2
 
-    assert math.isclose(hf_outputs[0], aphrodite_outputs[0], rel_tol=0.01)
-    assert math.isclose(hf_outputs[1], aphrodite_outputs[1], rel_tol=0.01)
+    assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.01)
+    assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.01)
 
 
 @pytest.fixture(scope="module", params=EMBEDDING_MODELS)
@@ -103,7 +107,7 @@ def test_embedding_1_to_1(aphrodite_runner, hf_runner, emb_model_name):
         ]
 
     with aphrodite_runner(emb_model_name,
-                     task="embed",
+                     runner="pooling",
                      dtype=DTYPE,
                      max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(text_pair[0], text_pair[1])
@@ -111,7 +115,7 @@ def test_embedding_1_to_1(aphrodite_runner, hf_runner, emb_model_name):
     assert len(aphrodite_outputs) == 1
     assert len(hf_outputs) == 1
 
-    assert math.isclose(hf_outputs[0], aphrodite_outputs[0], rel_tol=0.01)
+    assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.01)
 
 
 def test_embedding_1_to_N(aphrodite_runner, hf_runner, emb_model_name):
@@ -131,7 +135,7 @@ def test_embedding_1_to_N(aphrodite_runner, hf_runner, emb_model_name):
         ]
 
     with aphrodite_runner(emb_model_name,
-                     task="embed",
+                     runner="pooling",
                      dtype=DTYPE,
                      max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(TEXTS_1[0], TEXTS_2)
@@ -139,8 +143,8 @@ def test_embedding_1_to_N(aphrodite_runner, hf_runner, emb_model_name):
     assert len(aphrodite_outputs) == 2
     assert len(hf_outputs) == 2
 
-    assert math.isclose(hf_outputs[0], aphrodite_outputs[0], rel_tol=0.01)
-    assert math.isclose(hf_outputs[1], aphrodite_outputs[1], rel_tol=0.01)
+    assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.01)
+    assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.01)
 
 
 def test_embedding_N_to_N(aphrodite_runner, hf_runner, emb_model_name):
@@ -160,7 +164,7 @@ def test_embedding_N_to_N(aphrodite_runner, hf_runner, emb_model_name):
         ]
 
     with aphrodite_runner(emb_model_name,
-                     task="embed",
+                     runner="pooling",
                      dtype=DTYPE,
                      max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(TEXTS_1, TEXTS_2)
@@ -168,5 +172,5 @@ def test_embedding_N_to_N(aphrodite_runner, hf_runner, emb_model_name):
     assert len(aphrodite_outputs) == 2
     assert len(hf_outputs) == 2
 
-    assert math.isclose(hf_outputs[0], aphrodite_outputs[0], rel_tol=0.01)
-    assert math.isclose(hf_outputs[1], aphrodite_outputs[1], rel_tol=0.01)
+    assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.01)
+    assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.01)

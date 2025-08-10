@@ -823,7 +823,6 @@ def _get_kv_cache_config_uniform_type(aphrodite_config: AphroditeConfig,
 
     num_tokens = num_blocks * aphrodite_config.cache_config.block_size
     num_tokens_str = f"{num_tokens:,}"
-    logger.info("GPU KV cache size: {} tokens", num_tokens_str)
     max_concurrency = get_max_concurrency_for_kv_cache_config(
         aphrodite_config, kv_cache_config)
     total_kv_cache_memory = available_memory

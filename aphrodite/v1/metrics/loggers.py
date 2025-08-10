@@ -601,7 +601,7 @@ class PrometheusStatLogger(StatLoggerBase):
         # Handle request-level vs interval-based metrics
         if self.request_level_metrics:
             # For request-level metrics, log completed requests immediately
-            self._log_finished_requests_prometheus(iteration_stats)
+            self._log_finished_requests_prometheus(iteration_stats, engine_idx)
         else:
             # Existing interval-based behavior
             self.counter_num_preempted_reqs[engine_idx].inc(
@@ -659,21 +659,30 @@ class PrometheusStatLogger(StatLoggerBase):
             self.gauge_lora_info.labels(**lora_info_labels)\
                                 .set_to_current_time()
 
-    def _log_finished_requests_prometheus(self, iteration_stats: IterationStats):
-        """Log individual finished requests for request-level Prometheus metrics."""
+    def _log_finished_requests_prometheus(
+        self,
+        iteration_stats: IterationStats,
+        engine_idx: int,
+    ):
+        """Log individual finished requests for request-level Prometheus
+        metrics."""
         if not iteration_stats.finished_requests:
             return
 
         # Still increment the basic counters for request-level metrics
-        self.counter_num_preempted_reqs.inc(iteration_stats.num_preempted_reqs)
+        self.counter_num_preempted_reqs[engine_idx].inc(
+            iteration_stats.num_preempted_reqs)
 
         # For each finished request, increment token counters
         for finished_request in iteration_stats.finished_requests:
-            self.counter_prompt_tokens.inc(finished_request.num_prompt_tokens)
-            self.counter_generation_tokens.inc(finished_request.num_generation_tokens)
+            self.counter_prompt_tokens[engine_idx].inc(
+                finished_request.num_prompt_tokens)
+            self.counter_generation_tokens[engine_idx].inc(
+                finished_request.num_generation_tokens)
 
     def log_engine_initialized(self):
-        self.log_metrics_info("cache_config", self.aphrodite_config.cache_config)
+        self.log_metrics_info(
+            "cache_config", self.aphrodite_config.cache_config)
 
 
 PromMetric = Union[

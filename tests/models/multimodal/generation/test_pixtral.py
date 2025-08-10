@@ -178,8 +178,7 @@ def test_chat(
     ) as aphrodite_model:
         outputs = []
         for msg in MSGS:
-            output = aphrodite_model.model.chat(msg,
-                                           sampling_params=SAMPLING_PARAMS)
+            output = aphrodite_model.llm.chat(msg, sampling_params=SAMPLING_PARAMS)
 
             outputs.extend(output)
 
@@ -215,7 +214,7 @@ def test_multi_modal_placeholders(aphrodite_runner, prompt,
             max_model_len=8192,
             limit_mm_per_prompt=LIMIT_MM_PER_PROMPT,
     ) as aphrodite_model:
-        outputs = aphrodite_model.model.generate(prompt)
+        outputs = aphrodite_model.llm.generate(prompt)
 
         assert len(outputs) == 1, f"{len(outputs)=}"
         output: RequestOutput = outputs[0]

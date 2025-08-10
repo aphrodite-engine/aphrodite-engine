@@ -99,11 +99,12 @@ def run_test(
 
     with aphrodite_runner(
             model,
+            dtype="half",
             max_model_len=448,
             tensor_parallel_size=tensor_parallel_size,
             distributed_executor_backend=distributed_executor_backend,
     ) as aphrodite_model:
-        llm = aphrodite_model.model
+        llm = aphrodite_model.llm
 
         sampling_params = SamplingParams(
             temperature=0,

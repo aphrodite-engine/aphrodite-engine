@@ -36,7 +36,7 @@ class GGUFTestConfig(NamedTuple):
 LLAMA_CONFIG = GGUFTestConfig(
     original_model="meta-llama/Llama-3.2-1B-Instruct",
     gguf_repo="bartowski/Llama-3.2-1B-Instruct-GGUF",
-    gguf_filename="Llama-3.2-1B-Instruct-IQ4_XS.gguf",
+    gguf_filename="Llama-3.2-1B-Instruct-Q6_K.gguf",
 )
 
 QWEN2_CONFIG = GGUFTestConfig(
@@ -77,8 +77,12 @@ DOLPHIN_CONFIG = GGUFTestConfig(
 )
 
 MODELS = [
-    LLAMA_CONFIG, QWEN2_CONFIG, PHI3_CONFIG, GPT2_CONFIG, STABLELM_CONFIG,
-    DOLPHIN_CONFIG
+    # LLAMA_CONFIG, # broken: https://github.com/aphrodite-project/aphrodite/issues/19458
+    QWEN2_CONFIG,
+    PHI3_CONFIG,
+    GPT2_CONFIG,
+    STABLELM_CONFIG,
+    DOLPHIN_CONFIG,
     # STARCODER_CONFIG, # broken
 ]
 

@@ -21,7 +21,7 @@ def _get_expected_num_patches(
     min_num: int,
     max_num: int,
 ):
-    from aphrodite.modeling.models.h2ovl import (calculate_h2ovl_targets,
+    from aphrodite.model_executor.models.h2ovl import (calculate_h2ovl_targets,
                                                   get_h2ovl_target_ratios)
 
     width, height = image.size
