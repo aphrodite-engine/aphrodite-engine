@@ -21,22 +21,19 @@ if sys.version_info >= (3, 12):
 else:
     from typing_extensions import TypedDict
 
-from loguru import logger
-
 import aphrodite.common.envs as envs
 from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.common.sequence import Logprob, PromptLogprobs
-from aphrodite.utils import (AsyncMicrobatchTokenizer, is_list_of,
-                                    merge_async_iterators, random_uuid)
 # yapf conflicts with isort for this block
 # yapf: disable
 from aphrodite.endpoints.chat_utils import (
     ChatCompletionMessageParam, ChatTemplateContentFormatOption,
     ConversationMessage, apply_hf_chat_template, apply_mistral_chat_template,
     parse_chat_messages_futures, resolve_chat_template_content_format)
+from aphrodite.endpoints.context import ConversationContext
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  ChatCompletionResponse,
@@ -74,6 +71,8 @@ from aphrodite.tracing import (contains_trace_headers, extract_trace_headers,
                                log_tracing_disabled_warning)
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
                                                     MistralTokenizer)
+from aphrodite.utils import (AsyncMicrobatchTokenizer, is_list_of,
+                             merge_async_iterators, random_uuid)
 
 CompletionLikeRequest = Union[CompletionRequest, DetokenizeRequest,
                               EmbeddingCompletionRequest, RerankRequest,
@@ -947,6 +946,61 @@ class OpenAIServing:
             engine_prompt["cache_salt"] = request.cache_salt
 
         return conversation, [request_prompt], [engine_prompt]
+
+    async def _generate_with_builtin_tools(
+        self,
+        request_id: str,
+        request_prompt: RequestPrompt,
+        engine_prompt: EngineTokensPrompt,
+        sampling_params: SamplingParams,
+        context: ConversationContext,
+        lora_request: Optional[LoRARequest] = None,
+        priority: int = 0,
+        **kwargs,
+    ):
+        orig_priority = priority
+        while True:
+            self._log_inputs(
+                request_id,
+                request_prompt,
+                params=sampling_params,
+                lora_request=lora_request,
+            )
+            generator = self.engine_client.generate(
+                engine_prompt,
+                sampling_params,
+                request_id,
+                lora_request=lora_request,
+                priority=priority,
+                **kwargs,
+            )
+            async for res in generator:
+                context.append_output(res)
+                # NOTE: The stop condition is handled by the engine.
+                yield context
+
+            if not context.need_builtin_tool_call():
+                # The model did not ask for a tool call, so we're done.
+                break
+
+            # Call the tool and update the context with the result.
+            tool_output = await context.call_tool()
+            context.append_output(tool_output)
+
+            # TODO: uncomment this and enable tool output streaming
+            # yield context
+
+            # Create inputs for the next turn.
+            # Render the next prompt token ids.
+            prompt_token_ids = context.render_for_completion()
+            engine_prompt = EngineTokensPrompt(
+                prompt_token_ids=prompt_token_ids)
+            request_prompt = prompt_token_ids
+            # Update the sampling params.
+            sampling_params.max_tokens = (self.max_model_len -
+                                          len(prompt_token_ids))
+            # OPTIMIZATION
+            priority = orig_priority - 1
 
     def _load_prompt_embeds(
         self,
