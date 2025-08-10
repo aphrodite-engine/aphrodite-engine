@@ -157,6 +157,8 @@ if TYPE_CHECKING:
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
     APHRODITE_NO_DEPRECATION_WARNING: bool = False
     APHRODITE_DYNAMIC_ROPE_SCALING: bool = False
+    APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8: bool = False
+    APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16: bool = False
 
 
 def get_default_cache_root():
@@ -1103,6 +1105,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, aphrodite will use dynamic rope scaling.
     "APHRODITE_DYNAMIC_ROPE_SCALING":
     lambda: bool(int(os.getenv("APHRODITE_DYNAMIC_ROPE_SCALING", "0"))),
+
+    # If set to 1, use the FlashInfer
+    # MXFP8 (activation) x MXFP4 (weight) MoE backend.
+    "APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8":
+    lambda: bool(int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8", "0"))),
+
+    # If set to 1, use the FlashInfer
+    # BF16 (activation) x MXFP4 (weight) MoE backend.
+    "APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16":
+    lambda: bool(int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16", "0"))),
 }
 
 # --8<-- [end:env-vars-definition]
