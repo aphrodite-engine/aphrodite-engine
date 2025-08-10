@@ -197,12 +197,12 @@ class cmake_build_ext(build_ext):
             available_bytes = _get_available_memory_bytes()
             if available_bytes is not None and available_bytes > 0:
                 available_gib = max(0, available_bytes // (1024**3))
-                # Heuristic: 6 GiB per job
-                num_jobs = max(1, int(available_gib // 6))
+                # Heuristic: 8 GiB per job
+                num_jobs = max(1, int(available_gib // 8))
                 logger.info(
                     (
                         f"RAM heuristic: ~{available_gib} GiB avail -> "
-                        f"num_jobs={num_jobs} (6 GiB/job). If you think this "
+                        f"num_jobs={num_jobs} (8 GiB/job). If you think this "
                         "is too low or too high, set MAX_JOBS to a higher "
                         "value."
                     )
