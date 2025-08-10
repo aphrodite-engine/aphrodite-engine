@@ -546,16 +546,16 @@ class WorkerProc:
 
             worker.worker_busy_loop()
 
-        except Exception:
+        except Exception as e:
             # NOTE: if an Exception arises in busy_loop, we send
             # a FAILURE message over the MQ RPC to notify the Executor,
             # which triggers system shutdown.
             # TODO(rob): handle case where the MQ itself breaks.
 
             if ready_writer is not None:
-                logger.exception("WorkerProc failed to start.")
+                logger.exception("WorkerProc failed to start. Error: {}", e)
             else:
-                logger.exception("WorkerProc failed.")
+                logger.exception("WorkerProc failed. Error: {}", e)
 
             # The parent sends a SIGTERM to all worker processes if
             # any worker dies. Set this value so we don't re-throw
