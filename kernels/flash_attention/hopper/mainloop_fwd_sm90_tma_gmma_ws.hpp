@@ -39,6 +39,7 @@ struct CollectiveMainloopFwdSm90 {
     using TileShape_MNK_PV = Shape<decltype(get<0>(TileShape_MNK{})), Int<kHeadDimV>, decltype(get<1>(TileShape_MNK{}))>;
     using TileShape_MNK_QV = Shape<decltype(get<0>(TileShape_MNK{})), decltype(get<1>(TileShape_MNK{})), Int<kHeadDimV>>;
     using Element = Element_;
+    using ElementAccum = ElementAccum_;
     using ElementSAux = ElementSAux_;
     using ArchTag = ArchTag_;
     static constexpr bool Is_FP8 = cute::is_same_v<Element, cutlass::float_e4m3_t> || cute::is_same_v<Element, cutlass::float_e5m2_t>;;
@@ -1381,6 +1382,7 @@ struct CollectiveMainloopFwdSm90 {
             // Tensor scores_scale = softmax.finalize(v_descale);
             Tensor scores_scale = make_tensor_like(softmax.row_max);
             finalize_dispatch(scores_scale, v_descale);
+            
             if constexpr (LargeHeadDimV) {
                 cutlass::arch::NamedBarrier::sync(NumMmaThreads, static_cast<uint32_t>(FwdNamedBarriers::PEmpty) /*id*/);
                 store_scales(scores_scale, smem_pipe_read.index());

@@ -907,123 +907,6 @@ endif()
 
 # For CUDA we also build and ship some external projects.
 if (APHRODITE_GPU_LANG STREQUAL "CUDA")
-    set(FA2_ENABLED ON)
-    set(FA3_ENABLED ON)
-
-    # Flash Attention 2 build
-    if (FA2_ENABLED)
-        file(GLOB FA2_GEN_SRCS "kernels/flash_attention/flash_attn/src/flash_fwd_*.cu")
-
-        cuda_archs_loose_intersection(FA2_ARCHS "8.0+PTX" "${CUDA_ARCHS}")
-        message(STATUS "FA2_ARCHS: ${FA2_ARCHS}")
-
-        set_gencode_flags_for_srcs(
-            SRCS "${FA2_GEN_SRCS}"
-            CUDA_ARCHS "${FA2_ARCHS}")
-
-        define_gpu_extension_target(
-            _aphrodite_fa2_C
-            DESTINATION aphrodite
-            LANGUAGE ${APHRODITE_GPU_LANG}
-            SOURCES
-                kernels/flash_attention/flash_attn/flash_api.cpp
-                kernels/flash_attention/flash_attn/flash_api_sparse.cpp
-                kernels/flash_attention/flash_attn/flash_api_torch_lib.cpp
-                ${FA2_GEN_SRCS}
-            COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
-            USE_SABI 3
-            WITH_SOABI)
-
-        target_include_directories(_aphrodite_fa2_C PRIVATE
-            kernels/flash_attention/flash_attn
-            kernels/flash_attention/flash_attn/src
-            kernels/flash_attention/common
-            ${CUTLASS_INCLUDE_DIR})
-
-        target_compile_definitions(_aphrodite_fa2_C PRIVATE
-            FLASHATTENTION_DISABLE_BACKWARD
-            FLASHATTENTION_DISABLE_DROPOUT
-            FLASHATTENTION_DISABLE_UNEVEN_K
-            FLASHATTENTION_DISABLE_PYBIND)
-    endif()
-
-    # Flash Attention 3 build - requires CUDA 12.0 or later
-    if (FA3_ENABLED AND ${CMAKE_CUDA_COMPILER_VERSION} GREATER_EQUAL 12.0)
-        # BF16 source files
-        file(GLOB FA3_BF16_GEN_SRCS
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimall_bf16*_sm90.cu")
-        file(GLOB FA3_BF16_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimdiff_bf16*_sm90.cu")
-        list(APPEND FA3_BF16_GEN_SRCS ${FA3_BF16_GEN_SRCS_})
-        file(GLOB FA3_BF16_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_*_bf16_*_sm80.cu")
-        list(APPEND FA3_BF16_GEN_SRCS ${FA3_BF16_GEN_SRCS_})
-
-        # FP16 source files
-        file(GLOB FA3_FP16_GEN_SRCS
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimall_fp16*_sm90.cu")
-        file(GLOB FA3_FP16_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimdiff_fp16*_sm90.cu")
-        list(APPEND FA3_FP16_GEN_SRCS ${FA3_FP16_GEN_SRCS_})
-        file(GLOB FA3_FP16_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_*_fp16_*_sm80.cu")
-        list(APPEND FA3_FP16_GEN_SRCS ${FA3_FP16_GEN_SRCS_})
-
-        # FP8 source files
-        file(GLOB FA3_FP8_GEN_SRCS
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimall_e4m3*_sm90.cu")
-        file(GLOB FA3_FP8_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimdiff_e4m3*_sm90.cu")
-        list(APPEND FA3_FP8_GEN_SRCS ${FA3_FP8_GEN_SRCS_})
-
-        set(FA3_GEN_SRCS ${FA3_BF16_GEN_SRCS} ${FA3_FP16_GEN_SRCS} ${FA3_FP8_GEN_SRCS})
-
-        cuda_archs_loose_intersection(FA3_ARCHS "9.0;9.0a;10.0;10.1;12.0" "${CUDA_ARCHS}")
-
-        if(FA3_ARCHS)
-            message(STATUS "FA3_ARCHS: ${FA3_ARCHS}")
-
-            set_gencode_flags_for_srcs(
-                SRCS "${FA3_GEN_SRCS}"
-                CUDA_ARCHS "${FA3_ARCHS}")
-            set_gencode_flags_for_srcs(
-                SRCS 
-                    kernels/flash_attention/hopper/flash_fwd_combine.cu
-                    kernels/flash_attention/hopper/flash_prepare_scheduler.cu
-                CUDA_ARCHS "${FA3_ARCHS}")
-
-            define_gpu_extension_target(
-                _aphrodite_fa3_C
-                DESTINATION aphrodite
-                LANGUAGE ${APHRODITE_GPU_LANG}
-                SOURCES
-                    kernels/flash_attention/hopper/flash_fwd_combine.cu
-                    kernels/flash_attention/hopper/flash_prepare_scheduler.cu
-                    kernels/flash_attention/hopper/flash_api.cpp
-                    kernels/flash_attention/hopper/flash_api_torch_lib.cpp
-                    ${FA3_GEN_SRCS}
-                COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
-                ARCHITECTURES ""
-                USE_SABI 3
-                WITH_SOABI)
-
-            target_include_directories(_aphrodite_fa3_C PRIVATE
-                kernels/flash_attention/hopper
-                kernels/flash_attention/common
-                ${CUTLASS_INCLUDE_DIR})
-
-            target_compile_definitions(_aphrodite_fa3_C PRIVATE
-                FLASHATTENTION_DISABLE_BACKWARD
-                FLASHATTENTION_DISABLE_DROPOUT
-                FLASHATTENTION_DISABLE_UNEVEN_K
-                FLASHATTENTION_DISABLE_PYBIND
-                FLASHATTENTION_VARLEN_ONLY)
-        else()
-            message(STATUS "FA3 is disabled because no compatible Hopper or newer architecture (SM 9.0+) was detected.")
-        endif()
-    elseif(FA3_ENABLED AND ${CMAKE_CUDA_COMPILER_VERSION} VERSION_LESS 12.0)
-        message(STATUS "FA3 is disabled because CUDA version is not 12.0 or later.")
-    endif()
 
     # FlashMLA build - requires CUDA 12.3 or later and Hopper architecture
     cuda_archs_loose_intersection(FLASH_MLA_ARCHS "9.0;9.0a;10.0;10.1;12.0" "${CUDA_ARCHS}")
@@ -1064,4 +947,7 @@ if (APHRODITE_GPU_LANG STREQUAL "CUDA")
         # Create an empty target for setup.py when not targeting sm90a systems
         add_custom_target(_flashmla_C)
     endif()
+
+    # vllm-flash-attn should be last as it overwrites some CMake functions
+    include(cmake/external_project/vllm_flash_attn.cmake)
 endif()
