@@ -204,6 +204,10 @@ class LoggingStatLogger(StatLoggerBase):
                 "after num_gpu_blocks is: {}", self.engine_index,
                 self.aphrodite_config.cache_config.num_gpu_blocks)
 
+    def log_engine_initialized(self):
+        """No-op for console logger. Prometheus logger emits init metrics."""
+        return
+
     def __del__(self):
         """Cleanup the logging thread when the logger is destroyed."""
         if hasattr(self, 'request_level_metrics') and self.request_level_metrics:
@@ -749,7 +753,10 @@ class StatLoggerManager:
             factories = custom_stat_loggers
         else:
             factories = [PrometheusStatLogger]
-            if logging.getLogger().isEnabledFor(logging.INFO):
+            # Ensure request-level metrics are logged when explicitly enabled
+            # via environment flag, regardless of the stdlib logging level.
+            if (envs.APHRODITE_REQUEST_LEVEL_METRICS
+                    or logging.getLogger().isEnabledFor(logging.INFO)):
                 factories.append(LoggingStatLogger)
 
         # engine_idx: StatLogger
