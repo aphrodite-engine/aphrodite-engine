@@ -9,7 +9,6 @@ from collections.abc import Generator
 from concurrent.futures import Future
 from contextlib import ExitStack, contextmanager
 from inspect import isclass, signature
-from logging import DEBUG
 from typing import Any, Callable, Optional, TypeVar, Union
 
 import msgspec

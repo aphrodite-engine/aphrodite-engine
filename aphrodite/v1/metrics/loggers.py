@@ -199,8 +199,8 @@ class LoggingStatLogger(StatLoggerBase):
         self.spec_decoding_logging.log(log_fn=log_fn)
 
         if self.aphrodite_config.cache_config.num_gpu_blocks:
-            logger.info(
-                "Engine %03d: aphrodite cache_config_info with initialization "
+            logger.debug(
+                "Engine {}: aphrodite cache_config_info with initialization "
                 "after num_gpu_blocks is: {}", self.engine_index,
                 self.aphrodite_config.cache_config.num_gpu_blocks)
 
@@ -752,12 +752,8 @@ class StatLoggerManager:
         if custom_stat_loggers is not None:
             factories = custom_stat_loggers
         else:
-            factories = [PrometheusStatLogger]
-            # Ensure request-level metrics are logged when explicitly enabled
-            # via environment flag, regardless of the stdlib logging level.
-            if (envs.APHRODITE_REQUEST_LEVEL_METRICS
-                    or logging.getLogger().isEnabledFor(logging.INFO)):
-                factories.append(LoggingStatLogger)
+            factories = []
+            factories.append(LoggingStatLogger)
 
         # engine_idx: StatLogger
         self.per_engine_logger_dict: dict[int, list[StatLoggerBase]] = {}
