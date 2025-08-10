@@ -446,8 +446,6 @@ scaled_vec_conversion<uint16_t, uint8_t>(const uint8_t& a, float scale) {
 template <>
 __inline__ __device__ uint32_t
 scaled_vec_conversion<uint32_t, uint16_t>(const uint16_t& a, float scale) {
-  [[maybe_unused]] __half2_raw h2r =
-      __hip_cvt_fp8x2_to_halfraw2(a, fp8_type::__default_interpret);
   union {
     __half2_raw h2r;
     uint32_t ui32;
@@ -643,23 +641,22 @@ __inline__ __device__ Tout scaled_convert(const Tin& x, const float scale) {
   #define DISPATCH_BY_KV_CACHE_DTYPE(SRC_DTYPE, KV_DTYPE, FN)                  \
     if (KV_DTYPE == "auto") {                                                  \
       if (SRC_DTYPE == at::ScalarType::Float) {                                \
-        FN(float, float, aphrodite::Fp8KVCacheDataType::kAuto);                \
+        FN(float, float, aphrodite::Fp8KVCacheDataType::kAuto);                     \
       } else if (SRC_DTYPE == at::ScalarType::Half) {                          \
-        FN(uint16_t, uint16_t, aphrodite::Fp8KVCacheDataType::kAuto);          \
+        FN(uint16_t, uint16_t, aphrodite::Fp8KVCacheDataType::kAuto);               \
       } else if (SRC_DTYPE == at::ScalarType::BFloat16) {                      \
-        FN(__nv_bfloat16, __nv_bfloat16,                                       \
-           aphrodite::Fp8KVCacheDataType::kAuto);                              \
+        FN(__nv_bfloat16, __nv_bfloat16, aphrodite::Fp8KVCacheDataType::kAuto);     \
       } else {                                                                 \
         TORCH_CHECK(false, "Unsupported input type of kv cache: ", SRC_DTYPE); \
       }                                                                        \
     } else {                                                                   \
       if (KV_DTYPE == "fp8" || KV_DTYPE == "fp8_e4m3") {                       \
         if (SRC_DTYPE == at::ScalarType::Float) {                              \
-          FN(float, uint8_t, aphrodite::Fp8KVCacheDataType::kFp8E4M3);         \
+          FN(float, uint8_t, aphrodite::Fp8KVCacheDataType::kFp8E4M3);              \
         } else if (SRC_DTYPE == at::ScalarType::Half) {                        \
-          FN(uint16_t, uint8_t, aphrodite::Fp8KVCacheDataType::kFp8E4M3);      \
+          FN(uint16_t, uint8_t, aphrodite::Fp8KVCacheDataType::kFp8E4M3);           \
         } else if (SRC_DTYPE == at::ScalarType::BFloat16) {                    \
-          FN(__nv_bfloat16, uint8_t, aphrodite::Fp8KVCacheDataType::kFp8E4M3); \
+          FN(__nv_bfloat16, uint8_t, aphrodite::Fp8KVCacheDataType::kFp8E4M3);      \
         } else {                                                               \
           TORCH_CHECK(false,                                                   \
                       "Unsupported input type of kv cache: ", SRC_DTYPE);      \

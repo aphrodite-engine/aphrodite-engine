@@ -123,13 +123,14 @@ class BaseKVCacheMethod(QuantizeMethodBase):
         # These are used in the final Attention.forward()
         layer._q_scale.copy_(q_scale)
         layer._prob_scale.copy_(prob_scale)
-        if q_scale == 1.0 or prob_scale == 1.0:
+        if layer.kv_cache_dtype == "fp8" and (q_scale == 1.0
+                                              or prob_scale == 1.0):
             log_once(
                 "WARNING",
-                f"Using Q scale {q_scale} and prob scale {prob_scale} "
-                "with fp8 attention. This may cause accuracy issues. "
-                "Please make sure Q/prob scaling factors are "
-                "available in the fp8 checkpoint.")
+                "Using uncalibrated q_scale {} and/or prob_scale {} with fp8 attention. This may cause accuracy issues. Please make sure q/prob scaling factors are available in the fp8 checkpoint.",  # noqa: E501
+                q_scale,
+                prob_scale,
+            )
 
         del layer.k_scale
         del layer.v_scale

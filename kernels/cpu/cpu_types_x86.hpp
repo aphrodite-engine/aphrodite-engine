@@ -11,22 +11,22 @@ static_assert(false, "AVX2 must be supported for the current implementation.");
 
 namespace vec_op {
 
-#define APHRODITE_DISPATCH_CASE_FLOATING_TYPES(...)       \
+#define APHRODITE_DISPATCH_CASE_FLOATING_TYPES(...)            \
   AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__)    \
   AT_DISPATCH_CASE(at::ScalarType::BFloat16, __VA_ARGS__) \
   AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)
 
-#define APHRODITE_DISPATCH_CASE_FLOATING_TYPES_FP8(...)   \
+#define APHRODITE_DISPATCH_CASE_FLOATING_TYPES_FP8(...)        \
   AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__)    \
   AT_DISPATCH_CASE(at::ScalarType::BFloat16, __VA_ARGS__) \
+  AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)     \
   AT_DISPATCH_CASE(at::ScalarType::Float8_e5m2, __VA_ARGS__)
 
 #define APHRODITE_DISPATCH_FLOATING_TYPES(TYPE, NAME, ...) \
-  AT_DISPATCH_SWITCH(TYPE, NAME,                           \
-                     APHRODITE_DISPATCH_CASE_FLOATING_TYPES(__VA_ARGS__))
+  AT_DISPATCH_SWITCH(TYPE, NAME, APHRODITE_DISPATCH_CASE_FLOATING_TYPES(__VA_ARGS__))
 
 #define APHRODITE_DISPATCH_FLOATING_TYPES_WITH_E5M2(TYPE, NAME, ...) \
-  AT_DISPATCH_SWITCH(TYPE, NAME,                                     \
+  AT_DISPATCH_SWITCH(TYPE, NAME,                                \
                      APHRODITE_DISPATCH_CASE_FLOATING_TYPES_FP8(__VA_ARGS__))
 
 #ifndef CPU_OP_GUARD
@@ -83,7 +83,7 @@ struct FP16Vec16 : public Vec<FP16Vec16> {
   explicit FP16Vec16(const void* ptr)
       : reg((__m256i)_mm256_loadu_si256((__m256i*)ptr)) {}
 
-  // non-temproal load
+  // non-temporal load
   explicit FP16Vec16(bool, void* ptr)
       : reg(_mm256_stream_load_si256((__m256i*)ptr)) {}
 
@@ -120,7 +120,7 @@ struct BF16Vec16 : public Vec<BF16Vec16> {
   explicit BF16Vec16(const void* ptr)
       : reg((__m256i)_mm256_loadu_si256((__m256i*)ptr)) {}
 
-  // non-temproal load
+  // non-temporal load
   explicit BF16Vec16(bool, void* ptr)
       : reg(_mm256_stream_load_si256((__m256i*)ptr)) {}
 
@@ -327,7 +327,7 @@ struct FP32Vec16 : public Vec<FP32Vec16> {
   // normal load
   explicit FP32Vec16(const float* ptr) : reg(_mm512_loadu_ps(ptr)) {}
 
-  // non-temproal load
+  // non-temporal load
   explicit FP32Vec16(bool, void* ptr)
       : reg((__m512)_mm512_stream_load_si512(ptr)) {}
 
@@ -576,7 +576,7 @@ struct INT8Vec64 : public Vec<INT8Vec64> {
   // normal load
   explicit INT8Vec64(void* ptr) : reg(_mm512_loadu_epi8(ptr)) {}
 
-  // non-temproal load
+  // non-temporal load
   explicit INT8Vec64(bool, void* ptr) : reg(_mm512_stream_load_si512(ptr)) {}
 
   void save(void* ptr) const { _mm512_storeu_epi8(ptr, reg); }
@@ -587,7 +587,7 @@ struct INT8Vec64 : public Vec<INT8Vec64> {
     _mm512_mask_storeu_epi8(ptr, mask, reg);
   }
 
-  // non-temproal save
+  // non-temporal save
   void nt_save(int8_t* ptr) { _mm512_stream_si512((__m512i*)ptr, reg); }
 };
 #endif

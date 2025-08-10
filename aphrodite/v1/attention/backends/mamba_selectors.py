@@ -1,0 +1,10 @@
+from aphrodite.attention.backends.abstract import AttentionBackend
+from aphrodite.v1.attention.backends.mamba_attn import Mamba2AttentionBackend
+
+
+def get_mamba_attn_backend(mamba_type: str) -> type[AttentionBackend]:
+    if mamba_type == "mamba2":
+        return Mamba2AttentionBackend
+
+    raise NotImplementedError(f"Mamba Attention type {mamba_type} is not "
+                              "supported yet.")

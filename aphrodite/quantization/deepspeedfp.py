@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -43,7 +43,7 @@ class DeepSpeedFPConfig(QuantizationConfig):
         return "deepspeedfp"
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "DeepSpeedFPConfig":
+    def from_config(cls, config: dict[str, Any]) -> "DeepSpeedFPConfig":
         weight_bits = cls.get_from_keys(config, ["bits"])
         group_size = cls.get_from_keys(config, ["group_size"])
         return cls(weight_bits=weight_bits, group_size=group_size)
@@ -52,7 +52,7 @@ class DeepSpeedFPConfig(QuantizationConfig):
         return DeepSpeedFPLinearMethod(self)
 
     @classmethod
-    def get_supported_act_dtypes(cls) -> List[torch.dtype]:
+    def get_supported_act_dtypes(cls) -> list[torch.dtype]:
         return [torch.half, torch.bfloat16]
 
     @classmethod
@@ -61,7 +61,7 @@ class DeepSpeedFPConfig(QuantizationConfig):
         return 60
 
     @staticmethod
-    def get_config_filenames() -> List[str]:
+    def get_config_filenames() -> list[str]:
         return [
             "quant_config.json",
             "quantize_config.json",
@@ -88,7 +88,7 @@ class DeepSpeedFPLinearMethod(LinearMethodBase):
     def create_weights(self,
                        layer: torch.nn.Module,
                        input_size_per_partition: int,
-                       output_partition_sizes: List[int],
+                       output_partition_sizes: list[int],
                        input_size: int,
                        output_size: int,
                        params_dtype: torch.dtype,

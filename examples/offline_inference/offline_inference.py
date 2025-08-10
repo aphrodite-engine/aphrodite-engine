@@ -11,7 +11,8 @@ prompts = [
 sampling_params = SamplingParams(temperature=1.15, min_p=0.06)
 
 # Create an LLM.
-llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct"
+llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct",
+          max_model_len=8192
           )  # pass additional arguments here, such as `quantization`
 # Generate texts from the prompts. The output is a list of RequestOutput objects
 # that contain the prompt, generated text, and other information.

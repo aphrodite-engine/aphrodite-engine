@@ -22,7 +22,7 @@ def test_bench_serve(server):
     command = [
         "aphrodite",
         "bench",
-        "serve",
+        "run",
         "--model",
         MODEL_NAME,
         "--host",

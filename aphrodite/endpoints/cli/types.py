@@ -1,6 +1,10 @@
-import argparse
+from __future__ import annotations
 
-from aphrodite.common.utils import FlexibleArgumentParser
+import argparse
+import typing
+
+if typing.TYPE_CHECKING:
+    from aphrodite.utils import FlexibleArgumentParser
 
 
 class CLISubcommand:

@@ -10,6 +10,10 @@ from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
 from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.modeling.models.interfaces import supports_transcription
+from aphrodite.modeling.models.interfaces_base import (
+    is_pooling_model, is_text_generation_model)
+from aphrodite.tasks import GenerationTask, PoolingTask, SupportedTask
 
 if TYPE_CHECKING:
     from aphrodite.attention import AttentionMetadata
@@ -184,7 +188,6 @@ class ModelRunnerBase(ABC, Generic[T]):
         self.scheduler_config = aphrodite_config.scheduler_config
         self.device_config = aphrodite_config.device_config
         self.speculative_config = aphrodite_config.speculative_config
-        self.prompt_adapter_config = aphrodite_config.prompt_adapter_config
         self.observability_config = aphrodite_config.observability_config
 
     # Map of request_id -> generator used for seeded random sampling
@@ -218,6 +221,38 @@ class ModelRunnerBase(ABC, Generic[T]):
     @abstractmethod
     def get_model(self) -> nn.Module:
         raise NotImplementedError
+
+    def get_supported_generation_tasks(self) -> list[GenerationTask]:
+        model = self.get_model()
+        supported_tasks = list[GenerationTask]()
+
+        if is_text_generation_model(model):
+            supported_tasks.append("generate")
+
+        if supports_transcription(model):
+            if model.supports_transcription_only:
+                return ["transcription"]
+
+            supported_tasks.append("transcription")
+
+        return supported_tasks
+
+    def get_supported_pooling_tasks(self) -> list[PoolingTask]:
+        model = self.get_model()
+        if not is_pooling_model(model):
+            return []
+
+        return list(model.pooler.get_supported_tasks())
+
+    def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
+        tasks = list[SupportedTask]()
+
+        if self.model_config.runner_type == "generate":
+            tasks.extend(self.get_supported_generation_tasks())
+        if self.model_config.runner_type == "pooling":
+            tasks.extend(self.get_supported_pooling_tasks())
+
+        return tuple(tasks)
 
     def execute_model(
         self,

@@ -31,9 +31,6 @@ class Sampler(nn.Module):
         # Sample the next token.
         sampled = self.sample(logits, sampling_metadata)
 
-        # Use int32 to reduce the tensor size.
-        sampled = sampled.to(torch.int32)
-
         # These are GPU tensors.
         sampler_output = SamplerOutput(
             # The sampled tokens are expanded to 2D tensor with shape

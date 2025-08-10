@@ -24,14 +24,14 @@ include(${CMAKE_CURRENT_LIST_DIR}/cmake/utils.cmake)
 # Suppress potential warnings about unused manually-specified variables
 set(ignoreMe "${APHRODITE_PYTHON_PATH}")
 
+# Prevent installation of dependencies (cutlass) by default.
+install(CODE "set(CMAKE_INSTALL_LOCAL_ONLY TRUE)" ALL_COMPONENTS)
+
 #
 # Supported python versions.  These versions will be searched in order, the
 # first match will be selected.  These should be kept in sync with setup.py.
 #
 set(PYTHON_SUPPORTED_VERSIONS "3.9" "3.10" "3.11" "3.12")
-
-# Supported NVIDIA architectures.
-set(CUDA_SUPPORTED_ARCHS "7.0;7.2;7.5;8.0;8.6;8.7;8.9;9.0;10.0;10.1;12.0")
 
 # Supported AMD GPU architectures.
 set(HIP_SUPPORTED_ARCHS "gfx906;gfx908;gfx90a;gfx942;gfx950;gfx1030;gfx1100;gfx1101;gfx1200;gfx1201")
@@ -46,7 +46,7 @@ set(HIP_SUPPORTED_ARCHS "gfx906;gfx908;gfx90a;gfx942;gfx950;gfx1030;gfx1100;gfx1
 # requirements.txt files and should be kept consistent.  The ROCm torch
 # versions are derived from docker/Dockerfile.rocm
 #
-set(TORCH_SUPPORTED_VERSION_CUDA "2.7.0")
+set(TORCH_SUPPORTED_VERSION_CUDA "2.7.1")
 set(TORCH_SUPPORTED_VERSION_ROCM "2.7.0")
 
 #
@@ -79,6 +79,15 @@ endif()
 # etc.
 #
 find_package(Torch REQUIRED)
+
+# Supported NVIDIA architectures.
+# This check must happen after find_package(Torch) because that's when CMAKE_CUDA_COMPILER_VERSION gets defined
+if(DEFINED CMAKE_CUDA_COMPILER_VERSION AND
+   CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 12.8)
+  set(CUDA_SUPPORTED_ARCHS "6.0;6.1;7.0;7.2;7.5;8.0;8.6;8.7;8.9;9.0;10.0;10.1;12.0")
+else()
+  set(CUDA_SUPPORTED_ARCHS "6.0;6.1;7.0;7.2;7.5;8.0;8.6;8.7;8.9;9.0")
+endif()
 
 #
 # Forward the non-CUDA device extensions to external CMake scripts.
@@ -227,14 +236,17 @@ endif()
 #
 
 set(APHRODITE_EXT_SRC
+  "kernels/mamba/mamba_ssm/selective_scan_fwd.cu"
   "kernels/cache_kernels.cu"
   "kernels/attention/paged_attention_v1.cu"
   "kernels/attention/paged_attention_v2.cu"
   "kernels/attention/merge_attn_states.cu"
+  "kernels/attention/vertical_slash_index.cu"
   "kernels/pos_encoding_kernels.cu"
   "kernels/activation_kernels.cu"
   "kernels/layernorm_kernels.cu"
   "kernels/layernorm_quant_kernels.cu"
+  "kernels/sampler.cu"
   "kernels/cuda_view.cu"
   "kernels/quantization/squeezellm/quant_cuda_kernel.cu"
   "kernels/quantization/gptq/q_gemm.cu"
@@ -251,9 +263,8 @@ set(APHRODITE_EXT_SRC
   if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   SET(CUTLASS_ENABLE_HEADERS_ONLY ON CACHE BOOL "Enable only the header library")
 
-  # Set CUTLASS_REVISION manually -- its revision detection doesn't work in this case.
-  # Please keep this in sync with FetchContent_Declare line below.
-  set(CUTLASS_REVISION "v3.9.0" CACHE STRING "CUTLASS revision to use")
+  # Set CUTLASS_REVISION. Used for FetchContent. Also fixes some bogus messages when building.
+  set(CUTLASS_REVISION "v4.0.0" CACHE STRING "CUTLASS revision to use")
 
   # Use the specified CUTLASS source directory for compilation if APHRODITE_CUTLASS_SRC_DIR is provided
   if (DEFINED ENV{APHRODITE_CUTLASS_SRC_DIR})
@@ -271,7 +282,7 @@ set(APHRODITE_EXT_SRC
         cutlass
         GIT_REPOSITORY https://github.com/nvidia/cutlass.git
         # Please keep this in sync with CUTLASS_REVISION line above.
-        GIT_TAG v3.9.0
+        GIT_TAG ${CUTLASS_REVISION}
         GIT_PROGRESS TRUE
 
         # Speed up CUTLASS download by retrieving only the specified GIT_TAG instead of the history.
@@ -284,8 +295,6 @@ set(APHRODITE_EXT_SRC
 
   list(APPEND APHRODITE_EXT_SRC
     "kernels/quantization/fp6/fp6_linear.cu"
-    "kernels/mamba/mamba_ssm/selective_scan_fwd.cu"
-    "kernels/mamba/causal_conv1d/causal_conv1d.cu"
     "kernels/quantization/aqlm/gemm_kernels.cu"
     "kernels/quantization/vptq/gemm_kernels.cu"
     "kernels/quantization/awq/gemm_kernels.cu"
@@ -295,9 +304,11 @@ set(APHRODITE_EXT_SRC
     "kernels/quantization/cutlass_w8a8/scaled_mm_entry.cu"
     "kernels/quantization/fp4/nvfp4_quant_entry.cu"
     "kernels/quantization/fp4/nvfp4_scaled_mm_entry.cu"
+    "kernels/quantization/fp4/nvfp4_blockwise_moe_kernel.cu"
     "kernels/sparse/cutlass/sparse_scaled_mm_entry.cu"
     "kernels/cutlass_extensions/common.cpp"
-    "kernels/attention/mla/cutlass_mla_entry.cu")
+    "kernels/attention/mla/cutlass_mla_entry.cu"
+    "kernels/quantization/fp8/per_token_group_quant.cu")
 
   set_gencode_flags_for_srcs(
     SRCS "${APHRODITE_EXT_SRC}"
@@ -306,10 +317,54 @@ set(APHRODITE_EXT_SRC
   # Only build Marlin kernels if we are building for at least some compatible archs.
   # Keep building Marlin for 9.0 as there are some group sizes and shapes that
   # are not supported by Machete yet.
-  cuda_archs_loose_intersection(MARLIN_ARCHS "8.0;8.6;8.7;8.9;9.0;10.0;10.1;12.0" "${CUDA_ARCHS}")
+  # 9.0 for latest bf16 atomicAdd PTX
+  cuda_archs_loose_intersection(MARLIN_ARCHS "8.0;8.7;9.0+PTX" "${CUDA_ARCHS}")
   if (MARLIN_ARCHS)
+
+    #
+    # For the Marlin kernels we automatically generate sources for various
+    # preselected input type pairs and schedules.
+    # Generate sources:
+    set(MARLIN_GEN_SCRIPT
+      ${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantization/gptq_marlin/generate_kernels.py)
+    file(MD5 ${MARLIN_GEN_SCRIPT} MARLIN_GEN_SCRIPT_HASH)
+
+    message(STATUS "Marlin generation script hash: ${MARLIN_GEN_SCRIPT_HASH}")
+    message(STATUS "Last run Marlin generate script hash: $CACHE{MARLIN_GEN_SCRIPT_HASH}")
+
+    if (NOT DEFINED CACHE{MARLIN_GEN_SCRIPT_HASH}
+        OR NOT $CACHE{MARLIN_GEN_SCRIPT_HASH} STREQUAL ${MARLIN_GEN_SCRIPT_HASH})
+      execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env
+        PYTHONPATH=$PYTHONPATH
+          ${Python_EXECUTABLE} ${MARLIN_GEN_SCRIPT}
+        RESULT_VARIABLE marlin_generation_result
+        OUTPUT_VARIABLE marlin_generation_result
+        OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/marlin_generation.log
+        ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/marlin_generation.log
+      )
+
+      if (NOT marlin_generation_result EQUAL 0)
+        message(FATAL_ERROR "Marlin generation failed."
+                            " Result: \"${marlin_generation_result}\""
+                            "\nCheck the log for details: "
+                            "${CMAKE_CURRENT_BINARY_DIR}/marlin_generation.log")
+      else()
+        set(MARLIN_GEN_SCRIPT_HASH ${MARLIN_GEN_SCRIPT_HASH}
+            CACHE STRING "Last run Marlin generate script hash" FORCE)
+        message(STATUS "Marlin generation completed successfully.")
+      endif()
+    else()
+      message(STATUS "Marlin generation script has not changed, skipping generation.")
+    endif()
+
+    file(GLOB MARLIN_TEMPLATE_KERNEL_SRC "kernels/quantization/gptq_marlin/kernel_*.cu")
+    set_gencode_flags_for_srcs(
+      SRCS "${MARLIN_TEMPLATE_KERNEL_SRC}"
+      CUDA_ARCHS "${MARLIN_ARCHS}")
+
+    list(APPEND APHRODITE_EXT_SRC ${MARLIN_TEMPLATE_KERNEL_SRC})
     set(MARLIN_SRCS
-       "kernels/quantization/fp8/fp8_marlin.cu"
        "kernels/quantization/marlin/dense/marlin_cuda_kernel.cu"
        "kernels/quantization/marlin/sparse/marlin_24_cuda_kernel.cu"
        "kernels/quantization/marlin/qqq/marlin_qqq_gemm_kernel.cu"
@@ -347,7 +402,7 @@ set(APHRODITE_EXT_SRC
   # The cutlass_scaled_mm kernels for Hopper (c3x, i.e. CUTLASS 3.x) require
   # CUDA 12.0 or later
   cuda_archs_loose_intersection(SCALED_MM_ARCHS "9.0a;" "${CUDA_ARCHS}")
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.0 AND SCALED_MM_ARCHS)
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.0 AND SCALED_MM_ARCHS)
     set(SRCS
        "kernels/quantization/cutlass_w8a8/scaled_mm_c3x_sm90.cu"
        "kernels/quantization/cutlass_w8a8/c3x/scaled_mm_sm90_fp8.cu"
@@ -363,7 +418,7 @@ set(APHRODITE_EXT_SRC
     list(APPEND SCALED_MM_3X_ARCHS "${SCALED_MM_ARCHS}")
     message(STATUS "Building scaled_mm_c3x_sm90 for archs: ${SCALED_MM_ARCHS}")
   else()
-    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.0 AND SCALED_MM_ARCHS)
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.0 AND SCALED_MM_ARCHS)
       message(STATUS "Not building scaled_mm_c3x_sm90 as CUDA Compiler version is "
                      "not >= 12.0, we recommend upgrading to CUDA 12.0 or "
                      "later if you intend on running FP8 quantized models on "
@@ -374,13 +429,43 @@ set(APHRODITE_EXT_SRC
     endif()
   endif()
 
-  # The cutlass_scaled_mm kernels for Blackwell (c3x, i.e. CUTLASS 3.x) require
+  # The cutlass_scaled_mm kernels for Geforce Blackwell SM120 (c3x, i.e. CUTLASS 3.x) require
   # CUDA 12.8 or later
-  cuda_archs_loose_intersection(SCALED_MM_ARCHS "10.0a;10.1a;12.0a" "${CUDA_ARCHS}")
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.8 AND SCALED_MM_ARCHS)
+  cuda_archs_loose_intersection(SCALED_MM_ARCHS "12.0;12.0a" "${CUDA_ARCHS}")
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
+    set(SRCS
+      "kernels/quantization/cutlass_w8a8/scaled_mm_c3x_sm120.cu"
+      "kernels/quantization/cutlass_w8a8/c3x/scaled_mm_sm120_fp8.cu"
+    )
+    set_gencode_flags_for_srcs(
+      SRCS "${SRCS}"
+      CUDA_ARCHS "${SCALED_MM_ARCHS}")
+    list(APPEND APHRODITE_EXT_SRC "${SRCS}")
+    list(APPEND APHRODITE_GPU_FLAGS "-DENABLE_SCALED_MM_SM120=1")
+    # Let scaled_mm_c2x know it doesn't need to build these arches
+    list(APPEND SCALED_MM_3X_ARCHS "${SCALED_MM_ARCHS}")
+    message(STATUS "Building scaled_mm_c3x_sm120 for archs: ${SCALED_MM_ARCHS}")
+  else()
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
+      message(STATUS "Not building scaled_mm_c3x_sm120 as CUDA Compiler version is "
+                     "not >= 12.8, we recommend upgrading to CUDA 12.8 or "
+                     "later if you intend on running FP8 quantized models on "
+                     "Blackwell.")
+    else()
+      message(STATUS "Not building scaled_mm_c3x_120 as no compatible archs found "
+                     "in CUDA target architectures")
+    endif()
+  endif()
+
+
+  # The cutlass_scaled_mm kernels for Blackwell SM100 (c3x, i.e. CUTLASS 3.x)
+  # require CUDA 12.8 or later
+  cuda_archs_loose_intersection(SCALED_MM_ARCHS "10.0a;10.1a" "${CUDA_ARCHS}")
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
     set(SRCS
       "kernels/quantization/cutlass_w8a8/scaled_mm_c3x_sm100.cu"
       "kernels/quantization/cutlass_w8a8/c3x/scaled_mm_sm100_fp8.cu"
+      "kernels/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm100_fp8.cu"
     )
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
@@ -391,7 +476,7 @@ set(APHRODITE_EXT_SRC
     list(APPEND SCALED_MM_3X_ARCHS "${SCALED_MM_ARCHS}")
     message(STATUS "Building scaled_mm_c3x_sm100 for archs: ${SCALED_MM_ARCHS}")
   else()
-    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.8 AND SCALED_MM_ARCHS)
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
       message(STATUS "Not building scaled_mm_c3x_sm100 as CUDA Compiler version is "
                      "not >= 12.8, we recommend upgrading to CUDA 12.8 or "
                      "later if you intend on running FP8 quantized models on "
@@ -405,8 +490,9 @@ set(APHRODITE_EXT_SRC
   #
   # For the cutlass_scaled_mm kernels we want to build the c2x (CUTLASS 2.x)
   # kernels for the remaining archs that are not already built for 3x.
+  # (Build 8.9 for FP8)
   cuda_archs_loose_intersection(SCALED_MM_2X_ARCHS
-    "7.5;8.0;8.6;8.7;8.9;9.0;10.0;10.1;12.0" "${CUDA_ARCHS}")
+    "7.5;8.0;8.7;8.9+PTX" "${CUDA_ARCHS}")
   # subtract out the archs that are already built for 3x
   list(REMOVE_ITEM SCALED_MM_2X_ARCHS ${SCALED_MM_3X_ARCHS})
   if (SCALED_MM_2X_ARCHS)
@@ -433,7 +519,7 @@ set(APHRODITE_EXT_SRC
   # The 2:4 sparse kernels cutlass_scaled_sparse_mm and cutlass_compressor
   # require CUDA 12.2 or later (and only work on Hopper).
   cuda_archs_loose_intersection(SCALED_MM_ARCHS "9.0a;" "${CUDA_ARCHS}")
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.2 AND SCALED_MM_ARCHS)
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.2 AND SCALED_MM_ARCHS)
     set(SRCS "kernels/sparse/cutlass/sparse_scaled_mm_c3x.cu")
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
@@ -442,7 +528,7 @@ set(APHRODITE_EXT_SRC
     list(APPEND APHRODITE_GPU_FLAGS "-DENABLE_SPARSE_SCALED_MM_C3X=1")
     message(STATUS "Building sparse_scaled_mm_c3x for archs: ${SCALED_MM_ARCHS}")
   else()
-    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.2 AND SCALED_MM_ARCHS)
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.2 AND SCALED_MM_ARCHS)
       message(STATUS "Not building sparse_scaled_mm_c3x kernels as CUDA Compiler version is "
                      "not >= 12.2, we recommend upgrading to CUDA 12.2 or later "
                      "if you intend on running FP8 sparse quantized models on Hopper.")
@@ -452,17 +538,39 @@ set(APHRODITE_EXT_SRC
     endif()
   endif()
 
-  # FP4 Archs and flags
-  cuda_archs_loose_intersection(FP4_ARCHS "10.0a" "${CUDA_ARCHS}")
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.8 AND FP4_ARCHS)
+  # The nvfp4_scaled_mm_sm120 kernels for Geforce Blackwell SM120 require
+  # CUDA 12.8 or later
+  cuda_archs_loose_intersection(FP4_ARCHS "12.0;12.0a" "${CUDA_ARCHS}")
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND FP4_ARCHS)
     set(SRCS
       "kernels/quantization/fp4/nvfp4_quant_kernels.cu"
-      "kernels/quantization/fp4/nvfp4_scaled_mm_kernels.cu")
+      "kernels/quantization/fp4/nvfp4_scaled_mm_sm120_kernels.cu")
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
       CUDA_ARCHS "${FP4_ARCHS}")
     list(APPEND APHRODITE_EXT_SRC "${SRCS}")
-    list(APPEND APHRODITE_GPU_FLAGS "-DENABLE_NVFP4=1")
+    list(APPEND APHRODITE_GPU_FLAGS "-DENABLE_NVFP4_SM120=1")
+    message(STATUS "Building NVFP4 for archs: ${FP4_ARCHS}")
+  else()
+    message(STATUS "Not building NVFP4 as no compatible archs were found.")
+    # clear FP4_ARCHS
+    set(FP4_ARCHS)
+  endif()
+
+  # FP4 Archs and flags
+  cuda_archs_loose_intersection(FP4_ARCHS "10.0a" "${CUDA_ARCHS}")
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND FP4_ARCHS)
+    set(SRCS
+      "kernels/quantization/fp4/nvfp4_quant_kernels.cu"
+      "kernels/quantization/fp4/nvfp4_experts_quant.cu"
+      "kernels/quantization/fp4/nvfp4_scaled_mm_kernels.cu"
+      "kernels/quantization/fp4/nvfp4_blockwise_moe_kernel.cu")
+    set_gencode_flags_for_srcs(
+      SRCS "${SRCS}"
+      CUDA_ARCHS "${FP4_ARCHS}")
+    list(APPEND APHRODITE_EXT_SRC "${SRCS}")
+    list(APPEND APHRODITE_GPU_FLAGS "-DENABLE_NVFP4_SM100=1")
+    list(APPEND APHRODITE_GPU_FLAGS "-DENABLE_CUTLASS_MOE_SM100=1")
     message(STATUS "Building NVFP4 for archs: ${FP4_ARCHS}")
   else()
     message(STATUS "Not building NVFP4 as no compatible archs were found.")
@@ -472,9 +580,10 @@ set(APHRODITE_EXT_SRC
 
   # CUTLASS MLA Archs and flags
   cuda_archs_loose_intersection(MLA_ARCHS "10.0a" "${CUDA_ARCHS}")
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.8 AND MLA_ARCHS)
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND MLA_ARCHS)
     set(SRCS
-      "kernels/attention/mla/cutlass_mla_kernels.cu")
+      "kernels/attention/mla/cutlass_mla_kernels.cu"
+      "kernels/attention/mla/sm100_cutlass_mla_kernel.cu")
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
       CUDA_ARCHS "${MLA_ARCHS}")
@@ -492,13 +601,12 @@ set(APHRODITE_EXT_SRC
 
   # CUTLASS MoE kernels
 
-  # The MoE kernel cutlass_moe_mm requires CUDA 12.3 or later (and only works
-  # on Hopper). get_cutlass_moe_mm_data should only be compiled if it's possible
-  # to compile MoE kernels that use its output.
-  cuda_archs_loose_intersection(SCALED_MM_ARCHS "9.0a;" "${CUDA_ARCHS}")
+  # The MoE kernel cutlass_moe_mm requires CUDA 12.3 or later (and ONLY works
+  # on Hopper). get_cutlass_(pplx_)moe_mm_data should only be compiled
+  # if it's possible to compile MoE kernels that use its output.
+  cuda_archs_loose_intersection(SCALED_MM_ARCHS "9.0a" "${CUDA_ARCHS}")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.3 AND SCALED_MM_ARCHS)
-    set(SRCS "kernels/quantization/cutlass_w8a8/moe/grouped_mm_c3x.cu"
-             "kernels/quantization/cutlass_w8a8/moe/moe_data.cu")
+    set(SRCS "kernels/quantization/cutlass_w8a8/moe/grouped_mm_c3x_sm90.cu")
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
       CUDA_ARCHS "${SCALED_MM_ARCHS}")
@@ -512,6 +620,66 @@ set(APHRODITE_EXT_SRC
                      "if you intend on running FP8 quantized MoE models on Hopper.")
     else()
       message(STATUS "Not building grouped_mm_c3x as no compatible archs found "
+                     "in CUDA target architectures.")
+    endif()
+  endif()
+
+  cuda_archs_loose_intersection(SCALED_MM_ARCHS "10.0a" "${CUDA_ARCHS}")
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
+    set(SRCS "kernels/quantization/cutlass_w8a8/moe/grouped_mm_c3x_sm100.cu")
+    set_gencode_flags_for_srcs(
+      SRCS "${SRCS}"
+      CUDA_ARCHS "${SCALED_MM_ARCHS}")
+    list(APPEND APHRODITE_EXT_SRC "${SRCS}")
+    list(APPEND APHRODITE_GPU_FLAGS "-DENABLE_CUTLASS_MOE_SM100=1")
+    message(STATUS "Building grouped_mm_c3x for archs: ${SCALED_MM_ARCHS}")
+  else()
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
+      message(STATUS "Not building grouped_mm_c3x kernels as CUDA Compiler version is "
+                     "not >= 12.8, we recommend upgrading to CUDA 12.8 or later "
+                     "if you intend on running FP8 quantized MoE models on Blackwell.")
+    else()
+      message(STATUS "Not building grouped_mm_c3x as no compatible archs found "
+                     "in CUDA target architectures.")
+    endif()
+  endif()
+
+  # moe_data.cu is used by all CUTLASS MoE kernels.
+  cuda_archs_loose_intersection(CUTLASS_MOE_DATA_ARCHS "9.0a;10.0a" "${CUDA_ARCHS}")
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.3 AND CUTLASS_MOE_DATA_ARCHS)
+    set(SRCS "kernels/quantization/cutlass_w8a8/moe/moe_data.cu")
+    set_gencode_flags_for_srcs(
+      SRCS "${SRCS}"
+      CUDA_ARCHS "${CUTLASS_MOE_DATA_ARCHS}")
+    list(APPEND APHRODITE_EXT_SRC "${SRCS}")
+    message(STATUS "Building moe_data for archs: ${CUTLASS_MOE_DATA_ARCHS}")
+  else()
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.3 AND CUTLASS_MOE_DATA_ARCHS)
+      message(STATUS "Not building moe_data as CUDA Compiler version is "
+                     "not >= 12.3, we recommend upgrading to CUDA 12.3 or later "
+                     "if you intend on running FP8 quantized MoE models on Hopper or Blackwell.")
+    else()
+      message(STATUS "Not building moe_data as no compatible archs found "
+                     "in CUDA target architectures.")
+    endif()
+  endif()
+
+  cuda_archs_loose_intersection(SCALED_MM_ARCHS "10.0a" "${CUDA_ARCHS}")
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
+    set(SRCS "kernels/quantization/cutlass_w8a8/moe/blockwise_scaled_group_mm_sm100.cu")
+    set_gencode_flags_for_srcs(
+      SRCS "${SRCS}"
+      CUDA_ARCHS "${SCALED_MM_ARCHS}")
+    list(APPEND APHRODITE_EXT_SRC "${SRCS}")
+    list(APPEND APHRODITE_GPU_FLAGS "-DENABLE_CUTLASS_MOE_SM100=1")
+    message(STATUS "Building blockwise_scaled_group_mm_sm100 for archs: ${SCALED_MM_ARCHS}")
+  else()
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
+      message(STATUS "Not building blockwise_scaled_group_mm_sm100 kernels as CUDA Compiler version is "
+                     "not >= 12.8, we recommend upgrading to CUDA 12.8 or later "
+                     "if you intend on running FP8 quantized MoE models on Blackwell.")
+    else()
+      message(STATUS "Not building blockwise_scaled_group_mm_sm100 as no compatible archs found "
                      "in CUDA target architectures")
     endif()
   endif()
@@ -574,7 +742,7 @@ set(APHRODITE_EXT_SRC
 
     message(STATUS "Building Machete kernels for archs: ${MACHETE_ARCHS}")
   else()
-    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.0
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.0
         AND MACHETE_ARCHS)
       message(STATUS "Not building Machete kernels as CUDA Compiler version is "
                      "not >= 12.0, we recommend upgrading to CUDA 12.0 or "
@@ -586,6 +754,14 @@ set(APHRODITE_EXT_SRC
     endif()
   endif()
 # if CUDA endif
+endif()
+
+if (APHRODITE_GPU_LANG STREQUAL "HIP")
+  # Add QuickReduce kernels
+  list(APPEND APHRODITE_EXT_SRC
+    "kernels/custom_quickreduce.cu"
+  )
+# if ROCM endif
 endif()
 
 message(STATUS "Enabling C extension.")
@@ -620,6 +796,14 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   list(APPEND APHRODITE_MOE_EXT_SRC "kernels/moe/moe_wna16.cu")
 endif()
 
+if(APHRODITE_GPU_LANG STREQUAL "CUDA")
+  set(MOE_PERMUTE_SRC
+      "kernels/moe/permute_unpermute_kernels/moe_permute_unpermute_kernel.cu"
+      "kernels/moe/moe_permute_unpermute_op.cu")
+
+  list(APPEND APHRODITE_MOE_EXT_SRC "${MOE_PERMUTE_SRC}")
+endif()
+
 set_gencode_flags_for_srcs(
   SRCS "${APHRODITE_MOE_EXT_SRC}"
   CUDA_ARCHS "${CUDA_ARCHS}")
@@ -633,7 +817,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
     CUDA_ARCHS "${CUDA_ARCHS}")
 
   list(APPEND APHRODITE_MOE_EXT_SRC "${APHRODITE_MOE_WNA16_SRC}")
-  cuda_archs_loose_intersection(MARLIN_MOE_ARCHS "8.0;8.6;8.7;8.9;9.0;10.0;10.1;12.0" "${CUDA_ARCHS}")
+  # 9.0 for latest bf16 atomicAdd PTX
+  cuda_archs_loose_intersection(MARLIN_MOE_ARCHS "8.0;8.7;9.0+PTX" "${CUDA_ARCHS}")
   if (MARLIN_MOE_ARCHS)
 
     #
@@ -651,7 +836,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
         OR NOT $CACHE{MOE_MARLIN_GEN_SCRIPT_HASH} STREQUAL ${MOE_MARLIN_GEN_SCRIPT_HASH})
       execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
-        PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/kernels/cutlass_extensions/:${CUTLASS_DIR}/python/:${APHRODITE_PYTHON_PATH}:$PYTHONPATH
+        PYTHONPATH=$PYTHONPATH
           ${Python_EXECUTABLE} ${MOE_MARLIN_GEN_SCRIPT}
         RESULT_VARIABLE moe_marlin_generation_result
         OUTPUT_VARIABLE moe_marlin_generation_output
@@ -695,6 +880,8 @@ define_gpu_extension_target(
   SOURCES ${APHRODITE_MOE_EXT_SRC}
   COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
   ARCHITECTURES ${APHRODITE_GPU_ARCHES}
+  INCLUDE_DIRECTORIES ${CUTLASS_INCLUDE_DIR}
+  INCLUDE_DIRECTORIES ${CUTLASS_TOOLS_UTIL_INCLUDE_DIR}
   USE_SABI 3
   WITH_SOABI)
 
@@ -720,123 +907,6 @@ endif()
 
 # For CUDA we also build and ship some external projects.
 if (APHRODITE_GPU_LANG STREQUAL "CUDA")
-    set(FA2_ENABLED ON)
-    set(FA3_ENABLED ON)
-
-    # Flash Attention 2 build
-    if (FA2_ENABLED)
-        file(GLOB FA2_GEN_SRCS "kernels/flash_attention/flash_attn/src/flash_fwd_*.cu")
-
-        cuda_archs_loose_intersection(FA2_ARCHS "8.0;9.0;10.0;10.1;12.0" "${CUDA_ARCHS}")
-        message(STATUS "FA2_ARCHS: ${FA2_ARCHS}")
-
-        set_gencode_flags_for_srcs(
-            SRCS "${FA2_GEN_SRCS}"
-            CUDA_ARCHS "${FA2_ARCHS}")
-
-        define_gpu_extension_target(
-            _aphrodite_fa2_C
-            DESTINATION aphrodite
-            LANGUAGE ${APHRODITE_GPU_LANG}
-            SOURCES
-                kernels/flash_attention/flash_attn/flash_api.cpp
-                kernels/flash_attention/flash_attn/flash_api_sparse.cpp
-                kernels/flash_attention/flash_attn/flash_api_torch_lib.cpp
-                ${FA2_GEN_SRCS}
-            COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
-            USE_SABI 3
-            WITH_SOABI)
-
-        target_include_directories(_aphrodite_fa2_C PRIVATE
-            kernels/flash_attention/flash_attn
-            kernels/flash_attention/flash_attn/src
-            kernels/flash_attention/common
-            ${CUTLASS_INCLUDE_DIR})
-
-        target_compile_definitions(_aphrodite_fa2_C PRIVATE
-            FLASHATTENTION_DISABLE_BACKWARD
-            FLASHATTENTION_DISABLE_DROPOUT
-            FLASHATTENTION_DISABLE_UNEVEN_K
-            FLASHATTENTION_DISABLE_PYBIND)
-    endif()
-
-    # Flash Attention 3 build - requires CUDA 12.0 or later
-    if (FA3_ENABLED AND ${CMAKE_CUDA_COMPILER_VERSION} GREATER_EQUAL 12.0)
-        # BF16 source files
-        file(GLOB FA3_BF16_GEN_SRCS
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimall_bf16*_sm90.cu")
-        file(GLOB FA3_BF16_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimdiff_bf16*_sm90.cu")
-        list(APPEND FA3_BF16_GEN_SRCS ${FA3_BF16_GEN_SRCS_})
-        file(GLOB FA3_BF16_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_*_bf16_*_sm80.cu")
-        list(APPEND FA3_BF16_GEN_SRCS ${FA3_BF16_GEN_SRCS_})
-
-        # FP16 source files
-        file(GLOB FA3_FP16_GEN_SRCS
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimall_fp16*_sm90.cu")
-        file(GLOB FA3_FP16_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimdiff_fp16*_sm90.cu")
-        list(APPEND FA3_FP16_GEN_SRCS ${FA3_FP16_GEN_SRCS_})
-        file(GLOB FA3_FP16_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_*_fp16_*_sm80.cu")
-        list(APPEND FA3_FP16_GEN_SRCS ${FA3_FP16_GEN_SRCS_})
-
-        # FP8 source files
-        file(GLOB FA3_FP8_GEN_SRCS
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimall_e4m3*_sm90.cu")
-        file(GLOB FA3_FP8_GEN_SRCS_
-            "kernels/flash_attention/hopper/instantiations/flash_fwd_hdimdiff_e4m3*_sm90.cu")
-        list(APPEND FA3_FP8_GEN_SRCS ${FA3_FP8_GEN_SRCS_})
-
-        set(FA3_GEN_SRCS ${FA3_BF16_GEN_SRCS} ${FA3_FP16_GEN_SRCS} ${FA3_FP8_GEN_SRCS})
-
-        cuda_archs_loose_intersection(FA3_ARCHS "9.0;9.0a;10.0;10.1;12.0" "${CUDA_ARCHS}")
-
-        if(FA3_ARCHS)
-            message(STATUS "FA3_ARCHS: ${FA3_ARCHS}")
-
-            set_gencode_flags_for_srcs(
-                SRCS "${FA3_GEN_SRCS}"
-                CUDA_ARCHS "${FA3_ARCHS}")
-            set_gencode_flags_for_srcs(
-                SRCS 
-                    kernels/flash_attention/hopper/flash_fwd_combine.cu
-                    kernels/flash_attention/hopper/flash_prepare_scheduler.cu
-                CUDA_ARCHS "${FA3_ARCHS}")
-
-            define_gpu_extension_target(
-                _aphrodite_fa3_C
-                DESTINATION aphrodite
-                LANGUAGE ${APHRODITE_GPU_LANG}
-                SOURCES
-                    kernels/flash_attention/hopper/flash_fwd_combine.cu
-                    kernels/flash_attention/hopper/flash_prepare_scheduler.cu
-                    kernels/flash_attention/hopper/flash_api.cpp
-                    kernels/flash_attention/hopper/flash_api_torch_lib.cpp
-                    ${FA3_GEN_SRCS}
-                COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
-                ARCHITECTURES ${APHRODITE_GPU_ARCHES}
-                USE_SABI 3
-                WITH_SOABI)
-
-            target_include_directories(_aphrodite_fa3_C PRIVATE
-                kernels/flash_attention/hopper
-                kernels/flash_attention/common
-                ${CUTLASS_INCLUDE_DIR})
-
-            target_compile_definitions(_aphrodite_fa3_C PRIVATE
-                FLASHATTENTION_DISABLE_BACKWARD
-                FLASHATTENTION_DISABLE_DROPOUT
-                FLASHATTENTION_DISABLE_UNEVEN_K
-                FLASHATTENTION_DISABLE_PYBIND
-                FLASHATTENTION_VARLEN_ONLY)
-        else()
-            message(STATUS "FA3 is disabled because no compatible Hopper or newer architecture (SM 9.0+) was detected.")
-        endif()
-    elseif(FA3_ENABLED AND ${CMAKE_CUDA_COMPILER_VERSION} VERSION_LESS 12.0)
-        message(STATUS "FA3 is disabled because CUDA version is not 12.0 or later.")
-    endif()
 
     # FlashMLA build - requires CUDA 12.3 or later and Hopper architecture
     cuda_archs_loose_intersection(FLASH_MLA_ARCHS "9.0;9.0a;10.0;10.1;12.0" "${CUDA_ARCHS}")
@@ -877,4 +947,7 @@ if (APHRODITE_GPU_LANG STREQUAL "CUDA")
         # Create an empty target for setup.py when not targeting sm90a systems
         add_custom_target(_flashmla_C)
     endif()
+
+    # vllm-flash-attn should be last as it overwrites some CMake functions
+    include(cmake/external_project/vllm_flash_attn.cmake)
 endif()

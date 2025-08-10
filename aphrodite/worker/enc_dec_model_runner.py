@@ -15,7 +15,7 @@ from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors, PoolerOutput,
                                        SequenceGroupMetadata)
-from aphrodite.common.utils import (STR_NOT_IMPL_ENC_DEC_BACKEND,
+from aphrodite.utils import (STR_NOT_IMPL_ENC_DEC_BACKEND,
                                     make_tensor_with_pad)
 from aphrodite.forward_context import set_forward_context
 from aphrodite.inputs import INPUT_REGISTRY, InputRegistry

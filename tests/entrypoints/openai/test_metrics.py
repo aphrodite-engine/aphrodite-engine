@@ -169,10 +169,8 @@ async def test_metrics_counts(server: RemoteOpenAIServer,
 
 EXPECTED_METRICS = [
     "aphrodite:num_requests_running",
-    "aphrodite:num_requests_swapped",  # deprecated
     "aphrodite:num_requests_waiting",
     "aphrodite:gpu_cache_usage_perc",
-    "aphrodite:cpu_cache_usage_perc",  # deprecated
     "aphrodite:time_to_first_token_seconds_sum",
     "aphrodite:time_to_first_token_seconds_bucket",
     "aphrodite:time_to_first_token_seconds_count",
@@ -272,10 +270,7 @@ EXPECTED_METRICS_V1 = [
     "aphrodite:request_decode_time_seconds_count",
 ]
 
-HIDDEN_DEPRECATED_METRICS = [
-    "aphrodite:num_requests_swapped",
-    "aphrodite:cpu_cache_usage_perc",
-]
+HIDDEN_DEPRECATED_METRICS: list[str] = []
 
 
 @pytest.mark.asyncio
@@ -297,8 +292,6 @@ async def test_metrics_exist(server: RemoteOpenAIServer,
 
 
 def test_metrics_exist_run_batch(use_v1: bool):
-    if use_v1:
-        pytest.skip("Skipping test on aphrodite V1")
     input_batch = """{"custom_id": "request-0", "method": "POST", "url": "/v1/embeddings", "body": {"model": "intfloat/multilingual-e5-small", "input": "You are a helpful assistant."}}"""  # noqa: E501
 
     base_url = "0.0.0.0"
@@ -325,7 +318,8 @@ def test_metrics_exist_run_batch(use_v1: bool):
             base_url,
             "--port",
             port,
-        ], )
+        ],
+                                env={"APHRODITE_USE_V1": "1" if use_v1 else "0"})
 
         def is_server_up(url):
             try:

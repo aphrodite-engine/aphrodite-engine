@@ -1,34 +1,39 @@
-
-from typing import List, Optional, Type
+from typing import Optional
 
 import aphrodite.common.envs as envs
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.kernels.mixed_precision.allspark import (
+from aphrodite.quantization.kernels.mixed_precision.allspark import (  # noqa: E501
     AllSparkLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.bitblas import (
+from aphrodite.quantization.kernels.mixed_precision.bitblas import (  # noqa: E501
     BitBLASLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.exllama import (
+from aphrodite.quantization.kernels.mixed_precision.conch import (  # noqa: E501
+    ConchLinearKernel)
+from aphrodite.quantization.kernels.mixed_precision.dynamic_4bit import (  # noqa: E501
+    Dynamic4bitLinearKernel)
+from aphrodite.quantization.kernels.mixed_precision.exllama import (  # noqa: E501
     ExllamaLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.machete import (
+from aphrodite.quantization.kernels.mixed_precision.machete import (  # noqa: E501
     MacheteLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.marlin import (
+from aphrodite.quantization.kernels.mixed_precision.marlin import (  # noqa: E501
     MarlinLinearKernel)
-from aphrodite.quantization.kernels.mixed_precision.MPLinearKernel import (
+from aphrodite.quantization.kernels.mixed_precision.MPLinearKernel import (  # noqa: E501
     MPLinearKernel, MPLinearLayerConfig)
 
 # in priority/performance order (when available)
-_POSSIBLE_KERNELS: List[Type[MPLinearKernel]] = [
+_POSSIBLE_KERNELS: list[type[MPLinearKernel]] = [
     MacheteLinearKernel,
     AllSparkLinearKernel,
     MarlinLinearKernel,
+    Dynamic4bitLinearKernel,
     BitBLASLinearKernel,
+    ConchLinearKernel,
     ExllamaLinearKernel,
 ]
 
 
 def choose_mp_linear_kernel(
         config: MPLinearLayerConfig,
-        compute_capability: Optional[int] = None) -> Type[MPLinearKernel]:
+        compute_capability: Optional[int] = None) -> type[MPLinearKernel]:
     """
     Choose an MPLinearKernel that can implement the given config for the given
      compute capability. Attempts to choose the best kernel in terms of 
@@ -45,13 +50,14 @@ def choose_mp_linear_kernel(
         ValueError: If no kernel can implement the given config.
 
     Returns:
-        Type[MPLinearKernel]: Chosen kernel.
+        type[MPLinearKernel]: Chosen kernel.
     """
     if compute_capability is None:
         if current_platform is None:
             raise ValueError("Cannot determine compute capability")
         _cc = current_platform.get_device_capability()
-        compute_capability = _cc[0] * 10 + _cc[1]
+        if _cc is not None:
+            compute_capability = _cc[0] * 10 + _cc[1]
 
     failure_reasons = []
     for kernel in _POSSIBLE_KERNELS:
@@ -59,12 +65,12 @@ def choose_mp_linear_kernel(
             failure_reasons.append(
                 f' {kernel.__name__} disabled by environment variable')
             continue
-
-        if kernel.get_min_capability() > compute_capability:
+        if (compute_capability is not None
+                and kernel.get_min_capability() > compute_capability):
             failure_reasons.append(
                 f"{kernel.__name__} requires capability "
-                f"{kernel.get_min_capability()}, current compute capability "
-                f"is {compute_capability}")
+                f"{kernel.get_min_capability()}, current compute "
+                f" capability is {compute_capability}")
             continue
 
         can_implement, failure_reason = kernel.can_implement(config)

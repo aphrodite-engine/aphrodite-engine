@@ -5,16 +5,15 @@ import dataclasses
 import json
 import os
 import time
-from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
-import torch
 from tqdm import tqdm
 
+import aphrodite.common.envs as envs
 from aphrodite import LLM, SamplingParams
-from aphrodite.benchmarks.utils import (convert_to_pytorch_benchmark_format,
-                                        write_to_json)
+from aphrodite.benchmarks.lib.utils import (
+    convert_to_pytorch_benchmark_format, write_to_json)
 from aphrodite.common.sampling_params import BeamSearchParams
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.inputs import PromptType
@@ -59,13 +58,6 @@ def add_cli_args(parser: argparse.ArgumentParser):
         help="profile the generation process of a single batch",
     )
     parser.add_argument(
-        "--profile-result-dir",
-        type=str,
-        default=None,
-        help=("path to save the pytorch profiler output. Can be visualized "
-              "with ui.perfetto.dev or Tensorboard."),
-    )
-    parser.add_argument(
         "--output-json",
         type=str,
         default=None,
@@ -79,11 +71,16 @@ def add_cli_args(parser: argparse.ArgumentParser):
     )
 
     parser = EngineArgs.add_cli_args(parser)
+    # V1 enables prefix caching by default which skews the latency
+    # numbers. We need to disable prefix caching by default.
+    parser.set_defaults(enable_prefix_caching=False)
 
 
 def main(args: argparse.Namespace):
-    print(args)
-
+    if args.profile and not envs.APHRODITE_TORCH_PROFILER_DIR:
+        raise OSError(
+            "The environment variable 'APHRODITE_TORCH_PROFILER_DIR' is not set. "
+            "Please set it to a valid path to use torch profiler.")
     engine_args = EngineArgs.from_cli_args(args)
 
     # NOTE(woosuk): If the request cannot be processed in a single batch,
@@ -102,7 +99,6 @@ def main(args: argparse.Namespace):
         max_tokens=args.output_len,
         detokenize=not args.disable_detokenize,
     )
-    print(sampling_params)
     dummy_prompt_token_ids = np.random.randint(10000,
                                                size=(args.batch_size,
                                                      args.input_len))
@@ -127,16 +123,9 @@ def main(args: argparse.Namespace):
 
     def run_to_completion(profile_dir: Optional[str] = None):
         if profile_dir:
-            with torch.profiler.profile(
-                    activities=[
-                        torch.profiler.ProfilerActivity.CPU,
-                        torch.profiler.ProfilerActivity.CUDA,
-                    ],
-                    on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                        str(profile_dir)),
-            ) as p:
-                llm_generate()
-            print(p.key_averages().table(sort_by="self_cuda_time_total"))
+            llm.start_profile()
+            llm_generate()
+            llm.stop_profile()
         else:
             start_time = time.perf_counter()
             llm_generate()
@@ -149,10 +138,7 @@ def main(args: argparse.Namespace):
         run_to_completion(profile_dir=None)
 
     if args.profile:
-        profile_dir = args.profile_result_dir
-        if not profile_dir:
-            profile_dir = (Path(".") / "aphrodite_benchmark_result" /
-                           f"latency_result_{time.time()}")
+        profile_dir = envs.APHRODITE_TORCH_PROFILER_DIR
         print(f"Profiling (results will be saved to '{profile_dir}')...")
         run_to_completion(profile_dir=profile_dir)
         return

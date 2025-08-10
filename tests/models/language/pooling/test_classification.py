@@ -27,7 +27,7 @@ def test_models(
         # switch to use ROCm CK FA backend
         monkeypatch.setenv("APHRODITE_USE_TRITON_FLASH_ATTN", "False")
 
-    with aphrodite_runner(model, dtype=dtype) as aphrodite_model:
+    with aphrodite_runner(model, max_model_len=512, dtype=dtype) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.classify(example_prompts)
 
     with hf_runner(model,
@@ -42,6 +42,6 @@ def test_models(
 
         # the tolerance value of 1e-2 is selected based on the
         # half datatype tests in
-        # tests/models/embedding/language/test_embedding.py
+        # tests/models/language/pooling/test_embedding.py
         assert torch.allclose(hf_output, aphrodite_output,
                               1e-3 if dtype == "float" else 1e-2)

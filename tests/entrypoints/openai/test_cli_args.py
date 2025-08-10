@@ -5,7 +5,7 @@ import pytest
 from aphrodite.endpoints.openai.args import (make_arg_parser,
                                               validate_parsed_serve_args)
 from aphrodite.endpoints.openai.serving_models import LoRAModulePath
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 
 from ...utils import APHRODITE_PATH
 
@@ -20,7 +20,7 @@ assert CHATML_JINJA_PATH.exists()
 
 @pytest.fixture
 def serve_parser():
-    parser = FlexibleArgumentParser(description="Aphrodite's remote OpenAI server.")
+    parser = FlexibleArgumentParser(description="vLLM's remote OpenAI server.")
     return make_arg_parser(parser)
 
 
@@ -150,3 +150,13 @@ def test_chat_template_validation_for_sad_paths(serve_parser):
     args = serve_parser.parse_args(args=["--chat-template", "does/not/exist"])
     with pytest.raises(ValueError):
         validate_parsed_serve_args(args)
+
+
+@pytest.mark.parametrize(
+    "cli_args, expected_middleware",
+    [(["--middleware", "middleware1", "--middleware", "middleware2"
+       ], ["middleware1", "middleware2"]), ([], [])])
+def test_middleware(serve_parser, cli_args, expected_middleware):
+    """Ensure multiple middleware args are parsed properly"""
+    args = serve_parser.parse_args(args=cli_args)
+    assert args.middleware == expected_middleware

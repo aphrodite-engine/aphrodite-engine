@@ -61,11 +61,11 @@ def _run_test(
     # if we run HF first, the cuda initialization will be done and it
     # will hurt multiprocessing backend with fork method (the default method).
     with aphrodite_runner(model,
-                     task="embed",
+                     runner="pooling",
                      dtype=dtype,
                      max_model_len=4096,
                      enforce_eager=True) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.encode(input_texts, images=input_images)
+        aphrodite_outputs = aphrodite_model.embed(input_texts, images=input_images)
 
     with hf_runner(model, dtype=dtype,
                    auto_cls=AutoModelForImageTextToText) as hf_model:

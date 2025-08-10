@@ -1,5 +1,6 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -23,7 +24,7 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
 
     def create_weights(self, layer: torch.nn.Module,
                        input_size_per_partition: int,
-                       output_partition_sizes: List[int], input_size: int,
+                       output_partition_sizes: list[int], input_size: int,
                        output_size: int, params_dtype: torch.dtype,
                        **extra_weight_attrs):
         """Create weights for embedding layer."""
@@ -39,7 +40,7 @@ class UnquantizedEmbeddingMethod(QuantizeMethodBase):
               layer: torch.nn.Module,
               x: torch.Tensor,
               bias: Optional[torch.Tensor] = None) -> torch.Tensor:
-        return dispatch_unquantized_gemm()(x, layer.weight, bias)
+        return dispatch_unquantized_gemm()(layer, x, layer.weight, bias)
 
     def embedding(self, layer: torch.nn.Module,
                   input_: torch.Tensor) -> torch.Tensor:
@@ -139,7 +140,7 @@ def get_masked_input_and_mask(
         input_: torch.Tensor, org_vocab_start_index: int,
         org_vocab_end_index: int, num_org_vocab_padding: int,
         added_vocab_start_index: int,
-        added_vocab_end_index: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        added_vocab_end_index: int) -> tuple[torch.Tensor, torch.Tensor]:
     # torch.compile will fuse all of the pointwise ops below
     # into a single kernel, making it very fast
     org_vocab_mask = (input_ >= org_vocab_start_index) & (
@@ -296,7 +297,7 @@ class VocabParallelEmbedding(torch.nn.Module):
             org_vocab_start_index, org_vocab_end_index,
             added_vocab_start_index, added_vocab_end_index)
 
-    def get_sharded_to_full_mapping(self) -> Optional[List[int]]:
+    def get_sharded_to_full_mapping(self) -> Optional[list[int]]:
         """Get a mapping that can be used to reindex the gathered
         logits for sampling.
 
@@ -310,9 +311,9 @@ class VocabParallelEmbedding(torch.nn.Module):
         if self.tp_size < 2:
             return None
 
-        base_embeddings: List[int] = []
-        added_embeddings: List[int] = []
-        padding: List[int] = []
+        base_embeddings: list[int] = []
+        added_embeddings: list[int] = []
+        padding: list[int] = []
         for tp_rank in range(self.tp_size):
             shard_indices = self._get_indices(self.num_embeddings_padded,
                                               self.org_vocab_size_padded,
@@ -385,19 +386,8 @@ class VocabParallelEmbedding(torch.nn.Module):
         # Copy the data. Select chunk corresponding to current shard.
         loaded_weight = loaded_weight.narrow(output_dim, start_idx, shard_size)
 
-        if current_platform.is_hpu():
-            # FIXME: Weight copy with slicing bugs out on Gaudi here,
-            # so we're using a workaround. Remove this when fixed in
-            # HPU PT bridge.
-            padded_weight = torch.cat([
-                loaded_weight,
-                torch.zeros(param.shape[0] - loaded_weight.shape[0],
-                            *loaded_weight.shape[1:])
-            ])
-            param.data.copy_(padded_weight)
-        else:
-            param[:loaded_weight.shape[0]].data.copy_(loaded_weight)
-            param[loaded_weight.shape[0]:].data.fill_(0)
+        param[:loaded_weight.shape[0]].data.copy_(loaded_weight)
+        param[loaded_weight.shape[0]:].data.fill_(0)
 
     def forward(self, input_):
         if self.tp_size > 1:

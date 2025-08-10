@@ -6,7 +6,7 @@ import torch.distributed as dist
 from loguru import logger
 from torch.distributed import ProcessGroup, ReduceOp
 
-from aphrodite.common.utils import current_stream
+from aphrodite.utils import current_stream
 from aphrodite.distributed.device_communicators.pynccl_wrapper import (
     NCCLLibrary, buffer_type, cudaStream_t, ncclComm_t, ncclDataTypeEnum,
     ncclRedOpTypeEnum, ncclUniqueId)
@@ -62,7 +62,7 @@ class PyNcclCommunicator:
         self.available = True
         self.disabled = False
 
-        logger.debug("Aphrodite is using nccl=={}", self.nccl.ncclGetVersion())
+        logger.info("Aphrodite is using nccl=={}", self.nccl.ncclGetVersion())
 
         if self.rank == 0:
             # get the unique id from NCCL
@@ -147,6 +147,40 @@ class PyNcclCommunicator:
             ncclDataTypeEnum.from_torch(input_tensor.dtype), self.comm,
             cudaStream_t(stream.cuda_stream))
 
+    def all_gatherv(
+        self,
+        output_tensor: torch.Tensor,
+        input_tensor: torch.Tensor,
+        sizes: list[int],
+        stream=None,
+    ):
+        if self.disabled:
+            return
+        # nccl communicator created on a specific device
+        # will only work on tensors on the same device
+        # otherwise it will cause "illegal memory access"
+        assert input_tensor.device == self.device, (
+            f"this nccl communicator is created to work on {self.device}, "
+            f"but the input tensor is on {input_tensor.device}")
+        if stream is None:
+            stream = current_stream()
+        assert output_tensor.shape[0] == sum(sizes)
+        split_offset = 0
+        self.nccl.ncclGroupStart()
+        for root, split_size in enumerate(sizes):
+            dst_slice = output_tensor[split_offset:split_offset + split_size]
+            self.nccl.ncclBroadcast(
+                buffer_type(input_tensor.data_ptr()),
+                buffer_type(dst_slice.data_ptr()),
+                dst_slice.numel(),
+                ncclDataTypeEnum.from_torch(input_tensor.dtype),
+                root,
+                self.comm,
+                cudaStream_t(stream.cuda_stream),
+            )
+            split_offset += split_size
+        self.nccl.ncclGroupEnd()
+
     def reduce_scatter(self,
                        output_tensor: torch.Tensor,
                        input_tensor: torch.Tensor,
@@ -168,6 +202,38 @@ class PyNcclCommunicator:
             ncclDataTypeEnum.from_torch(input_tensor.dtype),
             ncclRedOpTypeEnum.from_torch(op), self.comm,
             cudaStream_t(stream.cuda_stream))
+
+    def reduce_scatterv(
+        self,
+        output_tensor: torch.Tensor,
+        input_tensor: torch.Tensor,
+        sizes: list[int],
+        op: ReduceOp = ReduceOp.SUM,
+        stream=None,
+    ):
+        if self.disabled:
+            return
+        # nccl communicator created on a specific device
+        # will only work on tensors on the same device
+        # otherwise it will cause "illegal memory access"
+        assert input_tensor.device == self.device, (
+            f"this nccl communicator is created to work on {self.device}, "
+            f"but the input tensor is on {input_tensor.device}")
+        if stream is None:
+            stream = current_stream()
+
+        split_offset = 0
+        self.nccl.ncclGroupStart()
+        for root, split_size in enumerate(sizes):
+            chunk = input_tensor[split_offset:split_offset + split_size, ...]
+            self.nccl.ncclReduce(
+                buffer_type(chunk.data_ptr()),
+                buffer_type(output_tensor.data_ptr()), chunk.numel(),
+                ncclDataTypeEnum.from_torch(input_tensor.dtype),
+                ncclRedOpTypeEnum.from_torch(op), root, self.comm,
+                cudaStream_t(stream.cuda_stream))
+            split_offset += split_size
+        self.nccl.ncclGroupEnd()
 
     def send(self, tensor: torch.Tensor, dst: int, stream=None):
         if self.disabled:
@@ -211,3 +277,9 @@ class PyNcclCommunicator:
         self.nccl.ncclBroadcast(sendbuff, recvbuff, tensor.numel(),
                                 ncclDataTypeEnum.from_torch(tensor.dtype), src,
                                 self.comm, cudaStream_t(stream.cuda_stream))
+
+    def group_start(self):
+        self.nccl.ncclGroupStart()
+
+    def group_end(self):
+        self.nccl.ncclGroupEnd()

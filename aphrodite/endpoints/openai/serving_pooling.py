@@ -6,13 +6,14 @@ from typing import Final, Literal, Optional, Union, cast
 
 import jinja2
 import numpy as np
+import torch
 from fastapi import Request
 from loguru import logger
 from typing_extensions import assert_never
 
-from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import PoolingOutput, PoolingRequestOutput
-from aphrodite.common.utils import merge_async_iterators
+from aphrodite.utils import merge_async_iterators
+from aphrodite.common.config import ModelConfig
 from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (ErrorResponse,
@@ -36,7 +37,8 @@ def _get_data(
     elif encoding_format == "base64":
         # Force to use float32 for base64 encoding
         # to match the OpenAI python client behavior
-        pooling_bytes = np.array(output.data, dtype="float32").tobytes()
+        pt_float32 = output.data.to(dtype=torch.float32)
+        pooling_bytes = np.array(pt_float32, dtype="float32").tobytes()
         return base64.b64encode(pooling_bytes).decode("utf-8")
 
     assert_never(encoding_format)
@@ -89,16 +91,13 @@ class OpenAIServingPooling(OpenAIServing):
         try:
             truncate_prompt_tokens = _validate_truncation_size(
                 self.max_model_len, truncate_prompt_tokens)
-            (
-                lora_request,
-                prompt_adapter_request,
-            ) = self._maybe_get_adapters(request)
+            lora_request = self._maybe_get_adapters(request)
 
-            tokenizer = await self.engine_client.get_tokenizer(lora_request)
-
-            if prompt_adapter_request is not None:
-                raise NotImplementedError("Prompt adapter is not supported "
-                                          "for pooling models")
+            if self.model_config.skip_tokenizer_init:
+                tokenizer = None
+            else:
+                tokenizer = await self.engine_client.get_tokenizer(lora_request
+                                                                   )
 
             if isinstance(request, PoolingChatRequest):
                 (
@@ -137,14 +136,18 @@ class OpenAIServingPooling(OpenAIServing):
         try:
             pooling_params = request.to_pooling_params()
 
+            try:
+                pooling_params.verify("encode", self.model_config)
+            except ValueError as e:
+                return self.create_error_response(str(e))
+
             for i, engine_prompt in enumerate(engine_prompts):
                 request_id_item = f"{request_id}-{i}"
 
                 self._log_inputs(request_id_item,
                                  request_prompts[i],
                                  params=pooling_params,
-                                 lora_request=lora_request,
-                                 prompt_adapter_request=prompt_adapter_request)
+                                 lora_request=lora_request)
 
                 trace_headers = (None if raw_request is None else await
                                  self._get_trace_headers(raw_request.headers))

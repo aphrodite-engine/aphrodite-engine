@@ -5,15 +5,16 @@ import pickle
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from itertools import product
-from typing import Dict, List, Optional, Sequence
+from typing import Optional
 
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.utils import (cuda_device_count_stateless,
+from aphrodite.utils import (cuda_device_count_stateless,
                                     update_environment_variables)
 from aphrodite.distributed.device_communicators.cuda_wrapper import (
     CudaRTLibrary)
@@ -146,7 +147,7 @@ def can_actually_p2p(
     p_src.join()
     p_tgt.join()
     assert p_src.exitcode == 0 and p_tgt.exitcode == 0
-    result: List[bool] = []
+    result: list[bool] = []
     for src, tgt in zip(batch_src, batch_tgt):
         a = result_queue.get()
         b = result_queue.get()
@@ -169,10 +170,10 @@ def can_actually_p2p(
 # then all the processes can read the cache file to check the p2p access status.
 # Note that the cache file is suffixed by the CUDA_VISIBLE_DEVICES, so that we
 #  can have different cache files for different CUDA_VISIBLE_DEVICES settings,
-#  e.g. used by different aphrodite engines. The device id in the cache file is
-#  a **local** device id, i.e. from 0 to num_dev-1, where num_dev is the number
+#  e.g. used by different aphrodite engines. The device id in the cache file is a
+#  **local** device id, i.e. from 0 to num_dev-1, where num_dev is the number
 #  of visible devices in the aphrodite engine.
-_gpu_p2p_access_cache: Optional[Dict[str, bool]] = None
+_gpu_p2p_access_cache: Optional[dict[str, bool]] = None
 
 
 def gpu_p2p_access_check(src: int, tgt: int) -> bool:
@@ -201,7 +202,7 @@ def gpu_p2p_access_check(src: int, tgt: int) -> bool:
         # only the local master process (with local_rank == 0) can
         #  enter this block to calculate the cache
         logger.debug("generating GPU P2P access cache in {}", path)
-        cache: Dict[str, bool] = {}
+        cache: dict[str, bool] = {}
         ids = list(range(num_dev))
         # batch of all pairs of GPUs
         batch_src, batch_tgt = zip(*list(product(ids, ids)))

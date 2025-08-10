@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 
@@ -16,7 +16,7 @@ class TritonScaledMMLinearKernel(CutlassScaledMMLinearKernel):
 
     @classmethod
     def can_implement(
-            cls, c: ScaledMMLinearLayerConfig) -> Tuple[bool, Optional[str]]:
+            cls, c: ScaledMMLinearLayerConfig) -> tuple[bool, Optional[str]]:
         if current_platform.is_cpu():
             return (
                 False,

@@ -1,7 +1,7 @@
 from typing import List, Optional, Tuple
 
 from aphrodite.common.sequence import Sequence, SequenceGroup
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 from aphrodite.processing.interfaces import AllocStatus, BlockSpaceManager
 
 
@@ -95,3 +95,6 @@ class PlaceholderBlockSpaceManager(BlockSpaceManager):
 
     def get_num_cached_tokens(self, seq: Sequence) -> int:
         return 0
+
+    def remove_seq_from_computed_blocks_tracker(self, seq: Sequence) -> None:
+        return

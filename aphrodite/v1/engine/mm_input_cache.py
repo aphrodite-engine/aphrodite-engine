@@ -2,9 +2,9 @@ from collections.abc import Sequence
 from typing import Optional
 
 from aphrodite.common.envs import APHRODITE_MM_INPUT_CACHE_GIB
-from aphrodite.common.utils import is_list_of
 from aphrodite.multimodal import MultiModalKwargs
 from aphrodite.multimodal.processing import ProcessingCache
+from aphrodite.utils import is_list_of
 
 # The idea of multimodal preprocessing caching is based on having a client and
 # a server, where the client executes in the frontend process (=P0) and the
@@ -33,8 +33,8 @@ class MirroredProcessingCache:
 
     def __init__(self, model_config):
         mm_config = model_config.multimodal_config
-        disable_mm_preprocessor_cache = mm_config is not None and \
-            not mm_config.disable_mm_preprocessor_cache
+        disable_mm_preprocessor_cache = (
+            mm_config is not None and mm_config.disable_mm_preprocessor_cache)
         self.use_cache = not disable_mm_preprocessor_cache
         self.mm_cache = ProcessingCache.get_lru_cache(APHRODITE_MM_INPUT_CACHE_GIB,
                                                       MultiModalKwargs)
@@ -82,3 +82,8 @@ class MirroredProcessingCache:
             full_mm_inputs.append(mm_input)
 
         return full_mm_inputs
+
+    def reset(self) -> bool:
+        self.mm_cache.clear()
+
+        return True

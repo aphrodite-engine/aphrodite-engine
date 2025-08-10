@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 
@@ -19,7 +19,7 @@ class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
 
     @classmethod
     def can_implement(
-            cls, c: ScaledMMLinearLayerConfig) -> Tuple[bool, Optional[str]]:
+            cls, c: ScaledMMLinearLayerConfig) -> tuple[bool, Optional[str]]:
 
         if (not current_platform.is_cuda() and not current_platform.is_cpu()):
             return False, "CutlassScaledMM requires running on CUDA or CPU."
@@ -84,6 +84,8 @@ class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
         # azp_adj is the AZP adjustment term, used to account for weights.
         # It does not depend on scales or azp, so it is the same for
         # static and dynamic quantization.
+        # For more details, see csrc/quantization/cutlass_w8a8/Epilogues.md
+        # https://github.com/aphrodite-project/aphrodite/blob/8d59dbb00044a588cab96bcdc028006ed922eb06/csrc/quantization/cutlass_w8a8/Epilogues.md
         if not self.config.input_symmetric:
             weight = getattr(layer, self.w_q_name)
             azp_adj = weight.sum(dim=0, keepdim=True, dtype=torch.int32)
@@ -106,7 +108,7 @@ class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
         # * dynamic, i_s is None and x_s computed from x.
         # * static, i_s is scalar and x_s is i_s.
         symmetric = azp_adj is None
-        x_q, x_s, x_zp = ops.scaled_int8_quant(x,
+        x_q, x_s, x_zp = ops.scaled_int8_quant(x.contiguous(),
                                                i_s,
                                                i_zp,
                                                symmetric=symmetric)

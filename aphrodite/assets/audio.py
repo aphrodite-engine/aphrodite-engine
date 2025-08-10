@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 
 import numpy.typing as npt
 
-from aphrodite.common.utils import PlaceholderModule
+from aphrodite.utils import PlaceholderModule
 
 from .base import VLLM_S3_BUCKET_URL, get_vllm_public_assets
 

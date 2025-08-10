@@ -15,20 +15,20 @@ from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           PreTrainedTokenizerBase)
 
 from aphrodite.benchmarks.datasets import (AIMODataset, BurstGPTDataset,
-                                      ConversationDataset,
-                                      InstructCoderDataset, RandomDataset,
-                                      SampleRequest, ShareGPTDataset,
-                                      SonnetDataset, VisionArenaDataset)
-from aphrodite.benchmarks.utils import (convert_to_pytorch_benchmark_format,
-                                   write_to_json)
-from aphrodite.engine.args_tools import AsyncEngineArgs, EngineArgs
-from aphrodite.endpoints.openai.api_server import (
-    build_async_engine_client_from_engine_args)
-from aphrodite.inputs import TextPrompt, TokensPrompt
-from aphrodite.lora.request import LoRARequest
+                                           ConversationDataset,
+                                           InstructCoderDataset, RandomDataset,
+                                           SampleRequest, ShareGPTDataset,
+                                           SonnetDataset, VisionArenaDataset)
+from aphrodite.benchmarks.lib.utils import (
+    convert_to_pytorch_benchmark_format, write_to_json)
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams
-from aphrodite.common.utils import merge_async_iterators
+from aphrodite.utils import merge_async_iterators
+from aphrodite.endpoints.openai.api_server import (
+    build_async_engine_client_from_engine_args)
+from aphrodite.engine.args_tools import AsyncEngineArgs, EngineArgs
+from aphrodite.inputs import TextPrompt, TokensPrompt
+from aphrodite.lora.request import LoRARequest
 
 
 def run_aphrodite(
@@ -82,7 +82,7 @@ def run_aphrodite(
         assert lora_requests is None, "BeamSearch API does not support LoRA"
         prompts = [request.prompt for request in requests]
         # output_len should be the same for all requests.
-        output_len = requests[0][2]
+        output_len = requests[0].expected_output_len
         for request in requests:
             assert request.expected_output_len == output_len
         start = time.perf_counter()
@@ -103,10 +103,9 @@ def run_aphrodite_chat(
         engine_args: EngineArgs,
         disable_detokenize: bool = False) -> tuple[float, list[RequestOutput]]:
     """
-    Run Aphrodite chat benchmark. This function is recommended ONLY for
-    benchmarking multimodal models as it properly handles multimodal inputs
-    and chat formatting. For non-multimodal models, use run_aphrodite()
-    instead.
+    Run Aphrodite chat benchmark. This function is recommended ONLY for benchmarking
+    multimodal models as it properly handles multimodal inputs and chat
+    formatting. For non-multimodal models, use run_aphrodite() instead.
     """
     from aphrodite import LLM, SamplingParams
     llm = LLM(**dataclasses.asdict(engine_args))
@@ -147,10 +146,13 @@ async def run_aphrodite_async(
     from aphrodite import SamplingParams
 
     async with build_async_engine_client_from_engine_args(
-            engine_args, disable_frontend_multiprocessing) as llm:
+        engine_args,
+        disable_frontend_multiprocessing=disable_frontend_multiprocessing,
+    ) as llm:
+        model_config = await llm.get_model_config()
         assert all(
-            llm.model_config.max_model_len >= (request.prompt_len +
-                                               request.expected_output_len)
+            model_config.max_model_len >= (request.prompt_len +
+                                           request.expected_output_len)
             for request in requests), (
                 "Please ensure that max_model_len is greater than the sum of"
                 " prompt_len and expected_output_len for all requests.")
@@ -472,7 +474,7 @@ def add_cli_args(parser: argparse.ArgumentParser):
     parser.add_argument("--async-engine",
                         action='store_true',
                         default=False,
-                        help="Use Aphrodite async engine rather than LLM class.")  # noqa: E501
+                        help="Use Aphrodite async engine rather than LLM class.")
     parser.add_argument("--disable-frontend-multiprocessing",
                         action='store_true',
                         default=False,
@@ -526,7 +528,6 @@ def main(args: argparse.Namespace):
     validate_args(args)
     if args.seed is None:
         args.seed = 0
-    print(args)
     random.seed(args.seed)
     # Sample the requests.
     tokenizer = AutoTokenizer.from_pretrained(

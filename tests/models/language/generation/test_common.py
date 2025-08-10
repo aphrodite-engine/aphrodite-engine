@@ -13,6 +13,7 @@ from ...utils import check_logprobs_close
 # These have unsupported head_dim for FA. We do not
 # not have a clean way to fall back, so we fail with
 # a clear msg when it happens.
+# https://github.com/aphrodite-project/aphrodite/issues/14524
 REQUIRES_V0 = ["microsoft/phi-2", "stabilityai/stablelm-3b-4e1t"]
 
 # This list contains the model that are using AITER kernel.
@@ -26,6 +27,7 @@ AITER_MODEL_LIST = [
     "Qwen/Qwen-7B-Chat",
     "Qwen/Qwen2.5-0.5B-Instruct",
     "TitanML/tiny-mixtral",
+    "Qwen/Qwen3-8B",
 ]
 
 
@@ -35,7 +37,7 @@ AITER_MODEL_LIST = [
     [
         pytest.param(
             "bigscience/bloom-560m",  # bloom - testing alibi slopes
-            marks=[pytest.mark.core_model, pytest.mark.cpu_model],
+            marks=[pytest.mark.core_model],
         ),
         pytest.param(
             "openai-community/gpt2",  # gpt2
@@ -49,7 +51,7 @@ AITER_MODEL_LIST = [
             marks=[pytest.mark.core_model, pytest.mark.cpu_model],
         ),
         pytest.param(
-            "THUDM/chatglm3-6b",  # chatglm (text-only)
+            "zai-org/chatglm3-6b",  # chatglm (text-only)
         ),
         pytest.param(
             "meta-llama/Llama-3.2-1B-Instruct",  # llama
@@ -74,12 +76,19 @@ AITER_MODEL_LIST = [
         ),
         pytest.param(
             "Qwen/Qwen2.5-0.5B-Instruct",  # qwen2
-            marks=[pytest.mark.core_model],
+            marks=[pytest.mark.core_model, pytest.mark.cpu_model],
+        ),
+        pytest.param(
+            "Qwen/Qwen3-8B",  # qwen (text-only)
         ),
         pytest.param("stabilityai/stablelm-3b-4e1t"),  # stablelm
         pytest.param("bigcode/starcoder2-3b"),  # starcoder2
         pytest.param(
             "TitanML/tiny-mixtral",  # mixtral
+            marks=[pytest.mark.core_model],
+        ),
+        pytest.param(
+            "allenai/OLMoE-1B-7B-0924-Instruct",
             marks=[pytest.mark.cpu_model],
         )
     ])
@@ -107,12 +116,15 @@ def test_models(hf_runner, aphrodite_runner, example_prompts, model: str,
         # in parts of the operators
         pytest.skip(f"Skipping '{model}' model test with AITER kernel.")
 
+    use_prompt_embeds = os.getenv("APHRODITE_USE_V1") == "0"
+
     with hf_runner(model) as hf_model:
         hf_outputs = hf_model.generate_greedy_logprobs_limit(
             example_prompts, max_tokens, num_logprobs)
 
-        prompt_embeds: Optional[list[torch.Tensor]] = [] if os.getenv(
-            "APHRODITE_USE_V1") == "0" else None
+        prompt_embeds: Optional[list[torch.Tensor]] = ([] if use_prompt_embeds
+                                                       else None)
+
         prompt_token_ids = []
         for prompt in example_prompts:
             token_ids = hf_model.tokenizer(prompt,
@@ -129,6 +141,7 @@ def test_models(hf_runner, aphrodite_runner, example_prompts, model: str,
             tokenizer_mode=model_info.tokenizer_mode,
             trust_remote_code=model_info.trust_remote_code,
             max_num_seqs=2,
+            enable_prompt_embeds=use_prompt_embeds,
     ) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.generate_greedy_logprobs(
             example_prompts, max_tokens, num_logprobs)

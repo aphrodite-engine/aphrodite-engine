@@ -6,7 +6,7 @@ import pytest
 
 from tests.quantization.utils import is_quant_method_supported
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import STR_BACKEND_ENV_VAR
+from aphrodite.utils import STR_BACKEND_ENV_VAR
 
 from ..utils import check_logprobs_close
 
@@ -53,6 +53,14 @@ def test_models(
     Only checks log probs match to cover the discrepancy in
     numerical sensitive kernels.
     """
+
+    if backend == "FLASHINFER" and current_platform.is_rocm():
+        pytest.skip("Flashinfer does not support ROCm/HIP.")
+
+    if kv_cache_dtype == "fp8_e5m2" and current_platform.is_rocm():
+        pytest.skip(
+            f"{kv_cache_dtype} is currently not supported on ROCm/HIP.")
+
     with monkeypatch.context() as m:
         m.setenv("TOKENIZERS_PARALLELISM", 'true')
         m.setenv(STR_BACKEND_ENV_VAR, backend)

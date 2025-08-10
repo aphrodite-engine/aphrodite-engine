@@ -46,22 +46,22 @@ class TestCase(NamedTuple):
     [
         TestCase(
             model_name=MODEL_NAME,
-            base_url=["v1"],  # http://localhost:8000/v1
+            base_url=["v1"],  # http://localhost:2242/v1
             api_key=ERROR_API_KEY,
             expected_error=openai.AuthenticationError),
         TestCase(
             model_name=MODEL_NAME,
-            base_url=[ROOT_PATH, "v1"],  # http://localhost:8000/llm/v1
+            base_url=[ROOT_PATH, "v1"],  # http://localhost:2242/llm/v1
             api_key=ERROR_API_KEY,
             expected_error=openai.AuthenticationError),
         TestCase(
             model_name=MODEL_NAME,
-            base_url=["v1"],  # http://localhost:8000/v1
+            base_url=["v1"],  # http://localhost:2242/v1
             api_key=API_KEY,
             expected_error=None),
         TestCase(
             model_name=MODEL_NAME,
-            base_url=[ROOT_PATH, "v1"],  # http://localhost:8000/llm/v1
+            base_url=[ROOT_PATH, "v1"],  # http://localhost:2242/llm/v1
             api_key=API_KEY,
             expected_error=None),
     ],

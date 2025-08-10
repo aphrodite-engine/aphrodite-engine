@@ -19,9 +19,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Inference-only IBM Granite speeech model."""
+"""Inference-only IBM Granite speech model."""
 import math
-from typing import Iterable, Mapping, Optional, Set, Tuple, TypedDict, Union
+from collections.abc import Iterable, Mapping
+from typing import Annotated, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -32,7 +33,6 @@ from aphrodite.common.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)
-from aphrodite.modeling.layers.sampler import get_sampler
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
@@ -47,6 +47,7 @@ from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              PromptReplacement, PromptUpdate)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
+from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .blip2 import Blip2QFormerModel
 from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
@@ -56,16 +57,25 @@ from .utils import (AutoWeightsLoader, embed_multimodal,
 
 
 ### Audio Input
-class GraniteSpeechAudioInputs(TypedDict):
+class GraniteSpeechAudioInputs(TensorSchema):
+    """
+    Audio input features for Granite Speech model.
+    
+    Dimensions:
+        - b: Batch size
+        - fi: Number of input features from the Mel spectrogram.
+        - fo: Number of output features, i.e. the embedding size.
+        - 160: Fixed feature dimension for Mel spectrogram features
+    """
 
-    input_features: torch.Tensor
-    """Shape: `(bsz, num_features, 160)`"""
+    input_features: Annotated[torch.Tensor, TensorShape("b", "fi", 160)]
+    """Audio input features."""
 
-    input_features_mask: torch.Tensor
-    """Shape: `(bsz, num_features)`"""
+    input_features_mask: Annotated[torch.Tensor, TensorShape("b", "fo")]
+    """Mask for variable length audio features."""
 
-    audio_embed_sizes: list[int]
-    """List of length `bsz`"""
+    audio_embed_sizes: Annotated[list[int], TensorShape("b")]
+    """List of audio embedding sizes for each item in batch."""
 
 
 class GraniteSpeechMultiModalProcessingInfo(BaseProcessingInfo):
@@ -139,6 +149,7 @@ class GraniteSpeechMultiModalProcessor(
         prompt: str,
         mm_data: Mapping[str, object],
         mm_kwargs: Mapping[str, object],
+        tok_kwargs: Mapping[str, object],
     ) -> BatchFeature:
         mm_data = dict(mm_data)
         audios = mm_data.pop("audios", [])
@@ -151,6 +162,7 @@ class GraniteSpeechMultiModalProcessor(
             prompt=prompt,
             mm_data=mm_data,
             mm_kwargs=mm_kwargs,
+            tok_kwargs=tok_kwargs,
         )
 
         if "audio" in mm_data:
@@ -529,6 +541,13 @@ class GraniteSpeechForConditionalGeneration(
         ],
     }
 
+    @classmethod
+    def get_placeholder_str(cls, modality: str, i: int) -> Optional[str]:
+        if modality.startswith("audio"):
+            return "<|audio|>"
+
+        raise ValueError("Only audio modality is supported")
+
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
@@ -538,7 +557,6 @@ class GraniteSpeechForConditionalGeneration(
         self.config = config
         self.quant_config = quant_config
         self.cache_config = cache_config
-        self.sampler = get_sampler()
 
         # The language model is typically a Granite LLM
         self.language_model = init_aphrodite_registered_model(
@@ -572,6 +590,7 @@ class GraniteSpeechForConditionalGeneration(
         input_features = kwargs.pop("input_features", None)
         input_features_mask = kwargs.pop("input_features_mask", None)
         audio_embed_sizes = kwargs.pop("audio_embed_sizes", None)
+
         if input_features is None:
             return None
 
@@ -625,7 +644,7 @@ class GraniteSpeechForConditionalGeneration(
         audio_embed_sizes: torch.Tensor,
     ) -> torch.Tensor:
         """Calculate the input features mask, which will generally be used
-        to mask the the padded features for all entries in the batch except
+        to mask the padded features for all entries in the batch except
         for those with the most audio features.
 
         Args:
@@ -704,10 +723,11 @@ class GraniteSpeechForConditionalGeneration(
     def get_multimodal_embeddings(
         self,
         **kwargs: object,
-    ) -> Optional[MultiModalEmbeddings]:
+    ) -> MultiModalEmbeddings:
         """Compute the audio embeddings if audio inputs are present."""
         audio_input = self._parse_and_validate_audio_input(**kwargs)
         if audio_input is None:
+            return []
             return None
         audio_features = self._process_audio_input(audio_input)
         return audio_features
@@ -718,7 +738,8 @@ class GraniteSpeechForConditionalGeneration(
         multimodal_embeddings: Optional[MultiModalEmbeddings] = None,
     ) -> torch.Tensor:
         """Compute the merged LLM / audio embeddings."""
-        if multimodal_embeddings is None:
+        if multimodal_embeddings is None \
+            or len(multimodal_embeddings) == 0:
             return self.language_model.get_input_embeddings(input_ids)
 
         inputs_embeds = embed_multimodal(
@@ -763,8 +784,8 @@ class GraniteSpeechForConditionalGeneration(
 
     def load_weights(
         self,
-        weights: Iterable[Tuple[str, torch.Tensor]],
-    ) -> Set[str]:
+        weights: Iterable[tuple[str, torch.Tensor]],
+    ) -> set[str]:
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)
 

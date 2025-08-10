@@ -1,6 +1,5 @@
 import logging
-import os
-from typing import Callable, Dict
+from typing import Any, Callable
 
 import torch
 
@@ -8,11 +7,13 @@ import aphrodite.common.envs as envs
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PLUGINS_GROUP = 'aphrodite.general_plugins'
+
 # make sure one process only loads plugins once
 plugins_loaded = False
 
 
-def load_plugins_by_group(group: str) -> Dict[str, Callable]:
+def load_plugins_by_group(group: str) -> dict[str, Callable[[], Any]]:
     import sys
     if sys.version_info < (3, 10):
         from importlib_metadata import entry_points
@@ -25,23 +26,32 @@ def load_plugins_by_group(group: str) -> Dict[str, Callable]:
     if len(discovered_plugins) == 0:
         logger.debug("No plugins for group {} found.", group)
         return {}
-    logger.info("Available plugins for group {}:", group)
+
+    # Check if the only discovered plugin is the default one
+    is_default_group = (group == DEFAULT_PLUGINS_GROUP)
+    # Use INFO for non-default groups and DEBUG for the default group
+    log_level = logger.debug if is_default_group else logger.info
+
+    log_level("Available plugins for group {}:", group)
     for plugin in discovered_plugins:
-        logger.info("name={}, value={}", plugin.name, plugin.value)
+        log_level("- {} -> {}", plugin.name, plugin.value)
+
     if allowed_plugins is None:
-        logger.info("all available plugins for group {} will be loaded.",
-                    group)
-        logger.info("set environment variable APHRODITE_PLUGINS to control"
-                    " which plugins to load.")
-    plugins = {}
+        log_level("All plugins in this group will be loaded. "
+                  "Set `APHRODITE_PLUGINS` to control which plugins to load.")
+
+    plugins = dict[str, Callable[[], Any]]()
     for plugin in discovered_plugins:
         if allowed_plugins is None or plugin.name in allowed_plugins:
+            if allowed_plugins is not None:
+                log_level("Loading plugin {}", plugin.name)
+
             try:
                 func = plugin.load()
                 plugins[plugin.name] = func
-                logger.info("plugin {} loaded.", plugin.name)
             except Exception:
                 logger.exception("Failed to load plugin {}", plugin.name)
+
     return plugins
 
 
@@ -61,20 +71,8 @@ def load_general_plugins():
     if current_platform.is_xpu():
         # see https://github.com/pytorch/pytorch/blob/43c5f59/torch/_dynamo/config.py#L158
         torch._dynamo.config.disable = True
-    elif current_platform.is_hpu():
-        # NOTE: PT HPU lazy backend (PT_HPU_LAZY_MODE = 1)
-        # does not support torch.compile
-        # Eager backend (PT_HPU_LAZY_MODE = 0) must be selected for
-        # torch.compile support
-        is_lazy = os.environ.get('PT_HPU_LAZY_MODE', '1') == '1'
-        if is_lazy:
-            torch._dynamo.config.disable = True
-            # NOTE: multi-HPU inference with HPUGraphs (lazy-only)
-            # requires enabling lazy collectives
-            # see https://docs.habana.ai/en/latest/PyTorch/Inference_on_PyTorch/Inference_Using_HPU_Graphs.html # noqa: E501
-            os.environ['PT_HPU_ENABLE_LAZY_COLLECTIVES'] = 'true'
 
-    plugins = load_plugins_by_group(group='aphrodite.general_plugins')
+    plugins = load_plugins_by_group(group=DEFAULT_PLUGINS_GROUP)
     # general plugins, we only need to execute the loaded functions
     for func in plugins.values():
         func()

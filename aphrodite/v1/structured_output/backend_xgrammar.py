@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -5,13 +7,10 @@ from typing import TYPE_CHECKING, Any
 import torch
 from loguru import logger
 
-import aphrodite.common.envs
-from aphrodite.common.config import AphroditeConfig
+import aphrodite.common.envs  # noqa: F401
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import LazyLoader
-from aphrodite.transformers_utils.tokenizer_group import (
-    init_tokenizer_from_configs)
 from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
+from aphrodite.utils import LazyLoader
 from aphrodite.v1.structured_output.backend_types import (
     StructuredOutputBackend, StructuredOutputGrammar, StructuredOutputOptions)
 from aphrodite.v1.structured_output.utils import (choice_as_grammar,
@@ -24,70 +23,62 @@ else:
     xgr = LazyLoader("xgr", globals(), "xgrammar")
 
 
-
+@dataclass
 class XgrammarBackend(StructuredOutputBackend):
 
-    def __init__(self, aphrodite_config: AphroditeConfig):
-        self.aphrodite_config = aphrodite_config
-        tokenizer_group = init_tokenizer_from_configs(
-            model_config=aphrodite_config.model_config,
-            scheduler_config=aphrodite_config.scheduler_config,
-            lora_config=aphrodite_config.lora_config)  # type: ignore[arg-type]
-
+    def __post_init__(self):
         self.disable_any_whitespace = \
-            aphrodite_config.decoding_config.disable_any_whitespace
+            self.aphrodite_config.decoding_config.disable_any_whitespace
 
-        self.num_speculative_tokens = 0
-        if self.aphrodite_config.speculative_config is not None:
-            self.num_speculative_tokens = \
-                self.aphrodite_config.speculative_config.num_speculative_tokens
-
-        tokenizer = tokenizer_group.get_lora_tokenizer(None)
-        self.vocab_size = aphrodite_config.model_config.get_vocab_size()
-        if isinstance(tokenizer, MistralTokenizer):
+        if isinstance(self.tokenizer, MistralTokenizer):
             # NOTE: ideally, xgrammar should handle this accordingly.
             # refer to https://github.com/mlc-ai/xgrammar/blob/d77c0a0173ef14779c918e3be7966ba852f7910f/python/xgrammar/tokenizer_info.py#L98
             try:
-                if tokenizer.is_tekken:
-                    encoded_vocab = tokenizer._vocab
+                if self.tokenizer.is_tekken:
+                    encoded_vocab = self.tokenizer._vocab
                 else:
                     encoded_vocab = [
                         token for token, _ in sorted(
-                            tokenizer.get_vocab().items(),
+                            self.tokenizer.get_vocab().items(),
                             key=lambda x: x[1],
                         )
                     ]
                 stop_token_ids = None
-                if hasattr(
-                        tokenizer,
+                if (hasattr(
+                        self.tokenizer,
                         "eos_token_id",
-                ) and tokenizer.eos_token_id is not None:
-                    stop_token_ids = [tokenizer.eos_token_id]
+                ) and self.tokenizer.eos_token_id is not None):
+                    stop_token_ids = [self.tokenizer.eos_token_id]
             except AttributeError as e:
                 raise ValueError(
                     f"Cannot get the vocabulary of the tokenizer "
-                    f"{type(tokenizer)}. The tokenizer should have a "
+                    f"{type(self.tokenizer)}. The tokenizer should have a "
                     "get_vocab method.") from e
             tokenizer_info = xgr.TokenizerInfo(  # type: ignore
                 encoded_vocab=encoded_vocab,
                 # NOTE: https://github.com/mlc-ai/xgrammar/blob/5e141f6ff1ca02bc31f9e512e68b61f2a8ae88e5/tests/python/test_tokenizer_info.py#L43 # noqa: E501
                 vocab_type=xgr.VocabType.RAW
-                if tokenizer.is_tekken else xgr.VocabType.BYTE_FALLBACK,
+                if self.tokenizer.is_tekken else xgr.VocabType.BYTE_FALLBACK,
                 vocab_size=self.vocab_size,
                 stop_token_ids=stop_token_ids,
                 add_prefix_space=True,
             )
         else:
             tokenizer_info = xgr.TokenizerInfo.from_huggingface(
-                tokenizer,
+                self.tokenizer,
                 vocab_size=self.vocab_size,
             )
         self.compiler = xgr.GrammarCompiler(
             tokenizer_info,
             max_threads=8,
             cache_enabled=True,
-            cache_limit_bytes=aphrodite.common.envs.APHRODITE_XGRAMMAR_CACHE_MB * 1024 * 1024,
+            cache_limit_bytes=aphrodite.envs.APHRODITE_XGRAMMAR_CACHE_MB * 1024 * 1024,
         )
+
+        self.num_speculative_tokens = 0
+        if self.aphrodite_config.speculative_config is not None:
+            self.num_speculative_tokens = \
+                self.aphrodite_config.speculative_config.num_speculative_tokens
 
     def compile_grammar(self, request_type: StructuredOutputOptions,
                         grammar_spec: str) -> StructuredOutputGrammar:
@@ -151,6 +142,7 @@ class XgrammarGrammar(StructuredOutputGrammar):
                                       repr=False,
                                       hash=False,
                                       init=False)
+    _is_terminated: bool = field(default=False, repr=False, hash=False)
 
     def accept_tokens(self, request_id: str, tokens: list[int]) -> bool:
         """Accepts a list of tokens and advances the FSM.
@@ -158,6 +150,8 @@ class XgrammarGrammar(StructuredOutputGrammar):
         Returns True if the FSM was advanced successfully.
         Returns False if the FSM failed to advance.
         """
+        if self._is_terminated:
+            return False
         for token in tokens:
             if not self.matcher.accept_token(token):
                 logger.error(
@@ -165,6 +159,7 @@ class XgrammarGrammar(StructuredOutputGrammar):
                     "for tokens {}. Please file an issue.", request_id, token)
                 return False
             self.num_processed_tokens += 1
+        self._is_terminated = self.matcher.is_terminated()
         return True
 
     def validate_tokens(self, tokens: list[int]) -> list[int]:
@@ -187,12 +182,13 @@ class XgrammarGrammar(StructuredOutputGrammar):
     def rollback(self, num_tokens: int) -> None:
         self.matcher.rollback(num_tokens)
         self.num_processed_tokens -= num_tokens
+        self._is_terminated = self.matcher.is_terminated()
 
     def fill_bitmask(self, bitmask: torch.Tensor, idx: int) -> None:
         self.matcher.fill_next_token_bitmask(bitmask, idx)
 
     def is_terminated(self) -> bool:
-        return self.matcher.is_terminated()
+        return self._is_terminated
 
     def reset(self):
         self.num_processed_tokens = 0
@@ -212,9 +208,8 @@ def has_xgrammar_unsupported_json_features(schema: dict[str, Any]) -> bool:
 
         # Check for array unsupported keywords
         if obj.get("type") == "array" and any(
-                key in obj
-                for key in ("uniqueItems", "contains", "minContains",
-                            "maxContains", "minItems", "maxItems")):
+                key in obj for key in ("uniqueItems", "contains",
+                                       "minContains", "maxContains")):
             return True
 
         # Unsupported keywords for strings
@@ -278,6 +273,12 @@ def validate_xgrammar_grammar(sampling_params: SamplingParams) -> None:
                 raise ValueError("Invalid JSON grammar specification.") from e
         else:
             schema = gd_params.json
+
+        try:
+            xgr.Grammar.from_json_schema(schema)
+        except Exception as err:
+            raise ValueError("Failed to transform json schema into a grammar: "
+                             f"{err}") from err
 
         if has_xgrammar_unsupported_json_features(schema):
             raise ValueError("The provided JSON schema contains features not "

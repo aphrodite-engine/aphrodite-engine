@@ -12,7 +12,8 @@ import os
 import pytest
 
 from tests.quantization.utils import is_quant_method_supported
-from aphrodite.modeling.layers.rotary_embedding import _ROPE_DICT
+from aphrodite.model_executor.layers.rotary_embedding import _ROPE_DICT
+from aphrodite.platforms import current_platform
 
 from ..utils import check_logprobs_close
 
@@ -33,7 +34,9 @@ MODELS = [
 
 
 @pytest.mark.flaky(reruns=3)
-@pytest.mark.skipif(not is_quant_method_supported("gptq_marlin"),
+@pytest.mark.skipif(not is_quant_method_supported("gptq_marlin")
+                    or current_platform.is_rocm()
+                    or not current_platform.is_cuda(),
                     reason="gptq_marlin is not supported on this GPU type.")
 @pytest.mark.parametrize("model", MODELS)
 @pytest.mark.parametrize("dtype", ["half", "bfloat16"])

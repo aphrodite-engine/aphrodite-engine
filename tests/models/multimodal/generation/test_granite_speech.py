@@ -26,7 +26,7 @@ def aphrodite_to_hf_output(
     return output_ids, hf_output_str, out_logprobs
 
 
-MODEL_NAME = "ibm-granite/granite-speech-3.3-8b"
+MODEL_NAME = "ibm-granite/granite-speech-3.3-2b"
 # Audio lora co-exists directly in the model directory, but
 # currently still needs to be passed directly to Aphrodite.
 audio_lora_path = MODEL_NAME
@@ -62,7 +62,7 @@ def run_test(
     # max_model_len should be greater than image_feature_size
     with aphrodite_runner(
             model,
-            task="generate",
+            runner="generate",
             max_model_len=max_model_len,
             max_num_seqs=1,
             dtype=dtype,

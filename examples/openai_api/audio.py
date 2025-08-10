@@ -1,6 +1,6 @@
 """An example showing how to use aphrodite to serve VLMs.
 Launch the aphrodite server with the following command:
-aphrodite serve fixie-ai/ultravox-v0_3
+aphrodite run fixie-ai/ultravox-v0_3
 """
 import base64
 import os

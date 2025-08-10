@@ -1,12 +1,16 @@
 import enum
+import os
 import platform
 import random
+import sys
+from datetime import timedelta
 from platform import uname
-from typing import TYPE_CHECKING, NamedTuple, Optional, Tuple, Union
+from typing import TYPE_CHECKING, NamedTuple, Optional, Union
 
 import numpy as np
 import torch
 from loguru import logger
+from torch.distributed import PrefixStore, ProcessGroup
 
 from aphrodite.inputs import ProcessorInputs, PromptType
 
@@ -14,8 +18,8 @@ if TYPE_CHECKING:
     from aphrodite.common.config import AphroditeConfig, ModelConfig
     from aphrodite.common.pooling_params import PoolingParams
     from aphrodite.common.sampling_params import SamplingParams
-    from aphrodite.common.utils import FlexibleArgumentParser
     from aphrodite.lora.request import LoRARequest
+    from aphrodite.utils import FlexibleArgumentParser
 else:
     ModelConfig = None
     AphroditeConfig = None
@@ -23,7 +27,6 @@ else:
     PoolingParams = None
     SamplingParams = None
     FlexibleArgumentParser = None
-
 
 
 def in_wsl() -> bool:
@@ -37,24 +40,32 @@ class _Backend(enum.Enum):
     TRITON_ATTN_APHRODITE_V1 = enum.auto()
     XFORMERS = enum.auto()
     ROCM_FLASH = enum.auto()
-    ROCM_AITER_MLA = enum.auto()
+    ROCM_AITER_MLA = enum.auto()  # Supported by V1
+    ROCM_AITER_MLA_APHRODITE_V1 = enum.auto()
+    ROCM_AITER_FA = enum.auto()  # used for ViT attn backend
     TORCH_SDPA = enum.auto()
     FLASHINFER = enum.auto()
+    FLASHINFER_APHRODITE_V1 = enum.auto()
     TRITON_MLA = enum.auto()  # Supported by V1
+    TRITON_MLA_APHRODITE_V1 = enum.auto()
+    FLASHMLA_APHRODITE_V1 = enum.auto()
     FLASHMLA = enum.auto()  # Supported by V1
-    HPU_ATTN = enum.auto()
+    CUTLASS_MLA = enum.auto()
     PALLAS = enum.auto()
     PALLAS_APHRODITE_V1 = enum.auto()
     IPEX = enum.auto()
-    BLOCK_SPARSE_FLASH_ATTN = enum.auto()
+    DUAL_CHUNK_FLASH_ATTN = enum.auto()
+    DIFFERENTIAL_FLASH_ATTN = enum.auto()
     NO_ATTENTION = enum.auto()
+    FLEX_ATTENTION = enum.auto()
+    TREE_ATTN = enum.auto()
+    XFORMERS_APHRODITE_V1 = enum.auto()
 
 
 class PlatformEnum(enum.Enum):
     CUDA = enum.auto()
     ROCM = enum.auto()
     TPU = enum.auto()
-    HPU = enum.auto()
     XPU = enum.auto()
     CPU = enum.auto()
     NEURON = enum.auto()
@@ -79,7 +90,7 @@ class DeviceCapability(NamedTuple):
 
     def to_int(self) -> int:
         """
-        Express device capability as an integer ``<major><minor>``.
+        Express device capability as an integer `<major><minor>`.
 
         It is assumed that the minor version is always a single digit.
         """
@@ -115,9 +126,20 @@ class Platform:
     # compilation strategy.
     simple_compile_backend: str = "inductor"
 
+    # The backend used for distributed communication.
+    dist_backend: str = ""
+
     supported_quantization: list[str] = []
 
     additional_env_vars: list[str] = []
+
+    @property
+    def supported_dtypes(self) -> list[torch.dtype]:
+        """Returns the supported dtypes for the current platform."""
+        # Be careful with the order of the dtypes. The first dtype will
+        # be used as the default dtype fallback for the current platform,
+        # when encountering unsupported dtypes in "auto" dtype.
+        return [torch.bfloat16, torch.float16, torch.float32]
 
     def is_cuda(self) -> bool:
         return self._enum == PlatformEnum.CUDA
@@ -127,9 +149,6 @@ class Platform:
 
     def is_tpu(self) -> bool:
         return self._enum == PlatformEnum.TPU
-
-    def is_hpu(self) -> bool:
-        return self._enum == PlatformEnum.HPU
 
     def is_xpu(self) -> bool:
         return self._enum == PlatformEnum.XPU
@@ -143,12 +162,32 @@ class Platform:
     def is_out_of_tree(self) -> bool:
         return self._enum == PlatformEnum.OOT
 
+    def get_max_output_tokens(self, prompt_len: int) -> int:
+        return sys.maxsize
+
     def is_cuda_alike(self) -> bool:
-        """Stateless version of :func:`torch.cuda.is_available`."""
+        """Stateless version of [torch.cuda.is_available][]."""
         return self._enum in (PlatformEnum.CUDA, PlatformEnum.ROCM)
 
     def is_sleep_mode_available(self) -> bool:
         return self._enum == PlatformEnum.CUDA
+
+    @classmethod
+    def device_id_to_physical_device_id(cls, device_id: int):
+        # Treat empty device control env var as unset. This is a valid
+        # configuration in Ray setups where the engine is launched in
+        # a CPU-only placement group located on a GPU node.
+        if cls.device_control_env_var in os.environ and os.environ[
+                cls.device_control_env_var] != "":
+            device_ids = os.environ[cls.device_control_env_var].split(",")
+            physical_device_id = device_ids[device_id]
+            return int(physical_device_id)
+        else:
+            return device_id
+
+    @classmethod
+    def get_vit_attn_backend(cls, support_fa: bool = False) -> _Backend:
+        return _Backend.TORCH_SDPA
 
     @classmethod
     def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
@@ -163,22 +202,23 @@ class Platform:
         cls,
         device_id: int = 0,
     ) -> Optional[DeviceCapability]:
-        """Stateless version of :func:`torch.cuda.get_device_capability`."""
+        """Stateless version of [torch.cuda.get_device_capability][]."""
         return None
 
     @classmethod
     def has_device_capability(
         cls,
-        capability: Union[Tuple[int, int], int],
+        capability: Union[tuple[int, int], int],
         device_id: int = 0,
     ) -> bool:
         """
         Test whether this platform is compatible with a device capability.
 
-        The ``capability`` argument can either be:
+        The `capability` argument can either be:
 
-        - A tuple ``(major, minor)``.
-        - An integer ``<major><minor>``. (See :meth:`DeviceCapability.to_int`)
+        - A tuple `(major, minor)`.
+        - An integer `<major><minor>`. (See
+        [`DeviceCapability.to_int`][aphrodite.platforms.interface.DeviceCapability.to_int])
         """
         current_capability = cls.get_device_capability(device_id=device_id)
         if current_capability is None:
@@ -188,6 +228,30 @@ class Platform:
             return current_capability >= capability
 
         return current_capability.to_int() >= capability
+
+    @classmethod
+    def is_device_capability(
+        cls,
+        capability: Union[tuple[int, int], int],
+        device_id: int = 0,
+    ) -> bool:
+        """
+        Test whether this platform has exactly the specified device capability.
+
+        The `capability` argument can either be:
+
+        - A tuple `(major, minor)`.
+        - An integer `<major><minor>`. (See
+        [`DeviceCapability.to_int`][aphrodite.platforms.interface.DeviceCapability.to_int])
+        """
+        current_capability = cls.get_device_capability(device_id=device_id)
+        if current_capability is None:
+            return False
+
+        if isinstance(capability, tuple):
+            return current_capability == capability
+
+        return current_capability.to_int() == capability
 
     @classmethod
     def get_device_name(cls, device_id: int = 0) -> str:
@@ -235,15 +299,22 @@ class Platform:
             torch.manual_seed(seed)
 
     @classmethod
+    def set_device(cls, device: torch.device) -> None:
+        """
+        Set the device for the current platform.
+        """
+        raise NotImplementedError
+
+    @classmethod
     def pre_register_and_update(cls,
                                 parser: Optional[FlexibleArgumentParser] = None
                                 ) -> None:
         """
         Do some pre-registration or update action for the current platform.
 
-        This function is called before global AphroditeConfig is initialized or
-        cli arguments are parsed. It's used for out-of-tree platforms to
-        register or update the configuration.
+        This function is called before global AphroditeConfig is initialized or cli
+        arguments are parsed. It's used for out-of-tree platforms to register or
+        update the configuration.
 
         For example, the out-of-tree quantization config can be imported and
         registered here dynamically.
@@ -331,11 +402,39 @@ class Platform:
         raise NotImplementedError
 
     @classmethod
+    def get_infinity_values(cls, dtype: torch.dtype) -> tuple[float, float]:
+        """
+        Return the platform specific values for (-inf, inf)
+        """
+        return float("-inf"), float("inf")
+
+    @classmethod
+    def can_update_inplace(cls) -> bool:
+        """
+        Checks if the platform allows inplace memory updates
+        """
+        return True
+
+    @classmethod
+    def get_lora_vocab_padding_size(cls) -> int:
+        """
+        Returns how much padding the LoRA logits need for kernels
+        """
+        return 256
+
+    @classmethod
     def get_device_communicator_cls(cls) -> str:
         """
         Get device specific communicator class for distributed communication.
         """
         return "aphrodite.distributed.device_communicators.base_device_communicator.DeviceCommunicatorBase"  # noqa
+
+    @classmethod
+    def supports_mx(cls) -> bool:
+        """
+        Returns whether the current platform supports MX types.
+        """
+        return False
 
     @classmethod
     def supports_fp8(cls) -> bool:
@@ -388,6 +487,13 @@ class Platform:
         return False
 
     @classmethod
+    def default_v1(cls, model_config: ModelConfig) -> bool:
+        """
+        Returns whether the current platform supports v1 by default.
+        """
+        return cls.supports_v1(model_config)
+
+    @classmethod
     def use_custom_allreduce(cls) -> bool:
         """
         Returns if custom allreduce is supported on the current platform
@@ -404,12 +510,12 @@ class Platform:
         """Raises if this request is unsupported on this platform"""
 
     def __getattr__(self, key: str):
-        device = getattr(torch, self.device_name, None)
+        device = getattr(torch, self.device_type, None)
         if device is not None and hasattr(device, key):
             return getattr(device, key)
         else:
             logger.warning("Current platform {} does not have '{}'" \
-            " attribute.", self.device_name, key)
+            " attribute.", self.device_type, key)
             return None
 
     @classmethod
@@ -418,6 +524,34 @@ class Platform:
         Returns the total number of compute units (CU) on single GPU.
         """
         raise NotImplementedError
+
+    @classmethod
+    def get_piecewise_backend_cls(cls) -> str:
+        """
+        Get piecewise backend class for piecewise graph.
+        """
+        return "aphrodite.compilation.base_piecewise_backend.AbstractPiecewiseBackend"  # noqa
+
+    @classmethod
+    def stateless_init_device_torch_dist_pg(
+        cls,
+        backend: str,
+        prefix_store: PrefixStore,
+        group_rank: int,
+        group_size: int,
+        timeout: timedelta,
+    ) -> ProcessGroup:
+        """
+        Init platform-specific torch distributed process group.
+        """
+        raise RuntimeError(f"Unsupported torch distributed backend: {backend}")
+
+    @classmethod
+    def is_kv_cache_dtype_supported(cls, kv_cache_dtype: str) -> bool:
+        """
+        Returns if the kv_cache_dtype is supported by the current platform.
+        """
+        return False
 
 
 class UnspecifiedPlatform(Platform):

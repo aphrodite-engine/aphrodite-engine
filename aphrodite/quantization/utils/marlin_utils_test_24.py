@@ -1,7 +1,6 @@
 """Utility functions used for tests and benchmarks"""
 
 import random
-from typing import List
 
 import numpy
 import torch
@@ -286,8 +285,8 @@ def sparse_semi_structured_to_dense_cutlass(sparse, meta_reordered):
 def mask_creator(tensor):
     """
     Class for creating N:M sparsity masks.
-    Masks will be created using the N:M ratio, where for every block of
-    M weights, N will be pruned based on ranked weight value. Each mask
+    Masks will be created using the N:M ratio, where for every block of 
+    M weights, N will be pruned based on ranked weight value. Each mask 
     will correspond to the given tensor.
 
     :param N: The number of weights in a group to keep
@@ -372,19 +371,19 @@ def compress_quantized_24_weight(q_24, size_k, size_n, wtype: ScalarType):
 
 
 def get_scale_perms_24():
-    scale_perm: List[int] = []
+    scale_perm: list[int] = []
     for i in range(8):
         scale_perm.extend([i * 8 + j for j in [0, 4, 1, 5, 2, 6, 3, 7]])
-    scale_perm_single: List[int] = []
+    scale_perm_single: list[int] = []
     for i in range(8):
         scale_perm_single.extend([8 * i + j for j in [0, 1, 2, 3, 4, 5, 6, 7]])
     return scale_perm, scale_perm_single
 
 
 def get_weight_perm_24(num_bits: int):
-    perm_list: List[int] = []
+    perm_list: list[int] = []
     for i in range(32):
-        perm1: List[int] = []
+        perm1: list[int] = []
         col = i // 4
         col_o = col // 2
         for block in [0, 1]:

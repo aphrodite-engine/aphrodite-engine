@@ -3,12 +3,11 @@ import copy
 import time
 import weakref
 from functools import partial
-from typing import (Any, AsyncGenerator, Callable, Coroutine, Dict, Iterable,
-                    List, Mapping, Optional, Set, Tuple, Type, Union, overload)
+from typing import (Any, AsyncGenerator, Callable, Dict, Iterable, List,
+                    Mapping, Optional, Set, Tuple, Type, Union)
 from weakref import ReferenceType
 
 from loguru import logger
-from typing_extensions import deprecated
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import (AphroditeConfig, DecodingConfig,
@@ -18,7 +17,7 @@ from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.common.utils import Device, deprecate_kwargs, weak_bind
+from aphrodite.utils import Device, deprecate_kwargs, weak_bind
 from aphrodite.engine.aphrodite_engine import (AphroditeEngine,
                                                SchedulerOutputState)
 from aphrodite.engine.args_tools import AsyncEngineArgs
@@ -29,11 +28,8 @@ from aphrodite.executor.executor_base import ExecutorBase
 from aphrodite.inputs import PromptType
 from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
-from aphrodite.modeling.guided_decoding import (
-    get_guided_decoding_logits_processor)
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.processing.scheduler import SchedulerOutputs
-from aphrodite.prompt_adapter.request import PromptAdapterRequest
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.usage.usage_lib import UsageContext
 
@@ -427,23 +423,6 @@ class _AsyncLLMEngine(AphroditeEngine):
         return await (
             self.get_tokenizer_group().get_lora_tokenizer_async(lora_request))
 
-    @overload
-    @deprecated("'inputs' will be renamed to 'prompt")
-    async def add_request_async(
-        self,
-        request_id: str,
-        *,
-        inputs: PromptType,
-        params: Union[SamplingParams, PoolingParams],
-        arrival_time: Optional[float] = None,
-        lora_request: Optional[LoRARequest] = None,
-        trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-        priority: int = 0,
-    ) -> None:
-        ...
-
-    @overload
     async def add_request_async(
         self,
         request_id: str,
@@ -452,32 +431,14 @@ class _AsyncLLMEngine(AphroditeEngine):
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
+        data_parallel_rank: Optional[int] = None,
+        tokenization_kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
-        ...
-
-    @deprecate_kwargs(
-        "inputs",
-        additional_message="Please use the 'prompt' parameter instead.",
-    )
-    async def add_request_async(
-            self,
-            request_id: str,
-            prompt: Optional[PromptType] = None,
-            params: Optional[Union[SamplingParams, PoolingParams]] = None,
-            arrival_time: Optional[float] = None,
-            lora_request: Optional[LoRARequest] = None,
-            trace_headers: Optional[Mapping[str, str]] = None,
-            prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-            priority: int = 0,
-            *,
-            inputs: Optional[PromptType] = None,  # DEPRECATED
-    ) -> None:
-        """Async version of :meth:`add_request`."""
-        if inputs is not None:
-            prompt = inputs
-        assert prompt is not None and params is not None
+        """
+        Async version of
+        [`add_request`][aphrodite.engine.aphrodite_engine.AphroditeEngine.add_request].
+        """
 
         if lora_request is not None and not self.lora_config:
             raise ValueError(f"Got lora_request {lora_request} but LoRA is "
@@ -488,6 +449,10 @@ class _AsyncLLMEngine(AphroditeEngine):
         if arrival_time is None:
             arrival_time = time.time()
 
+        if data_parallel_rank is not None:
+            raise ValueError("Targeting data_parallel_rank only supported "
+                             "in v1 client.")
+
         if (isinstance(prompt, dict)
                 and prompt.get("prompt_embeds", None) is not None
                 and not prompt.get("prompt_token_ids", None)):
@@ -496,29 +461,11 @@ class _AsyncLLMEngine(AphroditeEngine):
             prompt["prompt_token_ids"] = [0
                                           ] * prompt["prompt_embeds"].shape[-2]
 
-        if self.tokenizer is not None:
-            tokenizer = await self.get_tokenizer_async(lora_request)
-            self._validate_token_prompt(prompt, tokenizer=tokenizer)
-
         processed_inputs = await self.input_preprocessor.preprocess_async(
             prompt,
             lora_request=lora_request,
-            prompt_adapter_request=prompt_adapter_request,
+            tokenization_kwargs=tokenization_kwargs,
         )
-
-        if isinstance(params, SamplingParams) and \
-            params.guided_decoding is not None:
-            # Guided decoding has an async implementation for building logits
-            # processors in a separate threadpool.
-            # We want to invoke that here instead of using the blocking
-            # implementation in the AphroditeEngine
-            params = await build_guided_decoding_logits_processor_async(
-                sampling_params=params,
-                tokenizer=await self.get_tokenizer_async(lora_request),
-                default_guided_backend=self.decoding_config.
-                guided_decoding_backend,
-                reasoning_backend=self.decoding_config.reasoning_backend,
-                model_config=self.model_config)
 
         self._add_processed_request(
             request_id=request_id,
@@ -526,7 +473,6 @@ class _AsyncLLMEngine(AphroditeEngine):
             params=params,
             arrival_time=arrival_time,
             lora_request=lora_request,
-            prompt_adapter_request=prompt_adapter_request,
             trace_headers=trace_headers,
             priority=priority,
         )
@@ -540,48 +486,6 @@ class _AsyncLLMEngine(AphroditeEngine):
                                    args: tuple = (),
                                    kwargs: Optional[dict] = None):
         raise NotImplementedError
-
-
-async def build_guided_decoding_logits_processor_async(
-        sampling_params: SamplingParams, tokenizer: AnyTokenizer,
-        default_guided_backend: str, reasoning_backend: Optional[str],
-        model_config: ModelConfig) -> SamplingParams:
-    """Constructs logits processors based on the guided_decoding,
-    logits_bias, and allowed_token_ids fields in sampling_params. Deletes
-    those fields and adds the constructed logits processors to the
-    logits_processors field. Modifies sampling params in-place and returns
-    the modified sampling params."""
-    if sampling_params.guided_decoding is None:
-        return sampling_params
-
-    # Defensively copy sampling params since guided decoding logits
-    # processors can have different state for each request
-    sampling_params = copy.copy(sampling_params)
-    guided_decoding = sampling_params.guided_decoding
-
-    logger.debug(
-        "Building guided decoding logits processor. "
-        "guided_decoding: {}{}", guided_decoding,
-        f", reasoning_backend: {reasoning_backend}"
-        if reasoning_backend is not None else "")
-
-    guided_decoding.backend = guided_decoding.backend or default_guided_backend
-
-    processor = await get_guided_decoding_logits_processor(
-        guided_params=guided_decoding,
-        tokenizer=tokenizer,
-        reasoning_backend=reasoning_backend,
-        model_config=model_config)
-
-    if processor:
-        if sampling_params.logits_processors is None:
-            sampling_params.logits_processors = []
-        sampling_params.logits_processors.append(processor)
-
-    # Unset guided decoding params after constructing the lp from them
-    sampling_params.guided_decoding = None
-
-    return sampling_params
 
 
 class AsyncAphrodite(EngineClient):
@@ -650,14 +554,20 @@ class AsyncAphrodite(EngineClient):
         return AphroditeEngine._get_executor_cls(engine_config)
 
     @classmethod
+    @deprecate_kwargs(
+        "disable_log_requests",
+        additional_message=("This argument will have no effect. "
+                            "Use `enable_log_requests` instead."),
+    )
     def from_aphrodite_config(
-        cls,
-        aphrodite_config: AphroditeConfig,
-        start_engine_loop: bool = True,
-        usage_context: UsageContext = UsageContext.ENGINE_CONTEXT,
-        stat_loggers: Optional[dict[str, StatLoggerBase]] = None,
-        disable_log_requests: bool = False,
-        disable_log_stats: bool = False,
+            cls,
+            aphrodite_config: AphroditeConfig,
+            start_engine_loop: bool = True,
+            usage_context: UsageContext = UsageContext.ENGINE_CONTEXT,
+            stat_loggers: Optional[dict[str, StatLoggerBase]] = None,
+            enable_log_requests: bool = False,
+            disable_log_stats: bool = False,
+            disable_log_requests: bool = True,  # Deprecated, will be removed
     ) -> "AsyncAphrodite":
         """Create an AsyncAphrodite from the EngineArgs."""
 
@@ -665,7 +575,7 @@ class AsyncAphrodite(EngineClient):
             aphrodite_config=aphrodite_config,
             executor_class=cls._get_executor_cls(aphrodite_config),
             start_engine_loop=start_engine_loop,
-            log_requests=not disable_log_requests,
+            log_requests=enable_log_requests,
             log_stats=not disable_log_stats,
             usage_context=usage_context,
             stat_loggers=stat_loggers,
@@ -695,7 +605,7 @@ class AsyncAphrodite(EngineClient):
             usage_context=usage_context,
             stat_loggers=stat_loggers,
             disable_log_stats=engine_args.disable_log_stats,
-            disable_log_requests=engine_args.disable_log_requests,
+            enable_log_requests=engine_args.enable_log_requests,
         )
 
     @property
@@ -888,27 +798,7 @@ class AsyncAphrodite(EngineClient):
                 raise
             await asyncio.sleep(0)
 
-    # This method does not need to be async, but kept that way
-    # for backwards compatibility.
-    @overload
-    @deprecated("'inputs' will be renamed to 'prompt")
-    def add_request(
-        self,
-        request_id: str,
-        *,
-        inputs: PromptType,
-        params: Union[SamplingParams, PoolingParams],
-        arrival_time: Optional[float] = None,
-        lora_request: Optional[LoRARequest] = None,
-        trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-        priority: int = 0,
-    ) -> Coroutine[None, None, AsyncGenerator[Union[
-            RequestOutput, PoolingRequestOutput], None]]:
-        ...
-
-    @overload
-    def add_request(
+    async def add_request(
         self,
         request_id: str,
         prompt: PromptType,
@@ -916,32 +806,10 @@ class AsyncAphrodite(EngineClient):
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
-    ) -> Coroutine[None, None, AsyncGenerator[Union[
-            RequestOutput, PoolingRequestOutput], None]]:
-        ...
-
-    @deprecate_kwargs(
-        "inputs",
-        additional_message="Please use the 'prompt' parameter instead.",
-    )
-    async def add_request(
-        self,
-        request_id: str,
-        prompt: Optional[PromptType] = None,
-        params: Optional[Union[SamplingParams, PoolingParams]] = None,
-        arrival_time: Optional[float] = None,
-        lora_request: Optional[LoRARequest] = None,
-        trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
-        priority: int = 0,
-        *,
-        inputs: Optional[PromptType] = None,  # DEPRECATED
+        data_parallel_rank: Optional[int] = None,
+        tokenization_kwargs: Optional[dict[str, Any]] = None,
     ) -> AsyncGenerator[Union[RequestOutput, PoolingRequestOutput], None]:
-        if inputs is not None:
-            prompt = inputs
-        assert prompt is not None and params is not None
 
         if not self.is_running:
             if self.start_engine_loop:
@@ -966,8 +834,9 @@ class AsyncAphrodite(EngineClient):
             arrival_time=arrival_time or time.time(),
             lora_request=lora_request,
             trace_headers=trace_headers,
-            prompt_adapter_request=prompt_adapter_request,
             priority=priority,
+            data_parallel_rank=data_parallel_rank,
+            tokenization_kwargs=tokenization_kwargs,
         )
 
         return stream.generator()
@@ -979,8 +848,8 @@ class AsyncAphrodite(EngineClient):
         request_id: str,
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
-        prompt_adapter_request: Optional[PromptAdapterRequest] = None,
         priority: int = 0,
+        data_parallel_rank: Optional[int] = None,
     ) -> AsyncGenerator[RequestOutput, None]:
         """Generate outputs for a request.
 
@@ -995,10 +864,10 @@ class AsyncAphrodite(EngineClient):
             request_id: The unique id of the request.
             lora_request: LoRA request to use for generation, if any.
             trace_headers: OpenTelemetry trace headers.
-            prompt_adapter_request: Prompt Adapter request to use
-                                            for generation, if any.
             priority: The priority of the request.
                 Only applicable with priority scheduling.
+            data_parallel_rank: The (global) data parallel rank that must
+                handle this request. Only applicable if DP is enabled.
 
         Yields:
             The output `RequestOutput` objects from the AphroditeEngine
@@ -1055,8 +924,8 @@ class AsyncAphrodite(EngineClient):
                     sampling_params,
                     lora_request=lora_request,
                     trace_headers=trace_headers,
-                    prompt_adapter_request=prompt_adapter_request,
                     priority=priority,
+                    data_parallel_rank=data_parallel_rank,
             ):
                 yield AphroditeEngine.validate_output(output, RequestOutput)
         except asyncio.CancelledError:
@@ -1071,6 +940,7 @@ class AsyncAphrodite(EngineClient):
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
         priority: int = 0,
+        tokenization_kwargs: Optional[dict[str, Any]] = None,
     ) -> AsyncGenerator[PoolingRequestOutput, None]:
         """Generate outputs for a request from a pooling model.
 
@@ -1142,6 +1012,7 @@ class AsyncAphrodite(EngineClient):
                     lora_request=lora_request,
                     trace_headers=trace_headers,
                     priority=priority,
+                    tokenization_kwargs=tokenization_kwargs,
             ):
                 yield AphroditeEngine.validate_output(output, PoolingRequestOutput)
         except asyncio.CancelledError:
@@ -1217,7 +1088,7 @@ class AsyncAphrodite(EngineClient):
             raise AsyncEngineDeadError("Background loop is stopped.")
 
         await self.engine.check_health_async()
-        logger.debug("Health check took %fs", time.perf_counter() - t)
+        logger.debug("Health check took {:.2f}s", time.perf_counter() - t)
 
     async def is_tracing_enabled(self) -> bool:
         return self.engine.is_tracing_enabled()
@@ -1233,6 +1104,9 @@ class AsyncAphrodite(EngineClient):
 
     async def stop_profile(self) -> None:
         self.engine.stop_profile()
+
+    async def reset_mm_cache(self) -> None:
+        self.engine.reset_mm_cache()
 
     async def reset_prefix_cache(self,
                                  device: Optional[Device] = None) -> None:

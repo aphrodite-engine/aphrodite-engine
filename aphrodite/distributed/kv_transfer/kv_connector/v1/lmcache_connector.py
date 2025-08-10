@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 
@@ -12,16 +12,15 @@ from aphrodite.v1.core.sched.output import SchedulerOutput
 if TYPE_CHECKING:
     from aphrodite.attention.backends.abstract import AttentionMetadata
     from aphrodite.forward_context import ForwardContext
+    from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
     from aphrodite.v1.request import Request
 
 
 class LMCacheConnectorV1(KVConnectorBase_V1):
 
-    def __init__(self, aphrodite_config: "AphroditeConfig",
-                 role: KVConnectorRole):
+    def __init__(self, aphrodite_config: "AphroditeConfig", role: KVConnectorRole):
         super().__init__(aphrodite_config=aphrodite_config, role=role)
-        self._lmcache_engine = LMCacheConnectorV1Impl(aphrodite_config, role,
-                                                      self)
+        self._lmcache_engine = LMCacheConnectorV1Impl(aphrodite_config, role, self)
 
     # ==============================
     # Worker-side methods
@@ -40,7 +39,7 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
         Note:
             The number of elements in kv_caches and layer_names should be 
             the same.
-
+            
         """
         self._lmcache_engine.start_load_kv(forward_context, **kwargs)
 
@@ -49,7 +48,7 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
         Block until the KV for a specific layer is loaded into vLLM's
         paged buffer. This is called from within attention layer to ensure
         async copying from start_load_kv is complete.
-
+        
         This interface will be useful for layer-by-layer pipelining.
 
         Args:
@@ -84,6 +83,22 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
         """
         self._lmcache_engine.wait_for_save()
 
+    def get_finished(
+        self, finished_req_ids: set[str]
+    ) -> tuple[Optional[set[str]], Optional[set[str]]]:
+        """
+        Notifies worker-side connector ids of requests that have
+        finished generating tokens.
+
+        Returns:
+            ids of requests that have finished asynchronous transfer
+            (requests that previously returned True from request_finished()),
+            tuple of (sending/saving ids, recving/loading ids).
+            The finished saves/sends req ids must belong to a set provided in a
+            call to this method (this call or a prior one).
+        """
+        return self._lmcache_engine.get_finished(finished_req_ids)
+
     # ==============================
     # Scheduler-side methods
     # ==============================
@@ -91,11 +106,11 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
         self,
         request: "Request",
         num_computed_tokens: int,
-    ) -> int:
+    ) -> tuple[int, bool]:
         """
         Get number of new tokens that can be loaded from the
         external KV cache beyond the num_computed_tokens.
-
+        
         Args:
             request (Request): the request object.
             num_computed_tokens (int): the number of locally
@@ -106,9 +121,10 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
             external KV cache beyond what is already computed.
         """
         return self._lmcache_engine.get_num_new_matched_tokens(
-            request, num_computed_tokens)
+            request, num_computed_tokens), False
 
     def update_state_after_alloc(self, request: "Request",
+                                 blocks: "KVCacheBlocks",
                                  num_external_tokens: int):
         """
         Update KVConnector state after block allocation.
@@ -128,3 +144,20 @@ class LMCacheConnectorV1(KVConnectorBase_V1):
             scheduler_output (SchedulerOutput): the scheduler output object.
         """
         return self._lmcache_engine.build_connector_meta(scheduler_output)
+
+    def request_finished(
+        self,
+        request: "Request",
+        block_ids: list[int],
+    ) -> tuple[bool, Optional[dict[str, Any]]]:
+        """
+        Called when a request has finished, before its blocks are freed.
+
+        Returns:
+            True if the request is being saved/sent asynchronously and blocks
+            should not be freed until the request_id is returned from
+            get_finished().
+            Optional KVTransferParams to be included in the request outputs
+            returned by the engine.
+        """
+        return self._lmcache_engine.request_finished(request, block_ids)

@@ -1,4 +1,3 @@
-
 import torch
 from loguru import logger
 from torch._higher_order_ops.auto_functionalize import auto_functionalized
@@ -6,6 +5,7 @@ from torch._inductor.pattern_matcher import (PatternMatcherPass, fwd_only,
                                              register_replacement)
 
 from aphrodite.common.config import AphroditeConfig
+from aphrodite.platforms import current_platform
 
 from .aphrodite_inductor_pass import AphroditeInductorPass
 
@@ -38,7 +38,7 @@ def empty_bf16(*args, **kwargs):
 
 
 def empty_fp8(*args, **kwargs):
-    fp8 = torch.float8_e4m3fn
+    fp8 = current_platform.fp8_dtype()
     return torch.empty(*args, **kwargs, dtype=fp8, device="cuda")
 
 

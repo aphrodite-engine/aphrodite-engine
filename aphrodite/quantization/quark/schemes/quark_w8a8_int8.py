@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional, Set
+from typing import Callable, Optional
 
 import torch
 from loguru import logger
@@ -13,7 +13,7 @@ from aphrodite.quantization.quark.schemes import QuarkScheme
 
 
 class QuarkW8A8Int8(QuarkScheme):
-    _kernel_backends_being_used: Set[str] = set()
+    _kernel_backends_being_used: set[str] = set()
 
     def __init__(self, qscheme: str, is_static_input_scheme: Optional[bool],
                  input_symmetric: Optional[bool]):
@@ -27,7 +27,7 @@ class QuarkW8A8Int8(QuarkScheme):
         return 75
 
     def create_weights(self, layer: torch.nn.Module,
-                       output_partition_sizes: List[int],
+                       output_partition_sizes: list[int],
                        input_size_per_partition: int,
                        params_dtype: torch.dtype, weight_loader: Callable,
                        **kwargs):
