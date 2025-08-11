@@ -48,9 +48,9 @@ jobs:
       fail-fast: false
       matrix:
           os: ['ubuntu-22.04']
-          python-version: ['3.12']
-          pytorch-version: ['2.6.0']  # Must be the most recent version that meets requirements/cuda.txt.
-          cuda-version: ['12.4']
+          python-version: ['3.13']
+          pytorch-version: ['2.8.0']  # Must be the most recent version that meets requirements/cuda.txt.
+          cuda-version: ['12.8']
 
     steps:
       - name: Checkout
