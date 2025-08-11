@@ -2681,8 +2681,8 @@ class SchedulerConfig:
                 self.max_num_seqs = 1
 
             # In single user mode, we only need CUDA graphs for batch size 1
-            if self.cuda_graph_sizes != [1]:
-                self.cuda_graph_sizes = [1]
+            if self.cuda_graph_sizes != [2]:
+                self.cuda_graph_sizes = [2]
 
             if original_max_num_seqs != 1 or original_cuda_graph_sizes != [1]:
                 logger.info(
