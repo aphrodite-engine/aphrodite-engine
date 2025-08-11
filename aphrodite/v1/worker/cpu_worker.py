@@ -5,7 +5,7 @@ from typing import Callable, Optional
 import torch
 from loguru import logger
 
-from aphrodite import envs
+from aphrodite.common import envs
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed.parallel_state import get_pp_group, get_tp_group

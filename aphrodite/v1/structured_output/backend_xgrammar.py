@@ -72,7 +72,7 @@ class XgrammarBackend(StructuredOutputBackend):
             tokenizer_info,
             max_threads=8,
             cache_enabled=True,
-            cache_limit_bytes=aphrodite.envs.APHRODITE_XGRAMMAR_CACHE_MB * 1024 * 1024,
+            cache_limit_bytes=aphrodite.common.envs.APHRODITE_XGRAMMAR_CACHE_MB * 1024 * 1024,
         )
 
         self.num_speculative_tokens = 0

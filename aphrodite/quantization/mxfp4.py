@@ -3,7 +3,7 @@ from typing import Callable, Optional
 import torch
 from torch.nn.parameter import Parameter
 
-from aphrodite import envs
+from aphrodite.common import envs
 from aphrodite.modeling.layers.fused_moe import (FusedMoE, FusedMoEConfig,
                                                  FusedMoEMethodBase)
 from aphrodite.modeling.layers.linear import (LinearBase,
