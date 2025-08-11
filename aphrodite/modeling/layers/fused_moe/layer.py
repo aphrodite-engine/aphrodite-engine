@@ -713,6 +713,8 @@ class FusedMoE(torch.nn.Module):
                 dp_size_=dp_size_,
                 aphrodite_parallel_config=aphrodite_config.parallel_config))
 
+        self.global_num_experts = num_experts + num_redundant_experts
+
         # we padding globally so EP buffer allocation works
         if quant_config and quant_config.get_name() == "mxfp4" and (
                 envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8
