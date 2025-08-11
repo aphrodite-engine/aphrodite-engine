@@ -212,3 +212,4 @@ images/
 **/generated/**
 aphrodite/_version.py
 shellcheck-stable/
+ep_kernels_workspace/
