@@ -229,7 +229,21 @@ class Worker(WorkerBase):
         """
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
-        GiB = lambda b: b / GiB_bytes
+
+        def GiB(b):
+            return b / GiB_bytes
+
+        # In single user mode, profile with only one sequence worth of tokens
+        # by temporarily shrinking the model runner's max_num_tokens.
+        if getattr(self.scheduler_config, "single_user_mode", False):
+            original_max_num_tokens = self.model_runner.max_num_tokens
+            profiling_tokens = min(
+                self.model_config.max_model_len,
+                self.scheduler_config.max_num_batched_tokens,
+            )
+            self.model_runner.max_num_tokens = profiling_tokens
+        else:
+            original_max_num_tokens = None
 
         # Execute a forward pass with dummy inputs to profile the memory usage
         # of the model.
@@ -238,6 +252,10 @@ class Worker(WorkerBase):
                 weights_memory=int(
                     self.model_runner.model_memory_usage)) as profile_result:
             self.model_runner.profile_run()
+
+        # Restore original max_num_tokens if modified for single user mode
+        if original_max_num_tokens is not None:
+            self.model_runner.max_num_tokens = original_max_num_tokens
 
         free_gpu_memory = profile_result.after_profile.free_memory
         # NOTE(woosuk): Here we assume that the other processes using the same
@@ -250,8 +268,21 @@ class Worker(WorkerBase):
             "release GPU memory while Aphrodite is profiling during initialization. "
             "To fix this, ensure consistent GPU memory allocation or "
             "isolate Aphrodite in its own container.")
-        available_kv_cache_memory = self.requested_memory \
-            - profile_result.non_kv_cache_memory
+
+        # Determine available KV cache memory. In single user mode, only one
+        # sequence worth of KV cache is needed; compute that directly.
+        if getattr(self.scheduler_config, "single_user_mode", False):
+            tokens_per_block = self.cache_config.block_size
+            blocks_per_seq = (self.model_config.max_model_len +
+                              tokens_per_block - 1) // tokens_per_block
+            kv_cache_spec = self.model_runner.get_kv_cache_spec()
+            memory_per_seq = 0
+            for layer_spec in kv_cache_spec.values():
+                memory_per_seq += layer_spec.page_size_bytes * blocks_per_seq
+            available_kv_cache_memory = memory_per_seq
+        else:
+            available_kv_cache_memory = self.requested_memory \
+                - profile_result.non_kv_cache_memory
 
         unrequested_memory = self.init_snapshot.free_memory \
             - self.requested_memory
