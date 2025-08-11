@@ -18,7 +18,8 @@ from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba2_metadata import (
     Mamba2Metadata, prepare_mamba2_metadata)
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
-from aphrodite.modeling.layers.mamba.mamba_utils import get_mamba_state_shape
+from aphrodite.modeling.layers.mamba.mamba_utils import (
+    MambaStateShapeCalculator)
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
@@ -216,7 +217,7 @@ class Mamba2ForCausalLM(nn.Module, HasInnerState, IsAttentionFree):
         hf_config = aphrodite_config.model_config.hf_config
         intermediate_size = hf_config.expand * hf_config.hidden_size
 
-        return get_mamba_state_shape(
+        return MambaStateShapeCalculator.mamba2_state_shape(
             intermediate_size=intermediate_size,
             tp_world_size=parallel_config.tensor_parallel_size,
             n_groups=hf_config.n_groups,

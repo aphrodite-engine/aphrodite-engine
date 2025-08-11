@@ -7,6 +7,7 @@ from torch import nn
 from transformers import JambaConfig
 
 from aphrodite.attention.layer import Attention
+from aphrodite.common import envs
 from aphrodite.common.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import get_tensor_model_parallel_world_size
@@ -18,6 +19,8 @@ from aphrodite.modeling.layers.linear import (QKVParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer import MambaMixer
+from aphrodite.modeling.layers.mamba.mamba_utils import (
+    MambaStateShapeCalculator)
 from aphrodite.modeling.layers.pooler import (DispatchPooler, Pooler,
                                               PoolingType)
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
@@ -30,8 +33,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils import LayerBlockType
 
-from .interfaces import (HasInnerState, IsHybrid, SupportsLoRA, SupportsPP,
-                         SupportsV0Only)
+from .interfaces import HasInnerState, IsHybrid, SupportsLoRA, SupportsPP
 from .utils import (AutoWeightsLoader, WeightsMapper, is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
@@ -110,7 +112,8 @@ class JambaMambaDecoderLayer(nn.Module):
                                 use_rms_norm=True,
                                 rms_norm_eps=config.rms_norm_eps,
                                 activation=config.hidden_act,
-                                is_lora_enabled = self.is_lora_enabled
+                                is_lora_enabled = self.is_lora_enabled,
+                                prefix=f"{prefix}.mixer",
                                 )
 
         num_experts = config.layers_num_experts[layer_idx]
@@ -342,7 +345,8 @@ class JambaModel(nn.Module):
             layer_mamba_cache_params = None
             if isinstance(layer, JambaAttentionDecoderLayer):
                 kv_cache_index += 1
-            if isinstance(layer, JambaMambaDecoderLayer):
+            if isinstance(layer,
+                          JambaMambaDecoderLayer) and mamba_cache_params:
                 current_state_layer = mamba_cache_index
                 layer_mamba_cache_params = mamba_cache_params.at_layer_idx(
                     current_state_layer)
@@ -440,7 +444,7 @@ class JambaModel(nn.Module):
 
 
 class JambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
-                       IsHybrid, SupportsV0Only):
+                       IsHybrid):
     hf_to_aphrodite_mapper = WeightsMapper(orig_to_new_substr={
         ".self_attn.": ".",
         ".A_log": ".A"
@@ -507,14 +511,20 @@ class JambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
                 intermediate_tensors: Optional[IntermediateTensors] = None,
                 inputs_embeds: Optional[torch.Tensor] = None,
                 **kwargs):
-        if self.mamba_cache is None:
-            num_mamba_layers = self.model_config.get_num_layers_by_block_type(
-                self.aphrodite_config.parallel_config, LayerBlockType.mamba)
-            self.mamba_cache = MambaCacheManager(
-                self.aphrodite_config, self.lm_head.weight.dtype, num_mamba_layers,
-                *self._get_mamba_cache_shape())
+        # NOTE: mamba_cache_params is not needed for v1
+        mamba_cache_params = None
+        if not envs.APHRODITE_USE_V1:
+            if self.mamba_cache is None:
+                num_layers = self.model_config.get_num_layers_by_block_type(
+                    self.aphrodite_config.parallel_config,
+                    LayerBlockType.mamba)
+                state_shape = self.get_mamba_state_shape_from_config(
+                    self.aphrodite_config)
+                self.mamba_cache = MambaCacheManager(self.aphrodite_config,
+                                                     self.lm_head.weight.dtype,
+                                                     num_layers, *state_shape)
 
-        mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)
+            mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)
 
         hidden_states = self.model(input_ids, positions, mamba_cache_params,
                                    intermediate_tensors, inputs_embeds)
@@ -527,19 +537,22 @@ class JambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
     def get_seqlen_agnostic_capture_inputs(self, batch_size: int):
         return self.mamba_cache.get_seqlen_agnostic_capture_inputs(batch_size)
 
-    def _get_mamba_cache_shape(
-            self) -> tuple[tuple[int, int], tuple[int, int]]:
-        world_size = get_tensor_model_parallel_world_size()
-        hidden_size = self.config.hidden_size
-        conv_state_shape = (
-            self.config.mamba_expand * hidden_size // world_size,
-            self.config.mamba_d_conv - 1,
+    @classmethod
+    def get_mamba_state_shape_from_config(
+        cls,
+        aphrodite_config: "AphroditeConfig",
+    ) -> tuple[tuple[int, int], tuple[int, int]]:
+        parallel_config = aphrodite_config.parallel_config
+        hf_config = aphrodite_config.model_config.hf_config
+        hidden_size = hf_config.hidden_size
+
+        return MambaStateShapeCalculator.mamba1_state_shape(
+            tp_world_size=parallel_config.tensor_parallel_size,
+            intermediate_size=hf_config.mamba_expand * hidden_size,
+            state_size=hf_config.mamba_d_state,
+            conv_kernel=hf_config.mamba_d_conv,
+            use_v1=envs.APHRODITE_USE_V1,
         )
-        temporal_state_shape = (
-            self.config.mamba_expand * hidden_size // world_size,
-            self.config.mamba_d_state,
-        )
-        return conv_state_shape, temporal_state_shape
 
     def compute_logits(
         self,
