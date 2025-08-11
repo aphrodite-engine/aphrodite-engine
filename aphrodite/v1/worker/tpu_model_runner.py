@@ -19,6 +19,7 @@ from aphrodite.attention.layer import Attention
 from aphrodite.common.config import (AphroditeConfig, ParallelConfig,
                                      get_layers_from_aphrodite_config,
                                      update_config)
+from aphrodite.common.logger import log_once
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.wrapper import (
     TorchCompileWrapperWithCustomDispatcher)
@@ -517,7 +518,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
             if attn_module.attn_type == AttentionType.DECODER:
                 if attn_module.use_irope:
-                    logger.warning_once(
+                    log_once("WARNING",
                         "Using irope in Pallas is not supported yet, it "
                         "will fall back to global attention for long context.")
                 if attn_module.sliding_window is not None:

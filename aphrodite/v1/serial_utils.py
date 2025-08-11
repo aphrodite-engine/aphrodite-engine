@@ -15,6 +15,7 @@ from loguru import logger
 from msgspec import msgpack
 
 from aphrodite.common import envs
+from aphrodite.common.logger import log_once
 from aphrodite.multimodal.inputs import (BaseMultiModalField,
                                          MultiModalBatchedField,
                                          MultiModalFieldConfig,
@@ -41,8 +42,8 @@ bytestr = Union[bytes, bytearray, memoryview, zmq.Frame]
 
 
 def _log_insecure_serialization_warning():
-    logger.warning_once("Allowing insecure serialization using pickle due to "
-                        "APHRODITE_ALLOW_INSECURE_SERIALIZATION=1")
+    log_once("WARNING", "Allowing insecure serialization using pickle due to "
+             "APHRODITE_ALLOW_INSECURE_SERIALIZATION=1")
 
 
 def _typestr(val: Any) -> Optional[tuple[str, str]]:

@@ -6,6 +6,7 @@ import torch.nn as nn
 from loguru import logger
 
 from aphrodite.common.envs import APHRODITE_MM_INPUT_CACHE_GIB
+from aphrodite.common.logger import log_once
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.transformers_utils.tokenizer import (
     AnyTokenizer, cached_tokenizer_from_config)
@@ -293,7 +294,7 @@ class MultiModalRegistry:
         # Having more tokens is over-conservative but otherwise fine
         token_ids = dummy_data.prompt_token_ids
         if len(token_ids) < seq_len:
-            logger.warning_once(
+            log_once("WARNING",
                 "Expected at least {} dummy encoder tokens for profiling, but found {} tokens instead.",  # noqa: E501
                 seq_len,
                 len(token_ids),

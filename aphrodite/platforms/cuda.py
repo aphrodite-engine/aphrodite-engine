@@ -312,7 +312,7 @@ class CudaPlatformBase(Platform):
                     return FLASHINFER_V1
 
                 if not is_default_backend_supported.can_import:
-                    logger.warning_once(
+                    log_once("WARNING",
                         "FlashInfer failed to import for V1 engine on "
                         "Blackwell (SM 10.0) GPUs; it is recommended to "
                         "install FlashInfer for better performance.")

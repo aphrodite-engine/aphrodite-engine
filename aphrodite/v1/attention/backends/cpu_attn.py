@@ -14,6 +14,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    is_quantized_kv_cache)
 from aphrodite.attention.backends.utils import CommonAttentionState
 from aphrodite.common.config import AphroditeConfig
+from aphrodite.common.logger import log_once
 from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
                                                    CommonAttentionMetadata)
 from aphrodite.v1.core.sched.output import SchedulerOutput
@@ -448,8 +449,8 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
         if kv_sharing_target_layer_name is not None:
             raise NotImplementedError("KV sharing is not supported in V0.")
         if logits_soft_cap is not None:
-            logger.warning_once("Torch SPDA does not support logits soft cap. "
-                                "Outputs may be slightly off.")
+            log_once("WARNING", "Torch SPDA does not support logits soft cap. "
+                     "Outputs may be slightly off.")
         self.paged_attn_impl = _get_paged_attn_impl()
         self.num_heads = num_heads
         self.head_size = head_size

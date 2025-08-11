@@ -71,13 +71,13 @@ from transformers.tokenization_utils_base import BatchEncoding
 from typing_extensions import Never, ParamSpec, TypeIs, assert_never
 
 import aphrodite.common.envs as envs
-from aphrodite.common.logger import enable_trace_function_call
+from aphrodite.common.logger import enable_trace_function_call, log_once
 from aphrodite.ray.lazy_utils import is_in_ray_actor
 
 if TYPE_CHECKING:
     from argparse import Namespace
 
-    from aphrodite.common.config import ModelConfig, AphroditeConfig
+    from aphrodite.common.config import AphroditeConfig, ModelConfig
 
 
 # This value is chosen to have a balance between ITL and TTFT. Note it is
@@ -1541,6 +1541,7 @@ def _cuda_device_count_stateless(
     # torch/cuda/__init__.py#L831C1-L831C17
     import torch.cuda
     import torch.version
+
     from aphrodite.platforms import current_platform
     if not torch.cuda._is_compiled():
         return 0
@@ -1676,7 +1677,7 @@ class FlexibleArgumentParser(ArgumentParser):
             if args is not None and "--disable-log-requests" in args:
                 # Special case warning because the warning below won't trigger
                 # if –-disable-log-requests because its value is default.
-                logger.warning_once(
+                log_once("WARNING",
                     "argument '--disable-log-requests' is deprecated and "
                     "replaced with '--enable-log-requests'. This will be "
                     "removed in v0.12.0.")
@@ -1684,7 +1685,7 @@ class FlexibleArgumentParser(ArgumentParser):
             for action in FlexibleArgumentParser._deprecated:
                 if (hasattr(namespace, dest := action.dest)
                         and getattr(namespace, dest) != action.default):
-                    logger.warning_once("argument '{}' is deprecated", dest)
+                    log_once("WARNING", "argument '{}' is deprecated", dest)
             return namespace, args
 
         def add_argument(self, *args, **kwargs):

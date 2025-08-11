@@ -12,6 +12,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.common.config import AphroditeConfig
+from aphrodite.common.logger import log_once
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
 from aphrodite.distributed.kv_transfer import (ensure_kv_transfer_initialized,
@@ -227,8 +228,8 @@ class TPUWorker:
             padded_head_size = cdiv(
                 head_size, TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
             if padded_head_size != head_size:
-                logger.warning_once("head size is padded to {}",
-                                    padded_head_size)
+                log_once("WARNING", "head size is padded to {}",
+                         padded_head_size)
             # We adjust the usable memory size for the KV cache to prevent OOM
             # errors, even after padding the head_size.
             tpu_kv_cache_bytes = (tpu_kv_cache_bytes * head_size //

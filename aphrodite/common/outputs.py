@@ -8,6 +8,7 @@ import torch
 from loguru import logger
 from typing_extensions import TypeVar
 
+from aphrodite.common.logger import log_once
 from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.common.sequence import (PromptLogprobs, RequestMetrics,
                                        SampleLogprobs, SequenceGroup,
@@ -119,8 +120,8 @@ class RequestOutput:
         **kwargs: Any,
     ) -> None:
         if kwargs:
-            logger.warning_once("RequestOutput: Ignoring extra arguments: {}",
-                                str(kwargs))
+            log_once("WARNING", "RequestOutput: Ignoring extra arguments: {}",
+                     str(kwargs))
         self.request_id = request_id
         self.prompt = prompt
         self.prompt_token_ids = prompt_token_ids

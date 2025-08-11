@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Optional
 import torch
 from loguru import logger
 
+from aphrodite.common.logger import log_once
 from aphrodite.utils import DEFAULT_MAX_NUM_BATCHED_TOKENS
 
 from .interface import CpuArchEnum, Platform, PlatformEnum, _Backend
@@ -105,7 +106,7 @@ class CpuPlatform(Platform):
         kv_cache_space = envs.APHRODITE_CPU_KVCACHE_SPACE
         if kv_cache_space is None:
             kv_cache_space = 4 * GiB_bytes  # type: ignore
-            logger.warning_once(
+            log_once("WARNING",
                 "Environment variable APHRODITE_CPU_KVCACHE_SPACE (GiB) "
                 "for CPU backend is not set, using 4 by default.")
         else:
