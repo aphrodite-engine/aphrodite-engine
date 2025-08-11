@@ -28,6 +28,7 @@ from aphrodite.endpoints.openai.protocol import (ErrorResponse,
 # yapf: enable
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
+from aphrodite.endpoints.tool_server import ToolServer
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
@@ -49,6 +50,7 @@ class OpenAIServingResponses(OpenAIServing):
         reasoning_parser: str = "",
         enable_auto_tools: bool = False,
         tool_parser: Optional[str] = None,
+        tool_server: Optional[ToolServer] = None,
         enable_prompt_tokens_details: bool = False,
         enable_force_include_usage: bool = False,
     ) -> None:
@@ -110,6 +112,8 @@ class OpenAIServingResponses(OpenAIServing):
         self.msg_store: dict[str, list[ChatCompletionMessageParam]] = {}
 
         self.background_tasks: dict[str, asyncio.Task] = {}
+
+        self.tool_server = tool_server
 
     async def create_responses(
         self,
