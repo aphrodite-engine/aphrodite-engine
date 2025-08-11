@@ -30,17 +30,6 @@ from typing_extensions import Self, assert_never, runtime_checkable
 import aphrodite.common.envs as envs
 from aphrodite import version
 from aphrodite.common.logger import log_once
-# yapf conflicts with isort for this block
-# yapf: disable
-from aphrodite.utils import (DEFAULT_MAX_NUM_BATCHED_TOKENS,
-                                    MULTIMODAL_MODEL_MAX_NUM_BATCHED_TOKENS,
-                                    POOLING_MODEL_MAX_NUM_BATCHED_TOKENS,
-                                    GiB_bytes, LayerBlockType, LazyLoader,
-                                    common_broadcastable_dtype,
-                                    cuda_device_count_stateless,
-                                    get_cpu_memory, get_open_port,
-                                    is_torch_equal_or_newer, random_uuid,
-                                    resolve_obj_by_qualname)
 # yapf: enable
 from aphrodite.compilation.inductor_pass import (CallableInductorPass,
                                                  InductorPass)
@@ -54,6 +43,16 @@ from aphrodite.transformers_utils.config import (
     try_get_safetensors_metadata, try_get_tokenizer_config, uses_mrope)
 from aphrodite.transformers_utils.s3_utils import S3Model
 from aphrodite.transformers_utils.utils import is_s3, maybe_model_redirect
+# yapf conflicts with isort for this block
+# yapf: disable
+from aphrodite.utils import (DEFAULT_MAX_NUM_BATCHED_TOKENS,
+                             MULTIMODAL_MODEL_MAX_NUM_BATCHED_TOKENS,
+                             POOLING_MODEL_MAX_NUM_BATCHED_TOKENS, GiB_bytes,
+                             LayerBlockType, LazyLoader,
+                             common_broadcastable_dtype,
+                             cuda_device_count_stateless, get_cpu_memory,
+                             get_open_port, is_torch_equal_or_newer,
+                             random_uuid, resolve_obj_by_qualname)
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -200,7 +199,76 @@ def get_attr_docs(cls: type[Any]) -> dict[str, str]:
             yield a, b
             a = b
 
-    cls_node = ast.parse(textwrap.dedent(inspect.getsource(cls))).body[0]
+    # Try to get the class source directly. Some class decorators (e.g.,
+    # pydantic.dataclasses) on Python >=3.13 can make inspect.getsource fail
+    # with OSError('source code not available'). Fallback to parsing the
+    # module source and locating the class AST by qualname. As a last resort,
+    # return empty docs for each dataclass field to avoid crashing CLI.
+    try:
+        cls_node = ast.parse(textwrap.dedent(inspect.getsource(cls))).body[0]
+    except Exception:
+        module = inspect.getmodule(cls)
+        try:
+            module_source = inspect.getsource(module) if module else None
+        except Exception:
+            module_source = None
+
+        if module_source is not None:
+            module_ast = ast.parse(module_source)
+
+            # Resolve nested classes using the qualname path
+            qualname = getattr(
+                cls, "__qualname__", getattr(cls, "__name__", ""))
+            # Remove any <locals> segment
+            qual_parts = qualname.split(".<locals>.")[-1].split(".")
+
+            def find_class(
+                node: ast.AST,
+                parts: list[str],
+            ) -> ast.ClassDef | None:
+                if not parts:
+                    return None
+                name = parts[0]
+                for child in getattr(node, "body", []):
+                    if isinstance(child, ast.ClassDef) and child.name == name:
+                        if len(parts) == 1:
+                            return child
+                        return find_class(child, parts[1:])
+                return None
+
+            candidate = find_class(module_ast, qual_parts)
+            if candidate is None:
+                # Best-effort: pick first matching class by simple name
+                simple_name = getattr(cls, "__name__", "")
+                for child in getattr(module_ast, "body", []):
+                    if isinstance(child,
+                                  ast.ClassDef) and child.name == simple_name:
+                        candidate = child
+                        break
+
+            if candidate is None:
+                # Last resort: empty docs mapping for dataclass fields
+                try:
+                    from dataclasses import fields as dc_fields
+                    from dataclasses import is_dataclass as dc_is_dataclass
+                    if dc_is_dataclass(cls):
+                        return {f.name: "" for f in dc_fields(cls)}
+                except Exception:
+                    pass
+                raise
+
+            cls_node = candidate
+        else:
+            # Last resort: empty docs mapping for dataclass fields
+            try:
+                from dataclasses import fields as dc_fields
+                from dataclasses import is_dataclass as dc_is_dataclass
+                if dc_is_dataclass(cls):
+                    return {f.name: "" for f in dc_fields(cls)}
+            except Exception:
+                pass
+            # If we cannot recover, re-raise to preserve original behavior
+            raise
 
     if not isinstance(cls_node, ast.ClassDef):
         raise TypeError("Given object was not a class.")
@@ -4100,7 +4168,8 @@ class ObservabilityConfig:
                 and "," in self.collect_detailed_traces[0]):
             self._parse_collect_detailed_traces()
 
-        from aphrodite.tracing import is_otel_available, otel_import_error_traceback
+        from aphrodite.tracing import (is_otel_available,
+                                       otel_import_error_traceback)
         if not is_otel_available() and self.otlp_traces_endpoint is not None:
             raise ValueError(
                 "OpenTelemetry is not available. Unable to configure "
