@@ -43,9 +43,6 @@ from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import _SAMPLING_EPS, SamplingParams
-from aphrodite.utils import (Device, FlexibleArgumentParser,
-                                    decorate_logs, get_open_zmq_ipc_path,
-                                    is_valid_ipv6_address, set_ulimit)
 from aphrodite.endpoints.chat_utils import (load_chat_template,
                                             resolve_hf_chat_template,
                                             resolve_mistral_chat_template)
@@ -99,6 +96,7 @@ from aphrodite.endpoints.openai.serving_tokenization import (
 from aphrodite.endpoints.openai.serving_transcription import (
     OpenAIServingTranscription, OpenAIServingTranslation)
 from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
+from aphrodite.endpoints.tool_server import DemoToolServer, ToolServer
 from aphrodite.endpoints.utils import (cli_env_setup, load_aware_call,
                                        log_non_default_args, with_cancellation)
 from aphrodite.engine.args_tools import AsyncEngineArgs
@@ -112,6 +110,9 @@ from aphrodite.transformers_utils.config import (
     maybe_register_config_serialize_by_value)
 from aphrodite.transformers_utils.tokenizer import MistralTokenizer
 from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.utils import (Device, FlexibleArgumentParser, decorate_logs,
+                             get_open_zmq_ipc_path, is_valid_ipv6_address,
+                             set_ulimit)
 from aphrodite.v1.metrics.prometheus import get_prometheus_registry
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
@@ -1947,6 +1948,11 @@ async def init_app_state(
                     "This discrepancy may lead to performance degradation.",
                     resolved_chat_template, args.model)
 
+    if args.tool_server == "demo":
+        tool_server: Optional[ToolServer] = DemoToolServer()
+    else:
+        tool_server = None
+
     # Merge default_mm_loras into the static lora_modules
     default_mm_loras = (aphrodite_config.lora_config.default_mm_loras
                         if aphrodite_config.lora_config is not None else {})
@@ -1981,6 +1987,7 @@ async def init_app_state(
         return_tokens_as_token_ids=args.return_tokens_as_token_ids,
         enable_auto_tools=args.enable_auto_tool_choice,
         tool_parser=args.tool_call_parser,
+        tool_server=tool_server,
         reasoning_parser=args.reasoning_parser,
         enable_prompt_tokens_details=args.enable_prompt_tokens_details,
         enable_force_include_usage=args.enable_force_include_usage,
