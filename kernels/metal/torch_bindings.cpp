@@ -50,6 +50,15 @@ TORCH_LIBRARY_FRAGMENT(_C, m) {
       "    int tp_rank, int blocksparse_local_blocks,"
       "    int blocksparse_vert_stride, int blocksparse_block_size,"
       "    int blocksparse_head_sliding_step) -> ()");
+
+  m.def("silu_and_mul(Tensor! result, Tensor input) -> ()");
+  m.def("mul_and_silu(Tensor! out, Tensor input) -> ()");
+  m.def("gelu_and_mul(Tensor! out, Tensor input) -> ()");
+  m.def("gelu_tanh_and_mul(Tensor! out, Tensor input) -> ()");
+  m.def("fatrelu_and_mul(Tensor! out, Tensor input, float threshold) -> ()");
+  m.def("gelu_new(Tensor! out, Tensor input) -> ()");
+  m.def("gelu_fast(Tensor! out, Tensor input) -> ()");
+  m.def("gelu_quick(Tensor! out, Tensor input) -> ()");
 }
 
 TORCH_LIBRARY_FRAGMENT(CONCAT(_C, _cache_ops), m) {
@@ -79,6 +88,15 @@ TORCH_LIBRARY_FRAGMENT(CONCAT(_C, _cache_ops), m) {
 TORCH_LIBRARY_IMPL_EXPAND(_C, MPS, ops) {
   ops.impl("paged_attention_v1", &paged_attention_v1);
   ops.impl("paged_attention_v2", &paged_attention_v2);
+  // Activation ops on MPS
+  ops.impl("silu_and_mul", &silu_and_mul);
+  ops.impl("mul_and_silu", &mul_and_silu);
+  ops.impl("gelu_and_mul", &gelu_and_mul);
+  ops.impl("gelu_tanh_and_mul", &gelu_tanh_and_mul);
+  ops.impl("fatrelu_and_mul", &fatrelu_and_mul);
+  ops.impl("gelu_new", &gelu_new);
+  ops.impl("gelu_fast", &gelu_fast);
+  ops.impl("gelu_quick", &gelu_quick);
 }
 
 TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _cache_ops), MPS, cache_ops) {

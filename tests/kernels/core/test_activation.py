@@ -3,21 +3,25 @@ import random
 import pytest
 import torch
 
+from aphrodite.modeling.layers.activation import (FastGELU, FatreluAndMul,
+                                                  GeluAndMul, MulAndSilu,
+                                                  NewGELU, QuickGELU,
+                                                  SiluAndMul)
+from aphrodite.platforms import current_platform
 from tests.kernels.allclose_default import get_default_atol, get_default_rtol
 from tests.kernels.utils import opcheck
-from aphrodite.modeling.layers.activation import (FastGELU, FatreluAndMul,
-                                                   GeluAndMul, MulAndSilu,
-                                                   NewGELU, QuickGELU,
-                                                   SiluAndMul)
-from aphrodite.platforms import current_platform
 
 DTYPES = [torch.half, torch.bfloat16, torch.float]
 NUM_TOKENS = [7, 83, 2048]  # Arbitrary values for testing
 D = [512, 13824]  # Arbitrary values for testing
 SEEDS = [0]
-CUDA_DEVICES = [
-    f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)
-]
+if (not current_platform.is_mps()) and torch.cuda.is_available():
+    num_cuda = torch.cuda.device_count()
+    CUDA_DEVICES = [f"cuda:{i}" for i in range(1 if num_cuda == 1 else min(2, num_cuda))]
+else:
+    CUDA_DEVICES = []
+# Add MPS device if available
+MPS_DEVICES = ["mps"] if torch.backends.mps.is_available() else []
 
 
 @pytest.mark.parametrize(
@@ -27,7 +31,7 @@ CUDA_DEVICES = [
 @pytest.mark.parametrize("d", D)
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
-@pytest.mark.parametrize("device", CUDA_DEVICES)
+@pytest.mark.parametrize("device", CUDA_DEVICES + MPS_DEVICES)
 @torch.inference_mode()
 def test_act_and_mul(
     activation: str,
@@ -79,7 +83,7 @@ def test_act_and_mul(
 @pytest.mark.parametrize("d", D)
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
-@pytest.mark.parametrize("device", CUDA_DEVICES)
+@pytest.mark.parametrize("device", CUDA_DEVICES + MPS_DEVICES)
 @torch.inference_mode()
 def test_activation(
     activation: type[torch.nn.Module],
