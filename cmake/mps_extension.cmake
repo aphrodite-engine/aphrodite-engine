@@ -11,9 +11,7 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/utils.cmake)
 
 find_package(Torch REQUIRED)
-# Pin to the active venv Python to avoid ABI mismatch segfaults
-set(Python_EXECUTABLE "/Users/alpindale/venvs/py312/bin/python")
-find_package(Python 3.12 EXACT REQUIRED COMPONENTS Interpreter Development)
+find_python_from_executable(${Python_EXECUTABLE} "3.10;3.11;3.12")
 
 enable_language(OBJCXX)
 
