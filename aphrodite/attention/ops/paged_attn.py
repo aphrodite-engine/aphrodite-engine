@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 import torch
 
 from aphrodite import _custom_ops as ops
+from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import HAS_TRITON
 
 if HAS_TRITON:
@@ -128,6 +129,13 @@ class PagedAttention:
 
         if use_v1:
             # Run PagedAttention V1.
+            if current_platform.is_mps():
+                # Ensure helper tensors are on the same device as query (e.g., MPS)
+                device = query.device
+                if block_tables.device != device:
+                    block_tables = block_tables.to(device)
+                if seq_lens.device != device:
+                    seq_lens = seq_lens.to(device)
             ops.paged_attention_v1(
                 output,
                 query,

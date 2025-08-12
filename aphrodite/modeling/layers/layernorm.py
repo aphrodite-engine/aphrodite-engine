@@ -146,7 +146,12 @@ class RMSNorm(CustomOp):
         x = x * torch.rsqrt(variance + self.variance_epsilon)
         x = x.to(orig_dtype)
         if self.has_weight:
-            x = x * self.weight
+            weight = self.weight
+            if weight.device != x.device:
+                weight = weight.to(device=x.device)
+            if weight.dtype != orig_dtype:
+                weight = weight.to(dtype=orig_dtype)
+            x = x * weight
         if residual is None:
             return x
         else:
@@ -168,6 +173,14 @@ class RMSNorm(CustomOp):
                              self.variance_epsilon)
         else:
             return norm_func(x, self.weight.data, self.variance_epsilon)
+
+    def forward_mps(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        # Use native computation on MPS for correctness
+        return self.forward_native(x, residual)
 
     def forward_xpu(
         self,
@@ -263,4 +276,11 @@ class GemmaRMSNorm(CustomOp):
             self.forward_static = torch.compile(  # type: ignore
                 self.forward_static)
             self._is_compiled = True
+        return self.forward_native(x, residual)
+
+    def forward_mps(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         return self.forward_native(x, residual)

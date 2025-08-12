@@ -15,6 +15,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.backends.utils import CommonAttentionState
 from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.logger import log_once
+from aphrodite.platforms import current_platform
 from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
                                                    CommonAttentionMetadata)
 from aphrodite.v1.core.sched.output import SchedulerOutput
@@ -610,6 +611,14 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
                 block_tables_arg,
             ) = decode_meta.get_seq_len_block_table_args(attn_type)
 
+            if current_platform.is_mps():
+                # Ensure auxiliary tensors are on the same device as query (e.g., MPS)
+                device = query.device
+                if block_tables_arg is not None and block_tables_arg.device != device:
+                    block_tables_arg = block_tables_arg.to(device)
+                if seq_lens_arg is not None and seq_lens_arg.device != device:
+                    seq_lens_arg = seq_lens_arg.to(device)
+
             self.paged_attn_impl.forward_decode(
                 output[attn_metadata.num_prefill_tokens:, :, :],
                 query[attn_metadata.num_prefill_tokens:, :, :],
@@ -656,6 +665,10 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
             else:
                 seq_lens, _ = attn_metadata.get_seq_lens(attn_type)
                 attn_masks = [None] * len(seq_lens)
+            # Ensure masks are placed on the same device as query (e.g., MPS)
+            attn_masks = [
+                (m if m is None else m.to(device=query.device)) for m in attn_masks
+            ]
             attn_metadata.set_attn_bias(attn_masks, attn_type)
 
         query = query.movedim(0, query.dim() - 2)
