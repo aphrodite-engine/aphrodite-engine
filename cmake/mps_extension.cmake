@@ -11,7 +11,9 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/utils.cmake)
 
 find_package(Torch REQUIRED)
-find_package(Python REQUIRED COMPONENTS Development)
+# Pin to the active venv Python to avoid ABI mismatch segfaults
+set(Python_EXECUTABLE "/Users/alpindale/venvs/py312/bin/python")
+find_package(Python 3.12 EXACT REQUIRED COMPONENTS Interpreter Development)
 
 enable_language(OBJCXX)
 
@@ -30,6 +32,7 @@ set(METAL_SRC
   ${CMAKE_SOURCE_DIR}/kernels/metal/attention/cache/copy_blocks.metal
   ${CMAKE_SOURCE_DIR}/kernels/metal/attention/convert_fp8.metal
   ${CMAKE_SOURCE_DIR}/kernels/metal/activation/activation.metal
+  ${CMAKE_SOURCE_DIR}/kernels/metal/layernorm/rmsnorm.metal
 )
 
 set(METALLIB ${CMAKE_CURRENT_BINARY_DIR}/aphrodite_paged_attention.metallib)
@@ -70,6 +73,7 @@ set(MPS_EXT_SRCS
   ${CMAKE_SOURCE_DIR}/kernels/metal/attention/convert_fp8.mm
   ${CMAKE_SOURCE_DIR}/kernels/metal/attention/device.mm
   ${CMAKE_SOURCE_DIR}/kernels/metal/activation/activation.mm
+  ${CMAKE_SOURCE_DIR}/kernels/metal/layernorm/rmsnorm.mm
   ${CMAKE_SOURCE_DIR}/kernels/metal/torch_bindings.cpp
 )
 

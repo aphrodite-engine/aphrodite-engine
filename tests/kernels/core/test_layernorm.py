@@ -12,9 +12,13 @@ HIDDEN_SIZES = [8, 768, 769, 770, 771, 5120, 5124, 5125, 5126, 8192,
                 8199]  # Arbitrary values for testing
 ADD_RESIDUAL = [False, True]
 SEEDS = [0]
-CUDA_DEVICES = [
-    f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)
-]
+if (not current_platform.is_mps()) and torch.cuda.is_available():
+    num_cuda = torch.cuda.device_count()
+    CUDA_DEVICES = [f"cuda:{i}" for i in range(1 if num_cuda == 1 else min(2, num_cuda))]
+else:
+    CUDA_DEVICES = []
+# Add MPS device if available
+MPS_DEVICES = ["mps"] if torch.backends.mps.is_available() else []
 
 
 @pytest.mark.parametrize("num_tokens", NUM_TOKENS)
@@ -22,7 +26,7 @@ CUDA_DEVICES = [
 @pytest.mark.parametrize("add_residual", ADD_RESIDUAL)
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
-@pytest.mark.parametrize("device", CUDA_DEVICES)
+@pytest.mark.parametrize("device", CUDA_DEVICES + MPS_DEVICES)
 @torch.inference_mode()
 def test_rms_norm(
     num_tokens: int,
@@ -68,7 +72,8 @@ def test_rms_norm(
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("quant_scale", [1.0, 0.01, 10.0])
 @pytest.mark.parametrize("seed", SEEDS)
-@pytest.mark.parametrize("device", CUDA_DEVICES)
+@pytest.mark.parametrize("device", CUDA_DEVICES + MPS_DEVICES)
+@pytest.mark.skipif(current_platform.is_mps(), reason="MPS does not support quantized kernels")
 def test_fused_rms_norm_quant(
     num_tokens: int,
     hidden_size: int,
