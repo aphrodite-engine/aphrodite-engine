@@ -33,6 +33,7 @@ set(METAL_SRC
   ${CMAKE_SOURCE_DIR}/kernels/metal/attention/convert_fp8.metal
   ${CMAKE_SOURCE_DIR}/kernels/metal/activation/activation.metal
   ${CMAKE_SOURCE_DIR}/kernels/metal/layernorm/rmsnorm.metal
+  ${CMAKE_SOURCE_DIR}/kernels/metal/rope/rope.metal
 )
 
 set(METALLIB ${CMAKE_CURRENT_BINARY_DIR}/aphrodite_paged_attention.metallib)
@@ -74,6 +75,7 @@ set(MPS_EXT_SRCS
   ${CMAKE_SOURCE_DIR}/kernels/metal/attention/device.mm
   ${CMAKE_SOURCE_DIR}/kernels/metal/activation/activation.mm
   ${CMAKE_SOURCE_DIR}/kernels/metal/layernorm/rmsnorm.mm
+  ${CMAKE_SOURCE_DIR}/kernels/metal/rope/rope.mm
   ${CMAKE_SOURCE_DIR}/kernels/metal/torch_bindings.cpp
 )
 

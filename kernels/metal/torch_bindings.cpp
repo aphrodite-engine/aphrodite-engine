@@ -63,6 +63,10 @@ TORCH_LIBRARY_FRAGMENT(_C, m) {
   // Layernorm
   m.def("rms_norm(Tensor! result, Tensor input, Tensor weight, float epsilon) -> ()");
   m.def("fused_add_rms_norm(Tensor! input, Tensor! residual, Tensor weight, float epsilon) -> ()");
+
+  // Rotary embedding
+  m.def(
+      "rotary_embedding(Tensor positions, Tensor! query, Tensor!? key, int head_size, Tensor cos_sin_cache, bool is_neox) -> ()");
 }
 
 TORCH_LIBRARY_FRAGMENT(CONCAT(_C, _cache_ops), m) {
@@ -105,6 +109,9 @@ TORCH_LIBRARY_IMPL_EXPAND(_C, MPS, ops) {
   // Layernorm on MPS
   ops.impl("rms_norm", &rms_norm);
   ops.impl("fused_add_rms_norm", &fused_add_rms_norm);
+
+  // Rotary embedding on MPS
+  ops.impl("rotary_embedding", &rotary_embedding);
 }
 
 TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _cache_ops), MPS, cache_ops) {
