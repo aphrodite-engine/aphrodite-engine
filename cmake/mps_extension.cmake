@@ -12,6 +12,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/utils.cmake)
 
 find_package(Torch REQUIRED)
 find_python_from_executable(${Python_EXECUTABLE} "3.10;3.11;3.12")
+find_package(Python REQUIRED COMPONENTS Interpreter Development)
 
 enable_language(OBJCXX)
 
