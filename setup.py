@@ -641,9 +641,9 @@ if not envs.APHRODITE_USE_PRECOMPILED:
     if _is_cuda():
         ext_modules.append(CMakeExtension(
             name="aphrodite.aphrodite_flash_attn._vllm_fa2_C"))
-        major, minor = torch.cuda.get_device_capability()
-        if get_nvcc_cuda_version() >= Version("12.0") and major >= 8:
-            # FA3 requires CUDA 12.0 or later and compute capability >= 8.0
+        # Build FA3/_flashmla when using precompiled artifacts or nvcc >= 12.3.
+        if envs.APHRODITE_USE_PRECOMPILED or \
+                get_nvcc_cuda_version() >= Version("12.3"):
             ext_modules.append(
                 CMakeExtension(
                     name="aphrodite.aphrodite_flash_attn._vllm_fa3_C"))
@@ -689,3 +689,4 @@ setup(
     cmdclass={"build_ext": cmake_build_ext} if len(ext_modules) > 0 else {},
     package_data=package_data,
 )
+

@@ -3,10 +3,10 @@
 set -e
 
 # NOTE(alpin): These are the default values for my own machine.
-MAX_JOBS=28
-NVCC_THREADS=28
-CUDA_VERSION=12.4.1
-TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX"
+MAX_JOBS=64
+NVCC_THREADS=64
+CUDA_VERSION=12.8.1
+TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.9 9.0 10.0 10.1 12.0+PTX"
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
