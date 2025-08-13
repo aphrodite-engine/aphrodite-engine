@@ -65,9 +65,8 @@ envs = load_module_from_path(
 
 APHRODITE_TARGET_DEVICE = envs.APHRODITE_TARGET_DEVICE
 
-if sys.platform.startswith("darwin") and APHRODITE_TARGET_DEVICE != "cpu":
-    logger.warning(
-        "APHRODITE_TARGET_DEVICE automatically set to `cpu` due to macOS")
+if sys.platform.startswith("darwin") and APHRODITE_TARGET_DEVICE not in {"cpu", "mps"}:
+    logger.warning("On macOS, only cpu or mps are supported; forcing cpu")
     APHRODITE_TARGET_DEVICE = "cpu"
 elif not (sys.platform.startswith("linux")
           or sys.platform.startswith("darwin")):
@@ -378,8 +377,12 @@ class cmake_build_ext(build_ext):
             subprocess.check_call(install_args, cwd=self.build_temp)
 
     def run(self):
-        # Run the standard build_ext command to compile the extensions
-        super().run()
+        if _is_mps():
+            # Build and install via CMake; skip setuptools' copy step to avoid
+            # mismatches in expected extension filenames (e.g., .abi3 suffix).
+            self.build_extensions()
+        else:
+            super().run()
 
 
 def _is_hpu() -> bool:
@@ -449,11 +452,15 @@ def _is_xpu() -> bool:
     return APHRODITE_TARGET_DEVICE == "xpu"
 
 
+def _is_mps() -> bool:
+    return APHRODITE_TARGET_DEVICE == "mps"
+
+
 def _build_custom_ops() -> bool:
     # Skip building custom ops if using precompiled binaries
     if envs.APHRODITE_USE_PRECOMPILED:
         return False
-    return _is_cuda() or _is_hip() or _is_cpu()
+    return _is_cuda() or _is_hip() or _is_cpu() or _is_mps()
 
 
 def get_rocm_version():
@@ -574,6 +581,8 @@ def get_aphrodite_version() -> str:
             version += f"{sep}cpu"
     elif _is_xpu():
         version += f"{sep}xpu"
+    elif _is_mps():
+        version += f"{sep}mps"
     else:
         raise RuntimeError("Unknown runtime environment")
 
@@ -621,6 +630,8 @@ def get_requirements() -> list[str]:
         requirements = _read_requirements("cpu.txt")
     elif _is_xpu():
         requirements = _read_requirements("xpu.txt")
+    elif _is_mps(): 
+        requirements = _read_requirements("cpu.txt")
     else:
         raise ValueError(
             "Unsupported platform, please use CUDA, ROCm, Neuron, HPU, "

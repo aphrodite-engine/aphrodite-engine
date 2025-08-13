@@ -5,6 +5,7 @@
 
 #include "core/scalar_type.hpp"
 
+#include <torch/serialize/input-archive.h>
 #include <vector>
 
 inline torch::Tensor weak_ref_tensor(torch::Tensor& tensor) {

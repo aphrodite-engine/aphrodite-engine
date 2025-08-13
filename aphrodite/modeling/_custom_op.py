@@ -59,6 +59,10 @@ class CustomOp(nn.Module):
         # PyTorch-native implementation.
         return self.forward_native(*args, **kwargs)
 
+    def forward_mps(self, *args, **kwargs):
+        # On MPS, prefer the PyTorch-native implementation unless explicitly overridden.
+        return self.forward_native(*args, **kwargs)
+
     def forward_cpu(self, *args, **kwargs):
         # By default, we assume that CPU ops are compatible with CUDA ops.
         return self.forward_cuda(*args, **kwargs)
@@ -101,6 +105,8 @@ class CustomOp(nn.Module):
             return self.forward_tpu
         elif current_platform.is_xpu():
             return self.forward_xpu
+        elif current_platform.is_mps():
+            return self.forward_mps
         elif current_platform.is_neuron():
             return self.forward_neuron
         elif current_platform.is_out_of_tree():

@@ -147,22 +147,32 @@ def xpu_platform_plugin() -> Optional[str]:
 
 
 def cpu_platform_plugin() -> Optional[str]:
-    is_cpu = False
     logger.debug("Checking if CPU platform is available.")
     try:
+        import sys
+        # On macOS, if MPS is built and available, do NOT activate CPU
+        if sys.platform.startswith("darwin"):
+            try:
+                import torch  # type: ignore
+                if torch.backends.mps.is_built() and torch.backends.mps.is_available():
+                    logger.debug("MPS detected on macOS; CPU platform will not be activated.")
+                    return None
+            except Exception:
+                # If torch import fails, fall through to CPU detection
+                pass
+
         is_cpu = aphrodite_version_matches_substr("cpu")
         if is_cpu:
-            logger.debug("Confirmed CPU platform is available because"
-                         " Aphrodite is built with CPU.")
+            logger.debug("Confirmed CPU platform is available because Aphrodite is built with CPU.")
         if not is_cpu:
-            import sys
+            # As a fallback, allow CPU on macOS only if MPS is not available
             is_cpu = sys.platform.startswith("darwin")
             if is_cpu:
-                logger.debug("Confirmed CPU platform is available"
-                             " because the machine is MacOS.")
+                logger.debug("Confirmed CPU platform is available on macOS (no MPS).")
 
     except Exception as e:
         logger.debug("CPU platform is not available because: {}", str(e))
+        return None
 
     return "aphrodite.platforms.cpu.CpuPlatform" if is_cpu else None
 
@@ -190,6 +200,23 @@ def neuron_platform_plugin() -> Optional[str]:
     is_neuron = tnx_installed or nxd_installed
     return "aphrodite.platforms.neuron.NeuronPlatform" if is_neuron else None
 
+def mps_platform_plugin() -> Optional[str]:  
+    is_mps = False
+    logger.debug("Checking if MPS platform is available.")  
+    try:  
+        import torch  
+        if torch.backends.mps.is_available() and torch.backends.mps.is_built():  
+            is_mps = True
+            logger.debug("Confirmed MPS platform is available.")  
+            return "aphrodite.platforms.mps.MpsPlatform"  
+        else:  
+            logger.debug("MPS platform is not available.")  
+            return None  
+    except Exception as e:  
+        logger.debug("MPS platform is not available because: {}", str(e))
+        return None
+    return "aphrodite.platforms.mps.MpsPlatform" if is_mps else None
+
 
 builtin_platform_plugins = {
     'tpu': tpu_platform_plugin,
@@ -198,6 +225,7 @@ builtin_platform_plugins = {
     'xpu': xpu_platform_plugin,
     'cpu': cpu_platform_plugin,
     'neuron': neuron_platform_plugin,
+    'mps': mps_platform_plugin,
 }
 
 

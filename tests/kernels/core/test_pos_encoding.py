@@ -16,9 +16,13 @@ NUM_HEADS = [17]  # Arbitrary values for testing
 BATCH_SIZES = [5]  # Arbitrary values for testing
 SEQ_LENS = [11, 8192]  # Arbitrary values for testing
 SEEDS = [0]
-CUDA_DEVICES = [
-    f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)
-]
+if (not current_platform.is_mps()) and torch.cuda.is_available():
+    num_cuda = torch.cuda.device_count()
+    CUDA_DEVICES = [f"cuda:{i}" for i in range(1 if num_cuda == 1 else min(2, num_cuda))]
+else:
+    CUDA_DEVICES = []
+# Add MPS device if available
+MPS_DEVICES = ["mps"] if torch.backends.mps.is_available() else []
 
 
 def _get_flat_tensor_shape(batch_size: int, seq_len: int, num_heads: int,
@@ -43,7 +47,7 @@ TENSORS_SHAPES_FN = [_get_batch_tensor_shape, _get_flat_tensor_shape]
 @pytest.mark.parametrize("rotary_dim", ROTARY_DIMS)
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
-@pytest.mark.parametrize("device", CUDA_DEVICES)
+@pytest.mark.parametrize("device", CUDA_DEVICES + MPS_DEVICES)
 @torch.inference_mode()
 def test_rotary_embedding(
     is_neox_style: bool,
@@ -99,6 +103,7 @@ def test_rotary_embedding(
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("device", CUDA_DEVICES)
+@pytest.mark.skipif(current_platform.is_mps(), reason="MPS does not support quantized kernels")
 @torch.inference_mode()
 def test_batched_rotary_embedding(
     is_neox_style: bool,
@@ -158,6 +163,7 @@ def test_batched_rotary_embedding(
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("device", CUDA_DEVICES)
+@pytest.mark.skipif(current_platform.is_mps(), reason="MPS does not support quantized kernels")
 @torch.inference_mode()
 def test_batched_rotary_embedding_multi_lora(
     is_neox_style: bool,
