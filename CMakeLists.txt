@@ -893,6 +893,10 @@ if(APHRODITE_ENABLE_VULKAN)
   endif()
   # Do not force /usr/include globally; restrict to Vulkan translation units via source-level includes
   target_compile_definitions(_C PRIVATE APHRODITE_ENABLE_VULKAN=1)
+  # Ensure SPIR-V gets built before linking the extension
+  add_dependencies(_C aphrodite_vk_shaders)
+  # Provide a compile-time default for the runtime to find SPIR-Vs
+  target_compile_definitions(_C PRIVATE APHRODITE_VK_SPV_DIR_DEFAULT="${VK_SPV_DIR}")
 endif()
 
 # If CUTLASS is compiled on NVCC >= 12.5, it by default uses

@@ -125,7 +125,10 @@ const SpirvBlob* get_spirv(const std::string& name) {
   auto it = g_spv_cache.find(name);
   if (it == g_spv_cache.end()) {
     const char* dir = getenv("APHRODITE_VK_SPV_DIR");
-    if (!dir) return nullptr;
+#ifdef APHRODITE_VK_SPV_DIR_DEFAULT
+    if (!dir || !*dir) dir = APHRODITE_VK_SPV_DIR_DEFAULT;
+#endif
+    if (!dir || !*dir) return nullptr;
     std::string path = std::string(dir) + "/" + name + ".spv";
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) return nullptr;
