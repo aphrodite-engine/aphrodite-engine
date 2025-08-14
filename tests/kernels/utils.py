@@ -14,7 +14,7 @@ from torch._prims_common import TensorLikeType
 from aphrodite.attention import AttentionBackend, AttentionMetadata, AttentionType
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.platforms.interface import _Backend
-from aphrodite.common.utils import (STR_BACKEND_ENV_VAR, STR_FLASH_ATTN_VAL,
+from aphrodite.utils import (STR_BACKEND_ENV_VAR, STR_FLASH_ATTN_VAL,
                         STR_XFORMERS_ATTN_VAL, make_tensor_with_pad)
 
 # For now, disable "test_aot_dispatch_dynamic" since there are some
