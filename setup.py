@@ -109,7 +109,8 @@ def _get_available_memory_bytes() -> Optional[int]:
     # Linux fallback: /proc/meminfo
     with suppress(Exception):
         if sys.platform.startswith("linux"):
-            with open("/proc/meminfo", "r", encoding="utf-8") as f:
+            with open("/proc/meminfo", "r",
+                      encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("MemAvailable:"):
                         parts = line.split()
@@ -119,7 +120,8 @@ def _get_available_memory_bytes() -> Optional[int]:
     # macOS fallback: vm_stat
     with suppress(Exception):
         if sys.platform.startswith("darwin"):
-            out = subprocess.check_output(["vm_stat"], encoding="utf-8")
+            out = subprocess.check_output(["vm_stat"],
+                                          encoding="utf-8")
             page_size_bytes = 4096
             for line in out.splitlines():
                 if "page size of" in line and "bytes" in line:
@@ -261,6 +263,10 @@ class cmake_build_ext(build_ext):
             '-DAPHRODITE_TARGET_DEVICE={}'.format(APHRODITE_TARGET_DEVICE),
         ]
 
+        # Propagate Vulkan enable flag from envs to CMake
+        if getattr(envs, 'APHRODITE_ENABLE_VULKAN', False):
+            cmake_args += ['-DAPHRODITE_ENABLE_VULKAN=ON']
+
         verbose = envs.VERBOSE
         if verbose:
             cmake_args += ['-DCMAKE_VERBOSE_MAKEFILE=ON']
@@ -314,7 +320,9 @@ class cmake_build_ext(build_ext):
             build_tool = []
         # Make sure we use the nvcc from CUDA_HOME
         if _is_cuda():
-            cmake_args += [f'-DCMAKE_CUDA_COMPILER={CUDA_HOME}/bin/nvcc']
+            cmake_args += [
+                f'-DCMAKE_CUDA_COMPILER={CUDA_HOME}/bin/nvcc'
+            ]
         subprocess.check_call(
             ['cmake', ext.cmake_lists_dir, *build_tool, *cmake_args],
             cwd=self.build_temp)
@@ -372,10 +380,15 @@ class cmake_build_ext(build_ext):
 
             # prefix here should actually be the same for all components
             install_args = [
-                "cmake", "--install", ".", "--prefix", prefix, "--component",
-                target_name(ext.name)
+                "cmake", "--install", ".", "--prefix", prefix,
+                "--component", target_name(ext.name)
             ]
             subprocess.check_call(install_args, cwd=self.build_temp)
+
+        # Propagate Vulkan SPV directory to runtime via env var for editable installs
+        if getattr(envs, 'APHRODITE_ENABLE_VULKAN', False):
+            spv_dir = os.path.join(self.build_temp, 'vk_spv')
+            os.environ['APHRODITE_VK_SPV_DIR'] = spv_dir
 
     def run(self):
         # Run the standard build_ext command to compile the extensions

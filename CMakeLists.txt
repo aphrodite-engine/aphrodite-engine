@@ -13,6 +13,9 @@ cmake_minimum_required(VERSION 3.26)
 # cmake --install . --component _C
 project(aphrodite_extensions LANGUAGES CXX)
 
+# Optional: flag to enable Aphrodite's Vulkan backend wrappers (no third-party deps)
+option(APHRODITE_ENABLE_VULKAN "Enable Aphrodite Vulkan backend wrappers" OFF)
+
 # CUDA by default, can be overridden by using -DAPHRODITE_TARGET_DEVICE=... (used by setup.py)
 set(APHRODITE_TARGET_DEVICE "cuda" CACHE STRING "Target device backend for Aphrodite")
 
@@ -97,6 +100,10 @@ if (NOT APHRODITE_TARGET_DEVICE STREQUAL "cuda" AND
     if (APHRODITE_TARGET_DEVICE STREQUAL "cpu")
         include(${CMAKE_CURRENT_LIST_DIR}/cmake/cpu_extension.cmake)
     else()
+        # Still allow optional Vulkan shader generation even if not building GPU extensions
+        if(APHRODITE_ENABLE_VULKAN)
+          message(STATUS "Vulkan shaders were generated (no GPU extension build)")
+        endif()
         return()
     endif()
     return()
@@ -313,6 +320,67 @@ set(APHRODITE_EXT_SRC
   set_gencode_flags_for_srcs(
     SRCS "${APHRODITE_EXT_SRC}"
     CUDA_ARCHS "${CUDA_ARCHS}")
+
+  # If Vulkan is enabled, replace CUDA variants of activation/layernorm/rope with Vulkan wrappers
+  if(APHRODITE_ENABLE_VULKAN)
+    list(REMOVE_ITEM APHRODITE_EXT_SRC
+      "kernels/pos_encoding_kernels.cu"
+      "kernels/activation_kernels.cu"
+      "kernels/layernorm_kernels.cu")
+    list(APPEND APHRODITE_EXT_SRC
+      "kernels/vulkan/activation_vk.cpp"
+      "kernels/vulkan/layernorm_vk.cpp"
+      "kernels/vulkan/pos_encoding_vk.cpp"
+      "kernels/vulkan/vk_dispatch.cpp"
+      "kernels/vulkan/vk_runtime.cpp")
+
+    # Compile and embed a minimal set of Vulkan shaders
+    find_program(GLSLC glslc REQUIRED)
+    set(VK_SHADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/kernels/vulkan/shaders)
+    set(VK_SPV_DIR ${CMAKE_CURRENT_BINARY_DIR}/vk_spv)
+    file(MAKE_DIRECTORY ${VK_SPV_DIR})
+
+    # Manually compile a minimal set of shaders (extend as needed)
+    add_custom_command(
+      OUTPUT ${VK_SPV_DIR}/swiglu_f32.spv
+      COMMAND ${GLSLC} -fshader-stage=compute -O -I${VK_SHADERS_DIR}
+              -DA_TYPE=float -DD_TYPE=float
+              -o ${VK_SPV_DIR}/swiglu_f32.spv ${VK_SHADERS_DIR}/swiglu.comp
+      DEPENDS ${VK_SHADERS_DIR}/swiglu.comp
+      COMMENT "Compiling Vulkan shader swiglu_f32"
+    )
+    add_custom_command(
+      OUTPUT ${VK_SPV_DIR}/swiglu_f16.spv
+      COMMAND ${GLSLC} -fshader-stage=compute -O -I${VK_SHADERS_DIR}
+              -DA_TYPE=float16_t -DD_TYPE=float16_t -DRTE16=1
+              -o ${VK_SPV_DIR}/swiglu_f16.spv ${VK_SHADERS_DIR}/swiglu.comp
+      DEPENDS ${VK_SHADERS_DIR}/swiglu.comp
+      COMMENT "Compiling Vulkan shader swiglu_f16"
+    )
+    add_custom_command(
+      OUTPUT ${VK_SPV_DIR}/geglu_f32.spv
+      COMMAND ${GLSLC} -fshader-stage=compute -O -I${VK_SHADERS_DIR}
+              -DA_TYPE=float -DD_TYPE=float
+              -o ${VK_SPV_DIR}/geglu_f32.spv ${VK_SHADERS_DIR}/geglu.comp
+      DEPENDS ${VK_SHADERS_DIR}/geglu.comp ${VK_SHADERS_DIR}/glu_head.comp ${VK_SHADERS_DIR}/glu_main.comp
+      COMMENT "Compiling Vulkan shader geglu_f32"
+    )
+    add_custom_command(
+      OUTPUT ${VK_SPV_DIR}/geglu_f16.spv
+      COMMAND ${GLSLC} -fshader-stage=compute -O -I${VK_SHADERS_DIR}
+              -DA_TYPE=float16_t -DD_TYPE=float16_t -DRTE16=1
+              -o ${VK_SPV_DIR}/geglu_f16.spv ${VK_SHADERS_DIR}/geglu.comp
+      DEPENDS ${VK_SHADERS_DIR}/geglu.comp ${VK_SHADERS_DIR}/glu_head.comp ${VK_SHADERS_DIR}/glu_main.comp
+      COMMENT "Compiling Vulkan shader geglu_f16"
+    )
+    set(VK_SPV_OUTPUTS
+      ${VK_SPV_DIR}/swiglu_f32.spv
+      ${VK_SPV_DIR}/swiglu_f16.spv
+      ${VK_SPV_DIR}/geglu_f32.spv
+      ${VK_SPV_DIR}/geglu_f16.spv)
+
+    add_custom_target(aphrodite_vk_shaders ALL DEPENDS ${VK_SPV_OUTPUTS})
+  endif()
 
   # Only build Marlin kernels if we are building for at least some compatible archs.
   # Keep building Marlin for 9.0 as there are some group sizes and shapes that
@@ -765,6 +833,7 @@ if (APHRODITE_GPU_LANG STREQUAL "HIP")
 endif()
 
 message(STATUS "Enabling C extension.")
+
 define_gpu_extension_target(
   _C
   DESTINATION aphrodite
@@ -776,6 +845,55 @@ define_gpu_extension_target(
   INCLUDE_DIRECTORIES ${CUTLASS_TOOLS_UTIL_INCLUDE_DIR}
   USE_SABI 3
   WITH_SOABI)
+
+if(APHRODITE_ENABLE_VULKAN)
+  # Hint CMake where to look for Vulkan
+  if(DEFINED ENV{VULKAN_SDK})
+    list(APPEND CMAKE_PREFIX_PATH $ENV{VULKAN_SDK})
+    list(APPEND CMAKE_LIBRARY_PATH $ENV{VULKAN_SDK}/lib $ENV{VULKAN_SDK}/lib64)
+    list(APPEND CMAKE_INCLUDE_PATH $ENV{VULKAN_SDK}/include)
+  endif()
+  find_package(Vulkan QUIET)
+  if (Vulkan_FOUND)
+    target_link_libraries(_C PRIVATE Vulkan::Vulkan)
+    get_target_property(_vk_includes Vulkan::Vulkan INTERFACE_INCLUDE_DIRECTORIES)
+    if(_vk_includes)
+      target_include_directories(_C PRIVATE ${_vk_includes})
+    endif()
+  else()
+    # Fallback: manually locate libvulkan and create an imported target
+    set(_vk_candidates
+      /usr/lib/x86_64-linux-gnu/libvulkan.so
+      /usr/lib64/libvulkan.so
+      /usr/lib/libvulkan.so)
+    set(_vk_lib "")
+    foreach(p ${_vk_candidates})
+      if(EXISTS ${p})
+        set(_vk_lib ${p})
+        break()
+      endif()
+    endforeach()
+    if(_vk_lib)
+      set(_vk_inc /usr/include CACHE PATH "Vulkan headers path")
+      add_library(Vulkan::Vulkan UNKNOWN IMPORTED)
+      set_target_properties(Vulkan::Vulkan PROPERTIES
+        IMPORTED_LOCATION ${_vk_lib}
+        INTERFACE_INCLUDE_DIRECTORIES ${_vk_inc})
+      target_link_libraries(_C PRIVATE Vulkan::Vulkan)
+      target_include_directories(_C PRIVATE ${_vk_inc})
+      message(STATUS "Linked Vulkan via fallback: ${_vk_lib}")
+    else()
+      message(WARNING "Vulkan SDK not fully found; building without linking Vulkan::Vulkan. Make sure runtime has libvulkan.")
+    endif()
+  endif()
+  # As a last resort, force-add common system include roots so <vulkan/vulkan.h> resolves
+  target_include_directories(_C PRIVATE /usr/include)
+  if(DEFINED ENV{VULKAN_SDK})
+    target_include_directories(_C PRIVATE $ENV{VULKAN_SDK}/include)
+  endif()
+  # Do not force /usr/include globally; restrict to Vulkan translation units via source-level includes
+  target_compile_definitions(_C PRIVATE APHRODITE_ENABLE_VULKAN=1)
+endif()
 
 # If CUTLASS is compiled on NVCC >= 12.5, it by default uses
 # cudaGetDriverEntryPointByVersion as a wrapper to avoid directly calling the

@@ -254,6 +254,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "VERBOSE":
     lambda: bool(int(os.getenv('VERBOSE', '0'))),
 
+    # Enable Vulkan backend for selected kernels (activations, layernorm, rope)
+    # APHRODITE_ENABLE_VULKAN=1 to enable
+    "APHRODITE_ENABLE_VULKAN":
+    lambda: bool(int(os.getenv("APHRODITE_ENABLE_VULKAN", "0"))),
+
     # Root directory for Aphrodite configuration files
     # Defaults to `~/.config/aphrodite` unless `XDG_CONFIG_HOME` is set
     # Note that this not only affects how aphrodite finds its configuration files
