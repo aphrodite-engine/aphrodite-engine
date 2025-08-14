@@ -12,18 +12,27 @@ void main() {
         // Default
         const uint offset = p.ne00 / 2;
         const uint idx = row * p.ne00 + col;
-
+#ifdef ENABLE_F16_ARITH
         data_d[row * offset + col] = D_TYPE(op(float(data_a[idx]), float(data_a[idx + offset])));
+#else
+        data_d[row * offset + col] = D_TYPE(op(float(data_a[idx]), float(data_a[idx + offset])));
+#endif
     } else if (p.mode == 1) {
         // Swapped
         const uint offset = p.ne00 / 2;
         const uint idx = row * p.ne00 + col;
-
+#ifdef ENABLE_F16_ARITH
         data_d[row * offset + col] = D_TYPE(op(float(data_a[idx + offset]), float(data_a[idx])));
+#else
+        data_d[row * offset + col] = D_TYPE(op(float(data_a[idx + offset]), float(data_a[idx])));
+#endif
     } else {
         // Split
         const uint idx = row * p.ne00 + col;
-
+#ifdef ENABLE_F16_ARITH
         data_d[idx] = D_TYPE(op(float(data_a[idx]), float(data_b[idx])));
+#else
+        data_d[idx] = D_TYPE(op(float(data_a[idx]), float(data_b[idx])));
+#endif
     }
 }

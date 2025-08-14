@@ -337,13 +337,14 @@ set(APHRODITE_EXT_SRC
     # Compile and embed a minimal set of Vulkan shaders
     find_program(GLSLC glslc REQUIRED)
     set(VK_SHADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/kernels/vulkan/shaders)
-    set(VK_SPV_DIR ${CMAKE_CURRENT_BINARY_DIR}/vk_spv)
+    # Emit SPIR-V into source tree for a stable path during dev/editable installs
+    set(VK_SPV_DIR ${CMAKE_CURRENT_SOURCE_DIR}/kernels/vulkan/spv)
     file(MAKE_DIRECTORY ${VK_SPV_DIR})
 
     # Manually compile a minimal set of shaders (extend as needed)
     add_custom_command(
       OUTPUT ${VK_SPV_DIR}/swiglu_f32.spv
-      COMMAND ${GLSLC} -fshader-stage=compute -O -I${VK_SHADERS_DIR}
+      COMMAND ${GLSLC} -fshader-stage=compute --target-env=vulkan1.2 -O -I${VK_SHADERS_DIR}
               -DA_TYPE=float -DD_TYPE=float
               -o ${VK_SPV_DIR}/swiglu_f32.spv ${VK_SHADERS_DIR}/swiglu.comp
       DEPENDS ${VK_SHADERS_DIR}/swiglu.comp
@@ -351,7 +352,7 @@ set(APHRODITE_EXT_SRC
     )
     add_custom_command(
       OUTPUT ${VK_SPV_DIR}/swiglu_f16.spv
-      COMMAND ${GLSLC} -fshader-stage=compute -O -I${VK_SHADERS_DIR}
+      COMMAND ${GLSLC} -fshader-stage=compute --target-env=vulkan1.2 -O -I${VK_SHADERS_DIR}
               -DA_TYPE=float16_t -DD_TYPE=float16_t -DRTE16=1
               -o ${VK_SPV_DIR}/swiglu_f16.spv ${VK_SHADERS_DIR}/swiglu.comp
       DEPENDS ${VK_SHADERS_DIR}/swiglu.comp
@@ -359,7 +360,7 @@ set(APHRODITE_EXT_SRC
     )
     add_custom_command(
       OUTPUT ${VK_SPV_DIR}/geglu_f32.spv
-      COMMAND ${GLSLC} -fshader-stage=compute -O -I${VK_SHADERS_DIR}
+      COMMAND ${GLSLC} -fshader-stage=compute --target-env=vulkan1.2 -O -I${VK_SHADERS_DIR}
               -DA_TYPE=float -DD_TYPE=float
               -o ${VK_SPV_DIR}/geglu_f32.spv ${VK_SHADERS_DIR}/geglu.comp
       DEPENDS ${VK_SHADERS_DIR}/geglu.comp ${VK_SHADERS_DIR}/glu_head.comp ${VK_SHADERS_DIR}/glu_main.comp
@@ -367,7 +368,7 @@ set(APHRODITE_EXT_SRC
     )
     add_custom_command(
       OUTPUT ${VK_SPV_DIR}/geglu_f16.spv
-      COMMAND ${GLSLC} -fshader-stage=compute -O -I${VK_SHADERS_DIR}
+      COMMAND ${GLSLC} -fshader-stage=compute --target-env=vulkan1.2 -O -I${VK_SHADERS_DIR}
               -DA_TYPE=float16_t -DD_TYPE=float16_t -DRTE16=1
               -o ${VK_SPV_DIR}/geglu_f16.spv ${VK_SHADERS_DIR}/geglu.comp
       DEPENDS ${VK_SHADERS_DIR}/geglu.comp ${VK_SHADERS_DIR}/glu_head.comp ${VK_SHADERS_DIR}/glu_main.comp

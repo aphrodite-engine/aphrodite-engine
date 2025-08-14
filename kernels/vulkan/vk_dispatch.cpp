@@ -23,6 +23,7 @@ void dispatch_glu(GluOpKind kind, const GluParams& params,
   std::string pname;
   if (kind == GluOpKind::SiLU) pname = (input.scalar_type() == at::kHalf) ? "swiglu_f16" : "swiglu_f32";
   else if (kind == GluOpKind::GELU_Tanh) pname = (input.scalar_type() == at::kHalf) ? "geglu_f16" : "geglu_f32";
+  else if (kind == GluOpKind::GELU_Erf) pname = (input.scalar_type() == at::kHalf) ? "geglu_f16" : "geglu_f32"; // same kernel, tanh form matches torch GELU(approx=tanh) only when op uses tanh formula
   else unsupported("glu kind not supported by shader");
 
   // Create pipeline (descriptor layout: A,B,D as storage buffers)
@@ -67,15 +68,16 @@ void dispatch_glu(GluOpKind kind, const GluParams& params,
   }
   vkUpdateDescriptorSets(vkrt::get()->device, 3, writes, 0, nullptr);
 
-  // Push constants follow glu_head.comp layout: N, ne00, ne20, mode, alpha, limit
-  uint32_t pc[6] = {static_cast<uint32_t>(num_tokens), static_cast<uint32_t>(2 * d), static_cast<uint32_t>(d), static_cast<uint32_t>(params.mode), 0, 0};
+  // Push constants follow glu_head.comp layout: N (num_rows*ne20), ne00 (2*d), ne20 (d), mode, alpha, limit
+  uint64_t N = static_cast<uint64_t>(num_tokens) * static_cast<uint64_t>(d);
+  uint32_t pc[6] = {static_cast<uint32_t>(N), static_cast<uint32_t>(2 * d), static_cast<uint32_t>(d), static_cast<uint32_t>(params.mode), 0, 0};
   vkrt::begin();
   auto& c = *vkrt::get();
   vkCmdBindPipeline(c.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, P.pipeline);
   vkCmdBindDescriptorSets(c.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, P.layout, 0, 1, &P.dset, 0, nullptr);
   vkCmdPushConstants(c.cmd, P.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), pc);
   // Local size is 512, dispatch enough groups to cover N*ne20 elements
-  uint32_t groups = (uint32_t)((num_tokens * d + 511) / 512);
+  uint32_t groups = (uint32_t)((N + 511) / 512);
   vkCmdDispatch(c.cmd, groups, 1, 1);
   vkrt::submit_and_wait();
 

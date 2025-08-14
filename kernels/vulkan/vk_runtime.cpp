@@ -40,9 +40,29 @@ void init_once() {
     dq.queueFamilyIndex = g_ctx.queueFamily;
     dq.queueCount = 1;
     dq.pQueuePriorities = &prio;
+
+    // Enable 16-bit storage for fp16 buffers if supported (needed by shaders using float16_t in SSBOs)
+    VkPhysicalDeviceFeatures2 feats2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    VkPhysicalDevice16BitStorageFeatures feats16{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES};
+    feats2.pNext = &feats16;
+    vkGetPhysicalDeviceFeatures2(g_ctx.phys, &feats2);
+
+    VkPhysicalDevice16BitStorageFeatures enable16{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES};
+    if (feats16.storageBuffer16BitAccess) {
+      enable16.storageBuffer16BitAccess = VK_TRUE;
+      // Enable other 16-bit accesses if available (harmless if unused)
+      if (feats16.uniformAndStorageBuffer16BitAccess)
+        enable16.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+      if (feats16.storagePushConstant16)
+        enable16.storagePushConstant16 = VK_TRUE;
+      if (feats16.storageInputOutput16)
+        enable16.storageInputOutput16 = VK_TRUE;
+    }
+
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &dq;
+    dci.pNext = &enable16; // safe if all fields are VK_FALSE
     vkCreateDevice(g_ctx.phys, &dci, nullptr, &g_ctx.device);
     vkGetDeviceQueue(g_ctx.device, g_ctx.queueFamily, 0, &g_ctx.queue);
 
