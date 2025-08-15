@@ -1,1 +1,2 @@
-kernel_*.cu
+kernel_bf16*.cu
+kernel_fp16*.cu

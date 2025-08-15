@@ -303,7 +303,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ARG FLASHINFER_GIT_REPO="https://github.com/flashinfer-ai/flashinfer.git"
 # Keep this in sync with https://github.com/aphrodite-engine/aphrodite-engine/blob/main/requirements/cuda.txt
 # We use `--force-reinstall --no-deps` to avoid issues with the existing FlashInfer wheel.
-ARG FLASHINFER_GIT_REF="v0.2.10"
+ARG FLASHINFER_GIT_REF="v0.2.11"
 RUN --mount=type=cache,target=/root/.cache/uv bash - <<'BASH'
   . /etc/environment
     git clone --depth 1 --recursive --shallow-submodules \
@@ -347,7 +347,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Install DeepGEMM from source
 ARG DEEPGEMM_GIT_REPO="https://github.com/deepseek-ai/DeepGEMM.git"
-ARG DEEPGEMM_GIT_REF="187656694f7f69e3e7975617a68bc3387680a7e1"
+ARG DEEPGEMM_GIT_REF="7b6b5563b9d4c1ae07ffbce7f78ad3ac9204827c"
 RUN --mount=type=cache,target=/root/.cache/uv bash - <<'BASH'
   . /etc/environment
     CUDA_MAJOR="${CUDA_VERSION%%.*}"
