@@ -23,7 +23,7 @@ from aphrodite.modeling.model_loader.tensorizer import (TensorizerConfig,
                                                          serialize_aphrodite_model,
                                                          tensorize_aphrodite_model)
 # yapf: enable
-from aphrodite.common.utils import PlaceholderModule, import_from_path
+from aphrodite.utils import PlaceholderModule, import_from_path
 
 from ..utils import APHRODITE_PATH, RemoteOpenAIServer
 from .conftest import retry_until_skip

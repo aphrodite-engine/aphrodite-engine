@@ -13,9 +13,8 @@ from transformers.models.llava import LlavaProcessor
 from transformers.processing_utils import ProcessingKwargs, Unpack
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 
-from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.jsontree import json_map_leaves
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
@@ -33,6 +32,7 @@ from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              PromptReplacement, PromptUpdate)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
+from aphrodite.utils.jsontree import json_map_leaves
 
 from .clip import CLIPVisionModel
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP

@@ -1,6 +1,6 @@
 from typing import List
 
-from aphrodite.common.config import SchedulerConfig
+from aphrodite.config import SchedulerConfig
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
                                        SequenceGroup, SequenceGroupOutput)
 from aphrodite.utils import Counter

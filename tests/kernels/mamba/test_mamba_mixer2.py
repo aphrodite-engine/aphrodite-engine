@@ -8,7 +8,7 @@ from aphrodite.distributed.parallel_state import (init_distributed_environment,
                                              initialize_model_parallel)
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import Mixer2RMSNormGated
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import update_environment_variables
+from aphrodite.utils import update_environment_variables
 
 
 @multi_gpu_test(num_gpus=2)

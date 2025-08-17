@@ -1,5 +1,5 @@
 from aphrodite import SamplingParams
-from aphrodite.common.config import LoadFormat
+from aphrodite.config import LoadFormat
 
 test_model = "openai-community/gpt2"
 

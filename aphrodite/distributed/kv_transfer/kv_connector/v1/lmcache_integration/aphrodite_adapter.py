@@ -32,7 +32,7 @@ from lmcache.v1.gpu_connector import (VLLMBufferLayerwiseGPUConnector,
 
 from aphrodite.attention.backends.flashmla import FlashMLAMetadata
 from aphrodite.attention.backends.mla.common import MLACommonMetadata
-from aphrodite.common.config import (CacheConfig, ModelConfig, ParallelConfig,
+from aphrodite.config import (CacheConfig, ModelConfig, ParallelConfig,
                                      SchedulerConfig)
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.utils import cdiv, get_kv_cache_torch_dtype, round_down

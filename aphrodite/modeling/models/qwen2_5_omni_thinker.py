@@ -37,7 +37,7 @@ from transformers.models.qwen2_5_omni.processing_qwen2_5_omni import (
     Qwen2_5OmniProcessor)
 from transformers.models.whisper import WhisperFeatureExtractor
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.rotary_embedding import MRotaryEmbedding
 from aphrodite.modeling.models.qwen2_5_vl import (
@@ -429,7 +429,7 @@ class Qwen2_5OmniThinkerMultiModalProcessor(
         tokenization_kwargs: Mapping[str, object],
         *,
         enable_hf_prompt_update: bool,
-    ) -> tuple[list[int], MultiModalKwargs, bool]:
+    ) -> tuple[list[int], BatchFeature, bool]:
         """
         Qwen2.5-Omni reimplements this function to handle text only.
         """
@@ -446,20 +446,20 @@ class Qwen2_5OmniThinkerMultiModalProcessor(
         else:
             prompt_ids = self._apply_hf_processor_tokens_only(prompt)
 
-        mm_kwargs = self._apply_hf_processor_mm_only(
+        mm_processed_data = self._apply_hf_processor_mm_only(
             mm_items=mm_items,
             hf_processor_mm_kwargs=hf_processor_mm_kwargs,
             tokenization_kwargs=tokenization_kwargs,
         )
 
-        return prompt_ids, mm_kwargs, False
+        return prompt_ids, mm_processed_data, False
 
     def _apply_hf_processor_mm_only(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
         tokenization_kwargs: Mapping[str, object],
-    ) -> MultiModalKwargs:
+    ) -> BatchFeature:
         """
         Qwen2.5-Omni reimplements this function to handle `use_audio_in_video`.
         """
@@ -471,14 +471,14 @@ class Qwen2_5OmniThinkerMultiModalProcessor(
             assert "audio" in mm_counts
             mm_counts["audio"] -= mm_counts["video"]
 
-        _, mm_kwargs, _ = self._apply_hf_processor_text_mm(
+        _, mm_processed_data, _ = self._apply_hf_processor_text_mm(
             prompt_text=self.dummy_inputs.get_dummy_text(mm_counts),
             mm_items=mm_items,
             hf_processor_mm_kwargs=hf_processor_mm_kwargs,
             tokenization_kwargs=tokenization_kwargs,
         )
 
-        return mm_kwargs
+        return mm_processed_data
 
     def _validate_mm_placeholders(
         self,
@@ -720,13 +720,23 @@ class Qwen2_5OmniThinkerForConditionalGeneration(
                 "exactly same result as the transformers implementation "
                 "in the audio tower part.")
 
-        self.audio_tower = Qwen2_5OmniAudioEncoder(thinker_config.audio_config)
-        self.visual = Qwen2_5_VisionTransformer(
-            vision_config=thinker_config.vision_config,
-            norm_eps=getattr(thinker_config.text_config, "rms_norm_eps", 1e-6),
-            quant_config=quant_config,
-            prefix=maybe_prefix(prefix, "visual"),
-        )
+        if multimodal_config.get_limit_per_prompt("audio"):
+            self.audio_tower = Qwen2_5OmniAudioEncoder(
+                thinker_config.audio_config)
+        else:
+            self.audio_tower = None
+
+        if multimodal_config.get_limit_per_prompt(
+                "image") or multimodal_config.get_limit_per_prompt("video"):
+            self.visual = Qwen2_5_VisionTransformer(
+                vision_config=thinker_config.vision_config,
+                norm_eps=getattr(thinker_config.text_config, "rms_norm_eps",
+                                 1e-6),
+                quant_config=quant_config,
+                prefix=maybe_prefix(prefix, "visual"),
+            )
+        else:
+            self.visual = None
         self.quant_config = quant_config
         self.language_model = init_aphrodite_registered_model(
             aphrodite_config=aphrodite_config,
@@ -884,9 +894,14 @@ class Qwen2_5OmniThinkerForConditionalGeneration(
 
     def load_weights(self, weights: Iterable[tuple[str,
                                                    torch.Tensor]]) -> set[str]:
+        skip_prefixes = ["talker.", "token2wav."]
+        if self.audio_tower is None:
+            skip_prefixes.extend(["audio_tower."])
+        if self.visual is None:
+            skip_prefixes.extend(["visual."])
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=["talker.", "token2wav."],
+            skip_prefixes=skip_prefixes,
         )
         loaded_weights = loader.load_weights(weights,
                                              mapper=self.hf_to_aphrodite_mapper)

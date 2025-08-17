@@ -9,7 +9,7 @@ from torch._higher_order_ops.auto_functionalize import auto_functionalized
 from torch._inductor.pattern_matcher import PatternMatcherPass
 from torch.distributed._symmetric_memory import enable_symm_mem_for_group
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.utils import direct_register_custom_op
 from aphrodite.distributed import (get_tp_group,
                                    tensor_model_parallel_all_reduce)

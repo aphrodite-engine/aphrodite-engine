@@ -15,12 +15,11 @@ from functools import partial
 from typing import Any, Optional, Union
 
 import torch
-from loguru import logger
 from torch import nn
-from transformers import PretrainedConfig
+from transformers import OlmoeConfig
 
 from aphrodite.attention import Attention
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
@@ -202,7 +201,7 @@ class OlmoeDecoderLayer(nn.Module):
 
     def __init__(
         self,
-        config: PretrainedConfig,
+        config: OlmoeConfig,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",

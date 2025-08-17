@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from aphrodite.common.config import LoRAConfig
+from aphrodite.config import LoRAConfig
 from aphrodite.lora.peft_helper import PEFTHelper
 
 ERROR_CASES = [

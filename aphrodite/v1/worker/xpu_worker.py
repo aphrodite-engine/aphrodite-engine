@@ -5,7 +5,7 @@ import torch.distributed
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_world_group
 from aphrodite.modeling import set_random_seed
 from aphrodite.platforms import current_platform
@@ -148,7 +148,7 @@ class XPUWorker(Worker):
             raise RuntimeError(
                 f"Not support device type: {self.device_config.device}")
 
-        ENV_CCL_ZE_IPC_EXCHANGE = os.getenv("CCL_ZE_IPC_EXCHANGE", "drmfd")
+        ENV_CCL_ZE_IPC_EXCHANGE = os.getenv("CCL_ZE_IPC_EXCHANGE", "pidfd")
         ENV_CCL_ATL_TRANSPORT = os.getenv("CCL_ATL_TRANSPORT", "ofi")
         ENV_LOCAL_WORLD_SIZE = os.getenv("LOCAL_WORLD_SIZE",
                                          str(self.parallel_config.world_size))

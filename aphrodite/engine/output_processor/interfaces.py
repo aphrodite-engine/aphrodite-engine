@@ -1,14 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import Callable, List
 
-from aphrodite.common.config import SchedulerConfig
 from aphrodite.common.sequence import (Sequence, SequenceGroup,
                                        SequenceGroupOutput)
-from aphrodite.utils import Counter
+from aphrodite.config import SchedulerConfig
 from aphrodite.engine.output_processor.stop_checker import StopChecker
 from aphrodite.processing.scheduler import Scheduler
 from aphrodite.transformers_utils.detokenizer import Detokenizer
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+from aphrodite.utils import Counter
 
 
 class SequenceGroupOutputProcessor(ABC):
@@ -34,27 +34,12 @@ class SequenceGroupOutputProcessor(ABC):
     ):
         """Create an output processor.
 
-        This returns a single-step output processor if num_lookahead_slots is
-        zero, else returns a multi-step output processor.
+        single-step output processor.
         """
-        if scheduler_config.num_lookahead_slots == 0:
-            # Importing here to avoid cycle.
-            from aphrodite.engine.output_processor.single_step import (
-                SingleStepOutputProcessor)
-            return SingleStepOutputProcessor(scheduler_config, detokenizer,
-                                             scheduler, seq_counter,
-                                             stop_checker)
-        else:
-            # Importing here to avoid cycle.
-            from aphrodite.engine.output_processor.multi_step import (
-                MultiStepOutputProcessor)
-            return MultiStepOutputProcessor(
-                detokenizer,
-                scheduler,
-                seq_counter,
-                get_tokenizer_for_seq,
-                stop_checker,
-            )
+        from aphrodite.engine.output_processor.single_step import (
+            SingleStepOutputProcessor)
+        return SingleStepOutputProcessor(scheduler_config, detokenizer,
+                                         scheduler, seq_counter, stop_checker)
 
     @abstractmethod
     def process_outputs(self, sequence_group: SequenceGroup,

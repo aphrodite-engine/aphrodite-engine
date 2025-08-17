@@ -15,7 +15,7 @@ from transformers.image_utils import ImageInput
 from transformers.tokenization_utils_base import TextInput
 
 from aphrodite.attention.layer import MultiHeadAttention
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul, get_act_fn

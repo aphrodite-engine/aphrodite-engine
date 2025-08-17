@@ -20,7 +20,7 @@ from torch.utils._python_dispatch import TorchDispatchMode
 from transformers import PretrainedConfig
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import (AphroditeConfig, ModelConfig,
+from aphrodite.config import (AphroditeConfig, ModelConfig,
                                      ParallelConfig,
                                      set_current_aphrodite_config)
 from aphrodite.common.logger import log_once

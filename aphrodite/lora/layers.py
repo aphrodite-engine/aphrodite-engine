@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from transformers import PretrainedConfig
 
 from aphrodite.adapter_commons.layers import AdapterMapping
-from aphrodite.common.config import LoRAConfig
+from aphrodite.config import LoRAConfig
 from aphrodite.distributed import (get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size,
                                    split_tensor_along_last_dim,

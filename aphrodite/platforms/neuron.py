@@ -11,7 +11,7 @@ from aphrodite.utils import DEFAULT_MAX_NUM_BATCHED_TOKENS
 from .interface import Platform, PlatformEnum
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig
+    from aphrodite.config import AphroditeConfig
 else:
     AphroditeConfig = None
 

@@ -8,7 +8,7 @@ from torch.distributed import ProcessGroup
 
 import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
-from aphrodite.common.config import get_current_aphrodite_config
+from aphrodite.config import get_current_aphrodite_config
 from aphrodite.utils import cuda_device_count_stateless
 from aphrodite.distributed.parallel_state import in_the_same_node_as
 from aphrodite.platforms import current_platform

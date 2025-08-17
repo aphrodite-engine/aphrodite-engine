@@ -9,7 +9,7 @@ from loguru import logger
 from torch import nn
 from transformers import PretrainedConfig
 
-from aphrodite.common.config import LoRAConfig
+from aphrodite.config import LoRAConfig
 from aphrodite.lora.fully_sharded_layers import (
     ColumnParallelLinearWithShardedLoRA,
     MergedColumnParallelLinearWithShardedLoRA,

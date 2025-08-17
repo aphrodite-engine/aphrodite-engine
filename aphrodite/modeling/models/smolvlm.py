@@ -2,7 +2,7 @@ from typing import Optional
 
 from transformers import SmolVLMProcessor
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
 # yapf: disable

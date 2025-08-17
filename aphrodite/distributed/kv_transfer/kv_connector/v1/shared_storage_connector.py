@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import safetensors
 import torch
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase_V1, KVConnectorMetadata, KVConnectorRole)
 from loguru import logger

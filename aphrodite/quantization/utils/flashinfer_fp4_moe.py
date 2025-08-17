@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Optional
 
 import torch
-from loguru import logger
 
 import aphrodite.common.envs as envs
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
@@ -126,7 +125,7 @@ def flashinfer_fp4_cutlass_moe_forward(
 
 
 def select_nvfp4_gemm_impl(
-        allow_flashinfer_cutlass: bool,
+        allow_flashinfer: bool,
         moe,  # FusedMoEConfig
         logger):
     """Return a GEMM *experts* implementation for NV-FP4 fused-MoE layers"""
@@ -137,11 +136,15 @@ def select_nvfp4_gemm_impl(
     all2all_manager = get_ep_group().device_communicator.all2all_manager
     assert all2all_manager is not None
 
-    if allow_flashinfer_cutlass:
+    if allow_flashinfer:
+        flashinfer_backend = envs.APHRODITE_FLASHINFER_MOE_BACKEND
+        if flashinfer_backend != "throughput":
+            raise ValueError(
+                f"Only throughput backend is supported for FlashInferExperts, "
+                f"but got {flashinfer_backend}.")
         log_once(
             "DEBUG",
-            "Using FlashInferExperts",
-        )
+            "Initializing FlashInferExperts with throughput backend.")
         return FlashInferExperts(
             use_nvfp4_w4a4=True,
             use_dp=moe.moe_parallel_config.dp_size > 1,

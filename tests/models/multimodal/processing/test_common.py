@@ -8,7 +8,7 @@ from mistral_common.protocol.instruct.messages import (ImageChunk, TextChunk,
 from mistral_common.protocol.instruct.request import ChatCompletionRequest
 from PIL import Image
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalDataDict
 from aphrodite.multimodal.inputs import MultiModalInputs

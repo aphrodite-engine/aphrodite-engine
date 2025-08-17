@@ -13,6 +13,7 @@ from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    split_tensor_along_last_dim,
                                    tensor_model_parallel_all_gather,
                                    tensor_model_parallel_all_reduce)
+from aphrodite.modeling._custom_op import CustomOp
 from aphrodite.modeling.layers.utils import dispatch_unquantized_gemm
 # yapf: disable
 from aphrodite.modeling.parameter import (BaseAphroditeParameter,
@@ -221,7 +222,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
         return dispatch_unquantized_gemm()(layer, x, layer.weight, bias)
 
 
-class LinearBase(torch.nn.Module):
+class LinearBase(CustomOp):
     """Base linear layer.
 
     Args:
@@ -264,12 +265,8 @@ class LinearBase(torch.nn.Module):
                                                               prefix=prefix)
         self.return_bias = return_bias
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, Optional[Parameter]]]:
-        raise NotImplementedError
 
-
+@CustomOp.register("replicated_linear")
 class ReplicatedLinear(LinearBase):
     """Replicated linear layer.
 
@@ -414,8 +411,8 @@ class MergedReplicatedLinear(ReplicatedLinear):
         assert loaded_shard_id < len(self.output_sizes)
 
         if isinstance(param, BlockQuantScaleParameter):
-            from aphrodite.quantization.fp8 import (
-                Fp8LinearMethod, Fp8MoEMethod)
+            from aphrodite.quantization.fp8 import (Fp8LinearMethod,
+                                                    Fp8MoEMethod)
             assert self.quant_method is not None
             assert isinstance(self.quant_method,
                               (Fp8LinearMethod, Fp8MoEMethod))
@@ -438,6 +435,7 @@ class MergedReplicatedLinear(ReplicatedLinear):
         param[shard_offset:shard_offset + shard_size] = loaded_weight
 
 
+@CustomOp.register("column_parallel_linear")
 class ColumnParallelLinear(LinearBase):
     """Linear layer with column parallelism.
 
@@ -1223,6 +1221,7 @@ class QKVParallelLinear(ColumnParallelLinear):
         param_data.copy_(loaded_weight)
 
 
+@CustomOp.register("row_parallel_linear")
 class RowParallelLinear(LinearBase):
     """Linear layer with row parallelism.
 
@@ -1399,6 +1398,7 @@ class RowParallelLinear(LinearBase):
         return s
 
 
+@CustomOp.register("qkv_cross_parallel_linear")
 class QKVCrossParallelLinear(LinearBase):
     """Linear layers for efficient cross-attention's QKV transformation.
 

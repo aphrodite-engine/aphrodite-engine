@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
-from aphrodite.common.config import (ModelConfig, ParallelConfig,
+from aphrodite.config import (ModelConfig, ParallelConfig,
                                      SchedulerConfig, SpeculativeConfig)
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput, Logprob,
                                        SequenceOutput)

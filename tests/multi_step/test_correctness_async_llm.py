@@ -3,7 +3,7 @@ from typing import Optional
 
 import pytest
 
-from aphrodite.common.utils import STR_BACKEND_ENV_VAR
+from aphrodite.utils import STR_BACKEND_ENV_VAR
 
 from ..models.utils import check_logprobs_close
 from ..utils import (completions_with_server_args, get_client_text_generations,

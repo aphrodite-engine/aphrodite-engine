@@ -15,7 +15,7 @@ from aphrodite.adapter_commons.utils import (add_adapter, deactivate_adapter,
                                              get_adapter, list_adapters,
                                              remove_adapter,
                                              set_adapter_mapping)
-from aphrodite.common.config import LoRAConfig
+from aphrodite.config import LoRAConfig
 from aphrodite.common.logger import log_once
 from aphrodite.utils import is_pin_memory_available
 from aphrodite.lora.layers import BaseLayerWithLoRA, LoRAMapping

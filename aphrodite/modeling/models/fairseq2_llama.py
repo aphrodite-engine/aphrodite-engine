@@ -19,7 +19,7 @@ from collections.abc import Iterable
 import torch
 from torch.nn import Parameter
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.linear import set_weight_attrs

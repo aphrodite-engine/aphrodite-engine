@@ -7,7 +7,7 @@ import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig, ModelConfig
+from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.distributed.tpu_distributed_utils import get_fqn, shard_model
 from aphrodite.modeling.model_loader.default_loader import DefaultModelLoader
 from aphrodite.modeling.model_loader.utils import (

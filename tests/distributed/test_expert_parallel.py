@@ -3,7 +3,7 @@ from typing import Literal, NamedTuple, Optional
 
 import pytest
 
-from aphrodite.common.config import TaskOption
+from aphrodite.config import TaskOption
 from loguru import logger
 
 from ..utils import compare_two_settings, create_new_process_for_each_test

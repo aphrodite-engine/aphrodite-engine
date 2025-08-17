@@ -15,11 +15,12 @@ import msgspec
 import zmq
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig, ParallelConfig
+from aphrodite.config import AphroditeConfig, ParallelConfig
 from aphrodite.distributed import (
     stateless_destroy_torch_distributed_process_group)
 from aphrodite.logging_utils.dump_input import dump_engine_exception
 from aphrodite.lora.request import LoRARequest
+from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.tasks import POOLING_TASKS, SupportedTask
 from aphrodite.transformers_utils.config import (
     maybe_register_config_serialize_by_value)
@@ -35,7 +36,7 @@ from aphrodite.v1.engine import (EngineCoreOutputs, EngineCoreRequest,
                                  ReconfigureDistributedRequest,
                                  ReconfigureRankType, UtilityOutput,
                                  UtilityResult)
-from aphrodite.v1.engine.mm_input_cache import MirroredProcessingCache
+from aphrodite.v1.engine.mm_input_cache import MultiModalInputCacheServer
 from aphrodite.v1.engine.utils import (EngineHandshakeMetadata,
                                        EngineZmqAddresses)
 from aphrodite.v1.executor.abstract import Executor
@@ -123,9 +124,8 @@ class EngineCore:
             log_stats=self.log_stats,
         )
 
-        # Setup MM Input Mapper.
-        self.mm_input_cache_server = MirroredProcessingCache(
-            aphrodite_config.model_config)
+        self.mm_input_cache_server = MultiModalInputCacheServer(
+            aphrodite_config.model_config, MULTIMODAL_REGISTRY)
 
         # Setup batch queue for pipeline parallelism.
         # Batch queue for scheduled batches. This enables us to asynchronously
@@ -408,12 +408,13 @@ class EngineCore:
         request initialization running in parallel with Model forward
         """
         if request.mm_hashes is not None:
-            assert request.mm_inputs is not None
+            assert request.mm_kwargs is not None
+
             # Note on thread safety: no race condition.
             # `mm_input_cache_server` is reset at the end of LLMEngine init,
             # and will only accessed in the input processing thread afterwards.
-            request.mm_inputs = self.mm_input_cache_server.get_and_update_p1(
-                request.mm_inputs, request.mm_hashes)
+            request.mm_kwargs = self.mm_input_cache_server.get_and_update(
+                request.mm_kwargs, request.mm_hashes)
 
         req = Request.from_engine_core_request(request)
         if req.use_structured_output:

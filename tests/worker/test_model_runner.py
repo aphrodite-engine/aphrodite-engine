@@ -6,7 +6,7 @@ from aphrodite.distributed.parallel_state import (ensure_model_parallel_initiali
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.common.sequence import SamplingParams, SequenceData, SequenceGroupMetadata
-from aphrodite.common.utils import get_open_port
+from aphrodite.utils import get_open_port
 from aphrodite.worker.model_runner import ModelRunner
 
 

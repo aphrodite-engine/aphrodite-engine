@@ -8,7 +8,7 @@ import torch
 from aphrodite.distributed.kv_events import AllBlocksCleared, BlockRemoved
 from aphrodite.multimodal.inputs import MultiModalKwargs, PlaceholderRange
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import sha256
+from aphrodite.utils import sha256
 from aphrodite.v1.core.block_pool import BlockPool
 from aphrodite.v1.core.kv_cache_manager import KVCacheManager, Request
 from aphrodite.v1.core.kv_cache_utils import (BlockHashType, KVCacheBlock,

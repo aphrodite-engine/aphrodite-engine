@@ -10,7 +10,7 @@ from transformers.models.llava_onevision.modeling_llava_onevision import (
     get_anyres_image_grid_shape, unpad_image)
 from typing_extensions import NotRequired
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.sampling_metadata import SamplingMetadata

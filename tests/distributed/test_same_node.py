@@ -4,7 +4,7 @@ import torch.distributed as dist
 
 from aphrodite.distributed.parallel_state import in_the_same_node_as
 from aphrodite.distributed.utils import StatelessProcessGroup
-from aphrodite.common.utils import get_ip, get_open_port
+from aphrodite.utils import get_ip, get_open_port
 
 if __name__ == "__main__":
     dist.init_process_group(backend="gloo")

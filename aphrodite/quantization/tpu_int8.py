@@ -9,7 +9,7 @@ from aphrodite.modeling.parameter import ModelWeightParameter
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
-ACTIVATION_SCHEMES = ["none"]
+ACTIVATION_SCHEMES = ["none", "dynamic"]
 
 
 class Int8TpuConfig(QuantizationConfig):
@@ -57,6 +57,9 @@ class TPUInt8LinearMethod(LinearMethodBase):
 
     def __init__(self, quant_config: Int8TpuConfig):
         self.quant_config = quant_config
+        self.quantize_activation = False
+        if self.quant_config.activation_scheme == 'dynamic':
+            self.quantize_activation = True
 
     def create_weights(self, layer: Module, input_size_per_partition: int,
                        output_partition_sizes: list[int], input_size: int,
@@ -103,15 +106,14 @@ class TPUInt8LinearMethod(LinearMethodBase):
               x: torch.Tensor,
               bias: Optional[torch.Tensor] = None) -> torch.Tensor:
         try:
-            import torch_xla.experimental.xla_quantized_matmul  # noqa: F401
+            import torch_xla.experimental.custom_kernel  # noqa: F401
         except ImportError as err:
             raise ImportError(
-                "Please install torch_xla by following the instructions at "
-                "https://docs.aphrodite.ai/en/latest/getting_started/tpu-installation.html "  # noqa: E501
-                "to run vLLM on TPU.") from err
+                "Please install torch_xla.") from err
         weight = layer.weight
         scale = layer.scale
-        out = torch.ops.xla.quantized_matmul(x, weight, scale)
+        out = torch.ops.xla.quantized_matmul_int8(
+            x, weight, scale, quantize_activation=self.quantize_activation)
         if bias is not None:
             out = out + bias
         return out

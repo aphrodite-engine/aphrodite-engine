@@ -9,7 +9,7 @@ import numpy as np
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.common.config import LoRAConfig, ModelConfig, SchedulerConfig
+from aphrodite.config import LoRAConfig, ModelConfig, SchedulerConfig
 from aphrodite.lora.layers import LoRAMapping
 from aphrodite.lora.request import LoRARequest
 from aphrodite.lora.worker_manager import LRUCacheWorkerLoRAManager

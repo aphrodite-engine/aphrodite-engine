@@ -1,6 +1,6 @@
 import pytest
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import (apply_hf_chat_template,
                                          load_chat_template)
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest

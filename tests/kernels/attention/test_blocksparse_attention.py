@@ -9,7 +9,7 @@ from aphrodite import _custom_ops as ops
 from aphrodite.attention.ops.blocksparse_attention.interface import (
     LocalStridedBlockSparseAttn)
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import get_max_shared_memory_bytes
+from aphrodite.utils import get_max_shared_memory_bytes
 
 FLOAT32_BYTES = torch.finfo(torch.float).bits // 8
 # This will change depending on the compute capability.

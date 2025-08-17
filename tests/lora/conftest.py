@@ -8,7 +8,7 @@ import torch.nn as nn
 from huggingface_hub import snapshot_download
 
 import aphrodite
-from aphrodite.common.config import LoRAConfig
+from aphrodite.config import LoRAConfig
 from aphrodite.distributed import (cleanup_dist_env_and_memory,
                               init_distributed_environment,
                               initialize_model_parallel)

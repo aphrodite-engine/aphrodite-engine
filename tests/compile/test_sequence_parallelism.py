@@ -7,14 +7,14 @@ from aphrodite.compilation.fx_utils import (find_auto_fn, find_auto_fn_maybe,
                                        find_specified_fn,
                                        find_specified_fn_maybe, is_func)
 from aphrodite.compilation.sequence_parallelism import SequenceParallelismPass
-from aphrodite.common.config import (CompilationConfig, DeviceConfig, ModelConfig,
+from aphrodite.config import (CompilationConfig, DeviceConfig, ModelConfig,
                          AphroditeConfig)
 from aphrodite.distributed import tensor_model_parallel_all_reduce
 from aphrodite.distributed.parallel_state import (init_distributed_environment,
                                              initialize_model_parallel)
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import update_environment_variables
+from aphrodite.utils import update_environment_variables
 
 from ..utils import multi_gpu_test
 from .backend import TestBackend

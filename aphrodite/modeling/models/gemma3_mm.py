@@ -9,7 +9,7 @@ from transformers import BatchFeature, Gemma3Config, Gemma3Processor
 from transformers.models.gemma3.processing_gemma3 import Gemma3ProcessorKwargs
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.layernorm import GemmaRMSNorm
@@ -503,8 +503,6 @@ class Gemma3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP,
         self.config = config
         self.quant_config = quant_config
         self.multimodal_config = multimodal_config
-        self.sliding_window = getattr(config.text_config,
-                                      "interleaved_sliding_window", None)
 
         self.vision_tower = SiglipVisionModel(config.vision_config,
                                               quant_config,
@@ -691,11 +689,11 @@ class Gemma3ForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP,
             global_attn_mask = torch.where(img_mask == 2, 0, global_attn_mask)
             global_attn_masks.append(global_attn_mask)
 
-            if self.sliding_window is not None:
+            if (sliding_window := self.config.sliding_window) is not None:
                 # Create a local causal mask with sliding window (1024).
                 local_attn_mask = torch.ones_like(global_attn_mask)
                 local_attn_mask = torch.tril(local_attn_mask,
-                                             diagonal=-self.sliding_window)
+                                             diagonal=-sliding_window)
                 local_attn_mask = torch.where(local_attn_mask == 0,
                                               global_attn_mask, float("-inf"))
                 local_attn_masks.append(local_attn_mask)

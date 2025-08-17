@@ -17,7 +17,7 @@ from aphrodite.attention import (Attention, AttentionBackend,
 from aphrodite.attention.backends.utils import STR_NOT_IMPL_ENC_DEC_ROCM_HIP
 from aphrodite.attention.selector import (
     _Backend, global_force_attn_backend_context_manager)
-from aphrodite.common.utils import is_hip
+from aphrodite.utils import is_hip
 from tests.kernels.utils import *
 
 # List of support backends for encoder/decoder models

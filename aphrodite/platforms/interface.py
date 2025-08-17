@@ -15,7 +15,7 @@ from torch.distributed import PrefixStore, ProcessGroup
 from aphrodite.inputs import ProcessorInputs, PromptType
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig, ModelConfig
+    from aphrodite.config import AphroditeConfig, ModelConfig
     from aphrodite.common.pooling_params import PoolingParams
     from aphrodite.common.sampling_params import SamplingParams
     from aphrodite.lora.request import LoRARequest
@@ -192,8 +192,8 @@ class Platform:
     @classmethod
     def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
                              dtype: torch.dtype, kv_cache_dtype: Optional[str],
-                             block_size: int, use_v1: bool,
-                             use_mla: bool) -> str:
+                             block_size: int, use_v1: bool, use_mla: bool,
+                             has_sink: bool) -> str:
         """Get the attention backend class of a device."""
         return ""
 
@@ -472,7 +472,7 @@ class Platform:
         Whether to use allgather in LogitsProcessor to gather the logits.
         """
         import aphrodite.common.envs as envs
-        from aphrodite.common.config import get_current_aphrodite_config
+        from aphrodite.config import get_current_aphrodite_config
 
         parallel_config = get_current_aphrodite_config().parallel_config
         return (envs.APHRODITE_USE_V1

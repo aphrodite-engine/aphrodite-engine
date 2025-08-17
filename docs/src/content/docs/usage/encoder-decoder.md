@@ -135,7 +135,7 @@ outputs = llm.generate(prompts, sampling_params)
 For efficient processing of multiple encoder-decoder pairs, use the `zip_enc_dec_prompt_lists` helper function:
 
 ```py
-from aphrodite.common.utils import zip_enc_dec_prompt_lists
+from aphrodite.utils import zip_enc_dec_prompt_lists
 
 zipped_prompt_list = zip_enc_dec_prompt_lists(
     ['An encoder prompt', 'Another encoder prompt'],

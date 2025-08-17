@@ -20,7 +20,7 @@ from transformers import (BatchFeature, PretrainedConfig, PreTrainedTokenizer,
 from transformers.image_utils import ImageInput
 from transformers.tokenization_utils_base import TextInput
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,

@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 
 from tests.models.utils import softmax
-from aphrodite.common.config import PoolerConfig
+from aphrodite.config import PoolerConfig
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,7 @@ import multiprocessing
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Optional
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.transformers_utils.tokenizer_group import (
     init_tokenizer_from_configs)

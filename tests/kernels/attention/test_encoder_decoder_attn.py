@@ -17,7 +17,7 @@ from aphrodite.attention import Attention, AttentionMetadata, AttentionType
 from aphrodite.attention.backends.utils import STR_NOT_IMPL_ENC_DEC_ROCM_HIP
 from aphrodite.attention.selector import (_Backend, _cached_get_attn_backend,
                                      global_force_attn_backend_context_manager)
-from aphrodite.common.config import AphroditeConfig, set_current_aphrodite_config
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.forward_context import set_forward_context
 from aphrodite.platforms import current_platform
 

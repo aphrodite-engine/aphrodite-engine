@@ -10,7 +10,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionMetadata,
                                                    AttentionType)
 from aphrodite.attention.ops.triton_unified_attention import unified_attention
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.v1.attention.backends.utils import (
     AttentionMetadataBuilder, CommonAttentionMetadata,
     reorder_batch_to_split_decodes_and_prefills, split_decodes_and_prefills)

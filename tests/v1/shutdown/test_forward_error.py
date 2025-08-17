@@ -10,7 +10,7 @@ from tests.v1.shutdown.utils import (SHUTDOWN_TEST_THRESHOLD_BYTES,
 from aphrodite import LLM, AsyncEngineArgs, SamplingParams
 from aphrodite.distributed import get_tensor_model_parallel_rank
 from aphrodite.modeling.models.llama import LlamaForCausalLM
-from aphrodite.common.utils import cuda_device_count_stateless
+from aphrodite.utils import cuda_device_count_stateless
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from aphrodite.v1.engine.exceptions import EngineDeadError
 

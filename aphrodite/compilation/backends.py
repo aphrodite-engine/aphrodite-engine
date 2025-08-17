@@ -15,7 +15,7 @@ from rich.progress import (BarColumn, Progress, TaskProgressColumn, TextColumn,
 from torch._dispatch.python import enable_python_dispatcher
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig, CompilationConfig
+from aphrodite.config import AphroditeConfig, CompilationConfig
 from aphrodite.utils import (is_torch_equal_or_newer,
                                     resolve_obj_by_qualname)
 from aphrodite.platforms import current_platform

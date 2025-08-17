@@ -8,7 +8,7 @@ import zmq
 from loguru import logger
 
 from aphrodite import AsyncEngineArgs, SamplingParams
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 # yapf: enable
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.utils import deprecate_kwargs

@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 
 from aphrodite.compilation.wrapper import TorchCompileWrapperWithCustomDispatcher
-from aphrodite.common.config import CompilationLevel
+from aphrodite.config import CompilationLevel
 
 
 class MyMod(torch.nn.Module):

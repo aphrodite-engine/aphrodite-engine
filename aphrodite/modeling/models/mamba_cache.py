@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch
 
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.constant_size_cache import ConstantSizeCache
 
 

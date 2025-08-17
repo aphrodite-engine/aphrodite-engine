@@ -11,7 +11,7 @@ import torch_xla.runtime as xr
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)

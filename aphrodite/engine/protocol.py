@@ -4,7 +4,7 @@ from typing import AsyncGenerator, Mapping, Optional
 
 from aphrodite.common.beam_search import (BeamSearchSequence,
                                           create_sort_beams_key_function)
-from aphrodite.common.config import (AphroditeConfig, DecodingConfig,
+from aphrodite.config import (AphroditeConfig, DecodingConfig,
                                      ModelConfig)
 from aphrodite.common.outputs import (CompletionOutput, PoolingRequestOutput,
                                       RequestOutput)

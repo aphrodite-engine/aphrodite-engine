@@ -27,9 +27,9 @@ from torch import nn
 from transformers import Qwen3Config
 
 from aphrodite.attention import Attention, AttentionType
-from aphrodite.common.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.layernorm import RMSNorm
@@ -41,7 +41,7 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import SupportsLoRA, SupportsPP
+from .interfaces import SupportsEagle, SupportsLoRA, SupportsPP
 from .qwen2 import Qwen2MLP as Qwen3MLP
 from .qwen2 import Qwen2Model
 from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
@@ -256,7 +256,7 @@ class Qwen3Model(Qwen2Model):
                          decoder_layer_type=Qwen3DecoderLayer)
 
 
-class Qwen3ForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+class Qwen3ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle3):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",

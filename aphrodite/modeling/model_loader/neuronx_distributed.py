@@ -23,7 +23,7 @@ from neuronx_distributed_inference.utils.hf_adapter import (
     load_pretrained_config)
 from transformers import AutoModelForCausalLM, AutoTokenizer, PretrainedConfig
 
-from aphrodite.common.config import (ModelConfig, ParallelConfig,
+from aphrodite.config import (ModelConfig, ParallelConfig,
                                      SchedulerConfig, SpeculativeConfig)
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput, Logprob,
                                        SequenceOutput)

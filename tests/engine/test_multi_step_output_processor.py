@@ -11,7 +11,7 @@ from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput, Logprob,
                            SequenceOutput, SequenceStatus)
 from aphrodite.transformers_utils.detokenizer import Detokenizer
-from aphrodite.common.utils import Counter
+from aphrodite.utils import Counter
 
 from ..core.utils import create_seq_group
 

@@ -8,7 +8,7 @@ from typing import Literal, Optional, Union
 
 from loguru import logger
 
-from aphrodite.common.config import LoRAConfig
+from aphrodite.config import LoRAConfig
 from aphrodite.common.logger import log_once
 from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
 

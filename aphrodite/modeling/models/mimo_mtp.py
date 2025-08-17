@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
-from aphrodite.common.config import AphroditeConfig, CacheConfig, ModelConfig
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor

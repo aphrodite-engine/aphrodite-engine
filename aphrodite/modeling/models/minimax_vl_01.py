@@ -5,9 +5,8 @@ import torch
 import torch.nn as nn
 from transformers import BatchFeature, PretrainedConfig
 
-from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.jsontree import json_map_leaves
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)
@@ -15,6 +14,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import MultiModalFieldConfig
 from aphrodite.quantization import QuantizationConfig
+from aphrodite.utils.jsontree import json_map_leaves
 
 from .clip import CLIPVisionModel
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP

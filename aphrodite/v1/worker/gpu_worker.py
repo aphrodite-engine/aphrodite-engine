@@ -11,8 +11,8 @@ import torch.nn as nn
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment,
                                    set_custom_all_reduce)
@@ -20,6 +20,7 @@ from aphrodite.distributed.kv_transfer import ensure_kv_transfer_initialized
 from aphrodite.distributed.parallel_state import get_pp_group, get_tp_group
 from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling import set_random_seed
+from aphrodite.modeling.warmup.kernel_warmup import kernel_warmup
 from aphrodite.platforms import current_platform
 from aphrodite.tasks import SupportedTask
 from aphrodite.utils import GiB_bytes, MemorySnapshot, memory_profiling
@@ -366,6 +367,9 @@ class Worker(WorkerBase):
                 self.model_runner._dummy_sampler_run(
                     hidden_states=last_hidden_states)
 
+        # Warmup kernels used during model execution
+        kernel_warmup(self)
+
         # Reset the seed to ensure that the random state is not affected by
         # the model initialization and profiling.
         set_random_seed(self.model_config.seed)
@@ -565,7 +569,7 @@ class Worker(WorkerBase):
 
     def reinitialize_distributed(
             self, reconfig_request: ReconfigureDistributedRequest) -> None:
-        from aphrodite.common.config import set_current_aphrodite_config
+        from aphrodite.config import set_current_aphrodite_config
         from aphrodite.distributed.parallel_state import (
             cleanup_dist_env_and_memory, get_ep_group)
 

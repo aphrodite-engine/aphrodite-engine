@@ -5,7 +5,7 @@ import pytest
 from transformers import AutoConfig, AutoModelForVision2Seq, AutoTokenizer
 
 from aphrodite.common.sequence import SampleLogprobs
-from aphrodite.common.utils import is_hip
+from aphrodite.utils import is_hip
 from aphrodite.multimodal.utils import rescale_image_size
 
 from ....conftest import IMAGE_ASSETS, AphroditeRunner, HfRunner, _ImageAssets

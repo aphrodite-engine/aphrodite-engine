@@ -7,7 +7,7 @@ import torch
 import aphrodite.common.envs as envs
 from aphrodite.distributed.device_communicators.pynccl import PyNcclCommunicator
 from aphrodite.distributed.utils import StatelessProcessGroup
-from aphrodite.common.utils import (cuda_device_count_stateless, get_open_port,
+from aphrodite.utils import (cuda_device_count_stateless, get_open_port,
                         update_environment_variables)
 
 from ..utils import multi_gpu_test

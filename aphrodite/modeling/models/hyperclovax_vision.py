@@ -26,7 +26,7 @@ from timm.models.regnet import RegStage
 from transformers import BatchFeature, CLIPVisionConfig, SiglipVisionConfig
 from transformers.modeling_utils import no_init_weights
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.modeling.sampling_metadata import SamplingMetadata

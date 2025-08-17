@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from transformers import BartTokenizer, BatchFeature, PretrainedConfig
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader

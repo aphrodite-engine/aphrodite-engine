@@ -6,7 +6,7 @@ from fastapi import Request
 from loguru import logger
 from typing_extensions import override
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.common.outputs import ClassificationOutput, PoolingRequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.endpoints.logger import RequestLogger

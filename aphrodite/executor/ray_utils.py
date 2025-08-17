@@ -7,7 +7,7 @@ import msgspec
 from loguru import logger
 
 import aphrodite.platforms
-from aphrodite.common.config import ParallelConfig
+from aphrodite.config import ParallelConfig
 from aphrodite.common.sequence import ExecuteModelRequest, IntermediateTensors
 from aphrodite.utils import get_ip
 from aphrodite.executor.msgspec_utils import decode_hook, encode_hook

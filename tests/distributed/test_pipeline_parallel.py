@@ -12,7 +12,7 @@ from typing import Literal, NamedTuple, Optional
 
 import pytest
 
-from aphrodite.common.config import TaskOption
+from aphrodite.config import TaskOption
 from loguru import logger
 
 from ..models.registry import HF_EXAMPLE_MODELS

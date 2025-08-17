@@ -3,7 +3,7 @@ from typing import Literal, Union
 
 import pytest
 
-from aphrodite.common.config import (LoadConfig, ModelConfig, PoolerConfig, AphroditeConfig,
+from aphrodite.config import (LoadConfig, ModelConfig, PoolerConfig, AphroditeConfig,
                          config, get_field)
 from aphrodite.modeling.layers.pooler import PoolingType
 from aphrodite.platforms import current_platform

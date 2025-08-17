@@ -22,7 +22,7 @@ from aphrodite.utils import cuda_device_count_stateless, import_pynvml
 from .interface import DeviceCapability, Platform, PlatformEnum, _Backend
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig, ModelConfig
+    from aphrodite.config import AphroditeConfig, ModelConfig
 
 
 _P = ParamSpec("_P")
@@ -116,20 +116,10 @@ class CudaPlatformBase(Platform):
     @classmethod
     def check_and_update_config(cls, aphrodite_config: "AphroditeConfig") -> None:
         parallel_config = aphrodite_config.parallel_config
-        scheduler_config = aphrodite_config.scheduler_config
         model_config = aphrodite_config.model_config
 
         if parallel_config.worker_cls == "auto":
-            if scheduler_config.is_multi_step:
-                if envs.APHRODITE_USE_V1:
-                    raise NotImplementedError(
-                        "Multi-step scheduling is not supported (and not "
-                        "needed) on Aphrodite V1. Please launch without "
-                        "--num-scheduler-steps.")
-                else:
-                    parallel_config.worker_cls = \
-                        "aphrodite.worker.multi_step_worker.MultiStepWorker"
-            elif aphrodite_config.speculative_config:
+            if aphrodite_config.speculative_config:
                 if not envs.APHRODITE_USE_V1:
                     raise NotImplementedError(
                         "Speculative decoding is not supported on Aphrodite V0.")
@@ -137,7 +127,7 @@ class CudaPlatformBase(Platform):
             else:
                 if envs.APHRODITE_USE_V1:
                     parallel_config.worker_cls = \
-                            "aphrodite.v1.worker.gpu_worker.Worker"
+                        "aphrodite.v1.worker.gpu_worker.Worker"
                 else:
                     parallel_config.worker_cls = "aphrodite.worker.worker.Worker"
 
@@ -221,12 +211,14 @@ class CudaPlatformBase(Platform):
 
     @classmethod
     def get_attn_backend_cls(cls, selected_backend, head_size, dtype,
-                             kv_cache_dtype, block_size, use_v1,
-                             use_mla) -> str:
+                             kv_cache_dtype, block_size, use_v1, use_mla,
+                             has_sink) -> str:
         if use_mla:
             # TODO(lucas): refactor to be more concise
             #  we should probably consider factoring out V1 here
-            if selected_backend == _Backend.CUTLASS_MLA:
+            if selected_backend == _Backend.CUTLASS_MLA or (
+                    cls.is_device_capability(100) and selected_backend is None
+                    and block_size == 128):
                 if use_v1:
                     log_once("INFO", "Using Cutlass MLA backend on V1 engine.")
                     return ("aphrodite.v1.attention.backends.mla."
@@ -319,6 +311,9 @@ class CudaPlatformBase(Platform):
 
             # FlashAttention is the default for SM 8.0+ GPUs
             if cls.has_device_capability(80):
+                if has_sink and not cls.is_device_capability(90):
+                    log_once("INFO", "Using Triton backend on V1 engine.")
+                    return TRITON_ATTN_APHRODITE_V1
                 if is_default_backend_supported := is_attn_backend_supported(
                         FLASH_ATTN_V1, head_size, dtype,
                         allow_import_error=False):

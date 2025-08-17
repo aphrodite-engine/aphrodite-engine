@@ -6,7 +6,7 @@ import torch
 from loguru import logger
 
 from aphrodite.common import envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed.parallel_state import get_pp_group, get_tp_group
 from aphrodite.modeling.utils import set_random_seed

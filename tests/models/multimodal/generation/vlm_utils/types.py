@@ -9,7 +9,7 @@ from pytest import MarkDecorator
 from transformers import AutoModelForCausalLM
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
-from aphrodite.common.config import RunnerOption
+from aphrodite.config import RunnerOption
 from aphrodite.common.sequence import SampleLogprobs
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 

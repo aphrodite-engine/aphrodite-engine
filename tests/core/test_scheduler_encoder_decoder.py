@@ -1,6 +1,6 @@
 import pytest  # noqa
 
-from aphrodite.common.config import CacheConfig, SchedulerConfig
+from aphrodite.config import CacheConfig, SchedulerConfig
 from aphrodite.processing.scheduler import Scheduler
 from aphrodite.common.sequence import SequenceGroup
 

@@ -13,11 +13,9 @@ from prometheus_client import start_http_server
 from tqdm import tqdm
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
-from aphrodite.utils import FlexibleArgumentParser, random_uuid
+from aphrodite.config import AphroditeConfig
 from aphrodite.endpoints.logger import RequestLogger
 # yapf: disable
-from aphrodite.endpoints.openai.api_server import build_async_engine_client
 from aphrodite.endpoints.openai.protocol import (BatchRequestInput,
                                                  BatchRequestOutput,
                                                  BatchResponseData,
@@ -33,7 +31,7 @@ from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
 from aphrodite.endpoints.openai.serving_score import ServingScores
 from aphrodite.engine.args_tools import AsyncEngineArgs, optional_type
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.utils import FlexibleArgumentParser, random_uuid
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
 
@@ -298,7 +296,7 @@ async def run_request(serving_engine_func: Callable,
             id=f"aphrodite-{random_uuid()}",
             custom_id=request.custom_id,
             response=BatchResponseData(
-                status_code=response.code,
+                status_code=response.error.code,
                 request_id=f"aphrodite-batch-{random_uuid()}"),
             error=response,
         )
@@ -465,6 +463,9 @@ async def run_batch(
 
 
 async def main(args: Namespace):
+    from aphrodite.endpoints.openai.api_server import build_async_engine_client
+    from aphrodite.usage.usage_lib import UsageContext
+
     async with build_async_engine_client(
             args,
             usage_context=UsageContext.OPENAI_BATCH_RUNNER,

@@ -6,7 +6,7 @@ import torch
 from PIL.Image import Image
 from transformers import AutoConfig
 
-from aphrodite.common.utils import is_cpu
+from aphrodite.utils import is_cpu
 from aphrodite.multimodal.utils import rescale_image_size
 
 from ....conftest import (IMAGE_ASSETS, AphroditeRunner, HfRunner,

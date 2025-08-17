@@ -3,6 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from loguru import logger
+from packaging import version
 
 from aphrodite.common import envs
 from aphrodite.common.logger import log_once
@@ -34,7 +35,7 @@ class TopKTopPSampler(nn.Module):
         if current_platform.is_cuda():
             if is_flashinfer_available:
                 flashinfer_version = flashinfer.__version__
-                if flashinfer_version < "0.2.3":
+                if version.parse(flashinfer_version) < version.parse("0.2.3"):
                     # FIXME: Currently, we have errors when using
                     # FlashInfer>=v0.2.3 for top-p & top-k sampling. As a
                     # workaround, we disable FlashInfer for top-p & top-k

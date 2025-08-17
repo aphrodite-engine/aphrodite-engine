@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from aphrodite import LLM
-from aphrodite.common.config import ModelImpl
+from aphrodite.config import ModelImpl
 from aphrodite.engine.llm_engine import LLMEngine as V0LLMEngine
 from aphrodite.utils import GiB_bytes
 from aphrodite.v1.core.kv_cache_utils import get_kv_cache_config

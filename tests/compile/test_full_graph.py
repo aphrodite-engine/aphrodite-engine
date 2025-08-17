@@ -7,7 +7,7 @@ import torch
 
 from tests.quantization.utils import is_quant_method_supported
 from aphrodite import LLM, SamplingParams
-from aphrodite.common.config import CompilationConfig, CompilationLevel
+from aphrodite.config import CompilationConfig, CompilationLevel
 from aphrodite.platforms import current_platform
 
 from ..utils import create_new_process_for_each_test

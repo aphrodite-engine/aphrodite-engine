@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from aphrodite.common.config import (CacheConfig, KVTransferConfig, ModelConfig,
+from aphrodite.config import (CacheConfig, KVTransferConfig, ModelConfig,
                          SchedulerConfig, SpeculativeConfig, AphroditeConfig)
 from aphrodite.multimodal.inputs import MultiModalKwargs, PlaceholderRange
 from aphrodite.common.sampling_params import SamplingParams

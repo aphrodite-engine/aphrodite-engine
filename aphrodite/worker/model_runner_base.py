@@ -6,7 +6,7 @@ from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional, Type,
 import torch
 import torch.nn as nn
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
 from aphrodite.modeling.layers.sampler import SamplerOutput

@@ -20,7 +20,7 @@ from transformers.models.pixtral.modeling_pixtral import (
     PixtralRotaryEmbedding, apply_rotary_pos_emb, position_ids_in_meshgrid)
 from transformers.tokenization_utils_base import TextInput
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_and_mul_fn

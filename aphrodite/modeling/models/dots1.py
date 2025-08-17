@@ -26,10 +26,10 @@ from typing import Any, Optional, Union
 
 import torch
 from torch import nn
-from transformers import PretrainedConfig
+from transformers import Dots1Config
 
 from aphrodite.attention import Attention
-from aphrodite.common.config import AphroditeConfig, CacheConfig, ModelConfig
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
@@ -96,7 +96,7 @@ class Dots1MoE(nn.Module):
 
     def __init__(
         self,
-        config: PretrainedConfig,
+        config: Dots1Config,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
     ):
@@ -171,7 +171,7 @@ class Dots1Attention(nn.Module):
         hidden_size: int,
         num_heads: int,
         num_kv_heads: int,
-        config: PretrainedConfig,
+        config: Dots1Config,
         rope_theta: float = 10000,
         rope_scaling: Optional[dict[str, Any]] = None,
         max_position_embeddings: int = 8192,
@@ -257,7 +257,7 @@ class Dots1DecoderLayer(nn.Module):
 
     def __init__(
         self,
-        config: PretrainedConfig,
+        config: Dots1Config,
         prefix: str,
         model_config: ModelConfig,
         cache_config: Optional[CacheConfig] = None,

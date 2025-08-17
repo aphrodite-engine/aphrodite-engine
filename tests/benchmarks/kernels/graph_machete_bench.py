@@ -9,7 +9,7 @@ import pandas as pd
 import seaborn as sns
 from torch.utils.benchmark import Measurement as TMeasurement
 
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 
 if __name__ == "__main__":
     parser = FlexibleArgumentParser(

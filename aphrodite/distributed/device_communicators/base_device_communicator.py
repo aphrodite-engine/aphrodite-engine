@@ -95,7 +95,7 @@ class DeviceCommunicatorBase:
                                                  self.global_rank)
 
         use_ep = False
-        from aphrodite.common.config import get_current_aphrodite_config
+        from aphrodite.config import get_current_aphrodite_config
         config = get_current_aphrodite_config()
         if config is not None:
             # as long as we use data parallel (coupled data parallel

@@ -9,7 +9,7 @@ from transformers import AutoTokenizer
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.assets.audio import AudioAsset
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 
 # Input audio and question
 # audio_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),

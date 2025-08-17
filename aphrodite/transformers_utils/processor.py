@@ -11,7 +11,7 @@ from typing_extensions import TypeVar
 from aphrodite.utils import get_allowed_kwarg_only_overrides
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import ModelConfig
+    from aphrodite.config import ModelConfig
 
 _P = TypeVar("_P", bound=ProcessorMixin, default=ProcessorMixin)
 

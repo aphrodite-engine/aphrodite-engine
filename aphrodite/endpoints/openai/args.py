@@ -14,7 +14,7 @@ from typing import Literal, Optional, Union
 from pydantic.dataclasses import dataclass
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import config
+from aphrodite.config import config
 from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.endpoints.chat_utils import (ChatTemplateContentFormatOption,
                                             validate_chat_template)
@@ -39,10 +39,10 @@ class LoRAParserAction(argparse.Action):
 
         lora_list: list[LoRAModulePath] = []
         for item in values:
-            if item in [None, '']:  # Skip if item is None or empty string
+            if item in [None, ""]:  # Skip if item is None or empty string
                 continue
-            if '=' in item and ',' not in item:  # Old format: name=path
-                name, path = item.split('=')
+            if "=" in item and "," not in item:  # Old format: name=path
+                name, path = item.split("=")
                 lora_list.append(LoRAModulePath(name, path))
             else:  # Assume JSON format
                 try:
@@ -67,6 +67,8 @@ class FrontendArgs:
     """Host name."""
     port: int = 2242
     """Port number."""
+    uds: Optional[str] = None
+    """Unix domain socket path. If set, host and port arguments are ignored."""
     uvicorn_log_level: Literal["debug", "info", "warning", "error", "critical",
                                "trace"] = "info"
     """Log level for uvicorn."""
@@ -113,8 +115,8 @@ schema. Example: `[{"type": "text", "text": "Hello world!"}]`"""
     middleware: list[str] = field(default_factory=lambda: [])
     """Additional ASGI middleware to apply to the app. We accept multiple
     --middleware arguments. The value should be an import path. If a function
-    is provided, vLLM will add it to the server using
-    `@app.middleware('http')`. If a class is provided, vLLM will
+    is provided, Aphrodite will add it to the server using
+    `@app.middleware('http')`. If a class is provided, Aphrodite will
     add it to the server using `app.add_middleware()`."""
     return_tokens_as_token_ids: bool = False
     """When `--max-logprobs` is specified, represents single tokens as
@@ -161,6 +163,9 @@ schema. Example: `[{"type": "text", "text": "Hello world!"}]`"""
     enable_tokenizer_info_endpoint: bool = False
     """Enable the /get_tokenizer_info endpoint. May expose chat
     templates and other tokenizer configuration."""
+    enable_log_outputs: bool = False
+    """If set to True, enable logging of model outputs (generations) 
+    in addition to the input logging that is enabled by default."""
 
     @staticmethod
     def add_cli_args(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:

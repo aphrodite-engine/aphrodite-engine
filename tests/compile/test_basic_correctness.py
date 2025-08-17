@@ -4,8 +4,8 @@ import dataclasses
 
 import pytest
 
-from aphrodite.common.config import CompilationLevel
-from aphrodite.common.utils import cuda_device_count_stateless
+from aphrodite.config import CompilationLevel
+from aphrodite.utils import cuda_device_count_stateless
 
 from ..utils import compare_all_settings
 

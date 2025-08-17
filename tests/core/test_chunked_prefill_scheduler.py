@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest  # noqa
 
-from aphrodite.common.config import CacheConfig, SchedulerConfig
+from aphrodite.config import CacheConfig, SchedulerConfig
 from aphrodite.processing.scheduler import Scheduler
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.engine.aphrodite_engine import AphroditeEngine

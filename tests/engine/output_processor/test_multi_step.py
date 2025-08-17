@@ -7,7 +7,7 @@ from transformers import PreTrainedTokenizer
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput, Logprob,
                                        SequenceOutput, SequenceStatus)
-from aphrodite.common.utils import Counter
+from aphrodite.utils import Counter
 from aphrodite.engine.output_processor.multi_step import (
     MultiStepOutputProcessor)
 from aphrodite.engine.output_processor.stop_checker import StopChecker

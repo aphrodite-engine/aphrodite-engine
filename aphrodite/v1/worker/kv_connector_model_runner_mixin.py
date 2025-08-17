@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import Generator  # noqa: UP035
 from typing import TYPE_CHECKING, Optional
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer import (get_kv_transfer_group,
                                                has_kv_transfer_group)
 from aphrodite.distributed.kv_transfer.kv_connector.base import KVConnectorBase

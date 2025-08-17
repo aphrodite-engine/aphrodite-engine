@@ -11,7 +11,7 @@ import torch._inductor.compile_fx
 import torch.fx as fx
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.utils import is_torch_equal_or_newer
 from aphrodite.compilation.counter import compilation_counter
 
@@ -232,7 +232,7 @@ class InductorStandaloneAdaptor(CompilerInterface):
             graph_output = inductor_compiled_graph(*args)
             # unpack the tuple if needed
             # TODO(rzou): the implication is that we're not
-            # reading the python bytecode correctly in vLLM?
+            # reading the python bytecode correctly in Aphrodite?
             if returns_tuple:
                 return graph_output
             else:

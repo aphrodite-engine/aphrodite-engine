@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from aphrodite import _custom_ops as ops  # noqa: F401
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
-from aphrodite.common.utils import seed_everything
+from aphrodite.utils import seed_everything
 from aphrodite.modeling.layers.mamba.ops.causal_conv1d import (
     causal_conv1d_fn, causal_conv1d_update)
 from tests.kernels.utils import opcheck

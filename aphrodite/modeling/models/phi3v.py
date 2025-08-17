@@ -22,7 +22,7 @@ from loguru import logger
 from transformers import (BatchFeature, CLIPVisionConfig, PretrainedConfig,
                           ProcessorMixin)
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)

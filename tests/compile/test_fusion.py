@@ -7,7 +7,7 @@ from aphrodite.compilation.fusion import (FUSED_OPS, QUANT_OPS, FusedRMSQuantKey
                                      FusionPass, QuantKey)
 from aphrodite.compilation.fx_utils import find_auto_fn, find_auto_fn_maybe
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
-from aphrodite.common.config import CompilationConfig, CompilationLevel, AphroditeConfig
+from aphrodite.config import CompilationConfig, CompilationLevel, AphroditeConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.quantization.utils.w8a8_utils import (
     CUTLASS_FP8_SUPPORTED, Fp8LinearOp, maybe_create_device_identity)
@@ -78,7 +78,7 @@ def test_fusion_rmsnorm_quant(dtype, hidden_size, num_tokens, eps, static,
     aphrodite_config.compilation_config.pass_config = \
             CompilationConfig.PassConfig(enable_fusion=True,
                                               enable_noop=True)
-    with aphrodite.common.config.set_current_aphrodite_config(aphrodite_config):
+    with aphrodite.config.set_current_aphrodite_config(aphrodite_config):
         # Reshape pass is needed for the fusion pass to work
         noop_pass = NoOpEliminationPass(aphrodite_config)
         fusion_pass = FusionPass.instance(aphrodite_config)

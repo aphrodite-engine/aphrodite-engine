@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from aphrodite.attention.selector import which_attn_to_use
-from aphrodite.common.utils import STR_FLASH_ATTN_VAL, STR_INVALID_VAL
+from aphrodite.utils import STR_FLASH_ATTN_VAL, STR_INVALID_VAL
 from tests.kernels.utils import override_backend_env_variable
 
 

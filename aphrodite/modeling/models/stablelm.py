@@ -26,7 +26,7 @@ from torch import nn
 from transformers import StableLmConfig
 
 from aphrodite.attention import Attention
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)

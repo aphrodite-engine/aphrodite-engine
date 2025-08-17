@@ -13,7 +13,7 @@ import aphrodite.lora.ops.bgmv_shrink
 import aphrodite.lora.ops.sgmv_expand
 import aphrodite.lora.ops.sgmv_expand_slice
 import aphrodite.lora.ops.sgmv_shrink  # noqa: F401
-from aphrodite.common.utils import seed_everything
+from aphrodite.utils import seed_everything
 
 from .utils import (generate_data, generate_data_for_expand_nslices,
                     ref_torch_groupgemm)

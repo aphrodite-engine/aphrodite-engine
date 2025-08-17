@@ -1,7 +1,7 @@
 import torch
 
 from aphrodite.engine.args_tools import EngineArgs
-from aphrodite.common.utils import get_distributed_init_method, get_ip, get_open_port
+from aphrodite.utils import get_distributed_init_method, get_ip, get_open_port
 from aphrodite.worker.cache_engine import CacheEngine
 from aphrodite.worker.worker import Worker
 

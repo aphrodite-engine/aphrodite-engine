@@ -4,13 +4,14 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.common.config import LogprobsMode
-from aphrodite.utils import is_pin_memory_available
 from aphrodite.common.logger import log_once
 from aphrodite.common.sampling_params import SamplerID
+from aphrodite.config import LogprobsMode
+from aphrodite.utils import is_pin_memory_available
 from aphrodite.v1.outputs import LogprobsTensors, SamplerOutput
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.ops import SamplingOps
+from aphrodite.v1.sample.ops.logprobs import batched_count_greater_than
 from aphrodite.v1.sample.ops.temperatures import apply_all_temperatures
 from aphrodite.v1.sample.ops.topk_topp_sampler import TopKTopPSampler
 

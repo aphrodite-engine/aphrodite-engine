@@ -7,7 +7,7 @@ import torch.distributed as dist
 
 from aphrodite.distributed.device_communicators.shm_broadcast import MessageQueue
 from aphrodite.distributed.utils import StatelessProcessGroup
-from aphrodite.common.utils import get_ip, get_open_port, update_environment_variables
+from aphrodite.utils import get_ip, get_open_port, update_environment_variables
 
 
 def get_arrays(n: int, seed: int = 0) -> list[np.ndarray]:

@@ -8,7 +8,7 @@ import torch
 from loguru import logger
 from torch import nn
 
-from aphrodite.common.config import LoadConfig, ModelConfig
+from aphrodite.config import LoadConfig, ModelConfig
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.weight_utils import (
     download_weights_from_hf, runai_safetensors_weights_iterator)

@@ -22,7 +22,7 @@ if is_flash_attn_varlen_func_available():
                                                     get_scheduler_metadata,
                                                     reshape_and_cache_flash)
 
-from aphrodite.common.config import (AphroditeConfig,
+from aphrodite.config import (AphroditeConfig,
                                      get_layers_from_aphrodite_config)
 from aphrodite.utils import cdiv
 from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
@@ -382,6 +382,8 @@ class FlashAttentionImpl(AttentionImpl):
         self.alibi_slopes = alibi_slopes
         if sliding_window is None:
             self.sliding_window = (-1, -1)
+        elif attn_type == AttentionType.ENCODER_ONLY:
+            self.sliding_window = (sliding_window - 1, sliding_window - 1)
         else:
             self.sliding_window = (sliding_window - 1, 0)
         self.kv_cache_dtype = kv_cache_dtype

@@ -9,7 +9,7 @@ import prometheus_client
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig, SupportsMetricsInfo
+from aphrodite.config import AphroditeConfig, SupportsMetricsInfo
 from aphrodite.v1.core.kv_cache_utils import PrefixCachingMetrics
 from aphrodite.v1.engine import FinishReason
 from aphrodite.v1.metrics.prometheus import unregister_aphrodite_metrics

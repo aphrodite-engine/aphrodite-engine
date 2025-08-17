@@ -12,7 +12,7 @@ from aphrodite.processing.block.prefix_caching_block import (ComputedBlocksTrack
                                                   PrefixCachingBlock,
                                                   PrefixCachingBlockAllocator)
 from aphrodite.common.sequence import Logprob
-from aphrodite.common.utils import Device
+from aphrodite.utils import Device
 
 
 class TestPrefixCachingBlock:

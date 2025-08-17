@@ -6,7 +6,7 @@ import msgspec.msgpack
 import pytest
 import zmq
 
-from aphrodite.common.config import KVEventsConfig
+from aphrodite.config import KVEventsConfig
 from aphrodite.distributed.kv_events import EventPublisherFactory
 
 from .test_events import SampleBatch

@@ -1,6 +1,6 @@
 from torch import fx as fx
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.platforms import current_platform
 
 if current_platform.is_cuda_alike():

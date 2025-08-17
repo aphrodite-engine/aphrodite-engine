@@ -3,7 +3,7 @@ from typing import Optional
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.common.config import get_cached_compilation_config
+from aphrodite.config import get_cached_compilation_config
 from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 
@@ -134,7 +134,7 @@ class CustomOp(nn.Module):
         On by default if PyTorch Inductor is not used.
         Specifying 'all' or 'none' in custom_op takes precedence.
         """
-        from aphrodite.common.config import CompilationLevel
+        from aphrodite.config import CompilationLevel
         compilation_config = get_cached_compilation_config()
         default_on = (compilation_config.level < CompilationLevel.PIECEWISE
                       or not compilation_config.use_inductor)

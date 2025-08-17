@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import PretrainedConfig
 
-from aphrodite.common.config import ModelConfig, PoolerConfig
+from aphrodite.config import ModelConfig, PoolerConfig
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sequence import PoolerOutput, PoolingSequenceGroupOutput
 from aphrodite.modeling.pooling_metadata import (  # noqa: E501
@@ -42,15 +42,14 @@ class ResolvedPoolingConfig:
     task: PoolingTask
 
     @classmethod
-    def from_config_with_defaults(
+    def from_config(
         cls,
         task: PoolingTask,
         pooler_config: PoolerConfig,
-        pooling_type: PoolingType,
     ) -> "ResolvedPoolingConfig":
+        assert pooler_config.pooling_type is not None
         return cls(task=task,
-                   pooling_type=PoolingType[pooler_config.pooling_type]
-                   if pooler_config.pooling_type is not None else pooling_type)
+                   pooling_type=PoolingType[pooler_config.pooling_type])
 
 
 @dataclass(frozen=True)
@@ -66,32 +65,20 @@ class Pooler(nn.Module, ABC):
     """The interface required for all poolers used in pooling models in Aphrodite."""
 
     @staticmethod
-    def for_encode(
-        pooler_config: PoolerConfig,
-        *,
-        default_pooling_type: PoolingType = PoolingType.ALL,
-    ):
-        resolved_config = ResolvedPoolingConfig.from_config_with_defaults(
-            task="encode",
-            pooler_config=pooler_config,
-            pooling_type=default_pooling_type,
-        )
-
-        if resolved_config.pooling_type == PoolingType.STEP:
+    def for_encode(pooler_config: PoolerConfig):
+        if pooler_config.pooling_type == "STEP":
             return StepPooler()
+
+        resolved_config = ResolvedPoolingConfig(task="encode",
+                                                pooling_type=PoolingType.ALL)
 
         return SimplePooler.from_config(resolved_config)
 
     @staticmethod
-    def for_embed(
-        pooler_config: PoolerConfig,
-        *,
-        default_pooling_type: PoolingType = PoolingType.LAST,
-    ):
-        resolved_config = ResolvedPoolingConfig.from_config_with_defaults(
+    def for_embed(pooler_config: PoolerConfig):
+        resolved_config = ResolvedPoolingConfig.from_config(
             task="embed",
             pooler_config=pooler_config,
-            pooling_type=default_pooling_type,
         )
 
         return SimplePooler.from_config(resolved_config)
@@ -100,13 +87,10 @@ class Pooler(nn.Module, ABC):
     def for_classify(
         pooler_config: PoolerConfig,
         classifier: Optional[ClassifierFn],
-        *,
-        default_pooling_type: PoolingType = PoolingType.LAST,
     ):
-        resolved_config = ResolvedPoolingConfig.from_config_with_defaults(
+        resolved_config = ResolvedPoolingConfig.from_config(
             task="classify",
             pooler_config=pooler_config,
-            pooling_type=default_pooling_type,
         )
 
         pooling = PoolingMethod.from_pooling_type(resolved_config.pooling_type)

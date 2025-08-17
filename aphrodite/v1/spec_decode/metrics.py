@@ -5,7 +5,7 @@ import numpy as np
 import prometheus_client
 from loguru import logger
 
-from aphrodite.common.config import SpeculativeConfig
+from aphrodite.config import SpeculativeConfig
 
 
 @dataclass

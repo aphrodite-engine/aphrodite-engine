@@ -60,9 +60,10 @@ if TYPE_CHECKING:
     APHRODITE_IMAGE_FETCH_TIMEOUT: int = 5
     APHRODITE_VIDEO_FETCH_TIMEOUT: int = 30
     APHRODITE_AUDIO_FETCH_TIMEOUT: int = 10
+    APHRODITE_MEDIA_LOADING_THREAD_COUNT: int = 8
     APHRODITE_MAX_AUDIO_CLIP_FILESIZE_MB: int = 25
     APHRODITE_VIDEO_LOADER_BACKEND: str = "opencv"
-    APHRODITE_MM_INPUT_CACHE_GIB: int = 8
+    APHRODITE_MM_INPUT_CACHE_GIB: int = 4
     APHRODITE_TARGET_DEVICE: str = "cuda"
     MAX_JOBS: Optional[str] = None
     NVCC_THREADS: Optional[str] = None
@@ -117,15 +118,18 @@ if TYPE_CHECKING:
     APHRODITE_MOE_DP_CHUNK_SIZE: int = 256
     APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS: bool = False
     APHRODITE_MARLIN_USE_ATOMIC_ADD: bool = False
+    APHRODITE_MXFP4_USE_MARLIN: Optional[bool] = None
     APHRODITE_V0_USE_OUTLINES_CACHE: bool = False
     APHRODITE_V1_USE_OUTLINES_CACHE: bool = False
     APHRODITE_TPU_BUCKET_PADDING_GAP: int = 0
     APHRODITE_TPU_MOST_MODEL_LEN: Optional[int] = None
     APHRODITE_TPU_USING_PATHWAYS: bool = False
     APHRODITE_USE_DEEP_GEMM: bool = False
+    APHRODITE_USE_DEEP_GEMM_E8M0: bool = True
     APHRODITE_SKIP_DEEP_GEMM_WARMUP: bool = False
     APHRODITE_USE_FLASHINFER_MOE_FP8: bool = False
     APHRODITE_USE_FLASHINFER_MOE_FP4: bool = False
+    APHRODITE_FLASHINFER_MOE_BACKEND: str = "throughput"
     APHRODITE_XGRAMMAR_CACHE_MB: int = 0
     APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD: int = 256
     APHRODITE_ALLOW_INSECURE_SERIALIZATION: bool = False
@@ -159,6 +163,7 @@ if TYPE_CHECKING:
     APHRODITE_DYNAMIC_ROPE_SCALING: bool = False
     APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8: bool = False
     APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16: bool = False
+    APHRODITE_TUNED_CONFIG_FOLDER: Optional[str] = None
 
 
 def get_default_cache_root():
@@ -179,6 +184,12 @@ def maybe_convert_int(value: Optional[str]) -> Optional[int]:
     if value is None:
         return None
     return int(value)
+
+
+def maybe_convert_bool(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    return bool(int(value))
 
 
 def get_aphrodite_port() -> Optional[int]:
@@ -547,6 +558,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_AUDIO_FETCH_TIMEOUT":
     lambda: int(os.getenv("APHRODITE_AUDIO_FETCH_TIMEOUT", "10")),
 
+    # Max number of workers for the thread pool handling
+    # media bytes loading. Set to 1 to disable parallel processing.
+    # Default is 8
+    "APHRODITE_MEDIA_LOADING_THREAD_COUNT":
+    lambda: int(os.getenv("APHRODITE_MEDIA_LOADING_THREAD_COUNT", "8")),
+
     # Maximum filesize in MB for a single audio file when processing
     # speech-to-text requests. Files larger than this will be rejected.
     # Default is 25 MB
@@ -563,8 +580,8 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_VIDEO_LOADER_BACKEND":
     lambda: os.getenv("APHRODITE_VIDEO_LOADER_BACKEND", "opencv"),
 
-    # Cache size (in GiB) for multimodal input cache
-    # Default is 4 GiB
+    # [DEPRECATED] Cache size (in GiB per process) for multimodal input cache
+    # Default is 4 GiB per API process + 4 GiB per engine core process
     "APHRODITE_MM_INPUT_CACHE_GIB":
     lambda: int(os.getenv("APHRODITE_MM_INPUT_CACHE_GIB", "4")),
 
@@ -891,6 +908,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_MARLIN_USE_ATOMIC_ADD":
     lambda: os.environ.get("APHRODITE_MARLIN_USE_ATOMIC_ADD", "0") == "1",
 
+    # Whether to use marlin kernel in mxfp4 quantization method
+    "APHRODITE_MXFP4_USE_MARLIN":
+    lambda: maybe_convert_bool(os.environ.get(
+        "APHRODITE_MXFP4_USE_MARLIN", None)),
+
     # Whether to turn on the outlines cache for V0
     # This cache is unbounded and on disk, so it's not safe to use in
     # an environment with potentially malicious users.
@@ -918,6 +940,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Allow use of DeepGemm kernels for fused moe ops.
     "APHRODITE_USE_DEEP_GEMM":
     lambda: bool(int(os.getenv("APHRODITE_USE_DEEP_GEMM", "0"))),
+
+    # Whether to use E8M0 scaling when DeepGEMM is used on Blackwell GPUs.
+    # E8M0 is faster on B200 but may reduce accuracy.
+    "APHRODITE_USE_DEEP_GEMM_E8M0":
+    lambda: bool(int(os.getenv("APHRODITE_USE_DEEP_GEMM_E8M0", "1"))),
 
     # DeepGemm JITs the kernels on-demand. The warmup attempts to make DeepGemm
     # JIT all the required kernels before model execution so there is no
@@ -974,12 +1001,36 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_ALL2ALL_BACKEND":
     lambda: os.getenv("APHRODITE_ALL2ALL_BACKEND", "naive"),
 
+    # Flashinfer MoE backend for Aphrodite's fused Mixture-of-Experts support.
+    # Both require compute capability 10.0 or above.
+    # Available options:
+    # - "throughput":  [default]
+    #     Uses CUTLASS kernels optimized for high-throughput batch inference.
+    # - "latency":
+    #     Uses TensorRT-LLM kernels optimized for low-latency inference.
+    # To set this backend, define the environment variable:
+    #     export APHRODITE_FLASHINFER_MOE_BACKEND=latency.
+    # If not set, defaults to "throughput".
+    "APHRODITE_FLASHINFER_MOE_BACKEND": lambda: os.getenv(
+    "APHRODITE_FLASHINFER_MOE_BACKEND", "throughput"
+    ),
+
     # Control the maximum number of tokens per expert supported by the
     # NVFP4 MoE CUTLASS Kernel. This value is used to create a buffer for
     # the blockscale tensor of activations NVFP4 Quantization.
     # This is used to prevent the kernel from running out of memory.
     "APHRODITE_MAX_TOKENS_PER_EXPERT_FP4_MOE":
     lambda: int(os.getenv("APHRODITE_MAX_TOKENS_PER_EXPERT_FP4_MOE", "163840")),
+
+    # MoE routing strategy selector.
+    # See `RoutingSimulator.get_available_strategies()` # for available
+    # strategies.
+    # Cutstom routing strategies can be registered by
+    # RoutingSimulator.register_strategy()
+    # Note: custom strategies may not produce correct model outputs
+    "APHRODITE_MOE_ROUTING_SIMULATION_STRATEGY":
+    lambda: os.environ.get(
+        "APHRODITE_MOE_ROUTING_SIMULATION_STRATEGY", "").lower(),
 
     # Regex timeout for use by the Aphrodite tool parsing plugins.
     "APHRODITE_TOOL_PARSE_REGEX_TIMEOUT_SECONDS":
@@ -1045,6 +1096,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set to 1, use the TRTLLM Attention backend in flashinfer.
     "APHRODITE_USE_TRTLLM_ATTENTION":
     lambda: bool(int(os.getenv("APHRODITE_USE_TRTLLM_ATTENTION", "0"))),
+
+    # If set to 1, force the use of TRTLLM FP4 GEMM backend in flashinfer.
+    # Otherwise, uses the first available of: flashinfer cutlass GEMM,
+    # aphrodite cutlass GEMM, marlin GEMM.
+    "APHRODITE_USE_TRTLLM_FP4_GEMM":
+    lambda: bool(int(os.getenv("APHRODITE_USE_TRTLLM_FP4_GEMM", "0"))),
 
     # Controls garbage collection during CUDA graph capture.
     # If set to 0 (default), enables GC freezing to speed up capture time.
@@ -1115,6 +1172,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # BF16 (activation) x MXFP4 (weight) MoE backend.
     "APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16":
     lambda: bool(int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16", "0"))),
+
+    # Allows aphrodite to find tuned config under customized folder
+    "APHRODITE_TUNED_CONFIG_FOLDER":
+    lambda: os.getenv("APHRODITE_TUNED_CONFIG_FOLDER", None),
 }
 
 # --8<-- [end:env-vars-definition]
@@ -1179,6 +1240,7 @@ def compute_hash() -> str:
         "APHRODITE_DP_SIZE",
         "APHRODITE_USE_STANDALONE_COMPILE",
         "APHRODITE_FUSED_MOE_CHUNK_SIZE",
+        "APHRODITE_FLASHINFER_MOE_BACKEND",
     ]
     for key in environment_variables_to_hash:
         if key in environment_variables:

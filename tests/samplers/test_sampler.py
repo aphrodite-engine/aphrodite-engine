@@ -13,7 +13,7 @@ from aphrodite.modeling.layers.sampler import Sampler
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_random_seed
 from aphrodite.common.sequence import SamplingParams, SequenceData, SequenceGroupMetadata
-from aphrodite.common.utils import Counter, is_pin_memory_available
+from aphrodite.utils import Counter, is_pin_memory_available
 
 
 @pytest.fixture(scope="function", autouse=True)

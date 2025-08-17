@@ -7,7 +7,6 @@
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.platforms.rocm import use_rocm_custom_paged_attention
 from aphrodite.triton_utils import tl, triton
 
 from .prefix_prefill import context_attention_fwd
@@ -291,6 +290,7 @@ def chunked_prefill_paged_decode(
     num_queries_per_kv_padded = max(triton.next_power_of_2(num_queries_per_kv),
                                     16)
 
+    from aphrodite.platforms.rocm import use_rocm_custom_paged_attention
     use_custom = use_rocm_custom_paged_attention(
         query.dtype,
         head_size,

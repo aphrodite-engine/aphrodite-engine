@@ -7,7 +7,7 @@ from torch import nn
 from transformers import MambaConfig
 
 from aphrodite.common import envs
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group

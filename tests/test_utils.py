@@ -12,8 +12,8 @@ import torch
 import zmq
 from aphrodite_test_utils.monitor import monitor
 
-from aphrodite.common.config import ParallelConfig, AphroditeConfig, set_current_aphrodite_config
-from aphrodite.common.utils import (CacheInfo, FlexibleArgumentParser, LRUCache,
+from aphrodite.config import ParallelConfig, AphroditeConfig, set_current_aphrodite_config
+from aphrodite.utils import (CacheInfo, FlexibleArgumentParser, LRUCache,
                         MemorySnapshot, PlaceholderModule, StoreBoolean,
                         bind_kv_cache, deprecate_kwargs, get_open_port,
                         make_zmq_socket, memory_profiling,
@@ -399,7 +399,7 @@ def test_bind_kv_cache_encoder_decoder(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_bind_kv_cache_pp():
-    with patch("aphrodite.common.utils.cuda_device_count_stateless", lambda: 2):
+    with patch("aphrodite.utils.cuda_device_count_stateless", lambda: 2):
         # this test runs with 1 GPU, but we simulate 2 GPUs
         cfg = AphroditeConfig(
             parallel_config=ParallelConfig(pipeline_parallel_size=2))

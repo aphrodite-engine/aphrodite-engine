@@ -9,6 +9,7 @@ from torch.nn.parameter import Parameter, UninitializedParameter
 from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size,
                                    tensor_model_parallel_all_reduce)
+from aphrodite.modeling._custom_op import CustomOp
 from aphrodite.modeling.layers.utils import dispatch_unquantized_gemm
 from aphrodite.modeling.parameter import BaseAphroditeParameter
 from aphrodite.modeling.utils import set_weight_attrs
@@ -156,7 +157,8 @@ def get_masked_input_and_mask(
     return input_, ~vocab_mask
 
 
-class VocabParallelEmbedding(torch.nn.Module):
+@CustomOp.register("vocab_parallel_embedding")
+class VocabParallelEmbedding(CustomOp):
     """Embedding parallelized in the vocabulary dimension.
 
     Adapted from torch.nn.Embedding, note that we pad the vocabulary size to

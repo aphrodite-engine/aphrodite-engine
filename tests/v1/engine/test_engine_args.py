@@ -3,10 +3,10 @@ from argparse import ArgumentError
 import pytest
 
 from aphrodite.common import envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.usage.usage_lib import UsageContext
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 
 if not envs.APHRODITE_USE_V1:
     pytest.skip(

@@ -9,7 +9,7 @@ from aphrodite.compilation.fusion import (FUSED_OPS, FusionPass, QuantKey,
                                      kFp8DynamicTokenSym, kFp8StaticTensorSym)
 from aphrodite.compilation.fx_utils import find_auto_fn, find_auto_fn_maybe, is_func
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
-from aphrodite.common.config import CompilationConfig, AphroditeConfig
+from aphrodite.config import CompilationConfig, AphroditeConfig
 
 from .backend import TestBackend
 

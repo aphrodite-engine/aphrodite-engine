@@ -19,7 +19,7 @@ from typing import Callable, Optional
 import torch
 from loguru import logger
 
-from aphrodite.common.config import KVTransferConfig
+from aphrodite.config import KVTransferConfig
 from aphrodite.distributed.device_communicators.pynccl import (
     PyNcclCommunicator)
 from aphrodite.distributed.kv_transfer.kv_pipe.base import KVPipeBase

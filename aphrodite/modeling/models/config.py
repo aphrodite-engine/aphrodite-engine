@@ -10,7 +10,7 @@ from aphrodite.v1.kv_cache_interface import FullAttentionSpec, MambaSpec
 
 if TYPE_CHECKING:
 
-    from aphrodite.common.config import AphroditeConfig
+    from aphrodite.config import AphroditeConfig
 
 
 class VerifyAndUpdateConfig:

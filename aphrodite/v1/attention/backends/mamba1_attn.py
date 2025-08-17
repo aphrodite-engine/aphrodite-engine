@@ -4,7 +4,7 @@ from typing import ClassVar
 import torch
 
 from aphrodite.attention.backends.abstract import AttentionBackend
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
                                                    CommonAttentionMetadata)
 from aphrodite.v1.kv_cache_interface import AttentionSpec, MambaSpec

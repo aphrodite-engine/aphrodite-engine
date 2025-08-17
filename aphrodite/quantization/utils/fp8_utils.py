@@ -15,7 +15,7 @@ from aphrodite.quantization.utils.quant_utils import group_broadcast
 from aphrodite.quantization.utils.w8a8_utils import CUTLASS_BLOCK_FP8_SUPPORTED
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils import cdiv, direct_register_custom_op, has_deep_gemm
-from aphrodite.utils.deep_gemm import is_blackwell_deep_gemm_used
+from aphrodite.utils.deep_gemm import is_blackwell_deep_gemm_e8m0_used
 
 
 def is_fp8(x: Union[torch.dtype, torch.Tensor]) -> bool:
@@ -390,7 +390,7 @@ def per_token_group_quant_fp8(
     # TODO(wentao): refactor this
     # use_ue8m0 should be a global flag that could be set by user
     if use_ue8m0 is None:
-        use_ue8m0 = is_blackwell_deep_gemm_used()
+        use_ue8m0 = is_blackwell_deep_gemm_e8m0_used()
     dtype = current_platform.fp8_dtype() if dtype is None else dtype
     assert (x.shape[-1] % group_size == 0), (
         f"the last dimension of `x` {x.shape[-1]} must be divisible "

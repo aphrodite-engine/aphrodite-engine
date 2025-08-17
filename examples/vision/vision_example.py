@@ -13,7 +13,7 @@ from transformers import AutoTokenizer
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.assets.video import VideoAsset
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.multimodal.utils import sample_frames_from_video
 
 # Input image and question

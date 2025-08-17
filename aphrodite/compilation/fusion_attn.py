@@ -7,7 +7,7 @@ from torch._subclasses.fake_tensor import (FakeTensorMode,
                                            unset_fake_temporarily)
 
 from aphrodite.attention import Attention
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.platforms import current_platform
 
 from .aphrodite_inductor_pass import AphroditeInductorPass

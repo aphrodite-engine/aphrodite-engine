@@ -10,7 +10,7 @@ import torch
 from tests.kernels.utils import baseline_scaled_mm, opcheck, to_fp8, to_int8
 from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import cdiv
+from aphrodite.utils import cdiv
 
 MNK_FACTORS = [
     (1, 256, 128),

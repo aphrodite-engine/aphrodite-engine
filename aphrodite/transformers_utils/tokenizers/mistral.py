@@ -1,5 +1,4 @@
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
@@ -7,6 +6,7 @@ import huggingface_hub
 import regex as re
 from huggingface_hub import HfApi, hf_hub_download
 from loguru import logger
+from transformers.tokenization_utils_base import BatchEncoding
 
 from aphrodite.transformers_utils.tokenizer_base import TokenizerBase
 from aphrodite.utils import is_list_of
@@ -20,11 +20,6 @@ if TYPE_CHECKING:
         MistralTokenizer as PublicMistralTokenizer)
 
     from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
-
-
-@dataclass
-class Encoding:
-    input_ids: Union[list[int], list[list[int]]]
 
 
 def maybe_serialize_tool_calls(request: "ChatCompletionRequest"):
@@ -354,7 +349,7 @@ class MistralTokenizer(TokenizerBase):
         # For str, single prompt text
         else:
             input_ids = self.encode_one(text, truncation, max_length)
-        return Encoding(input_ids=input_ids)
+        return BatchEncoding({"input_ids": input_ids})
 
     def get_vocab(self) -> dict[str, int]:
         # NB: the dictionary form of the vocabulary collapses token ids that map

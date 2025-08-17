@@ -7,7 +7,7 @@ import pytest
 
 from aphrodite import SamplingParams
 from aphrodite.assets.image import ImageAsset
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.inputs import PromptType
 from aphrodite.platforms import current_platform

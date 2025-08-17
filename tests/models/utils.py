@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from transformers import PretrainedConfig
 
-from aphrodite.common.config import ModelConfig, RunnerOption
+from aphrodite.config import ModelConfig, RunnerOption
 from aphrodite.inputs import InputContext
 from aphrodite.common.sequence import Logprob, PromptLogprobs, SampleLogprobs
 

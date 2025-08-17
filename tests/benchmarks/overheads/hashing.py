@@ -2,7 +2,7 @@ import cProfile
 import pstats
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 
 # A very long prompt, total number of tokens is about 15k.
 LONG_PROMPT = ["You are an expert in large language models, aren't you?"

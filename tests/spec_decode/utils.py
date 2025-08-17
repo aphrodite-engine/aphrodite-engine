@@ -11,7 +11,7 @@ from aphrodite.modeling.utils import set_random_seed
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (CompletionSequenceGroupOutput, Logprob,
                            SequenceData, SequenceGroupMetadata, SequenceOutput)
-from aphrodite.common.utils import get_distributed_init_method, get_ip, get_open_port
+from aphrodite.utils import get_distributed_init_method, get_ip, get_open_port
 from aphrodite.worker.cache_engine import CacheEngine
 from aphrodite.worker.model_runner import ModelRunner
 from aphrodite.worker.worker import Worker

@@ -9,7 +9,7 @@ from aphrodite.modeling.models.config import VerifyAndUpdateConfig
 from .interfaces_base import AphroditeModelForPooling, is_pooling_model
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig
+    from aphrodite.config import AphroditeConfig
 
 _T = TypeVar("_T", bound=type[nn.Module])
 
@@ -179,8 +179,8 @@ def as_seq_cls_model(cls: _T) -> _T:
             assert pooler_config is not None
 
             pooling_type_str = pooler_config.pooling_type
-            pooling_type = (PoolingType.LAST if pooling_type_str is None else
-                            PoolingType[pooling_type_str])
+            assert pooling_type_str is not None
+            pooling_type = PoolingType[pooling_type_str]
 
             self.pooler = DispatchPooler({
                 "encode":

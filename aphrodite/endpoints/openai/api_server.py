@@ -5,6 +5,7 @@ import importlib
 import inspect
 import json
 import multiprocessing
+import multiprocessing.forkserver as forkserver
 import os
 import signal
 import socket
@@ -39,10 +40,10 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from typing_extensions import assert_never
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import _SAMPLING_EPS, SamplingParams
+from aphrodite.config import AphroditeConfig
 from aphrodite.endpoints.chat_utils import (load_chat_template,
                                             resolve_hf_chat_template,
                                             resolve_mistral_chat_template)
@@ -60,7 +61,7 @@ from aphrodite.endpoints.openai.protocol import (AnthropicMessagesRequest,
                                                  DetokenizeRequest,
                                                  DetokenizeResponse,
                                                  EmbeddingRequest,
-                                                 EmbeddingResponse,
+                                                 EmbeddingResponse, ErrorInfo,
                                                  ErrorResponse,
                                                  KAIGenerationInputSchema,
                                                  LoadLoRAAdapterRequest,
@@ -96,7 +97,8 @@ from aphrodite.endpoints.openai.serving_tokenization import (
 from aphrodite.endpoints.openai.serving_transcription import (
     OpenAIServingTranscription, OpenAIServingTranslation)
 from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
-from aphrodite.endpoints.tool_server import DemoToolServer, ToolServer
+from aphrodite.endpoints.tool_server import (DemoToolServer, MCPToolServer,
+                                             ToolServer)
 from aphrodite.endpoints.utils import (cli_env_setup, load_aware_call,
                                        log_non_default_args, with_cancellation)
 from aphrodite.engine.args_tools import AsyncEngineArgs
@@ -168,6 +170,15 @@ async def build_async_engine_client(
     disable_frontend_multiprocessing: Optional[bool] = None,
     client_config: Optional[dict[str, Any]] = None,
 ) -> AsyncIterator[EngineClient]:
+
+    if os.getenv("APHRODITE_WORKER_MULTIPROC_METHOD") == "forkserver":
+        # The executor is expected to be mp.
+        # Pre-import heavy modules in the forkserver process
+        logger.debug("Setup forkserver with pre-imports")
+        multiprocessing.set_start_method('forkserver')
+        multiprocessing.set_forkserver_preload(["aphrodite.v1.engine.async_llm"])
+        forkserver.ensure_running()
+        logger.debug("Forkserver setup complete!")
 
     # Context manager to handle engine_client lifecycle
     # Ensures everything is shutdown and cleaned up on error/exit
@@ -265,9 +276,9 @@ async def build_async_engine_client_from_engine_args(
         else:
             logger.warning(
                 "Found PROMETHEUS_MULTIPROC_DIR was set by user. "
-                "This directory must be wiped between vLLM runs or "
+                "This directory must be wiped between Aphrodite runs or "
                 "you will find inaccurate metrics. Unset the variable "
-                "and vLLM will properly handle cleanup.")
+                "and Aphrodite will properly handle cleanup.")
 
         # Select random path for IPC.
         ipc_path = get_open_zmq_ipc_path()
@@ -512,7 +523,7 @@ async def tokenize(request: TokenizeRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
     elif isinstance(generator, TokenizeResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -546,7 +557,7 @@ async def detokenize(request: DetokenizeRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
     elif isinstance(generator, DetokenizeResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -642,7 +653,7 @@ async def create_responses(request: ResponsesRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
     elif isinstance(generator, ResponsesResponse):
         return JSONResponse(content=generator.model_dump())
     return StreamingResponse(content=generator, media_type="text/event-stream")
@@ -709,7 +720,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
 
     elif isinstance(generator, ChatCompletionResponse):
         return JSONResponse(content=generator.model_dump())
@@ -748,7 +759,7 @@ async def create_messages(request: AnthropicMessagesRequest,
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
 
     elif isinstance(generator, AnthropicMessagesResponse):
         return JSONResponse(content=generator.model_dump())
@@ -793,7 +804,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
     elif isinstance(generator, CompletionResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -822,7 +833,7 @@ async def create_embedding(request: EmbeddingRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
     elif isinstance(generator, EmbeddingResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -850,7 +861,7 @@ async def create_pooling(request: PoolingRequest, raw_request: Request):
     generator = await handler.create_pooling(request, raw_request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
     elif isinstance(generator, PoolingResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -870,7 +881,7 @@ async def create_classify(request: ClassificationRequest,
     generator = await handler.create_classify(request, raw_request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
 
     elif isinstance(generator, ClassificationResponse):
         return JSONResponse(content=generator.model_dump())
@@ -899,7 +910,7 @@ async def create_score(request: ScoreRequest, raw_request: Request):
     generator = await handler.create_score(request, raw_request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
     elif isinstance(generator, ScoreResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -959,7 +970,7 @@ async def create_transcriptions(raw_request: Request,
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
 
     elif isinstance(generator, TranscriptionResponse):
         return JSONResponse(content=generator.model_dump())
@@ -1000,7 +1011,7 @@ async def create_translations(request: Annotated[TranslationRequest,
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
 
     elif isinstance(generator, TranslationResponse):
         return JSONResponse(content=generator.model_dump())
@@ -1028,7 +1039,7 @@ async def do_rerank(request: RerankRequest, raw_request: Request):
     generator = await handler.do_rerank(request, raw_request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.code)
+                            status_code=response.error.code)
     elif isinstance(generator, RerankResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -1833,9 +1844,9 @@ def build_app(args: Namespace) -> FastAPI:
         else:
             message = exc_str
 
-        err = ErrorResponse(message=message,
-                            type=HTTPStatus.BAD_REQUEST.phrase,
-                            code=HTTPStatus.BAD_REQUEST)
+        err = ErrorResponse(error=ErrorInfo(message=message,
+                                            type=HTTPStatus.BAD_REQUEST.phrase,
+                                            code=HTTPStatus.BAD_REQUEST))
         return JSONResponse(err.model_dump(),
                             status_code=HTTPStatus.BAD_REQUEST)
 
@@ -1950,6 +1961,9 @@ async def init_app_state(
 
     if args.tool_server == "demo":
         tool_server: Optional[ToolServer] = DemoToolServer()
+    elif args.tool_server:
+        tool_server = MCPToolServer()
+        await tool_server.add_tool_server(args.tool_server)
     else:
         tool_server = None
 
@@ -2088,6 +2102,12 @@ def create_server_socket(addr: tuple[str, int]) -> socket.socket:
     return sock
 
 
+def create_server_unix_socket(path: str) -> socket.socket:
+    sock = socket.socket(family=socket.AF_UNIX, type=socket.SOCK_STREAM)
+    sock.bind(path)
+    return sock
+
+
 def validate_api_server_args(args):
 
     valid_tool_parses = ToolParserManager.tool_parsers.keys()
@@ -2120,8 +2140,11 @@ def setup_server(args):
 
     # workaround to make sure that we bind the port before the engine is set up.
     # This avoids race conditions with ray.
-    sock_addr = (args.host or "", args.port)
-    sock = create_server_socket(sock_addr)
+    if args.uds:
+        sock = create_server_unix_socket(args.uds)
+    else:
+        sock_addr = (args.host or "", args.port)
+        sock = create_server_socket(sock_addr)
 
     # workaround to avoid footguns where uvicorn drops requests with too
     # many concurrent requests active
@@ -2133,11 +2156,14 @@ def setup_server(args):
 
     signal.signal(signal.SIGTERM, signal_handler)
 
-    addr, port = sock_addr
-    is_ssl = args.ssl_keyfile and args.ssl_certfile
-    host_part = f"[{addr}]" if is_valid_ipv6_address(
-        addr) else addr or "0.0.0.0"
-    listen_address = f"http{'s' if is_ssl else ''}://{host_part}:{port}"
+    if args.uds:
+        listen_address = f"unix:{args.uds}"
+    else:
+        addr, port = sock_addr
+        is_ssl = args.ssl_keyfile and args.ssl_certfile
+        host_part = f"[{addr}]" if is_valid_ipv6_address(
+            addr) else addr or "0.0.0.0"
+        listen_address = f"http{'s' if is_ssl else ''}://{host_part}:{port}"
 
     return listen_address, sock
 
@@ -2277,7 +2303,7 @@ async def run_server_worker(listen_address,
 if __name__ == "__main__":
     # NOTE:
     # This section should be in sync with aphrodite/endpoints/cli.py
-    # for CLI entrypoints.
+    # for CLI endpoints.
     cli_env_setup()
     parser = FlexibleArgumentParser(
         description="Aphrodite OpenAI-Compatible RESTful API Server")

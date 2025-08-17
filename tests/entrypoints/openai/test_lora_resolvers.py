@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from aphrodite.common.config import MultiModalConfig
+from aphrodite.config import MultiModalConfig
 from aphrodite.engine.multiprocessing.client import MQLLMEngineClient
 from aphrodite.endpoints.openai.protocol import CompletionRequest, ErrorResponse
 from aphrodite.endpoints.openai.serving_completion import OpenAIServingCompletion

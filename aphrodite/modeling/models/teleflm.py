@@ -23,7 +23,7 @@
 import torch
 import torch.nn as nn
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.models.llama import (LlamaDecoderLayer,
                                              LlamaForCausalLM, LlamaModel)

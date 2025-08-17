@@ -12,7 +12,7 @@ from torch.utils.benchmark import Measurement as TMeasurement
 from weight_shapes import WEIGHT_SHAPES
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.quantization.utils.marlin_utils import (
     GPTQ_MARLIN_MAX_PARALLEL, GPTQ_MARLIN_MIN_THREAD_N, marlin_permute_scales)
 from aphrodite.quantization.utils.marlin_utils_test import MarlinWorkspace

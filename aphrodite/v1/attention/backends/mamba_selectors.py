@@ -1,14 +1,16 @@
 from aphrodite.attention.backends.abstract import AttentionBackend
+from aphrodite.v1.attention.backends.linear_attn import LinearAttentionBackend
 from aphrodite.v1.attention.backends.mamba1_attn import Mamba1AttentionBackend
-from aphrodite.v1.attention.backends.mamba_attn import Mamba2AttentionBackend
+from aphrodite.v1.attention.backends.mamba2_attn import Mamba2AttentionBackend
 
 
 def get_mamba_attn_backend(mamba_type: str) -> type[AttentionBackend]:
     if mamba_type == "mamba1":
         return Mamba1AttentionBackend
-
     if mamba_type == "mamba2":
         return Mamba2AttentionBackend
+    if mamba_type == "linear_attention":
+        return LinearAttentionBackend
 
     raise NotImplementedError(f"Mamba Attention type {mamba_type} is not "
                               "supported yet.")

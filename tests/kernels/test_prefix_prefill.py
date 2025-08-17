@@ -9,7 +9,7 @@ from xformers.ops.fmha.attn_bias import BlockDiagonalCausalFromBottomRightMask
 
 from aphrodite.attention.backends.xformers import _make_alibi_bias
 from aphrodite.attention.ops.prefix_prefill import context_attention_fwd
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE
 
 NUM_HEADS = [64]
 NUM_QUERIES_PER_KV = [1, 8, 64]

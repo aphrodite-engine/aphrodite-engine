@@ -20,7 +20,7 @@ from aphrodite.transformers_utils.utils import check_gguf_file
 from aphrodite.utils import make_async
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import ModelConfig
+    from aphrodite.config import ModelConfig
     from aphrodite.lora.request import LoRARequest
     from aphrodite.transformers_utils.tokenizer_base import TokenizerBase
 else:

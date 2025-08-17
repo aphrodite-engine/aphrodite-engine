@@ -27,8 +27,8 @@ from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
 from aphrodite.quantization.kv_cache import BaseKVCacheMethod
 from aphrodite.quantization.utils.flashinfer_utils import (
-    apply_flashinfer_per_tensor_scale_fp8, rotate_flashinfer_fp8_moe_weights,
-    swap_w13_to_w31)
+    apply_flashinfer_per_tensor_scale_fp8, register_moe_scaling_factors,
+    rotate_flashinfer_fp8_moe_weights, swap_w13_to_w31)
 from aphrodite.quantization.utils.fp8_utils import (
     get_col_major_tma_aligned_tensor, requant_weight_ue8m0_inplace)
 from aphrodite.quantization.utils.marlin_utils_fp8 import (
@@ -43,7 +43,8 @@ from aphrodite.quantization.utils.w8a8_utils import (
     requantize_with_max_scale)
 from aphrodite.scalar_type import scalar_types
 from aphrodite.utils import has_deep_gemm
-from aphrodite.utils.deep_gemm import is_blackwell_deep_gemm_used
+from aphrodite.utils.deep_gemm import (is_blackwell_deep_gemm_e8m0_used,
+                                       is_deep_gemm_supported)
 from aphrodite.utils.flashinfer import has_flashinfer_moe
 
 if TYPE_CHECKING:
@@ -412,10 +413,10 @@ class Fp8LinearMethod(LinearMethodBase):
             # Activations not quantized for marlin.
             del layer.input_scale
 
-        # On B200, DeepGemm only support E8M0 scale, which means we need to
+        # On B200, if E8M0 for DeepGemm is used, we need to
         # requantize the weight and input to the specific scale
         # at the same time.
-        if is_blackwell_deep_gemm_used():
+        if is_blackwell_deep_gemm_e8m0_used():
             assert layer.weight_block_size is not None
             block_sz = tuple(layer.weight_block_size)
             requant_weight_ue8m0_inplace(
@@ -506,18 +507,10 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 log_once(
                     "WARNING",
                     "Model is not block quantized. Not using DeepGemm kernels")
-            elif (current_platform.is_cuda()
-                  and current_platform.is_device_capability(90)):
+            elif (is_deep_gemm_supported()):
                 log_once(
                     "INFO",
                     "Using DeepGemm kernels for Fp8MoEMethod.")
-                self.allow_deep_gemm = True
-            elif (current_platform.is_cuda()
-                  and is_blackwell_deep_gemm_used()):
-                log_once(
-                    "INFO",
-                    "Using DeepGemm SM100 kernels for "
-                    "Fp8MoEMethod.")
                 self.allow_deep_gemm = True
             else:
                 log_once(
@@ -709,6 +702,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 w2_weight = layer.w2_weight.data
                 w2_weight_scale_inv = layer.w2_weight_scale_inv.data
                 if not self.block_quant:
+                    register_moe_scaling_factors(layer)
                     rotate_flashinfer_fp8_moe_weights(w13_weight, w2_weight)
             else:
                 w13_weight = layer.w13_weight.data
@@ -735,7 +729,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
 
             # DeepGemm scales need to be transposed and aligned.  We try to do
             # it ahead of time for performance reasons.
-            if self.allow_deep_gemm and not is_blackwell_deep_gemm_used():
+            if self.allow_deep_gemm and not is_blackwell_deep_gemm_e8m0_used():
                 # Lazy import to avoid CUDA initialization problems.
                 if _is_col_major(layer.w13_weight_scale_inv):
                     layer.w13_weight_scale_inv = \
@@ -862,7 +856,7 @@ class Fp8MoEMethod(FusedMoEMethodBase):
             del layer.w13_input_scale
             del layer.w2_input_scale
 
-        if is_blackwell_deep_gemm_used():
+        if is_blackwell_deep_gemm_e8m0_used():
             assert layer.weight_block_size is not None
             # Re-quantise the expert weights so their scales are UE8M0.
             block_sz = tuple(layer.weight_block_size)
@@ -999,6 +993,8 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 x,
                 layer.w13_weight,
                 layer.w2_weight,
+                None,
+                None,
                 layer.w13_weight_scale,
                 layer.w2_weight_scale,
                 router_logits,

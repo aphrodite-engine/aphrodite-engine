@@ -11,7 +11,7 @@ import pytest_asyncio
 import torch
 
 from aphrodite import SamplingParams
-from aphrodite.common.config import ParallelConfig
+from aphrodite.config import ParallelConfig
 from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.engine.async_aphrodite import AsyncEngineArgs, AsyncAphrodite
 from aphrodite.common.outputs import RequestOutput as RealRequestOutput

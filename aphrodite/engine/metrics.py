@@ -6,7 +6,7 @@ import numpy as np
 import prometheus_client
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig, SupportsMetricsInfo
+from aphrodite.config import AphroditeConfig, SupportsMetricsInfo
 from aphrodite.engine.metrics_types import StatLoggerBase, Stats
 from aphrodite.executor.ray_utils import ray
 

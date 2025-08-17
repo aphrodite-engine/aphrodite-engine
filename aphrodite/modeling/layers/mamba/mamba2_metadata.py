@@ -9,7 +9,7 @@ from aphrodite.attention.backends.placeholder_attn import (
     PlaceholderAttentionMetadata)
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
 from aphrodite.platforms import current_platform
-from aphrodite.v1.attention.backends.mamba_attn import (
+from aphrodite.v1.attention.backends.mamba2_attn import (
     Mamba2AttentionMetadata, _query_start_loc_to_chunk_indices_offsets)
 
 

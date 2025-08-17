@@ -7,7 +7,7 @@ from torch import nn
 from transformers import PretrainedConfig
 
 from aphrodite.attention import Attention
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
@@ -29,7 +29,7 @@ from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import SupportsLoRA, SupportsPP
+from .interfaces import SupportsLoRA, SupportsPP, default_pooling_type
 from .utils import (is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
@@ -399,6 +399,7 @@ class InternLM2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         return loaded_params
 
 
+@default_pooling_type("ALL")
 class InternLM2ForRewardModel(InternLM2ForCausalLM):
 
     is_pooling_model = True

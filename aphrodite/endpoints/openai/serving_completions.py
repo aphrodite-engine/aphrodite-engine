@@ -9,7 +9,7 @@ from fastapi import Request
 from loguru import logger
 from typing_extensions import assert_never
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.common.sequence import Logprob

@@ -1,6 +1,5 @@
 import enum
 import time
-from collections.abc import Sequence
 from typing import Any, Optional, Union
 
 import msgspec
@@ -9,8 +8,7 @@ import torch
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.lora.request import LoRARequest
-from aphrodite.multimodal import MultiModalKwargs
-from aphrodite.multimodal.inputs import PlaceholderRange
+from aphrodite.multimodal.inputs import MultiModalKwargsItem, PlaceholderRange
 from aphrodite.v1.metrics.stats import SchedulerStats
 from aphrodite.v1.outputs import LogprobsLists, LogprobsTensors
 
@@ -46,7 +44,7 @@ class EngineCoreRequest(
 
     request_id: str
     prompt_token_ids: list[int]
-    mm_inputs: Optional[Sequence[Optional[MultiModalKwargs]]]
+    mm_kwargs: Optional[list[MultiModalKwargsItem]]
     mm_hashes: Optional[list[str]]
     mm_placeholders: Optional[list[PlaceholderRange]]
     sampling_params: Optional[SamplingParams]

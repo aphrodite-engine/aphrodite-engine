@@ -9,7 +9,7 @@ import torch
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import (CompilationLevel,
+from aphrodite.config import (CompilationLevel,
                                      get_current_aphrodite_config)
 
 

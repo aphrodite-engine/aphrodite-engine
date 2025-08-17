@@ -9,7 +9,7 @@ import torch
 from transformers import MixtralConfig
 from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
-from aphrodite.common.utils import seed_everything
+from aphrodite.utils import seed_everything
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_moe
 from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (

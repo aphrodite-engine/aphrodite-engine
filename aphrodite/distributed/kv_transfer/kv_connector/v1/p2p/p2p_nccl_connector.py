@@ -5,7 +5,7 @@ import regex as re
 import torch
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase_V1, KVConnectorMetadata, KVConnectorRole)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.p2p.p2p_nccl_engine import (

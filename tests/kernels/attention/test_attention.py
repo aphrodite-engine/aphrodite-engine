@@ -8,7 +8,7 @@ from tests.kernels.allclose_default import get_default_atol, get_default_rtol
 from tests.kernels.utils import opcheck
 from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import get_max_shared_memory_bytes
+from aphrodite.utils import get_max_shared_memory_bytes
 
 if not current_platform.is_rocm():
     from xformers import ops as xops

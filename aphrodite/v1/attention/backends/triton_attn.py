@@ -15,7 +15,7 @@ from aphrodite.attention.ops.chunked_prefill_paged_decode import (
     chunked_prefill_paged_decode)
 from aphrodite.attention.ops.paged_attn import PagedAttention
 from aphrodite.common import envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 from aphrodite.v1.attention.backends.flash_attn import FlashAttentionMetadata

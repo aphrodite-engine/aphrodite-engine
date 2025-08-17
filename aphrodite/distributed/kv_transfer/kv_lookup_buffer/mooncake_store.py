@@ -13,7 +13,7 @@ import torch
 from safetensors.torch import load as safetensors_load
 from safetensors.torch import save as safetensors_save
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer.kv_lookup_buffer.base import (
     KVStoreBufferBase)
 from loguru import logger

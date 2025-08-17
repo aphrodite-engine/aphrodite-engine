@@ -31,7 +31,7 @@ import os
 from time import sleep
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.common.utils import get_open_port
+from aphrodite.utils import get_open_port
 
 
 def parse_args():

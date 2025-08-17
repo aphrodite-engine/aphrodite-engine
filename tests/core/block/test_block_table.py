@@ -2,7 +2,7 @@ import pytest
 
 from aphrodite.processing.block.block_table import BlockTable
 from aphrodite.processing.block.cpu_gpu_block_allocator import CpuGpuBlockAllocator
-from aphrodite.common.utils import Device, cdiv, chunk_list
+from aphrodite.utils import Device, cdiv, chunk_list
 
 
 @pytest.mark.parametrize("block_size", [16])

@@ -4,7 +4,7 @@ from typing import List
 import torch
 
 from aphrodite.attention import get_attn_backend
-from aphrodite.common.config import (CacheConfig, DeviceConfig, ModelConfig,
+from aphrodite.config import (CacheConfig, DeviceConfig, ModelConfig,
                                      ParallelConfig)
 from aphrodite.utils import (STR_DTYPE_TO_TORCH_DTYPE, LayerBlockType,
                                     get_dtype_size, is_pin_memory_available)

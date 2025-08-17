@@ -10,7 +10,7 @@ from aphrodite.utils import DEFAULT_MAX_NUM_BATCHED_TOKENS
 from .interface import DeviceCapability, Platform, PlatformEnum, _Backend
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig, ModelConfig
+    from aphrodite.config import AphroditeConfig, ModelConfig
 else:
     ModelConfig = None
     AphroditeConfig = None
@@ -30,8 +30,8 @@ class XPUPlatform(Platform):
     @classmethod
     def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
                              dtype: torch.dtype, kv_cache_dtype: Optional[str],
-                             block_size: int, use_v1: bool,
-                             use_mla: bool) -> str:
+                             block_size: int, use_v1: bool, use_mla: bool,
+                             has_sink: bool) -> str:
         if selected_backend is not None and selected_backend != _Backend.IPEX:
             logger.info("Cannot use {} backend on XPU.", selected_backend)
         use_v1 = envs.APHRODITE_USE_V1

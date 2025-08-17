@@ -5,19 +5,22 @@ import torch
 from torch import nn
 from transformers import RobertaConfig
 
-from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.forward_context import get_forward_context
 from aphrodite.modeling.layers.pooler import (ClassifierPooler, CLSPool,
                                               DispatchPooler, Pooler)
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
-from aphrodite.modeling.models.bert import BertEmbeddingModel, BertModel
+from aphrodite.modeling.models.bert import (TOKEN_TYPE_SHIFT,
+                                            BertEmbeddingModel, BertModel,
+                                            _decode_token_type_ids,
+                                            _encode_token_type_ids)
 from aphrodite.modeling.models.utils import (AutoWeightsLoader, WeightsMapper,
                                              maybe_prefix)
 
 from .bert_with_rope import BertWithRope, JinaRobertaModel
-from .interfaces import SupportsCrossEncoding, SupportsV0Only
+from .interfaces import SupportsCrossEncoding, default_pooling_type
 
 
 class RobertaEmbedding(nn.Module):
@@ -50,17 +53,12 @@ class RobertaEmbedding(nn.Module):
         self,
         input_ids: torch.Tensor,
         position_ids: torch.Tensor,
-        token_type_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        input_shape = input_ids.size()
-        inputs_embeds = self.word_embeddings(input_ids)
 
-        # Position embeddings.
+        token_type_ids = _decode_token_type_ids(input_ids)
+
+        inputs_embeds = self.word_embeddings(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
-        if token_type_ids is None:
-            token_type_ids = torch.zeros(input_shape,
-                                         dtype=torch.long,
-                                         device=inputs_embeds.device)
 
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
         embeddings = inputs_embeds + token_type_embeddings + position_embeddings
@@ -85,6 +83,7 @@ class RobertaClassificationHead(nn.Module):
         return x
 
 
+@default_pooling_type("CLS")
 class RobertaEmbeddingModel(BertEmbeddingModel):
     """A model that uses Roberta to provide embedding functionalities.
 
@@ -102,9 +101,8 @@ class RobertaEmbeddingModel(BertEmbeddingModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor],
+        input_ids: torch.Tensor,
         positions: torch.Tensor,
-        token_type_ids: Optional[torch.Tensor] = None,
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
@@ -117,8 +115,7 @@ class RobertaEmbeddingModel(BertEmbeddingModel):
                                   padding_idx=self.padding_idx)
 
         return self.model(input_ids=input_ids,
-                          position_ids=positions,
-                          token_type_ids=token_type_ids,
+                          positions=positions,
                           inputs_embeds=inputs_embeds,
                           intermediate_tensors=intermediate_tensors)
 
@@ -150,8 +147,8 @@ class RobertaEmbeddingModel(BertEmbeddingModel):
         return loader.load_weights(weights_list, mapper=mapper)
 
 
-class RobertaForSequenceClassification(nn.Module, SupportsCrossEncoding,
-                                       SupportsV0Only):
+@default_pooling_type("CLS")
+class RobertaForSequenceClassification(nn.Module, SupportsCrossEncoding):
     """A model that uses Roberta to provide embedding functionalities.
 
    This class encapsulates the BertModel and provides an interface for
@@ -223,11 +220,14 @@ class RobertaForSequenceClassification(nn.Module, SupportsCrossEncoding,
         replace_roberta_positions(input_ids=input_ids,
                                   position_ids=positions,
                                   padding_idx=self.padding_idx)
+        if token_type_ids is not None:
+            assert self.roberta.config.vocab_size < (1 << TOKEN_TYPE_SHIFT)
+            assert input_ids is not None
+            _encode_token_type_ids(input_ids, token_type_ids)
         return self.roberta(input_ids=input_ids,
-                            position_ids=positions,
+                            positions=positions,
                             inputs_embeds=inputs_embeds,
-                            intermediate_tensors=intermediate_tensors,
-                            token_type_ids=token_type_ids)
+                            intermediate_tensors=intermediate_tensors)
 
 
 # Adapted from transformers

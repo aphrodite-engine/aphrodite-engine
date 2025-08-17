@@ -15,9 +15,9 @@ from torch.library import Library
 
 from aphrodite.compilation.counter import compilation_counter
 from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.common.config import (CompilationConfig, CompilationLevel, AphroditeConfig,
+from aphrodite.config import (CompilationConfig, CompilationLevel, AphroditeConfig,
                          set_current_aphrodite_config)
-from aphrodite.common.utils import direct_register_custom_op
+from aphrodite.utils import direct_register_custom_op
 
 # create a library to hold the custom op
 silly_lib = Library("silly", "FRAGMENT")  # noqa
