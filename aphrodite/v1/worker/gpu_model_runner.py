@@ -12,7 +12,8 @@ import torch
 import torch.distributed
 import torch.nn as nn
 from loguru import logger
-from tqdm import tqdm
+from rich.progress import (BarColumn, Progress, SpinnerColumn, TextColumn,
+                           TimeElapsedColumn)
 
 import aphrodite.common.envs as envs
 from aphrodite.attention import Attention, AttentionType
@@ -2599,29 +2600,52 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             full_cg = self.full_cuda_graph
             # Only rank 0 should print progress bar during capture
             compilation_cases = reversed(self.cudagraph_batch_sizes)
-            if is_global_first_rank():
-                compilation_cases = tqdm(
-                    list(compilation_cases),
-                    disable=not self.load_config.use_tqdm_on_load,
-                    desc="Capturing CUDA graph shapes")
-            for num_tokens in compilation_cases:
-                # We skip EPLB here since we don't want to record dummy metrics
-                for _ in range(
-                        self.compilation_config.cudagraph_num_of_warmups):
+            if is_global_first_rank() and self.load_config.use_tqdm_on_load:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[bold blue]{task.description}"),
+                    BarColumn(),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                ) as progress:
+                    task = progress.add_task(
+                        "Capturing CUDA graph shapes",
+                        total=len(self.cudagraph_batch_sizes)
+                    )
+                    for num_tokens in compilation_cases:
+                        progress.advance(task)
+                        # We skip EPLB here since we don't want to record dummy metrics
+                        for _ in range(
+                                self.compilation_config.cudagraph_num_of_warmups):
+                            self._dummy_run(num_tokens,
+                                            capture_attn_cudagraph=full_cg,
+                                            skip_eplb=True)
+                        self._dummy_run(num_tokens,
+                                        capture_attn_cudagraph=full_cg,
+                                        skip_eplb=True)
+            else:
+                for num_tokens in compilation_cases:
+                    # We skip EPLB here since we don't want to record dummy metrics
+                    for _ in range(
+                            self.compilation_config.cudagraph_num_of_warmups):
+                        self._dummy_run(num_tokens,
+                                        capture_attn_cudagraph=full_cg,
+                                        skip_eplb=True)
                     self._dummy_run(num_tokens,
                                     capture_attn_cudagraph=full_cg,
                                     skip_eplb=True)
-                self._dummy_run(num_tokens,
-                                capture_attn_cudagraph=full_cg,
-                                skip_eplb=True)
 
         end_time = time.perf_counter()
         end_free_gpu_memory = torch.cuda.mem_get_info()[0]
         elapsed_time = end_time - start_time
         cuda_graph_size = start_free_gpu_memory - end_free_gpu_memory
         # This usually takes 5~20 seconds.
-        logger.info("Graph capturing finished in {:.0f} secs, took {:.2f} GiB",
-                    elapsed_time, cuda_graph_size / (1 << 30))
+        if is_global_first_rank():
+            logger.info(
+                "Graph capturing finished in {:.0f} secs, took {:.2f} GiB",
+                elapsed_time,
+                cuda_graph_size / (1 << 30),
+            )
 
     def initialize_attn_backend(self, kv_cache_config: KVCacheConfig) -> None:
         """
