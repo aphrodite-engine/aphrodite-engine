@@ -3601,7 +3601,6 @@ class AphroditeConfig:
         if self.lora_config is not None:
             self.lora_config.verify_with_cache_config(self.cache_config)
             self.lora_config.verify_with_model_config(self.model_config)
-            self.lora_config.verify_lora_support()
 
         if self.quant_config is None and self.model_config is not None:
             self.quant_config = AphroditeConfig._get_quantization_config(
