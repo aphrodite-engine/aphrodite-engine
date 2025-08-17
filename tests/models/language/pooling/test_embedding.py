@@ -2,7 +2,7 @@ from typing import Optional
 
 import pytest
 
-from aphrodite.common.config import PoolerConfig
+from aphrodite.config import PoolerConfig
 from aphrodite.platforms import current_platform
 
 from ...utils import check_embeddings_close

@@ -15,9 +15,9 @@ import ray
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 from aphrodite import initialize_ray_cluster
-from aphrodite.common.config import ParallelConfig
+from aphrodite.config import ParallelConfig
 from aphrodite.executor.ray_utils import _wait_until_pg_removed
-from aphrodite.common.utils import get_ip
+from aphrodite.utils import get_ip
 
 APHRODITE_MULTI_NODE = os.getenv("APHRODITE_MULTI_NODE", "0") == "1"
 

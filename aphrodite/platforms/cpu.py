@@ -16,7 +16,7 @@ from aphrodite.utils import DEFAULT_MAX_NUM_BATCHED_TOKENS
 from .interface import CpuArchEnum, Platform, PlatformEnum, _Backend
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig
+    from aphrodite.config import AphroditeConfig
 else:
     AphroditeConfig = None
 
@@ -87,8 +87,8 @@ class CpuPlatform(Platform):
     @classmethod
     def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
                              dtype: torch.dtype, kv_cache_dtype: Optional[str],
-                             block_size: int, use_v1: bool,
-                             use_mla: bool) -> str:
+                             block_size: int, use_v1: bool, use_mla: bool,
+                             has_sink: bool) -> str:
         if selected_backend and selected_backend != _Backend.TORCH_SDPA:
             logger.info("Cannot use {} backend on CPU.", selected_backend)
         if use_mla:
@@ -182,7 +182,7 @@ class CpuPlatform(Platform):
             parallel_config.worker_cls = "aphrodite.v1.worker.cpu_worker.CPUWorker"
 
         # Note: workaround for v1 gpu_model_runner
-        from aphrodite.common.config import CompilationLevel
+        from aphrodite.config import CompilationLevel
         aphrodite_config.compilation_config.cudagraph_capture_sizes = []
 
         compilation_config = aphrodite_config.compilation_config

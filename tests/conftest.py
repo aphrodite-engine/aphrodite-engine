@@ -19,7 +19,7 @@ from aphrodite import LLM, SamplingParams
 from aphrodite.assets.audio import AudioAsset
 from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
-from aphrodite.common.config import (ConvertOption, RunnerOption,
+from aphrodite.config import (ConvertOption, RunnerOption,
                                      _get_and_verify_dtype)
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams

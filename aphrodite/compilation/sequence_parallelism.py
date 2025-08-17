@@ -6,7 +6,7 @@ import torch.fx as fx
 from loguru import logger
 from torch._inductor.pattern_matcher import PatternMatcherPass
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (get_tp_group,
                                    tensor_model_parallel_all_reduce)
 from aphrodite.distributed.parallel_state import (

@@ -19,7 +19,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only Erine model compatible with HuggingFace weights."""
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 
 from .utils import PPMissingLayer

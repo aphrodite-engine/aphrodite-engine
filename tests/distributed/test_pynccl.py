@@ -12,7 +12,7 @@ from aphrodite.distributed.device_communicators.pynccl_wrapper import NCCLLibrar
 from aphrodite.distributed.parallel_state import (ensure_model_parallel_initialized,
                                              get_world_group, graph_capture,
                                              init_distributed_environment)
-from aphrodite.common.utils import update_environment_variables
+from aphrodite.utils import update_environment_variables
 
 
 def distributed_run(fn, world_size):

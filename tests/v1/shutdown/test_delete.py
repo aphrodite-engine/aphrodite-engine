@@ -8,7 +8,7 @@ from tests.v1.shutdown.utils import (SHUTDOWN_TEST_THRESHOLD_BYTES,
 from aphrodite import LLM, SamplingParams
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.common.sampling_params import RequestOutputKind
-from aphrodite.common.utils import cuda_device_count_stateless
+from aphrodite.utils import cuda_device_count_stateless
 from aphrodite.v1.engine.async_llm import AsyncLLM
 
 MODELS = ["meta-llama/Llama-3.2-1B"]

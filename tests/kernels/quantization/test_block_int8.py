@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from tests.kernels.quant_utils import native_w8a8_block_matmul
-from aphrodite.common.config import AphroditeConfig, set_current_aphrodite_config
+from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_moe
 from aphrodite.quantization.utils.int8_utils import (

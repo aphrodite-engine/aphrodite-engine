@@ -11,7 +11,7 @@ from aphrodite.adapter_commons.utils import (add_adapter, deactivate_adapter,
                                              get_adapter, list_adapters,
                                              remove_adapter,
                                              set_adapter_mapping)
-from aphrodite.common.config import PromptAdapterConfig
+from aphrodite.config import PromptAdapterConfig
 from aphrodite.prompt_adapter.layers import (
     VocabParallelEmbeddingWithPromptAdapter)  # yapf: disable
 from aphrodite.prompt_adapter.layers import PromptAdapterMapping

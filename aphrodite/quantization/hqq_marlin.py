@@ -13,7 +13,7 @@ from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
 from aphrodite.quantization.utils.marlin_utils import (
     GPTQ_MARLIN_MAX_PARALLEL, GPTQ_MARLIN_MIN_THREAD_N,
-    marlin_make_empty_g_idx, marlin_permute_scales)
+    marlin_make_empty_g_idx, marlin_permute_bias, marlin_permute_scales)
 from aphrodite.quantization.utils.marlin_utils_test import MarlinWorkspace
 from aphrodite.quantization.utils.quant_utils import gptq_pack
 from aphrodite.scalar_type import scalar_types
@@ -277,6 +277,9 @@ class HQQMarlinMethod(LinearMethodBase):
         layer.marlin_zeros = marlin_zp
         layer.marlin_scales = marlin_s
 
+        if hasattr(layer, "bias") and layer.bias is not None:
+            layer.bias.data = marlin_permute_bias(layer.bias)
+
     def apply(
         self,
         layer: torch.nn.Module,
@@ -300,6 +303,7 @@ class HQQMarlinMethod(LinearMethodBase):
             x,
             None,
             layer.marlin_qweight,
+            bias,
             scales,
             None,
             zeros,
@@ -318,8 +322,5 @@ class HQQMarlinMethod(LinearMethodBase):
 
         if orig_type != torch.float16:
             marlin_out = marlin_out.to(orig_type)
-
-        if bias is not None:
-            marlin_out.add_(bias)
 
         return marlin_out

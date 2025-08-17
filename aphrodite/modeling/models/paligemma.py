@@ -6,7 +6,7 @@ from loguru import logger
 from torch import nn
 from transformers import BatchFeature, PaliGemmaConfig
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY

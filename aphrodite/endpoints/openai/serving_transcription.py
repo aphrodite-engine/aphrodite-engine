@@ -3,8 +3,8 @@ from typing import Optional, Union
 
 from fastapi import Request
 
-from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import RequestOutput
+from aphrodite.config import ModelConfig
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (
     ErrorResponse, RequestResponseMetadata, TranscriptionRequest,

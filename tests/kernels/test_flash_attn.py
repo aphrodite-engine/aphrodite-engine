@@ -5,7 +5,7 @@ import torch
 
 from aphrodite.attention.ops.aphrodite_flash_attn import (
     flash_attn_varlen_func, flash_attn_with_kvcache)
-from aphrodite.common.utils import seed_everything
+from aphrodite.utils import seed_everything
 
 NUM_HEADS = [(4, 4), (8, 2), (16, 2)]
 HEAD_SIZES = [128, 256]

@@ -4,7 +4,7 @@ import flashinfer
 import pytest
 import torch
 
-from aphrodite.common.utils import seed_everything
+from aphrodite.utils import seed_everything
 
 NUM_HEADS = [(16, 16), (32, 8), (64, 8), (6, 1)]
 HEAD_SIZES = [128, 256]

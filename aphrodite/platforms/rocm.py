@@ -15,7 +15,7 @@ from aphrodite.utils import cuda_device_count_stateless
 from .interface import DeviceCapability, Platform, PlatformEnum, _Backend
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig, ModelConfig
+    from aphrodite.config import AphroditeConfig, ModelConfig
 
 
 try:
@@ -185,8 +185,8 @@ class RocmPlatform(Platform):
 
     @classmethod
     def get_attn_backend_cls(cls, selected_backend, head_size, dtype,
-                             kv_cache_dtype, block_size, use_v1,
-                             use_mla) -> str:
+                             kv_cache_dtype, block_size, use_v1, use_mla,
+                             has_sink) -> str:
         if use_mla:
             from aphrodite.attention.backends.rocm_aiter_mla import (
                 is_aiter_mla_enabled)
@@ -324,18 +324,8 @@ class RocmPlatform(Platform):
             cache_config.block_size = 16
 
         parallel_config = aphrodite_config.parallel_config
-        scheduler_config = aphrodite_config.scheduler_config
         if parallel_config.worker_cls == "auto":
-            if scheduler_config.is_multi_step:
-                if envs.APHRODITE_USE_V1:
-                    raise NotImplementedError(
-                        "Multi-step scheduling is not supported (and not "
-                        "needed) on Aphrodite V1. Please launch without "
-                        "--num-scheduler-steps.")
-                else:
-                    parallel_config.worker_cls = \
-                        "aphrodite.worker.multi_step_worker.MultiStepWorker"
-            elif aphrodite_config.speculative_config:
+            if aphrodite_config.speculative_config:
                 if not envs.APHRODITE_USE_V1:
                     raise NotImplementedError(
                         "Speculative decoding is not supported on Aphrodite V0.")
@@ -343,7 +333,7 @@ class RocmPlatform(Platform):
             else:
                 if envs.APHRODITE_USE_V1:
                     parallel_config.worker_cls = \
-                            "aphrodite.v1.worker.gpu_worker.Worker"
+                        "aphrodite.v1.worker.gpu_worker.Worker"
                 else:
                     parallel_config.worker_cls = "aphrodite.worker.worker.Worker"
 

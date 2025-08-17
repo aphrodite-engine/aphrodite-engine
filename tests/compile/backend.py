@@ -4,7 +4,7 @@ from typing import Callable, Union
 from torch import fx
 
 from aphrodite.compilation.inductor_pass import InductorPass
-from aphrodite.common.config import get_current_aphrodite_config
+from aphrodite.config import get_current_aphrodite_config
 
 
 class TestBackend:

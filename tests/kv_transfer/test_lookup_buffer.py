@@ -4,7 +4,7 @@ import random
 import torch
 from tqdm import tqdm
 
-from aphrodite.common.config import KVTransferConfig
+from aphrodite.config import KVTransferConfig
 from aphrodite.distributed.kv_transfer.kv_lookup_buffer.simple_buffer import (
     SimpleBuffer)
 from aphrodite.distributed.kv_transfer.kv_pipe.pynccl_pipe import PyNcclPipe

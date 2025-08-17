@@ -12,7 +12,7 @@ from torch import nn
 from typing_extensions import assert_never
 
 from aphrodite.attention import Attention
-from aphrodite.common.config import (AphroditeConfig, ModelConfig, ModelImpl,
+from aphrodite.config import (AphroditeConfig, ModelConfig, ModelImpl,
                                      set_current_aphrodite_config)
 from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.linear import QKVCrossParallelLinear

@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 from torch import nn
 
-from aphrodite.common.config import LoadConfig, ModelConfig, AphroditeConfig
+from aphrodite.config import LoadConfig, ModelConfig, AphroditeConfig
 from loguru import logger
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.bitsandbytes_loader import (
@@ -62,7 +62,7 @@ def register_model_loader(load_format: str):
         load_format (str): The model loader format name.
 
     Examples:
-        >>> from aphrodite.common.config import LoadConfig
+        >>> from aphrodite.config import LoadConfig
         >>> from aphrodite.modeling.model_loader import get_model_loader, register_model_loader
         >>> from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
         >>>

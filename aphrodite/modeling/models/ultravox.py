@@ -11,7 +11,7 @@ from transformers.models.whisper import WhisperFeatureExtractor
 from transformers.models.whisper.modeling_whisper import WhisperEncoder
 
 from aphrodite.common import envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.forward_context import get_forward_context
 from aphrodite.modeling.layers.activation import MulAndSilu, get_act_fn

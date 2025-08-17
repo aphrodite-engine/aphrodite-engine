@@ -8,7 +8,7 @@ from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.modeling.utils import set_random_seed
 from aphrodite.common.sequence import SamplingParams, SequenceData, SequenceGroupMetadata
-from aphrodite.common.utils import is_pin_memory_available
+from aphrodite.utils import is_pin_memory_available
 
 
 class MockLogitsProcessor(LogitsProcessor):

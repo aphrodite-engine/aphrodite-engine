@@ -5,7 +5,7 @@ import pytest
 from transformers import AutoModel, AutoTokenizer, BatchEncoding
 
 from aphrodite.common.sequence import SampleLogprobs
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE
 
 from ....conftest import AphroditeRunner, HfRunner
 from ...utils import check_logprobs_close

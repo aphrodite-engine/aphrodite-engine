@@ -1,7 +1,7 @@
 import pytest
 
 from aphrodite.assets.image import ImageAsset
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
 

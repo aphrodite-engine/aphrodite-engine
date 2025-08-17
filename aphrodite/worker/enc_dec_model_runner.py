@@ -11,7 +11,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
 from aphrodite.attention.selector import (get_env_variable_attn_backend,
                                           get_global_forced_attn_backend)
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors, PoolerOutput,
                                        SequenceGroupMetadata)

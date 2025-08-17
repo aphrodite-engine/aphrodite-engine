@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import (CacheConfig, DeviceConfig, LoadConfig, LoRAConfig,
+from aphrodite.config import (CacheConfig, DeviceConfig, LoadConfig, LoRAConfig,
                          ModelConfig, ParallelConfig, SchedulerConfig,
                          AphroditeConfig)
 from aphrodite.lora.models import LoRAMapping

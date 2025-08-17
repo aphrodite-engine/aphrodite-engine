@@ -14,7 +14,7 @@ from transformers.models.phi4_multimodal.modeling_phi4_multimodal import (
     Phi4MultimodalAudioConvModule, Phi4MultimodalAudioNemoConvSubsampling,
     Phi4MultimodalAudioRelativeAttentionBias, adaptive_enc_mask, unfold_tensor)
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)

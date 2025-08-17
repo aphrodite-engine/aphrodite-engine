@@ -6,7 +6,7 @@ from torch._dynamo.utils import lazy_format_graph_code
 # yapf: enable
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 
 from .inductor_pass import InductorPass
 

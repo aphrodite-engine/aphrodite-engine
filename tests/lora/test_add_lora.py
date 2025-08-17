@@ -8,7 +8,7 @@ from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.inputs import TextPrompt
 from aphrodite.lora.request import LoRARequest
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import merge_async_iterators
+from aphrodite.utils import merge_async_iterators
 
 MODEL_PATH = "THUDM/chatglm3-6b"
 LORA_RANK = 64

@@ -7,7 +7,7 @@ from aphrodite.attention.selector import _cached_get_attn_backend, get_attn_back
 from aphrodite.platforms.cpu import CpuPlatform
 from aphrodite.platforms.cuda import CudaPlatform
 from aphrodite.platforms.rocm import RocmPlatform
-from aphrodite.common.utils import STR_BACKEND_ENV_VAR, STR_FLASH_ATTN_VAL, STR_INVALID_VAL
+from aphrodite.utils import STR_BACKEND_ENV_VAR, STR_FLASH_ATTN_VAL, STR_INVALID_VAL
 
 
 @pytest.fixture(autouse=True)

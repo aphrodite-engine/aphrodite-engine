@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from aphrodite.common.utils import get_cuda_view_from_cpu_tensor, is_uva_available
+from aphrodite.utils import get_cuda_view_from_cpu_tensor, is_uva_available
 
 CUDA_DEVICES = [
     f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)

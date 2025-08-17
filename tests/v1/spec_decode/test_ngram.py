@@ -1,6 +1,6 @@
 import numpy as np
 
-from aphrodite.common.config import ModelConfig, SpeculativeConfig, AphroditeConfig
+from aphrodite.config import ModelConfig, SpeculativeConfig, AphroditeConfig
 from aphrodite.v1.spec_decode.ngram_proposer import (NgramProposer,
                                                 _find_subarray_kmp,
                                                 _kmp_lps_array)

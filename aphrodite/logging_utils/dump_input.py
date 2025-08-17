@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.metrics.stats import SchedulerStats
 from aphrodite.version import __version__ as APHRODITE_VERSION

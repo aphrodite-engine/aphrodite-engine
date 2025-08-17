@@ -6,7 +6,7 @@ import torch.nn as nn
 from transformers import (BatchFeature, Blip2Config, Blip2QFormerConfig,
                           apply_chunking_to_forward)
 
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.sampling_metadata import SamplingMetadata

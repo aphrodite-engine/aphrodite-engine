@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from transformers import CLIPImageProcessor, LlavaNextImageProcessor
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.multimodal import MultiModalRegistry
 from aphrodite.multimodal.utils import rescale_image_size
 

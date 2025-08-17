@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from aphrodite.common.config import LoadConfig, ModelConfig
+from aphrodite.config import LoadConfig, ModelConfig
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.weight_utils import (
     initialize_dummy_weights)

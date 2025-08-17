@@ -11,7 +11,7 @@ from mistral_common.tokens.tokenizers.tekken import (SpecialTokenInfo,
 from aphrodite.assets.audio import AudioAsset
 from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import (
     _try_extract_ast, load_chat_template, parse_chat_messages,
     parse_chat_messages_futures, resolve_chat_template_content_format,

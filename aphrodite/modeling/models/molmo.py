@@ -16,7 +16,7 @@ from transformers.tokenization_utils_base import TextInput
 
 from aphrodite.attention import Attention
 from aphrodite.attention.layer import MultiHeadAttention
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,

@@ -6,12 +6,12 @@ from typing import Literal, Optional
 
 import pytest
 
-from aphrodite.common.config import config
+from aphrodite.config import config
 from aphrodite.engine.args_tools import (EngineArgs, contains_type, get_kwargs,
                                    get_type, is_not_builtin, is_type,
                                    literal_to_kwargs, nullable_kvs,
                                    optional_type)
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 
 
 @pytest.mark.parametrize(("type", "value", "expected"), [

@@ -4,7 +4,7 @@ from typing import List, Optional, Set, Tuple
 
 import torch.distributed
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import ExecuteModelRequest
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment)
@@ -59,25 +59,21 @@ class NeuronWorker(LocalOrDistributedWorkerBase):
         assert (self.lora_config
                 is None), ("LoRA is not supported for TransformersNeuronX "
                            "framework.")
-        from aphrodite.worker.multi_step_neuron_model_runner import (
-            MultiStepNeuronModelRunner)
         if self.speculative_config is not None:
-            return MultiStepNeuronModelRunner(aphrodite_config=aphrodite_config)
-        else:
-            return NeuronModelRunner(aphrodite_config=aphrodite_config)
+            raise NotImplementedError(
+                "Speculative decoding is not supported for TransformersNeuronX"
+            )
+        return NeuronModelRunner(aphrodite_config=aphrodite_config)
 
     def get_neuronx_distributed_model_runner(self, aphrodite_config):
-        from aphrodite.worker.multi_step_neuronx_distributed_model_runner import (
-            MultiStepNeuronxDistributedModelRunner)
         from aphrodite.worker.neuronx_distributed_model_runner import (
             NeuronxDistributedModelRunner)
         if self.speculative_config is not None:
-            assert (self.lora_config
-                    is None), "LoRA is not supported for Speculative Decoding"
-            return MultiStepNeuronxDistributedModelRunner(
-                aphrodite_config=aphrodite_config)
-        else:
-            return NeuronxDistributedModelRunner(aphrodite_config=aphrodite_config)
+            assert (self.lora_config is None), (
+                "LoRA is not supported for Speculative Decoding")
+            raise NotImplementedError(
+                "Speculative decoding is not supported for NeuronxDistributed")
+        return NeuronxDistributedModelRunner(aphrodite_config=aphrodite_config)
 
     def init_device(self) -> None:
         self.init_distributed_environment()

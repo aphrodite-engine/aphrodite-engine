@@ -18,7 +18,7 @@ from mistral_common.tokens.tokenizers.audio import Audio, AudioEncoder
 from transformers import TensorType, WhisperConfig
 from transformers.tokenization_utils_base import TextInput
 
-from aphrodite.common.config import (AphroditeConfig, ModelConfig,
+from aphrodite.config import (AphroditeConfig, ModelConfig,
                                      SpeechToTextConfig)
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.inputs.data import PromptType

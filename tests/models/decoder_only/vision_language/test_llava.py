@@ -5,7 +5,7 @@ from transformers import (AutoConfig, AutoModelForVision2Seq, AutoTokenizer,
                           BatchEncoding)
 
 from aphrodite.common.sequence import SampleLogprobs
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE
 from aphrodite.multimodal.utils import rescale_image_size
 
 from ....conftest import (IMAGE_ASSETS, AphroditeRunner, HfRunner,

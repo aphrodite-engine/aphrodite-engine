@@ -25,7 +25,7 @@ from torch import nn
 from transformers import GPTBigCodeConfig
 
 from aphrodite.attention import Attention
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import (get_pp_group,
@@ -43,7 +43,8 @@ from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP
 from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers)
+                    make_empty_intermediate_tensors_factory, make_layers,
+                    maybe_prefix)
 
 
 class GPTBigCodeAttention(nn.Module):
@@ -81,6 +82,7 @@ class GPTBigCodeAttention(nn.Module):
             total_num_kv_heads,
             bias=True,
             quant_config=quant_config,
+            prefix=f"{prefix}.c_attn",
         )
 
         self.c_proj = RowParallelLinear(
@@ -88,6 +90,7 @@ class GPTBigCodeAttention(nn.Module):
             self.hidden_size,
             bias=True,
             quant_config=quant_config,
+            prefix=f"{prefix}.c_proj",
         )
         self.attn = Attention(self.num_heads,
                               self.head_dim,
@@ -121,6 +124,7 @@ class GPTBigMLP(nn.Module):
         intermediate_size: int,
         config: GPTBigCodeConfig,
         quant_config: Optional[QuantizationConfig] = None,
+        prefix: str = "",
     ):
         super().__init__()
         hidden_size = config.hidden_size
@@ -129,12 +133,14 @@ class GPTBigMLP(nn.Module):
             intermediate_size,
             bias=True,
             quant_config=quant_config,
+            prefix=f"{prefix}.c_fc",
         )
         self.c_proj = RowParallelLinear(
             intermediate_size,
             hidden_size,
             bias=True,
             quant_config=quant_config,
+            prefix=f"{prefix}.c_proj",
         )
         self.act = get_act_fn(config.activation_function)
 
@@ -165,7 +171,10 @@ class GPTBigCodeBlock(nn.Module):
                                         quant_config,
                                         prefix=f"{prefix}.attn")
         self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
-        self.mlp = GPTBigMLP(inner_dim, config, quant_config)
+        self.mlp = GPTBigMLP(inner_dim,
+                             config,
+                             quant_config,
+                             prefix=f"{prefix}.mlp")
 
     def forward(
         self,
@@ -258,7 +267,7 @@ class GPTBigCodeModel(nn.Module):
             weight_loader = getattr(param, "weight_loader",
                                     default_weight_loader)
             # TODO (@robertgshaw2-neuralmagic): move to fp8 linear method
-            if "c_attn.input_scale" in name or "c_attn.weight_scale" in name:
+            if "c_attn.input_scale" in name:
                 weight_loader(param, loaded_weight, 'q')
                 weight_loader(param, loaded_weight, 'k')
                 weight_loader(param, loaded_weight, 'v')
@@ -282,7 +291,8 @@ class GPTBigCodeForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
 
         self.quant_config = quant_config
         self.transformer = GPTBigCodeModel(aphrodite_config=aphrodite_config,
-                                           prefix=prefix)
+                                           prefix=maybe_prefix(
+                                               prefix, "transformer"))
         if self.config.tie_word_embeddings:
             self.lm_head = self.transformer.wte
         else:

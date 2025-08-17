@@ -26,7 +26,7 @@ from transformers import BartConfig
 from transformers.utils import logging
 
 from aphrodite.attention import Attention, AttentionType
-from aphrodite.common.config import AphroditeConfig, CacheConfig, LoRAConfig
+from aphrodite.config import AphroditeConfig, CacheConfig, LoRAConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn

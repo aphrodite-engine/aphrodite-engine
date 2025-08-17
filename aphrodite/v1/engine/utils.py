@@ -13,7 +13,7 @@ import msgspec
 import zmq
 from loguru import logger
 
-from aphrodite.common.config import (AphroditeConfig, CacheConfig,
+from aphrodite.config import (AphroditeConfig, CacheConfig,
                                      ParallelConfig)
 from aphrodite.platforms import current_platform
 from aphrodite.ray.ray_env import get_env_vars_to_copy

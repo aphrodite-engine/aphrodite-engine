@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.endpoints.openai.protocol import (ErrorResponse,
                                               LoadLoRAAdapterRequest,

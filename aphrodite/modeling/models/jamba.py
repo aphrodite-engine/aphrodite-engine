@@ -8,8 +8,8 @@ from transformers import JambaConfig
 
 from aphrodite.attention.layer import Attention
 from aphrodite.common import envs
-from aphrodite.common.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.fused_moe import FusedMoE
@@ -21,8 +21,7 @@ from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer import MambaMixer
 from aphrodite.modeling.layers.mamba.mamba_utils import (
     MambaStateShapeCalculator)
-from aphrodite.modeling.layers.pooler import (DispatchPooler, Pooler,
-                                              PoolingType)
+from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
@@ -603,6 +602,5 @@ class JambaForSequenceClassification(JambaForCausalLM):
             Pooler.for_classify(
                 pooler_config,
                 classifier=self.score,
-                default_pooling_type=PoolingType.LAST,
             ),
         })

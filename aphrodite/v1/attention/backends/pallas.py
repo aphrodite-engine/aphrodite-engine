@@ -14,7 +14,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionLayer,
                                                    AttentionType)
 from aphrodite.attention.backends.utils import CommonAttentionState
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.utils import cdiv, next_power_of_2
 
 # TPU requires the head size to be a multiple of 128.

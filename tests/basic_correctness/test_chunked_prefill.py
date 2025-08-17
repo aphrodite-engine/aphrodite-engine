@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import STR_BACKEND_ENV_VAR
+from aphrodite.utils import STR_BACKEND_ENV_VAR
 
 from ..models.utils import check_logprobs_close, check_outputs_equal
 from ..utils import multi_gpu_test

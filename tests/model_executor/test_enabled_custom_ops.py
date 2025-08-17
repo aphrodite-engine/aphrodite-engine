@@ -1,6 +1,6 @@
 import pytest
 
-from aphrodite.common.config import CompilationConfig, AphroditeConfig, set_current_aphrodite_config
+from aphrodite.config import CompilationConfig, AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.custom_op import CustomOp
 from aphrodite.modeling.layers.activation import (GeluAndMul,
                                                    ReLUSquaredActivation,

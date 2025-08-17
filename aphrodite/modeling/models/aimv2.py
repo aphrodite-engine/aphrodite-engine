@@ -5,7 +5,6 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-from transformers import PretrainedConfig
 
 from aphrodite.attention.layer import MultiHeadAttention
 from aphrodite.distributed import get_tensor_model_parallel_world_size
@@ -17,12 +16,13 @@ from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization.base_config import QuantizationConfig
+from aphrodite.transformers_utils.configs.ovis import AIMv2Config
 
 
 class AIMv2SwiGLUFFN(nn.Module):
 
-    def __init__(self, config: PretrainedConfig,
-                 quant_config: QuantizationConfig, prefix: str):
+    def __init__(self, config: AIMv2Config, quant_config: QuantizationConfig,
+                 prefix: str):
         super().__init__()
         hidden_features = config.intermediate_size
         in_features = config.hidden_size
@@ -53,7 +53,7 @@ class AIMv2SwiGLUFFN(nn.Module):
 
 class AIMv2PatchEmbed(nn.Module):
 
-    def __init__(self, config: PretrainedConfig):
+    def __init__(self, config: AIMv2Config):
         super().__init__()
         self.proj = nn.Conv2d(
             config.num_channels,
@@ -71,7 +71,7 @@ class AIMv2PatchEmbed(nn.Module):
 
 class AIMv2ViTPreprocessor(nn.Module):
 
-    def __init__(self, config: PretrainedConfig):
+    def __init__(self, config: AIMv2Config):
         super().__init__()
         num_patches = (config.image_size // config.patch_size)**2
 
@@ -89,8 +89,8 @@ class AIMv2ViTPreprocessor(nn.Module):
 
 class AIMv2Attention(nn.Module):
 
-    def __init__(self, config: PretrainedConfig,
-                 quant_config: QuantizationConfig, prefix: str):
+    def __init__(self, config: AIMv2Config, quant_config: QuantizationConfig,
+                 prefix: str):
         super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
@@ -137,8 +137,8 @@ class AIMv2Attention(nn.Module):
 
 class AIMv2Block(nn.Module):
 
-    def __init__(self, config: PretrainedConfig,
-                 quant_config: QuantizationConfig, prefix: str):
+    def __init__(self, config: AIMv2Config, quant_config: QuantizationConfig,
+                 prefix: str):
         super().__init__()
         self.attn = AIMv2Attention(config,
                                    quant_config=quant_config,
@@ -159,7 +159,7 @@ class AIMv2Transformer(nn.Module):
 
     def __init__(
         self,
-        config: PretrainedConfig,
+        config: AIMv2Config,
         quant_config: QuantizationConfig,
         *,
         require_post_norm: Optional[bool] = None,
@@ -189,7 +189,7 @@ class AIMv2Transformer(nn.Module):
 class AIMv2Model(torch.nn.Module):
 
     def __init__(self,
-                 config: PretrainedConfig,
+                 config: AIMv2Config,
                  quant_config: QuantizationConfig,
                  *,
                  require_post_norm: Optional[bool] = None,

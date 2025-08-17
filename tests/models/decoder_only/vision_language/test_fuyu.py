@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple, Type
 import pytest
 
 from aphrodite.common.sequence import SampleLogprobs
-from aphrodite.common.utils import is_cpu
+from aphrodite.utils import is_cpu
 from aphrodite.multimodal.utils import rescale_image_size
 
 from ....conftest import IMAGE_ASSETS, AphroditeRunner, HfRunner, _ImageAssets

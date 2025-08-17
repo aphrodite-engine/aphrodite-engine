@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from aphrodite.attention.selector import get_attn_backend
-from aphrodite.common.utils import STR_BACKEND_ENV_VAR, STR_INVALID_VAL
+from aphrodite.utils import STR_BACKEND_ENV_VAR, STR_INVALID_VAL
 
 
 def test_platform_plugins():

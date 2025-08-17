@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import msgspec
 
@@ -7,7 +7,7 @@ from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.tasks import PoolingTask
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import ModelConfig
+    from aphrodite.config import ModelConfig
 
 
 class PoolingParams(
@@ -41,6 +41,9 @@ class PoolingParams(
     """Internal use only."""
 
     requires_token_ids: bool = False
+    """Internal use only."""
+
+    extra_kwargs: Optional[dict[str, Any]] = None
     """Internal use only."""
 
     output_kind: RequestOutputKind = RequestOutputKind.FINAL_ONLY
@@ -164,7 +167,8 @@ class PoolingParams(
                 f"softmax={self.softmax}, "
                 f"step_tag_id={self.step_tag_id}, "
                 f"returned_token_ids={self.returned_token_ids}, "
-                f"requires_token_ids={self.requires_token_ids})")
+                f"requires_token_ids={self.requires_token_ids}, "
+                f"extra_kwargs={self.extra_kwargs})")
 
     def __post_init__(self) -> None:
         assert self.output_kind == RequestOutputKind.FINAL_ONLY,\

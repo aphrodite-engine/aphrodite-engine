@@ -5,7 +5,7 @@ from aphrodite.processing.block.utils import (STR_NOT_IMPL_ENC_DEC_PREFIX_CACHE,
 from aphrodite.processing.block_manager import SelfAttnBlockSpaceManager
 from aphrodite.processing.interfaces import AllocStatus
 from aphrodite.common.sequence import Logprob, SequenceStatus
-from aphrodite.common.utils import chunk_list
+from aphrodite.utils import chunk_list
 
 from ..utils import (create_dummy_prompt, create_seq_group,
                      create_seq_group_encoder_decoder)

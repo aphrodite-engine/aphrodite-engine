@@ -1,7 +1,7 @@
 import os
 import time
 
-from aphrodite.common.config import (AphroditeConfig, CompilationConfig,
+from aphrodite.config import (AphroditeConfig, CompilationConfig,
                                      CompilationLevel)
 
 context_manager = None

@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.quantization.aqlm import (dequantize_weight,
                                          generic_dequantize_gemm,
                                          get_int_dtype,

@@ -362,6 +362,8 @@ set(APHRODITE_EXT_SRC
     set_gencode_flags_for_srcs(
       SRCS "${MARLIN_TEMPLATE_KERNEL_SRC}"
       CUDA_ARCHS "${MARLIN_ARCHS}")
+    set_source_files_properties(${MARLIN_TEMPLATE_KERNEL_SRC}
+      PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
 
     list(APPEND APHRODITE_EXT_SRC ${MARLIN_TEMPLATE_KERNEL_SRC})
     set(MARLIN_SRCS
@@ -374,6 +376,8 @@ set(APHRODITE_EXT_SRC
     set_gencode_flags_for_srcs(
       SRCS "${MARLIN_SRCS}"
       CUDA_ARCHS "${MARLIN_ARCHS}")
+    set_source_files_properties("kernels/quantization/gptq_marlin/gptq_marlin.cu"
+      PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
     list(APPEND APHRODITE_EXT_SRC "${MARLIN_SRCS}")
     message(STATUS "Building Marlin kernels for archs: ${MARLIN_ARCHS}")
   else()
@@ -436,6 +440,7 @@ set(APHRODITE_EXT_SRC
     set(SRCS
       "kernels/quantization/cutlass_w8a8/scaled_mm_c3x_sm120.cu"
       "kernels/quantization/cutlass_w8a8/c3x/scaled_mm_sm120_fp8.cu"
+      "kernels/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm120_fp8.cu"
     )
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
@@ -862,6 +867,8 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
     set_gencode_flags_for_srcs(
       SRCS "${MOE_WNAA16_MARLIN_SRC}"
       CUDA_ARCHS "${MARLIN_MOE_ARCHS}")
+    set_source_files_properties(${MOE_WNAA16_MARLIN_SRC}
+      PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
 
     list(APPEND APHRODITE_MOE_EXT_SRC ${MOE_WNAA16_MARLIN_SRC})
 
@@ -907,46 +914,7 @@ endif()
 
 # For CUDA we also build and ship some external projects.
 if (APHRODITE_GPU_LANG STREQUAL "CUDA")
-
-    # FlashMLA build - requires CUDA 12.3 or later and Hopper architecture
-    cuda_archs_loose_intersection(FLASH_MLA_ARCHS "9.0;9.0a;10.0;10.1;12.0" "${CUDA_ARCHS}")
-    if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.3 AND FLASH_MLA_ARCHS)
-        set(FlashMLA_SOURCES
-            kernels/flash_mla/flash_api.cpp
-            kernels/flash_mla/flash_fwd_mla_bf16_sm90.cu
-            kernels/flash_mla/flash_fwd_mla_fp16_sm90.cu
-            kernels/flash_mla/flash_fwd_mla_metadata.cu)
-
-        set_gencode_flags_for_srcs(
-            SRCS "${FlashMLA_SOURCES}"
-            CUDA_ARCHS "${FLASH_MLA_ARCHS}")
-
-        define_gpu_extension_target(
-            _flashmla_C
-            DESTINATION aphrodite
-            LANGUAGE ${APHRODITE_GPU_LANG}
-            SOURCES ${FlashMLA_SOURCES}
-            COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
-            ARCHITECTURES ${APHRODITE_GPU_ARCHES}
-            INCLUDE_DIRECTORIES 
-                kernels/flash_mla/include
-                ${CUTLASS_INCLUDE_DIR}
-            USE_SABI 3
-            WITH_SOABI)
-
-        message(STATUS "Building FlashMLA for archs: ${FLASH_MLA_ARCHS}")
-    else()
-        if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.3 AND FLASH_MLA_ARCHS)
-            message(STATUS "Not building FlashMLA kernels as CUDA Compiler version is "
-                         "not > 12.3, we recommend upgrading to CUDA 12.3 or later "
-                         "if you intend on using FlashMLA on Hopper.")
-        else()
-            message(STATUS "Not building FlashMLA as no compatible archs found "
-                         "in CUDA target architectures")
-        endif()
-        # Create an empty target for setup.py when not targeting sm90a systems
-        add_custom_target(_flashmla_C)
-    endif()
+    include(cmake/external_project/flashmla.cmake)
 
     # vllm-flash-attn should be last as it overwrites some CMake functions
     include(cmake/external_project/vllm_flash_attn.cmake)

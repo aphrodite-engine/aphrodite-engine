@@ -43,7 +43,7 @@ from aphrodite.attention.backends.utils import (PAD_SLOT_ID,
                                                 is_block_tables_empty)
 from aphrodite.attention.layer import Attention
 from aphrodite.attention.ops.paged_attn import PagedAttention
-from aphrodite.common.config import (AphroditeConfig,
+from aphrodite.config import (AphroditeConfig,
                                      get_layers_from_aphrodite_config)
 from aphrodite.common.logger import log_once
 from aphrodite.utils import (async_tensor_h2d, get_kv_cache_torch_dtype,

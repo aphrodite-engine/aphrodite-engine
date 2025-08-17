@@ -6,7 +6,7 @@ import jinja2
 from fastapi import Request
 from loguru import logger
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.utils import random_uuid
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (AnthropicContentBlockDelta,

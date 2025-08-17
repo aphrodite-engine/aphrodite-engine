@@ -11,9 +11,8 @@ from fastapi import Request
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import RequestOutput
-from aphrodite.utils import PlaceholderModule
+from aphrodite.config import ModelConfig
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (
     DeltaMessage, ErrorResponse, RequestResponseMetadata,
@@ -26,6 +25,7 @@ from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import PromptType
 from aphrodite.modeling.models import SupportsTranscription
+from aphrodite.utils import PlaceholderModule
 
 try:
     import librosa

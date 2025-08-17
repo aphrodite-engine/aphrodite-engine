@@ -257,6 +257,13 @@ def marlin_permute_scales(s: torch.Tensor, size_k: int, size_n: int,
     return s
 
 
+def marlin_permute_bias(s: torch.Tensor) -> torch.Tensor:
+    origin_shape = s.shape
+    _, scale_perm_single = get_scale_perms()
+    s = s.reshape((-1, len(scale_perm_single)))[:, scale_perm_single]
+    return s.reshape(*origin_shape).contiguous()
+
+
 def marlin_moe_permute_scales(
     s: torch.Tensor,
     size_k: int,
@@ -408,6 +415,7 @@ def apply_gptq_marlin_linear(
     output = ops.gptq_marlin_gemm(reshaped_x,
                                   None,
                                   weight,
+                                  bias,
                                   weight_scale,
                                   None,
                                   weight_zp,
@@ -422,9 +430,6 @@ def apply_gptq_marlin_linear(
                                   use_atomic_add=use_atomic_add,
                                   use_fp32_reduce=use_fp32_reduce,
                                   is_zp_float=False)
-
-    if bias is not None:
-        output.add_(bias)  # In-place add
 
     return output.reshape(out_shape)
 
@@ -454,6 +459,7 @@ def apply_awq_marlin_linear(
     output = ops.gptq_marlin_gemm(reshaped_x,
                                   None,
                                   weight,
+                                  bias,
                                   weight_scale,
                                   None,
                                   weight_zp,
@@ -467,8 +473,5 @@ def apply_awq_marlin_linear(
                                   use_atomic_add=use_atomic_add,
                                   use_fp32_reduce=use_fp32_reduce,
                                   is_zp_float=False)
-
-    if bias is not None:
-        output.add_(bias)  # In-place add
 
     return output.reshape(out_shape)

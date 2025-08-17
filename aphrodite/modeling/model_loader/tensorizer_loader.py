@@ -6,7 +6,7 @@ from typing import Union
 import torch
 from torch import nn
 
-from aphrodite.common.config import (AphroditeConfig, LoadConfig, ModelConfig,
+from aphrodite.config import (AphroditeConfig, LoadConfig, ModelConfig,
                                      ParallelConfig)
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.tensorizer import (

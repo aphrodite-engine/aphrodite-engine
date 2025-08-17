@@ -6,7 +6,7 @@ import torch
 from loguru import logger
 from torch import nn
 
-from aphrodite.common.config import AphroditeConfig, DeviceConfig
+from aphrodite.config import AphroditeConfig, DeviceConfig
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)

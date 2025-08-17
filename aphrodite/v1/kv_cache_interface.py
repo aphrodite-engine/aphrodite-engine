@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 from typing_extensions import Self
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.utils import cdiv, get_dtype_size
 
 

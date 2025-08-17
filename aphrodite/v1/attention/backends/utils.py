@@ -3,15 +3,14 @@ import enum
 import functools
 from abc import abstractmethod
 from dataclasses import dataclass, make_dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar
+from typing import (TYPE_CHECKING, Any, Callable, ClassVar, Generic, Optional,
+                    TypeVar)
 
 import numpy as np
 import torch
 
-from aphrodite.attention.layer import Attention
-from aphrodite.common.config import (AphroditeConfig,
-                                     get_layers_from_aphrodite_config)
 from aphrodite.common.logger import log_once
+from aphrodite.config import AphroditeConfig, get_layers_from_aphrodite_config
 from aphrodite.utils import cdiv
 
 if TYPE_CHECKING:
@@ -19,9 +18,9 @@ if TYPE_CHECKING:
     from aphrodite.v1.core.sched.output import SchedulerOutput
     from aphrodite.v1.worker.gpu_input_batch import InputBatch
 
-from loguru import logger
-
 import aphrodite.common.envs as envs
+from aphrodite.attention.backends.abstract import AttentionBackend
+from aphrodite.attention.layer import Attention
 from aphrodite.distributed.kv_transfer.kv_connector.utils import (
     get_kv_connector_cache_layout)
 from aphrodite.v1.kv_cache_interface import AttentionSpec
@@ -284,6 +283,7 @@ class PerLayerParameters:
     window_left: int
     logits_soft_cap: Optional[float]
     sm_scale: float
+    has_sinks: bool = False
 
 
 def get_per_layer_parameters(
@@ -306,9 +306,11 @@ def get_per_layer_parameters(
         window_left = window_size[0] if window_size is not None else -1
         logits_soft_cap = getattr(impl, "logits_soft_cap", None)
         sm_scale = impl.scale
+        has_sinks = getattr(impl, "sinks", None) is not None
 
         per_layer_params[key] = PerLayerParameters(window_left,
-                                                   logits_soft_cap, sm_scale)
+                                                   logits_soft_cap, sm_scale,
+                                                   has_sinks)
 
     return per_layer_params
 
@@ -532,6 +534,48 @@ def make_local_attention_virtual_batches(
         slot_mapping=common_attn_metadata.slot_mapping,
         causal=True,
     )
+
+
+def subclass_attention_metadata_builder(
+    name_prefix: str,
+    builder_cls: type[AttentionMetadataBuilder[M]],
+    build_preprocess_fn: Callable[[CommonAttentionMetadata],
+                                  CommonAttentionMetadata],
+) -> type[AttentionMetadataBuilder[M]]:
+    """
+    Return a new subclass of `builder_cls` whose .build(...) method
+    first calls build_preprocess_fn(common_attn_metadata) on the metadata.
+    """
+    name: str = name_prefix + builder_cls.__name__  # type: ignore
+
+    def build(self,
+              common_prefix_len: int,
+              common_attn_metadata: CommonAttentionMetadata,
+              fast_build: bool = False):
+        return builder_cls.build(self, common_prefix_len,
+                                 build_preprocess_fn(common_attn_metadata),
+                                 fast_build)
+
+    Wrapped = type(
+        name,
+        (builder_cls, ),  # inherit from the original
+        {
+            "build": build,
+        })
+    return Wrapped  # type: ignore
+
+
+def subclass_attention_backend(
+        name_prefix: str, attention_backend_cls: type[AttentionBackend],
+        builder_cls: type[AttentionMetadataBuilder[M]]
+) -> type[AttentionBackend]:
+    """
+    Return a new subclass where `get_builder_cls` returns `builder_cls`.
+    """
+    name: str = name_prefix + attention_backend_cls.__name__  # type: ignore
+
+    return type(name, (attention_backend_cls, ),
+                {"get_builder_cls": lambda: builder_cls})
 
 
 def split_decodes_and_prefills(

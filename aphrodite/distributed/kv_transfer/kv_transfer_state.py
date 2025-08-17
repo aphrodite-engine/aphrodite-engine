@@ -9,7 +9,7 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
     KVConnectorBase_V1, KVConnectorRole)
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig
+    from aphrodite.config import AphroditeConfig
 
 _KV_CONNECTOR_AGENT: Optional[KVConnectorBaseType] = None
 

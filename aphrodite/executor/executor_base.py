@@ -10,7 +10,7 @@ from loguru import logger
 from typing_extensions import TypeVar
 
 import aphrodite.platforms
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import ExecuteModelRequest, PoolerOutput
 from aphrodite.utils import make_async
 from aphrodite.lora.request import LoRARequest

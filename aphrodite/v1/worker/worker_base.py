@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.v1.kv_cache_interface import KVCacheSpec
 from aphrodite.worker.worker_base import WorkerBase as WorkerBaseV0
 

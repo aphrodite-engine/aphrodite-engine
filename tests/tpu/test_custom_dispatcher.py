@@ -1,6 +1,6 @@
 import pytest
 
-from aphrodite.common.config import CompilationLevel
+from aphrodite.config import CompilationLevel
 
 from ..utils import compare_two_settings
 

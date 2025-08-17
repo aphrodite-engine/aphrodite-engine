@@ -19,7 +19,7 @@ import cloudpickle
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (destroy_distributed_environment,
                                    destroy_model_parallel)
 from aphrodite.distributed.device_communicators.shm_broadcast import (

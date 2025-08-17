@@ -11,11 +11,10 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
-from aphrodite.common.config import (AphroditeConfig,
-                                     get_current_aphrodite_config)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
-    KVConnectorBase_V1)
 from aphrodite.common.logger import log_once
+from aphrodite.config import AphroditeConfig, get_current_aphrodite_config
+from aphrodite.distributed.kv_transfer.kv_connector.factory import (
+    KVConnectorFactory)
 from aphrodite.v1.outputs import KVConnectorOutput, ModelRunnerOutput
 
 
@@ -104,8 +103,9 @@ def get_kv_connector_cache_layout():
     aphrodite_config = get_current_aphrodite_config()
     kv_config = aphrodite_config.kv_transfer_config
     if kv_config is not None:
-        required_kvcache_layout = (
-            KVConnectorBase_V1.get_required_kvcache_layout(aphrodite_config))
+        connector_cls = KVConnectorFactory.get_connector_class(kv_config)
+        required_kvcache_layout = connector_cls.get_required_kvcache_layout(
+            aphrodite_config)
         if required_kvcache_layout is not None:
             return required_kvcache_layout
         log_once(
@@ -144,6 +144,8 @@ class KVOutputAggregator:
         finished_recving = set[str]()
         for output in outputs:
             output = output.kv_connector_output
+            if not output:
+                continue
             update_finished_set(output.finished_sending,
                                 self._send_remaining_count, finished_sending)
             update_finished_set(output.finished_recving,

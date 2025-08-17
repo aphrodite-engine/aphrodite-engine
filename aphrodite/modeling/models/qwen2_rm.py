@@ -9,14 +9,13 @@ from typing import Optional, Union
 import torch
 from torch import nn
 
-from aphrodite.common.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)
-from aphrodite.modeling.layers.pooler import (DispatchPooler, Pooler,
-                                              PoolingType)
+from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 
-from .interfaces import SupportsLoRA, SupportsPP
+from .interfaces import SupportsLoRA, SupportsPP, default_pooling_type
 from .qwen2 import Qwen2Model
 from .utils import AutoWeightsLoader, maybe_prefix
 
@@ -87,6 +86,7 @@ class Qwen2RewardBaseModel(nn.Module, SupportsLoRA, SupportsPP):
         return loader.load_weights(weights)
 
 
+@default_pooling_type("ALL")
 class Qwen2ForRewardModel(Qwen2RewardBaseModel):
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
@@ -100,6 +100,7 @@ class Qwen2ForRewardModel(Qwen2RewardBaseModel):
             {"encode": Pooler.for_encode(pooler_config)}, )
 
 
+@default_pooling_type("STEP")
 class Qwen2ForProcessRewardModel(Qwen2RewardBaseModel):
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
@@ -109,10 +110,5 @@ class Qwen2ForProcessRewardModel(Qwen2RewardBaseModel):
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
 
-        self.pooler = DispatchPooler({
-            "encode":
-            Pooler.for_encode(
-                pooler_config,
-                default_pooling_type=PoolingType.STEP,
-            )
-        })
+        self.pooler = DispatchPooler(
+            {"encode": Pooler.for_encode(pooler_config)})

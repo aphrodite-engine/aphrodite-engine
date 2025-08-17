@@ -27,6 +27,7 @@ from openai.types.chat import (ChatCompletionMessageToolCallParam,
 from openai.types.chat.chat_completion_content_part_input_audio_param import (
     InputAudio)
 from openai.types.responses import ResponseInputImageParam
+from openai_harmony import Message as OpenAIHarmonyMessage
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 # yapf: enable
@@ -35,8 +36,8 @@ from transformers import (PreTrainedTokenizer, PreTrainedTokenizerFast,
 # pydantic needs the TypedDict from typing_extensions
 from typing_extensions import Required, TypeAlias, TypedDict
 
-from aphrodite.common.config import ModelConfig
 from aphrodite.common.logger import log_once
+from aphrodite.config import ModelConfig
 from aphrodite.modeling.models import SupportsMultiModal
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalDataDict
 from aphrodite.multimodal.utils import MediaConnector
@@ -204,7 +205,8 @@ class CustomChatCompletionMessageParam(TypedDict, total=False):
 
 
 ChatCompletionMessageParam = Union[OpenAIChatCompletionMessageParam,
-                                   CustomChatCompletionMessageParam]
+                                   CustomChatCompletionMessageParam,
+                                   OpenAIHarmonyMessage]
 
 
 # TODO: Make fields ReadOnly once mypy supports it

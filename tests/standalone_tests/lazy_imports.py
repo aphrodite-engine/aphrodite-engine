@@ -1,5 +1,5 @@
 # Description: Test the lazy import module
-# The utility function cannot be placed in `aphrodite.common.utils`
+# The utility function cannot be placed in `aphrodite.utils`
 # this needs to be a standalone script
 import sys
 from contextlib import nullcontext

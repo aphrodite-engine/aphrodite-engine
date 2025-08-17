@@ -6,7 +6,7 @@ import pytest
 from scipy.spatial.distance import cosine
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 
 from ....utils import RemoteOpenAIServer
 

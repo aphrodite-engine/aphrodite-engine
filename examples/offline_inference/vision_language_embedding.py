@@ -11,7 +11,7 @@ from typing import Literal, NamedTuple, Optional, TypedDict, Union, get_args
 from PIL.Image import Image
 
 from aphrodite import LLM
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.multimodal.utils import fetch_image
 
 

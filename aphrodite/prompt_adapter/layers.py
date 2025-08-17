@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from aphrodite.adapter_commons.layers import AdapterMapping
-from aphrodite.common.config import PromptAdapterConfig
+from aphrodite.config import PromptAdapterConfig
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 

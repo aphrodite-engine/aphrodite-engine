@@ -3,15 +3,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 import torch
+from loguru import logger
 
-from aphrodite.common.config import KVTransferConfig, AphroditeConfig
+from aphrodite.config import AphroditeConfig, KVTransferConfig
 from aphrodite.distributed.kv_transfer.kv_connector.factory import (
     KVConnectorFactory)
 from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase_V1, KVConnectorMetadata, KVConnectorRole)
-from loguru import logger
 from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
 from aphrodite.v1.core.sched.output import SchedulerOutput
+from aphrodite.v1.outputs import KVConnectorOutput
 
 if TYPE_CHECKING:
     from aphrodite.attention.backends.abstract import AttentionMetadata
@@ -173,6 +174,10 @@ class MultiConnector(KVConnectorBase_V1):
             self._extra_async_saves = {}
         return metadata
 
+    def update_connector_output(self, connector_output: KVConnectorOutput):
+        for c in self._connectors:
+            c.update_connector_output(connector_output)
+
     def request_finished(
         self,
         request: "Request",
@@ -219,8 +224,10 @@ class MultiConnector(KVConnectorBase_V1):
         for ktc in ktcs:
             kv_transfer_config = KVTransferConfig(**ktc)
             temp_aphrodite_config.kv_transfer_config = kv_transfer_config
+            connector_cls = KVConnectorFactory.get_connector_class(
+                kv_transfer_config)
             required_kvcache_layout = (
-                KVConnectorBase_V1.get_required_kvcache_layout(
+                connector_cls.get_required_kvcache_layout(
                     temp_aphrodite_config))
             if required_kvcache_layout is not None:
                 layouts.add(required_kvcache_layout)

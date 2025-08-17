@@ -1,5 +1,5 @@
 from aphrodite import SamplingParams
-from aphrodite.common.config import LoadConfig, LoadFormat
+from aphrodite.config import LoadConfig, LoadFormat
 from aphrodite.modeling.model_loader.loader import (RunaiModelStreamerLoader,
                                                      get_model_loader)
 

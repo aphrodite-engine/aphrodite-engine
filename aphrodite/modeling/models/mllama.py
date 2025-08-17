@@ -35,7 +35,7 @@ import aphrodite.distributed.parallel_state as ps
 from aphrodite.attention import Attention, AttentionMetadata, AttentionType
 from aphrodite.attention.ops.paged_attn import PagedAttention
 from aphrodite.attention.selector import _Backend
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_pp_group, get_tp_group
 from aphrodite.forward_context import get_forward_context
 from aphrodite.modeling.layers.layernorm import RMSNorm

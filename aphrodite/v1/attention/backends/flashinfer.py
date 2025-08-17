@@ -11,12 +11,13 @@ from flashinfer import (BatchDecodeWithPagedKVCacheWrapper,
 from flashinfer.decode import (_get_range_buf, get_seq_lens,
                                trtllm_batch_decode_with_kv_cache)
 from flashinfer.prefill import trtllm_batch_context_with_kv_cache
+from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionImpl,
                                                    AttentionType)
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.utils import cdiv, is_pin_memory_available
 from aphrodite.utils.flashinfer import use_trtllm_attention
 from aphrodite.v1.attention.backends.flash_attn import use_cascade_attention
@@ -208,6 +209,7 @@ class FlashInferMetadataBuilder(AttentionMetadataBuilder[FlashInferMetadata]):
         self._cascade_wrapper = None  # Wrapper for cascade attention
 
         # Global hyperparameters shared by all attention layers
+        # TODO: discard this for trtllm-gen backend
         self.global_hyperparameters = infer_global_hyperparameters(
             get_per_layer_parameters(aphrodite_config, layer_names, FlashInferImpl))
 
@@ -515,17 +517,17 @@ class FlashInferMetadataBuilder(AttentionMetadataBuilder[FlashInferMetadata]):
         num_kv_heads = self.kv_cache_spec.num_kv_heads
         head_dim = self.kv_cache_spec.head_size
 
+        # Check if any layer uses sinks (requires TRTLLM attention)
+        has_sinks = self.global_hyperparameters.has_sinks
+
         # currently prefill trtllm attention does not support fp8 kv cache
-        # trtllm may not support sliding window
-        prefill_use_trtllm = (self.global_hyperparameters.window_left == -1
-                              and not cache_dtype.startswith("fp8")
-                              and use_trtllm_attention(
+        prefill_use_trtllm = not cache_dtype.startswith("fp8") \
+                                and use_trtllm_attention(
                                 num_prefill_tokens, max_seq_len, cache_dtype,
-                                num_qo_heads, num_kv_heads, head_dim))
-        decode_use_trtllm = (self.global_hyperparameters.window_left == -1
-                             and use_trtllm_attention(
+                                num_qo_heads, num_kv_heads, head_dim, has_sinks)
+        decode_use_trtllm = use_trtllm_attention(
                                 num_decode_tokens, max_seq_len, cache_dtype,
-                                num_qo_heads, num_kv_heads, head_dim))
+                                num_qo_heads, num_kv_heads, head_dim, has_sinks)
 
         attn_metadata = FlashInferMetadata(
             num_actual_tokens=num_actual_tokens,
@@ -637,9 +639,9 @@ class FlashInferImpl(AttentionImpl):
                     f"heads in the layer. Expected {num_heads}, but got "
                     f"{sinks.shape[0]}."
                 )
+            # Cast sinks to float32 if needed (FlashInfer requirement)
             if sinks.dtype != torch.float32:
-                raise ValueError("Sinks must be of type float32, but got "
-                                 f"{sinks.dtype}.")
+                sinks = sinks.to(torch.float32)
             self.sinks = sinks
 
     def forward(
@@ -786,6 +788,8 @@ class FlashInferImpl(AttentionImpl):
                     batch_size=attn_metadata.num_prefills,
                     cum_seq_lens_q=attn_metadata.qo_indptr_gpu,
                     cum_seq_lens_kv=attn_metadata.paged_kv_indptr_gpu,
+                    window_left=window_left,
+                    sinks=self.sinks,
                     out=output[num_decode_tokens:],
                 )
 
@@ -832,6 +836,8 @@ class FlashInferImpl(AttentionImpl):
                     max_seq_len=attn_metadata.max_seq_len,
                     bmm1_scale=layer._k_scale_float * self.scale,
                     bmm2_scale=layer._v_scale_float,
+                    window_left=window_left,
+                    sinks=self.sinks,
                     out=output[:num_decode_tokens],
                 )
         return output_padded

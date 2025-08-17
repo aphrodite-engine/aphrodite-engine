@@ -5,7 +5,7 @@ import torch
 
 from aphrodite.compilation.inductor_pass import CallableInductorPass, InductorPass
 from aphrodite.compilation.pass_manager import PostGradPassManager
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 
 
 # dummy custom pass that doesn't inherit

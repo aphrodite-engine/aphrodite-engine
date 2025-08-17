@@ -4,7 +4,7 @@ from collections.abc import Iterable
 import torch
 import torch.nn as nn
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling import SamplingMetadata
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.sampler import SamplerOutput, get_sampler

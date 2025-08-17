@@ -23,7 +23,7 @@ import torch.nn as nn
 from transformers import (BatchFeature, FuyuConfig, FuyuImageProcessor,
                           FuyuProcessor)
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.linear import ColumnParallelLinear
 from aphrodite.modeling.models.persimmon import PersimmonForCausalLM

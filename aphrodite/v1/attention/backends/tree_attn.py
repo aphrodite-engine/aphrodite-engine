@@ -11,7 +11,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionMetadata,
                                                    AttentionType)
 from aphrodite.attention.ops.triton_unified_attention import unified_attention
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.v1.attention.backends.utils import (
     AttentionMetadataBuilder, CommonAttentionMetadata,
     reorder_batch_to_split_decodes_and_prefills, split_decodes_and_prefills)
@@ -233,9 +233,9 @@ class TreeAttentionMetadataBuilder(
             # Use prefill for drafting at the root level.
             self.tree_attn_bias = torch.empty(0)
         else:
-            # Slice the tree attention bias for drafting.
-            query_len = common_attn_metadata.max_query_len
-            start, end = draft_index, draft_index + query_len
+            # Slice the tree attention bias for drafting. Exclude
+            # the root level.
+            start, end = 1, 1 + common_attn_metadata.max_query_len
             self.tree_attn_bias = self.tree_attn_bias[start:end,
                                                       start:end].contiguous()
 

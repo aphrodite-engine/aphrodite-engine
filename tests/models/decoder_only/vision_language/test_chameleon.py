@@ -3,7 +3,7 @@ from typing import List, Optional, Type
 import pytest
 from transformers import AutoModelForVision2Seq, BatchEncoding
 
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE
 from aphrodite.multimodal.utils import rescale_image_size
 
 from ....conftest import IMAGE_ASSETS, AphroditeRunner, HfRunner, _ImageAssets

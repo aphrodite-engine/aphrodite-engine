@@ -2,7 +2,7 @@ from typing import Any, Callable, Protocol
 
 import torch.fx as fx
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.compilation.backends import AphroditeBackend
 
 

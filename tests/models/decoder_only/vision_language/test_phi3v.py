@@ -7,7 +7,7 @@ import torch
 from transformers import AutoImageProcessor, AutoTokenizer
 
 from aphrodite.common.sequence import SampleLogprobs
-from aphrodite.common.utils import is_cpu, is_hip
+from aphrodite.utils import is_cpu, is_hip
 from aphrodite.inputs import InputContext, LLMInputs
 from aphrodite.modeling.models.phi3v import _IMAGE_TOKEN_ID
 from aphrodite.multimodal import MultiModalRegistry

@@ -13,7 +13,7 @@ from aphrodite.attention.ops.chunked_prefill_paged_decode import (
     chunked_prefill_paged_decode)
 from aphrodite.attention.ops.prefix_prefill import context_attention_fwd
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import STR_DTYPE_TO_TORCH_DTYPE
+from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE
 
 NUM_HEADS = [64]
 NUM_QUERIES_PER_KV = [1, 8, 64]

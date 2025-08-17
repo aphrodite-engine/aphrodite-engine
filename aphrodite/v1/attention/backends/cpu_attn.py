@@ -13,7 +13,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionType,
                                                    is_quantized_kv_cache)
 from aphrodite.attention.backends.utils import CommonAttentionState
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
                                                    CommonAttentionMetadata)

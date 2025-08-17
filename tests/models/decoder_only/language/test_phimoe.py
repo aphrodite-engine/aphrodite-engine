@@ -5,7 +5,7 @@ Run `pytest tests/models/test_phimoe.py`.
 import pytest
 import torch
 
-from aphrodite.common.utils import is_cpu
+from aphrodite.utils import is_cpu
 
 from ...utils import check_logprobs_close
 

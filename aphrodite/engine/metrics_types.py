@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List
 
-from aphrodite.common.config import AphroditeConfig, SupportsMetricsInfo
+from aphrodite.config import AphroditeConfig, SupportsMetricsInfo
 
 
 @dataclass

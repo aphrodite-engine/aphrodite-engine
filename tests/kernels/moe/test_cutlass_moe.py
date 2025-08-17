@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common.config import ParallelConfig, AphroditeConfig, set_current_aphrodite_config
+from aphrodite.config import ParallelConfig, AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe.cutlass_moe import cutlass_moe_fp8
 from aphrodite.modeling.layers.fused_moe.fused_moe import (fused_experts,
                                                             fused_topk)

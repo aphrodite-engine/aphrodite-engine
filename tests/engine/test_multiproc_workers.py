@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.executor.multiproc_worker_utils import (ProcessWorkerWrapper,
                                                   ResultHandler, WorkerMonitor)
 from aphrodite.worker.worker_base import WorkerWrapperBase

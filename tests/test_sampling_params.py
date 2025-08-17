@@ -4,7 +4,7 @@
 import pytest
 
 from aphrodite import SamplingParams
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
 
 MODEL_NAME = "Qwen/Qwen1.5-7B"

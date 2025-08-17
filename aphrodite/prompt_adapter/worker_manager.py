@@ -8,7 +8,7 @@ from aphrodite.adapter_commons.utils import (add_adapter_worker,
                                              list_adapters_worker,
                                              set_active_adapters_worker)
 from aphrodite.adapter_commons.worker_manager import AbstractWorkerManager
-from aphrodite.common.config import PromptAdapterConfig
+from aphrodite.config import PromptAdapterConfig
 from aphrodite.prompt_adapter.models import (LRUCachePromptAdapterModelManager,
                                              PromptAdapterModel,
                                              PromptAdapterModelManager,

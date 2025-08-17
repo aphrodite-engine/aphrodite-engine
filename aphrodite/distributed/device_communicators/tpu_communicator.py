@@ -5,7 +5,7 @@ import torch
 from loguru import logger
 from torch.distributed import ProcessGroup
 
-from aphrodite.common.config import get_current_aphrodite_config
+from aphrodite.config import get_current_aphrodite_config
 from aphrodite.platforms import current_platform
 
 from .base_device_communicator import DeviceCommunicatorBase

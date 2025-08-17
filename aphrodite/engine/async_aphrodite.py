@@ -10,16 +10,13 @@ from weakref import ReferenceType
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import (AphroditeConfig, DecodingConfig,
-                                     LoRAConfig, ModelConfig, ParallelConfig,
-                                     SchedulerConfig)
 from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.utils import Device, deprecate_kwargs, weak_bind
-from aphrodite.engine.aphrodite_engine import (AphroditeEngine,
-                                               SchedulerOutputState)
+from aphrodite.config import (AphroditeConfig, DecodingConfig, LoRAConfig,
+                              ModelConfig, ParallelConfig, SchedulerConfig)
+from aphrodite.engine.aphrodite_engine import AphroditeEngine
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_timeout import asyncio_timeout
 from aphrodite.engine.metrics_types import StatLoggerBase
@@ -32,6 +29,7 @@ from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.processing.scheduler import SchedulerOutputs
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.utils import Device, deprecate_kwargs, weak_bind
 
 ENGINE_ITERATION_TIMEOUT_S = envs.APHRODITE_ENGINE_ITERATION_TIMEOUT_S
 
@@ -308,13 +306,6 @@ class _AsyncLLMEngine(AphroditeEngine):
             if not allow_async_output_proc and len(ctx.output_queue) > 0:
                 self._process_model_outputs(ctx=ctx)
 
-            if (self.scheduler_config.is_multi_step
-                    and scheduler_outputs.num_lookahead_slots > 0):
-                # cache the scheduler outputs for the next iteration if we have
-                # lookahead slots
-                self._cache_scheduler_outputs_for_multi_step(
-                    virtual_engine, seq_group_metadata_list, scheduler_outputs,
-                    allow_async_output_proc)
         else:
             finished_requests_ids = list()
 
@@ -351,29 +342,15 @@ class _AsyncLLMEngine(AphroditeEngine):
             outputs = await self.model_executor.execute_model_async(
                 execute_model_req)
 
-            # we need to do this here so that last step's sampled_token_ids can
-            # be passed to the next iteration for PP.
-            if self.scheduler_config.is_multi_step:
-                self._update_cached_scheduler_output(virtual_engine, outputs)
         else:
             if len(ctx.output_queue) > 0:
                 self._process_model_outputs(ctx=ctx)
             outputs = []
 
-        # Finish the current step for all the sequence groups.
-        if self.scheduler_config.is_multi_step:
-            for seq_group in seq_group_metadata_list:
-                seq_group.finish_step()
-
         if not self._has_remaining_steps(seq_group_metadata_list):
-            # Clear the cache if we have finished all the steps
-            if self.scheduler_config.is_multi_step:
-                self.cached_scheduler_outputs[
-                    virtual_engine] = SchedulerOutputState()
 
             # is_first_step_output is True only when the num_steps of all
-            # the sequences are 1. When the num_steps > 1,
-            # multi_step_model_runner does the first-step output append.
+            # the sequences are 1.
             is_first_step_output: bool = False if not seq_group_metadata_list \
                 else seq_group_metadata_list[0].state.num_steps == 1
 
@@ -1113,6 +1090,7 @@ class AsyncAphrodite(EngineClient):
         self.engine.reset_prefix_cache(device)
 
     async def sleep(self, level: int = 1) -> None:
+        await self.reset_prefix_cache()
         self.engine.sleep(level)
 
     async def wake_up(self, tags: Optional[list[str]] = None) -> None:

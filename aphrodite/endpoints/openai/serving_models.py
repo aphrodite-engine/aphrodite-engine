@@ -6,9 +6,8 @@ from typing import Optional, Union
 
 from loguru import logger
 
-from aphrodite.common.config import ModelConfig
-from aphrodite.utils import AtomicCounter
-from aphrodite.endpoints.openai.protocol import (ErrorResponse,
+from aphrodite.config import ModelConfig
+from aphrodite.endpoints.openai.protocol import (ErrorInfo, ErrorResponse,
                                                  LoadLoRAAdapterRequest,
                                                  ModelCard, ModelList,
                                                  ModelPermission,
@@ -16,6 +15,7 @@ from aphrodite.endpoints.openai.protocol import (ErrorResponse,
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.lora.request import LoRARequest
 from aphrodite.lora.resolver import LoRAResolver, LoRAResolverRegistry
+from aphrodite.utils import AtomicCounter
 
 
 @dataclass
@@ -32,8 +32,7 @@ class LoRAModulePath:
 
 
 class OpenAIServingModels:
-    """Shared instance to hold data about the loaded base model(s) and
-    adapters.
+    """Shared instance to hold data about the loaded base model(s) and adapters.
 
     Handles the routes:
     - /v1/models
@@ -79,7 +78,7 @@ class OpenAIServingModels:
             load_result = await self.load_lora_adapter(
                 request=load_request, base_model_name=lora.base_model_name)
             if isinstance(load_result, ErrorResponse):
-                raise ValueError(load_result.message)
+                raise ValueError(load_result.error.message)
 
     def is_base_model(self, model_name) -> bool:
         return any(model.name == model_name for model in self.base_model_paths)
@@ -281,6 +280,5 @@ def create_error_response(
         message: str,
         err_type: str = "BadRequestError",
         status_code: HTTPStatus = HTTPStatus.BAD_REQUEST) -> ErrorResponse:
-    return ErrorResponse(message=message,
-                         type=err_type,
-                         code=status_code.value)
+    return ErrorResponse(error=ErrorInfo(
+        message=message, type=err_type, code=status_code.value))

@@ -28,7 +28,7 @@ from torch import nn
 from transformers import LlamaConfig
 
 from aphrodite.attention import AttentionType
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import get_pp_group

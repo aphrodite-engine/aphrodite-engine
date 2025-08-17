@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing_extensions import Annotated
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import SchedulerConfig
+from aphrodite.config import SchedulerConfig
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 _SAMPLING_EPS = 1e-5
@@ -63,7 +63,7 @@ class GuidedDecodingParams:
             if isinstance(value, str) and value.strip() == "":
                 return True
             return bool(isinstance(value, dict) and len(value) == 0)
-        
+
         if all(is_effectively_none(arg) for arg in (json, regex, choice,
                                                    grammar, json_object,
                                                    structural_tag)):
@@ -91,7 +91,7 @@ class GuidedDecodingParams:
             if isinstance(value, str) and value.strip() == "":
                 return True
             return bool(isinstance(value, dict) and len(value) == 0)
-        
+
         guide_count = sum([
             not is_effectively_none(self.json),
             not is_effectively_none(self.regex),
@@ -168,218 +168,302 @@ class SamplingParams(
     API (https://platform.openai.com/docs/api-reference/completions/create).
     In addition, we support multiple additional samplers which are not supported
     by OpenAI.
-
-    Args:
-        n: Number of output sequences to return for the given prompt.
-        best_of: Number of output sequences that are generated from the prompt.
-            From these `best_of` sequences, the top `n` sequences are returned.
-            `best_of` must be greater than or equal to `n`. By default,
-            `best_of` is set to `n`.
-        presence_penalty: Float that penalizes new tokens based on whether they
-            appear in the generated text so far. Values > 0 encourage the model
-            to use new tokens, while values < 0 encourage the model to repeat
-            tokens.
-        frequency_penalty: Float that penalizes new tokens based on their
-            frequency in the generated text so far. Values > 0 encourage the
-            model to use new tokens, while values < 0 encourage the model to
-            repeat tokens.
-        repetition_penalty: Float that penalizes new tokens based on their
-            frequency in the generated text so far.
-            freq_pen is applied additively while
-            rep_pen is applied multiplicatively.
-            Must be in [1, inf). Set to 1 to disable the effect.
-        no_repeat_ngram_size: Size of the n-grams to prevent repeating.
-            1 would mean no token can appear twice.
-            2 would mean no pair of consecutive tokens can appear twice.
-        temperature: Float that controls the randomness of the sampling. Lower
-            values make the model more deterministic, while higher values make
-            the model more random. Zero means greedy sampling.
-        top_p: Float that controls the cumulative probability of the top tokens
-            to consider. Must be in (0, 1]. Set to 1 to consider all tokens.
-        top_k: Integer that controls the number of top tokens to consider. Set
-            to 0 (or -1) to consider all tokens.
-        top_a: Float that controls the cutoff for Top-A sampling.
-            Exact cutoff is top_a*max_prob**2. Must be in [0,inf], 0 to disable.
-        min_p: Float that controls the cutoff for min-p sampling.
-            Exact cutoff is min_p*max_prob. Must be in [0,1], 0 to disable.
-        tfs: Float that controls the cumulative approximate curvature of the
-            distribution to retain for Tail Free Sampling.
-            Must be in (0, 1]. Set to 1 to disable
-        eta_cutoff: Float that controls the cutoff threshold for Eta sampling
-            (a form of entropy adaptive truncation sampling)
-            threshold is computed as min(eta, sqrt(eta)*entropy(probs)).
-            Specified in units of 1e-4. Set to 0 to disable
-        epsilon_cutoff: Float that controls the cutoff threshold for
-            Epsilon sampling (simple probability threshold truncation).
-            Specified in units of 1e-4. Set to 0 to disable.
-        typical_p: Float that controls the cumulative probability of tokens
-            closest in surprise to the expected surprise to consider.
-            Must be in (0, 1]. Set to 1 to disable.
-        mirostat_mode: Can either be 0 (disabled) or 2 (Mirostat v2).
-        mirostat_tau: Target "surprisal" that mirostat works towards.
-            Range [0, inf).
-        mirostat_eta: Rate at which mirostat updates its internal surprisal
-            value. Range [0, inf).
-        dynatemp_min: Minimum temperature for dynatemp sampling.
-            Range [0, inf).
-        dynatemp_max: Maximum temperature for dynatemp sampling.
-            Range [0, inf).
-        dynatemp_exponent: Exponent for dynatemp sampling. Range [0, inf).
-        smoothing_factor: Smoothing factor for Quadratic Sampling.
-        smoothing_curve: Smoothing curve for Quadratic (Cubic) Sampling.
-        seed: Random seed to use for the generation.
-        use_beam_search: Whether to use beam search instead of sampling.
-        length_penalty: Float that penalizes sequences based on their length.
-            Used in beam search.
-        early_stopping: Controls the stopping condition for beam search. It
-            accepts the following values: `True`, where the generation stops as
-            soon as there are `best_of` complete candidates; `False`, where an
-            heuristic is applied and the generation stops when is it very
-            unlikely to find better candidates; `"never"`, where the beam search
-            procedure only stops when there cannot be better candidates
-            (canonical beam search algorithm).
-        stop: List of strings that stop the generation when they are generated.
-            The returned output will not contain the stop strings.
-        stop_token_ids: List of tokens that stop the generation when they are
-            generated. The returned output will contain the stop tokens unless
-            the stop tokens are special tokens.
-        include_stop_str_in_output: Whether to include the stop strings in
-            output text. Defaults to False.
-        ignore_eos: Whether to ignore the EOS token and continue generating
-            tokens after the EOS token is generated.
-        max_tokens: Maximum number of tokens to generate per output sequence.
-        min_tokens: Minimum number of tokens to generate per output sequence
-            before EOS or stop tokens are generated.
-        logprobs: Number of log probabilities to return per output token.
-            When set to None, no probability is returned. If set to a non-None
-            value, the result includes the log probabilities of the specified
-            number of most likely tokens, as well as the chosen tokens.
-            Note that the implementation follows the OpenAI API: The API will
-            always return the log probability of the sampled token, so there
-            may be up to `logprobs+1` elements in the response.
-            When set to -1, return all `vocab_size` log probabilities.
-        prompt_logprobs: Number of log probabilities to return per prompt token.
-        detokenize: Whether to detokenize the output. Defaults to True.
-        custom_token_bans: List of token IDs to ban from generating
-        token_ban_ranges: List of tuples (tokens, start, length) to ban from
-            generating. start=0 means start from first output token.
-        skip_special_tokens: Whether to skip special tokens in the output.
-            defaults to true.
-        spaces_between_special_tokens: Whether to add spaces between special
-            tokens in the output. Defaults to True.
-        logits_processors: List of functions that modify logits based on
-            previously generated tokens, and optionally prompt tokens as
-            a first argument.
-        truncate_prompt_tokens: If set to an integer k, will use only the last
-            k tokens from the prompt (i.e. left-truncation). Defaults to None
-            (i.e. no truncation).
-        xtc_threshold: In XTC sampling, if 2 or more tokens have probability
-            above this threshold, consider removing all but the last one.
-        xtc_probability: Probability that the removal will actually happen.
-            0 disables the sampler, 1 makes it always happen.
-        nsigma: Number of standard deviations from the maximum logit to use
-            as a cutoff threshold. Tokens with logits below
-            (max_logit - nsgima * std_dev) are filtered out. Higher values
-            (e.g. 3.0) keep more tokens, lower values (e.g. 1.0) are more
-            selective. Must be positive. 0 to disable.
-        dry_multiplier: Float that controls the magnitude of the DRY sampling
-            penalty. Higher values create stronger penalties against
-            repetition. The penalty is multiplied by this value before being
-            applied. Must be non-negative. 0 disables the sampler.
-        dry_base: Base for the exponential growth of the DRY sampling penalty.
-            Controls how quickly the penalty increases with longer repeated
-            sequences. Must be greater than 1. Higher values (e.g. 2.0) create
-            more aggressive penalties for longer repetitions. Defaults to 1.75.
-        dry_allowed_length: Maximum number of tokens that can be repeated
-            without incurring a DRY sampling penalty. Sequences longer than
-            this will be penalized exponentially. Must be at least 1.
-            Defaults to 2.
-        dry_sequence_breaker_ids: List of token IDs that stop
-            the matching of repeated content. These tokens will break up the
-            input into sections where repetition is evaluated separately.
-            Common examples are newlines, quotes, and other structural tokens.
-            Defaults to None.
-        dry_range: The range of tokens (input + output) to apply the DRY
-            sampler.
-        dry_max_ngram: Maximum length of match to check.
-        dry_max_occurrences: How many occurrences of last_token we analyze.
-        dry_early_exit_match_len: If we find this large a match, we stop
-            searching.
-        skew: Bias the token selection towards higher or lower probability
-            tokens. Defaults to 0 (disabled).
-        sampler_priority: A list of integers to control the order in which
-            samplers are applied.
-        guided_decoding: If provided, the engine will construct a guided
-            decoding logits processor from these parameters. Defaults to None.
-        logit_bias: If provided, the engine will construct a logits processor
-            that applies these logit biases. Defaults to None.
-        allowed_token_ids: If provided, the engine will construct a logits
-            processor which only retains scores for the given token ids.
-            Defaults to None.
-        bad_words: List of words that are not allowed to be generated.
-            More precisely, only the last token of a corresponding
-            token sequence is not allowed when the next generated token
-            can complete the sequence.
     """
 
     n: int = 1
+    """Number of output sequences to return for the given prompt."""
     best_of: Optional[int] = None
+    """
+    Number of output sequences that are generated from the prompt.
+    From these `best_of` sequences, the top `n` sequences are returned.
+    `best_of` must be greater than or equal to `n`. By default,
+    `best_of` is set to `n`.
+    """
     _real_n: Optional[int] = None
     presence_penalty: float = 0.0
+    """
+    Float that penalizes new tokens based on whether they
+    appear in the generated text so far. Values > 0 encourage the model
+    to use new tokens, while values < 0 encourage the model to repeat
+    tokens.
+    """
     frequency_penalty: float = 0.0
+    """
+    Float that penalizes new tokens based on their
+    frequency in the generated text so far. Values > 0 encourage the
+    model to use new tokens, while values < 0 encourage the model to
+    repeat tokens.
+    """
     repetition_penalty: float = 1.0
+    """
+    Float that penalizes new tokens based on their
+    frequency in the generated text so far.
+    freq_pen is applied additively while
+    rep_pen is applied multiplicatively.
+    Must be in [1, inf). Set to 1 to disable the effect.
+    """
     no_repeat_ngram_size: int = 0
+    """
+    Size of the n-grams to prevent repeating.
+    1 would mean no token can appear twice.
+    2 would mean no pair of consecutive tokens can appear twice.
+    """
     temperature: float = 1.0
+    """
+    Float that controls the randomness of the sampling. Lower
+    values make the model more deterministic, while higher values make
+    the model more random. Zero means greedy sampling.
+    """
     dynatemp_min: float = 0.0
+    """
+    Minimum temperature for dynamic temperature sampling.
+    """
     dynatemp_max: float = 0.0
+    """
+    Maximum temperature for dynamic temperature sampling.
+    """
     dynatemp_exponent: float = 1.0
+    """
+    Exponent for dynamic temperature sampling.
+    """
     temperature_last: bool = False
+    """
+    Whether to use temperature as the last sampler in the sampling
+    pipeline. Ignored if sampler_priority is set.
+    """
     top_p: float = 1.0
+    """
+    Float that controls the cumulative probability of the top tokens
+    to consider. Must be in (0, 1]. Set to 1 to consider all tokens.
+    """
     top_k: int = 0
+    """
+    Integer that controls the number of top tokens to consider. Set
+    to 0 (or -1) to consider all tokens.
+    """
     top_a: float = 0.0
+    """
+    Float that controls the cutoff for Top-A sampling.
+    Exact cutoff is top_a*max_prob**2. Must be in [0,inf], 0 to disable.
+    """
     min_p: float = 0.0
+    """
+    Float that controls the cutoff for min-p sampling.
+    Exact cutoff is min_p*max_prob. Must be in [0,1], 0 to disable.
+    """
     tfs: float = 1.0
+    """
+    Float that controls the cumulative approximate curvature of the
+    distribution to retain for Tail Free Sampling.
+    Must be in (0, 1]. Set to 1 to disable
+    """
     eta_cutoff: float = 0.0
+    """
+    Float that controls the cutoff threshold for Eta sampling
+    (a form of entropy adaptive truncation sampling)
+    threshold is computed as min(eta, sqrt(eta)*entropy(probs)).
+    Specified in units of 1e-4. Set to 0 to disable
+    """
     epsilon_cutoff: float = 0.0
+    """
+    Float that controls the cutoff threshold for
+    Epsilon sampling (simple probability threshold truncation).
+    Specified in units of 1e-4. Set to 0 to disable.
+    """
     typical_p: float = 1.0
+    """
+    Float that controls the cumulative probability of tokens
+    closest in surprise to the expected surprise to consider.
+    Must be in (0, 1]. Set to 1 to disable.
+    """
     smoothing_factor: float = 0.0
+    """Smoothing factor for Quadratic Sampling."""
     smoothing_curve: float = 1.0
+    """Smoothing curve for Quadratic (Cubic) Sampling."""
     seed: Optional[int] = None
+    """Random seed to use for the generation."""
     use_beam_search: bool = False
+    """Whether to use beam search instead of sampling."""
     length_penalty: float = 1.0
+    """Float that penalizes sequences based on their length.
+    Used in beam search.
+    """
     early_stopping: Union[bool, str] = False
+    """
+    Controls the stopping condition for beam search. It
+    accepts the following values: `True`, where the generation stops as
+    soon as there are `best_of` complete candidates; `False`, where an
+    heuristic is applied and the generation stops when is it very
+    unlikely to find better candidates; `"never"`, where the beam search
+    procedure only stops when there cannot be better candidates
+    (canonical beam search algorithm).
+    """
     stop: Union[None, str, List[str]] = None
+    """
+    List of strings that stop the generation when they are generated.
+    The returned output will not contain the stop strings.
+    """
     stop_token_ids: Optional[List[int]] = None
+    """
+    List of tokens that stop the generation when they are
+    generated. The returned output will contain the stop tokens unless
+    the stop tokens are special tokens.
+    """
     include_stop_str_in_output: bool = False
+    """
+    Whether to include the stop strings in
+    output text. Defaults to False.
+    """
     ignore_eos: bool = False
+    """
+    Whether to ignore the EOS token and continue generating
+    tokens after the EOS token is generated.
+    """
     max_tokens: Optional[int] = 16
+    """
+    Maximum number of tokens to generate per output sequence.
+    """
     min_tokens: int = 0
+    """
+    Minimum number of tokens to generate per output sequence
+    before EOS or stop tokens are generated.
+    """
     logprobs: Optional[int] = None
+    """
+    Number of log probabilities to return per output token.
+    When set to None, no probability is returned. If set to a non-None
+    value, the result includes the log probabilities of the specified
+    number of most likely tokens, as well as the chosen tokens.
+    Note that the implementation follows the OpenAI API: The API will
+    always return the log probability of the sampled token, so there
+    may be up to `logprobs+1` elements in the response.
+    When set to -1, return all `vocab_size` log probabilities.
+    """
     prompt_logprobs: Optional[int] = None
+    """
+    Number of log probabilities to return per prompt token.
+    """
     detokenize: bool = True
+    """
+    Whether to detokenize the output. Defaults to True.
+    """
     custom_token_bans: Optional[List[int]] = None
+    """
+    List of token IDs to ban from generating
+    """
     token_ban_ranges: Optional[List[Tuple[List[int], int, int]]] = None
+    """
+    List of tuples (tokens, start, length) to ban from
+    generating. start=0 means start from first output token.
+    """
     skip_special_tokens: bool = True
+    """
+    Whether to skip special tokens in the output.
+    defaults to true.
+    """
     spaces_between_special_tokens: bool = True
+    """
+    Whether to add spaces between special
+    tokens in the output. Defaults to True.
+    """
     # Optional[List[LogitsProcessor]] type.
     # We use Any here because the type above
     # is not supported by msgspec.
     logits_processors: Optional[Any] = None
+    """
+    List of functions that modify logits based on
+    previously generated tokens, and optionally prompt tokens as
+    a first argument.
+    """
     truncate_prompt_tokens: Optional[Annotated[int, msgspec.Meta(ge=1)]] = None
+    """
+    If set to an integer k, will use only the last
+    k tokens from the prompt (i.e. left-truncation). Defaults to None
+    (i.e. no truncation).
+    """
     xtc_threshold: float = 0.1
+    """
+    In XTC sampling, if 2 or more tokens have probability
+    above this threshold, consider removing all but the last one.
+    """
     xtc_probability: float = 0
+    """
+    Probability that the removal will actually happen.
+    0 disables the sampler, 1 makes it always happen.
+    """
     nsigma: float = 0.0
+    """
+    Number of standard deviations from the maximum logit to use
+    as a cutoff threshold. Tokens with logits below
+    (max_logit - nsgima * std_dev) are filtered out. Higher values
+    (e.g. 3.0) keep more tokens, lower values (e.g. 1.0) are more
+    selective. Must be positive. 0 to disable.
+    """
     dry_multiplier: float = 0.0
+    """
+    Float that controls the magnitude of the DRY sampling
+    penalty. Higher values create stronger penalties against
+    repetition. The penalty is multiplied by this value before being
+    applied. Must be non-negative. 0 disables the sampler.
+    """
     dry_base: float = 1.75
+    """
+    Base for the exponential growth of the DRY sampling penalty.
+    Controls how quickly the penalty increases with longer repeated
+    sequences. Must be greater than 1. Higher values (e.g. 2.0) create
+    more aggressive penalties for longer repetitions. Defaults to 1.75.
+    """
     dry_allowed_length: int = 2
+    """
+    Maximum number of tokens that can be repeated
+    without incurring a DRY sampling penalty. Sequences longer than
+    this will be penalized exponentially. Must be at least 1.
+    Defaults to 2.
+    """
     dry_sequence_breaker_ids: List[int] = []
+    """
+    List of token IDs that stop
+    the matching of repeated content. These tokens will break up the
+    input into sections where repetition is evaluated separately.
+    Common examples are newlines, quotes, and other structural tokens.
+    Defaults to None.
+    """
     dry_range: int = 0
+    """
+    The range of tokens (input + output) to apply the DRY
+    sampler.
+    """
     dry_max_ngram: int = 12
+    """
+    Maximum length of match to check in DRY sampling.
+    """
     dry_max_occurrences: int = 8
+    """
+    How many occurrences of last_token we analyze in DRY sampling.
+    """
     dry_early_exit_match_len: int = 8
+    """
+    If we find this large a match in DRY sampling, we stop
+    searching.
+    """
     skew: float = 0.0
+    """
+    Bias the token selection towards higher or lower probability
+    tokens. Defaults to 0 (disabled).
+    """
     sampler_priority: Optional[List[int]] = []
+    """
+    A list of integers to control the order in which
+    samplers are applied.
+    """
     output_kind: RequestOutputKind = RequestOutputKind.CUMULATIVE
+    """
+    The type of output to generate. 0 is cumulative, which means
+    return the entire output so far in every RequestOutput, 1
+    is delta, which means return only deltas in each RequestOutput,
+    and 2 is final_only, which means do not return intermediate
+    request outputs.
+    """
     # The below fields are not supposed to be used as an input.
     # They are set in post_init.
     output_text_buffer_length: int = 0
@@ -388,10 +472,32 @@ class SamplingParams(
 
     # Fields used to construct logits processors
     guided_decoding: Optional[GuidedDecodingParams] = None
+    """
+    If provided, the engine will construct a guided
+    decoding logits processor from these parameters. Defaults to None.
+    """
     logit_bias: Optional[Dict[int, float]] = None
+    """
+    If provided, the engine will construct a logits processor
+    that applies these logit biases. Defaults to None.
+    """
     allowed_token_ids: Optional[List[int]] = None
+    """
+    If provided, the engine will construct a logits
+    processor which only retains scores for the given token ids.
+    Defaults to None.
+    """
     extra_args: Optional[dict[str, Any]] = None
+    """
+    Extra arguments to pass to the engine. Defaults to None.
+    """
     bad_words: Optional[List[str]] = None
+    """
+    List of words that are not allowed to be generated.
+    More precisely, only the last token of a corresponding
+    token sequence is not allowed when the next generated token
+    can complete the sequence.
+    """
 
     @staticmethod
     def from_optional(

@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig, ModelConfig
+from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.common.sequence import PoolerOutput
 from aphrodite.modeling.layers.pooler import (DispatchPooler, Pooler,
                                               PoolerHead, PoolerNormalize,
@@ -244,9 +244,7 @@ class GritLM(LlamaForCausalLM, SupportsV0Only):
 
             aphrodite_config.cache_config.sliding_window = None
 
-            for attr in ("sliding_window", "interleaved_sliding_window"):
-                if hasattr(hf_config, attr):
-                    delattr(hf_config, attr)
+            hf_config.sliding_window = None
 
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, **kwargs)
 

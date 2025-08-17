@@ -8,7 +8,7 @@ import torch.fx as fx
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.utils import weak_ref_tensors
 from aphrodite.compilation.backends import AphroditeBackend
 from aphrodite.compilation.counter import compilation_counter

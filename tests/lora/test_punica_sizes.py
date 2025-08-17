@@ -7,7 +7,7 @@ is set to [1, 2, 4, 8, 16, 32, 64].
 import pytest
 import torch
 
-from aphrodite.common.utils import seed_everything
+from aphrodite.utils import seed_everything
 from aphrodite.lora.ops.bgmv_expand import bgmv_expand
 from aphrodite.lora.ops.bgmv_expand_slice import bgmv_expand_slice
 from aphrodite.lora.ops.bgmv_shrink import bgmv_shrink

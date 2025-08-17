@@ -12,7 +12,7 @@ import msgspec
 import zmq
 from loguru import logger
 
-from aphrodite.common.config import KVEventsConfig
+from aphrodite.config import KVEventsConfig
 
 
 class EventBatch(

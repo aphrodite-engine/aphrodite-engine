@@ -23,12 +23,10 @@ from aphrodite.benchmarks.lib.utils import (
     convert_to_pytorch_benchmark_format, write_to_json)
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams
-from aphrodite.utils import merge_async_iterators
-from aphrodite.endpoints.openai.api_server import (
-    build_async_engine_client_from_engine_args)
 from aphrodite.engine.args_tools import AsyncEngineArgs, EngineArgs
 from aphrodite.inputs import TextPrompt, TokensPrompt
 from aphrodite.lora.request import LoRARequest
+from aphrodite.utils import merge_async_iterators
 
 
 def run_aphrodite(
@@ -144,6 +142,8 @@ async def run_aphrodite_async(
     disable_detokenize: bool = False,
 ) -> float:
     from aphrodite import SamplingParams
+    from aphrodite.endpoints.openai.api_server import (
+        build_async_engine_client_from_engine_args)
 
     async with build_async_engine_client_from_engine_args(
         engine_args,

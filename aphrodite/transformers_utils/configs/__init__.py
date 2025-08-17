@@ -16,7 +16,6 @@ from aphrodite.transformers_utils.configs.falcon import RWConfig
 from aphrodite.transformers_utils.configs.jais import JAISConfig
 from aphrodite.transformers_utils.configs.kimi_vl import KimiVLConfig
 from aphrodite.transformers_utils.configs.medusa import MedusaConfig
-from aphrodite.transformers_utils.configs.mllama import MllamaConfig
 from aphrodite.transformers_utils.configs.mlp_speculator import (
     MLPSpeculatorConfig)
 from aphrodite.transformers_utils.configs.moonvit import MoonViTConfig
@@ -24,7 +23,6 @@ from aphrodite.transformers_utils.configs.nemotron import NemotronConfig
 from aphrodite.transformers_utils.configs.nemotron_h import NemotronHConfig
 from aphrodite.transformers_utils.configs.nemotron_vl import (
     Nemotron_Nano_VL_Config)
-from aphrodite.transformers_utils.configs.nvlm_d import NVLM_D_Config
 from aphrodite.transformers_utils.configs.ovis import OvisConfig
 from aphrodite.transformers_utils.configs.speculators.base import (
     SpeculatorsConfig)
@@ -35,18 +33,16 @@ from aphrodite.transformers_utils.configs.ultravox import UltravoxConfig
 __all__ = [
     "ChatGLMConfig",
     "DeepseekVLV2Config",
+    "EAGLEConfig",
     "RWConfig",
     "JAISConfig",
     "MedusaConfig",
-    "EAGLEConfig",
-    "MllamaConfig",
     "MLPSpeculatorConfig",
     "MoonViTConfig",
     "KimiVLConfig",
     "NemotronConfig",
     "NemotronHConfig",
     "Nemotron_Nano_VL_Config",
-    "NVLM_D_Config",
     "OvisConfig",
     "SpeculatorsConfig",
     "UltravoxConfig",

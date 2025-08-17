@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.common.config import (AphroditeConfig, ObservabilityConfig,
+from aphrodite.config import (AphroditeConfig, ObservabilityConfig,
                                      set_current_aphrodite_config)
 from aphrodite.common.sequence import ExecuteModelRequest, IntermediateTensors
 from aphrodite.utils import (enable_trace_function_call_for_thread,

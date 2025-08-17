@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn.parameter import Parameter
 
 from aphrodite.common import envs
-from aphrodite.common.config import get_current_aphrodite_config
+from aphrodite.config import get_current_aphrodite_config
 from aphrodite.distributed.parallel_state import (
     get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size)
 from aphrodite.forward_context import ForwardContext, get_forward_context

@@ -8,7 +8,7 @@ import msgspec.msgpack
 import zmq
 from loguru import logger
 
-from aphrodite.common.config import ParallelConfig
+from aphrodite.config import ParallelConfig
 from aphrodite.utils import get_mp_context, make_zmq_socket, set_process_title
 from aphrodite.v1.engine import EngineCoreOutputs, EngineCoreRequestType
 from aphrodite.v1.serial_utils import MsgpackDecoder

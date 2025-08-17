@@ -13,9 +13,8 @@ from transformers.models.aya_vision.processing_aya_vision import (
 from transformers.models.got_ocr2.image_processing_got_ocr2 import (
     get_optimal_tiled_canvas)
 
-from aphrodite.common.config import AphroditeConfig
-from aphrodite.common.jsontree import json_map_leaves
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalKwargs
@@ -27,6 +26,7 @@ from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              PromptReplacement, PromptUpdate,
                                              PromptUpdateDetails)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
+from aphrodite.utils.jsontree import json_map_leaves
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP

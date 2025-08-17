@@ -5,7 +5,7 @@ from torch import nn
 
 from aphrodite.attention.backends.abstract import AttentionMetadata
 from aphrodite.common import envs
-from aphrodite.common.config import get_current_aphrodite_config
+from aphrodite.config import get_current_aphrodite_config
 from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size,
                                    tensor_model_parallel_all_gather,
@@ -33,7 +33,7 @@ from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils import direct_register_custom_op
-from aphrodite.v1.attention.backends.mamba_attn import Mamba2AttentionMetadata
+from aphrodite.v1.attention.backends.mamba2_attn import Mamba2AttentionMetadata
 
 # Added by the IBM Team, 2024
 
@@ -470,12 +470,12 @@ class MambaMixer2(MambaBase, CustomOp):
                 conv_state = self_kv_cache[0].transpose(-1, -2)
                 ssm_state = self_kv_cache[1]
                 state_indices_tensor = attn_metadata.state_indices_tensor
-                has_initial_states_p = attn_metadata.has_initial_states
+                has_initial_states_p = attn_metadata.has_initial_states_p
                 prep_initial_states = attn_metadata.prep_initial_states
                 chunk_size = attn_metadata.chunk_size
-                seq_idx_p = attn_metadata.seq_idx
-                chunk_indices_p = attn_metadata.chunk_indices
-                chunk_offsets_p = attn_metadata.chunk_offsets
+                seq_idx_p = attn_metadata.seq_idx_p
+                chunk_indices_p = attn_metadata.chunk_indices_p
+                chunk_offsets_p = attn_metadata.chunk_offsets_p
         else:
             conv_state = mamba_cache_params.conv_state
             ssm_state = mamba_cache_params.ssm_state

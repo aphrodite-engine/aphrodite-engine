@@ -12,8 +12,7 @@ from loguru import logger
 from typing_extensions import assert_never
 
 from aphrodite.common.outputs import PoolingOutput, PoolingRequestOutput
-from aphrodite.utils import merge_async_iterators
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (ErrorResponse,
@@ -26,6 +25,7 @@ from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.endpoints.utils import _validate_truncation_size
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.utils import merge_async_iterators
 
 
 def _get_data(

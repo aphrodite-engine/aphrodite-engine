@@ -2,7 +2,7 @@ import unittest.mock as mock
 
 import pytest
 
-from aphrodite.common.config import CacheConfig, ModelConfig, SchedulerConfig, AphroditeConfig
+from aphrodite.config import CacheConfig, ModelConfig, SchedulerConfig, AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.v1.core.sched.output import (CachedRequestData, NewRequestData,
                                        SchedulerOutput)

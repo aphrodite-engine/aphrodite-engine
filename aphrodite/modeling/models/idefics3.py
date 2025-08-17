@@ -22,7 +22,7 @@ from torch import nn
 from transformers import (BatchFeature, Idefics3Config, Idefics3ImageProcessor,
                           Idefics3Processor)
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.linear import ReplicatedLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor

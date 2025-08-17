@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
 
-from aphrodite.common.config import LoadConfig, ModelConfig
+from aphrodite.config import LoadConfig, ModelConfig
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.weight_utils import (
     download_safetensors_index_file_from_hf, download_weights_from_hf,

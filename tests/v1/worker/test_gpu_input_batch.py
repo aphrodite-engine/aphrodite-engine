@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.utils import is_pin_memory_available, make_tensor_with_pad
+from aphrodite.utils import is_pin_memory_available, make_tensor_with_pad
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.worker.gpu_input_batch import (BlockTable, CachedRequestState,
                                             InputBatch)

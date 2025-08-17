@@ -5,7 +5,7 @@ from typing import List, Optional
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common.utils import (STR_DTYPE_TO_TORCH_DTYPE,
+from aphrodite.utils import (STR_DTYPE_TO_TORCH_DTYPE,
                                     FlexibleArgumentParser,
                                     create_kv_caches_with_random)
 

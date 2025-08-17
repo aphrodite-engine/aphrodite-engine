@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.common.config import LoadConfig, ModelConfig, AphroditeConfig
+from aphrodite.config import LoadConfig, ModelConfig, AphroditeConfig
 from aphrodite.modeling.model_loader.utils import (
     initialize_model, process_weights_after_loading, set_default_torch_dtype)
 

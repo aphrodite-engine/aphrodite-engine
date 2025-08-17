@@ -1,10 +1,11 @@
 from typing import Callable, Optional, Union
 
 import torch
+from packaging import version
 
 from aphrodite import _custom_ops as ops
 from aphrodite.common import envs
-from aphrodite.common.config import (CompilationLevel,
+from aphrodite.config import (CompilationLevel,
                                      get_current_aphrodite_config)
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.input_quant_fp8 import QuantFP8
@@ -18,8 +19,8 @@ TORCH_DEVICE_IDENTITY = None
 # torch._scaled_mm rowwise feature.
 # The condition is determined once as the operations
 # are time consuming.
-USE_ROWWISE_TORCH_SCALED_MM = (current_platform.is_rocm()
-                               and torch.__version__[0:3] >= "2.7"
+USE_ROWWISE_TORCH_SCALED_MM = (current_platform.is_rocm() and version.parse(
+    torch.__version__) >= version.parse("2.7")
                                and current_platform.has_device_capability(94))
 
 

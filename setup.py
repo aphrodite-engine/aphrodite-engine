@@ -73,7 +73,7 @@ elif not (sys.platform.startswith("linux")
           or sys.platform.startswith("darwin")):
     logger.warning(
         "Aphrodite only supports Linux platform (including WSL) and MacOS."
-        "Building on %s, "
+        "Building on {}, "
         "so Aphrodite may not be able to run correctly", sys.platform)
     APHRODITE_TARGET_DEVICE = "empty"
 elif (sys.platform.startswith("linux") and torch.version.cuda is None

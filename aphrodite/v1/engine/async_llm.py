@@ -8,11 +8,11 @@ import numpy as np
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import AphroditeConfig, ModelConfig
 from aphrodite.common.envs import APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE
 from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs import PromptType
@@ -26,7 +26,8 @@ from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.transformers_utils.tokenizer_group import (
     init_tokenizer_from_configs)
 from aphrodite.usage.usage_lib import UsageContext
-from aphrodite.utils import Device, cdiv, deprecate_kwargs
+from aphrodite.utils import (Device, cancel_task_threadsafe, cdiv,
+                             deprecate_kwargs)
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.core_client import EngineCoreClient
 from aphrodite.v1.engine.exceptions import EngineDeadError, EngineGenerateError
@@ -216,8 +217,7 @@ class AsyncLLM(EngineClient):
         if engine_core := getattr(self, "engine_core", None):
             engine_core.shutdown()
 
-        if handler := getattr(self, "output_handler", None):
-            handler.cancel()
+        cancel_task_threadsafe(getattr(self, "output_handler", None))
 
     async def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         return await self.engine_core.get_supported_tasks_async()
@@ -566,7 +566,7 @@ class AsyncLLM(EngineClient):
         await self.engine_core.profile_async(False)
 
     async def reset_mm_cache(self) -> None:
-        self.processor.mm_registry.reset_processor_cache()
+        self.processor.mm_registry.reset_processor_cache(self.model_config)
         self.processor.mm_input_cache_client.reset()
         await self.engine_core.reset_mm_cache_async()
 
@@ -577,6 +577,7 @@ class AsyncLLM(EngineClient):
         await self.engine_core.reset_prefix_cache_async()
 
     async def sleep(self, level: int = 1) -> None:
+        await self.reset_prefix_cache()
         await self.engine_core.sleep_async(level)
 
     async def wake_up(self, tags: Optional[list[str]] = None) -> None:

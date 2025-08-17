@@ -5,7 +5,7 @@ Run `pytest tests/models/encoder_decoder/language/test_bart.py`.
 """
 from typing import List, Optional, Tuple, Type
 
-from aphrodite.common.utils import is_cpu
+from aphrodite.utils import is_cpu
 
 if not is_cpu():
     # CPU backend is not currently supported with encoder/decoder models

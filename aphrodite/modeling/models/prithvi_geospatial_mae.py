@@ -21,13 +21,13 @@ import torch
 import torch.nn as nn
 from transformers import BatchFeature
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.modeling.layers.pooler import (AllPool, PoolerHead,
-                                              PoolerIdentity, SimplePooler)
+from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.interfaces import (
-    IsAttentionFree, MultiModalEmbeddings, SupportsMultiModalWithRawInput)
+    IsAttentionFree, MultiModalEmbeddings, SupportsMultiModalWithRawInput,
+    default_pooling_type)
 from aphrodite.modeling.models.utils import AutoWeightsLoader
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
@@ -142,6 +142,7 @@ class PrithviGeoSpatialMAEMultiModalProcessor(BaseMultiModalProcessor):
         )
 
 
+@default_pooling_type("All")
 @MULTIMODAL_REGISTRY.register_processor(
     PrithviGeoSpatialMAEMultiModalProcessor,
     info=PrithviGeoSpatialMAEProcessingInfo,
@@ -198,7 +199,11 @@ class PrithviGeoSpatialMAE(nn.Module, IsAttentionFree,
                 "Only SemanticSegmentationTask is supported for now "
                 "by PrithviGeospatialMAE.")
 
-        self.pooler = SimplePooler(AllPool(), PoolerHead(PoolerIdentity()))
+        pooler_config = aphrodite_config.model_config.pooler_config
+        assert pooler_config is not None
+
+        self.pooler = DispatchPooler(
+            {"encode": Pooler.for_encode(pooler_config)}, )
 
     def _parse_and_validate_multimodal_data(
             self, **kwargs) -> tuple[torch.Tensor, Optional[torch.Tensor]]:

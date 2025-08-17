@@ -1,6 +1,6 @@
 import pytest
 
-from aphrodite.common.utils import (create_kv_caches_with_random,
+from aphrodite.utils import (create_kv_caches_with_random,
                                     create_kv_caches_with_random_flash)
 
 

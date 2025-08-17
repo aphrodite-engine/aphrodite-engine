@@ -7,7 +7,7 @@ import torch
 from aphrodite import _custom_ops as ops
 from aphrodite.attention.ops.blocksparse_attention.interface import (
     LocalStridedBlockSparseAttn)
-from aphrodite.common.utils import get_max_shared_memory_bytes, is_hip
+from aphrodite.utils import get_max_shared_memory_bytes, is_hip
 
 from .allclose_default import get_default_atol, get_default_rtol
 

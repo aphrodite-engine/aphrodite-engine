@@ -4,7 +4,7 @@ from torch._higher_order_ops.auto_functionalize import auto_functionalized
 from torch._inductor.pattern_matcher import (PatternMatcherPass, fwd_only,
                                              register_replacement)
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.platforms import current_platform
 
 from .aphrodite_inductor_pass import AphroditeInductorPass

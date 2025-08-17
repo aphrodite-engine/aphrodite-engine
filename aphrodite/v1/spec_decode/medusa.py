@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.forward_context import set_forward_context
 from aphrodite.modeling.model_loader import get_model
 from aphrodite.v1.sample.metadata import SamplingMetadata

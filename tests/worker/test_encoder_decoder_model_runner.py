@@ -6,7 +6,7 @@ import torch
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.platforms import current_platform
 from aphrodite.common.sequence import SamplingParams, SequenceData, SequenceGroupMetadata
-from aphrodite.common.utils import make_tensor_with_pad
+from aphrodite.utils import make_tensor_with_pad
 from aphrodite.worker.enc_dec_model_runner import EncoderDecoderModelRunner
 
 BATCH_SIZES = [1, 4, 16, 64, 256]

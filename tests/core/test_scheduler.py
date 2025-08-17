@@ -7,7 +7,7 @@ import pytest  # noqa
 import torch
 from torch import Use  # noqa
 
-from aphrodite.common.config import CacheConfig, LoRAConfig, SchedulerConfig
+from aphrodite.config import CacheConfig, LoRAConfig, SchedulerConfig
 from aphrodite.processing.interfaces import AllocStatus
 from aphrodite.processing.scheduler import Scheduler, SchedulingBudget
 from aphrodite.lora.request import LoRARequest

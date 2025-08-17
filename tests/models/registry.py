@@ -6,7 +6,7 @@ import pytest
 from packaging.version import Version
 from transformers import __version__ as TRANSFORMERS_VERSION
 
-from aphrodite.common.config import TokenizerMode
+from aphrodite.config import TokenizerMode
 
 
 @dataclass(frozen=True)

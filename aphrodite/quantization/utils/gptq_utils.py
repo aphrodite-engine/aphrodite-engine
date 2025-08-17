@@ -4,7 +4,7 @@ from typing import Optional, Union
 import regex as re
 import torch
 
-from aphrodite.common.config import QuantizationConfig
+from aphrodite.config import QuantizationConfig
 from aphrodite.modeling.layers.linear import (LinearBase,
                                               UnquantizedLinearMethod)
 from aphrodite.modeling.layers.vocab_parallel_embedding import (

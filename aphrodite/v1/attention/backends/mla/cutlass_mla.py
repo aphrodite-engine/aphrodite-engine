@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import ClassVar, Optional
 
 import torch
 from loguru import logger
@@ -7,9 +7,16 @@ from loguru import logger
 import aphrodite._custom_ops as ops
 from aphrodite.attention.backends.abstract import (AttentionType,
                                                    is_quantized_kv_cache)
-from aphrodite.v1.attention.backends.mla.common import (MLACommonBackend,
-                                                        MLACommonImpl,
-                                                        MLACommonMetadata)
+from aphrodite.v1.attention.backends.mla.common import (
+    MLACommonBackend, MLACommonImpl, MLACommonMetadata,
+    MLACommonMetadataBuilder)
+from aphrodite.v1.attention.backends.utils import AttentionCGSupport
+
+
+class CutlassMLAMetadataBuilder(MLACommonMetadataBuilder[MLACommonMetadata]):
+    # enable full CUDA Graph support for decode-only capture
+    attn_cudagraph_support: ClassVar[
+        AttentionCGSupport] = AttentionCGSupport.PURE_DECODE_ONLY
 
 
 class CutlassMLABackend(MLACommonBackend):
@@ -21,6 +28,10 @@ class CutlassMLABackend(MLACommonBackend):
     @staticmethod
     def get_impl_cls() -> type["CutlassMLAImpl"]:
         return CutlassMLAImpl
+
+    @staticmethod
+    def get_builder_cls() -> type["CutlassMLAMetadataBuilder"]:
+        return CutlassMLAMetadataBuilder
 
 
 class SM100Workspace:

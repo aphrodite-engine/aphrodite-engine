@@ -2,7 +2,7 @@ from typing import Optional
 
 from typing_extensions import assert_never
 
-from aphrodite.common.config import LoRAConfig, ModelConfig, SchedulerConfig
+from aphrodite.config import LoRAConfig, ModelConfig, SchedulerConfig
 from aphrodite.lora.request import LoRARequest
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
                                                     encode_tokens,

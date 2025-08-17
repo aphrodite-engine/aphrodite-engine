@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import io
 import json
 import sys
@@ -10,6 +9,7 @@ from http import HTTPStatus
 from typing import (Annotated, Any, Callable, ClassVar, Generic, Optional,
                     TypeVar, Union, cast, overload)
 
+import pybase64
 import torch
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,11 +22,10 @@ else:
     from typing_extensions import TypedDict
 
 import aphrodite.common.envs as envs
-from aphrodite.common.config import ModelConfig
 from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
-from aphrodite.common.sequence import Logprob, PromptLogprobs
+from aphrodite.config import ModelConfig
 # yapf conflicts with isort for this block
 # yapf: disable
 from aphrodite.endpoints.chat_utils import (
@@ -45,7 +44,7 @@ from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  EmbeddingChatRequest,
                                                  EmbeddingCompletionRequest,
                                                  EmbeddingRequest,
-                                                 EmbeddingResponse,
+                                                 EmbeddingResponse, ErrorInfo,
                                                  ErrorResponse,
                                                  PoolingResponse,
                                                  RerankRequest,
@@ -67,6 +66,7 @@ from aphrodite.inputs.parse import parse_and_batch_prompt
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import (  # noqa: F401 - Required to resolve Pydantic error in RequestProcessingMixin
     MultiModalDataDict)
+from aphrodite.common.sequence import Logprob, PromptLogprobs
 from aphrodite.tracing import (contains_trace_headers, extract_trace_headers,
                                log_tracing_disabled_warning)
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
@@ -407,21 +407,18 @@ class OpenAIServing:
             message: str,
             err_type: str = "BadRequestError",
             status_code: HTTPStatus = HTTPStatus.BAD_REQUEST) -> ErrorResponse:
-        return ErrorResponse(message=message,
-                             type=err_type,
-                             code=status_code.value)
+        return ErrorResponse(error=ErrorInfo(
+            message=message, type=err_type, code=status_code.value))
 
     def create_streaming_error_response(
             self,
             message: str,
             err_type: str = "BadRequestError",
             status_code: HTTPStatus = HTTPStatus.BAD_REQUEST) -> str:
-        json_str = json.dumps({
-            "error":
+        json_str = json.dumps(
             self.create_error_response(message=message,
                                        err_type=err_type,
-                                       status_code=status_code).model_dump()
-        })
+                                       status_code=status_code).model_dump())
         return json_str
 
     async def _check_model(
@@ -440,7 +437,7 @@ class OpenAIServing:
             if isinstance(load_result, LoRARequest):
                 return None
             if isinstance(load_result, ErrorResponse) and \
-                load_result.code == HTTPStatus.BAD_REQUEST.value:
+                load_result.error.code == HTTPStatus.BAD_REQUEST.value:
                 error_response = load_result
 
         return error_response or self.create_error_response(
@@ -547,8 +544,7 @@ class OpenAIServing:
         input_ids = encoded.input_ids
         input_text = prompt
 
-        result = self._validate_input(request, input_ids, input_text)
-        return result
+        return self._validate_input(request, input_ids, input_text)
 
     async def _normalize_prompt_tokens_to_input(
         self,
@@ -584,6 +580,8 @@ class OpenAIServing:
                       (EmbeddingChatRequest, EmbeddingCompletionRequest,
                        ScoreRequest, RerankRequest, ClassificationRequest)):
 
+            # Note: input length can be up to the entire model context length
+            # since these requests don't generate tokens.
             if token_num > self.max_model_len:
                 operations: dict[type[AnyRequest], str] = {
                     ScoreRequest: "score",
@@ -612,21 +610,24 @@ class OpenAIServing:
             max_tokens = request.max_completion_tokens or request.max_tokens
         else:
             max_tokens = getattr(request, "max_tokens", None)
-        if max_tokens is None:
-            if token_num >= self.max_model_len:
-                raise ValueError(
-                    f"This model's maximum context length is "
-                    f"{self.max_model_len} tokens. However, you requested "
-                    f"{token_num} tokens in the messages, "
-                    f"Please reduce the length of the messages.")
-        elif token_num + max_tokens > self.max_model_len:
+
+        # Note: input length can be up to model context length - 1 for
+        # completion-like requests.
+        if token_num >= self.max_model_len:
             raise ValueError(
                 f"This model's maximum context length is "
-                f"{self.max_model_len} tokens. However, you requested "
-                f"{max_tokens + token_num} tokens "
-                f"({token_num} in the messages, "
-                f"{max_tokens} in the completion). "
-                f"Please reduce the length of the messages or completion.")
+                f"{self.max_model_len} tokens. However, your request has "
+                f"{token_num} input tokens. Please reduce the length of "
+                "the input messages.")
+
+        if max_tokens is not None and \
+            token_num + max_tokens > self.max_model_len:
+            raise ValueError(
+                "'max_tokens' or 'max_completion_tokens' is too large: "
+                f"{max_tokens}. This model's maximum context length is "
+                f"{self.max_model_len} tokens and your request has "
+                f"{token_num} input tokens ({max_tokens} > {self.max_model_len}"
+                f" - {token_num}).")
 
         return TextTokensPrompt(prompt=input_text, prompt_token_ids=input_ids)
 
@@ -668,22 +669,20 @@ class OpenAIServing:
         """
         for text in prompt_inputs:
             if isinstance(text, str):
-                result = await self._normalize_prompt_text_to_input(
+                yield await self._normalize_prompt_text_to_input(
                     request,
                     tokenizer,
                     prompt=text,
                     truncate_prompt_tokens=truncate_prompt_tokens,
                     add_special_tokens=add_special_tokens,
                 )
-                yield result
             else:
-                result = await self._normalize_prompt_tokens_to_input(
+                yield await self._normalize_prompt_tokens_to_input(
                     request,
                     tokenizer,
                     prompt_ids=text,
                     truncate_prompt_tokens=truncate_prompt_tokens,
                 )
-                yield result
 
     async def _tokenize_prompt_input_or_inputs_async(
         self,
@@ -744,8 +743,8 @@ class OpenAIServing:
         # Wait for all tokenization tasks to complete
         results = await asyncio.gather(*tasks)
         inputs_text.extend(results)
-        result = (inputs_text, inputs_embeds)
-        return result
+
+        return inputs_text, inputs_embeds
 
     @overload
     async def _preprocess_completion(
@@ -976,7 +975,7 @@ class OpenAIServing:
             )
             async for res in generator:
                 context.append_output(res)
-                # NOTE: The stop condition is handled by the engine.
+                # NOTE(woosuk): The stop condition is handled by the engine.
                 yield context
 
             if not context.need_builtin_tool_call():
@@ -1009,7 +1008,8 @@ class OpenAIServing:
     ) -> list[EmbedsPrompt]:
 
         def _load_and_validate_embed(embed: bytes) -> EmbedsPrompt:
-            tensor = torch.load(io.BytesIO(base64.b64decode(embed)),
+            tensor = torch.load(io.BytesIO(
+                pybase64.b64decode(embed, validate=True)),
                                 weights_only=True)
             assert isinstance(tensor, torch.Tensor) and tensor.dtype in (
                 torch.float32,

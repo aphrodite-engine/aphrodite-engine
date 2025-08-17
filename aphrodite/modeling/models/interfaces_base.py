@@ -9,7 +9,7 @@ from typing_extensions import TypeIs, TypeVar
 from aphrodite.utils import supports_kw
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig
+    from aphrodite.config import AphroditeConfig
     from aphrodite.modeling.layers.pooler import Pooler
     from aphrodite.modeling.sampling_metadata import SamplingMetadata
 else:

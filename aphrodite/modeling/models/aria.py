@@ -7,7 +7,7 @@ from transformers import AriaConfig, AriaTextConfig, BatchFeature
 from transformers.models.aria.modeling_aria import AriaCrossAttention
 from transformers.models.aria.processing_aria import AriaProcessor
 
-from aphrodite.common.config import (AphroditeConfig, CacheConfig,
+from aphrodite.config import (AphroditeConfig, CacheConfig,
                                      QuantizationConfig)
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.distributed import get_tensor_model_parallel_rank

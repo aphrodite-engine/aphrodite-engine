@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 
 
 @dataclass

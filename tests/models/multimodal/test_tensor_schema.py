@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.engine.llm_engine import LLMEngine as V0LLMEngine
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalKwargs

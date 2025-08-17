@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import torch
 
-    from aphrodite.common.config import AphroditeConfig
+    from aphrodite.config import AphroditeConfig
     from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 

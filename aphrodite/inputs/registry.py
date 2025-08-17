@@ -3,18 +3,17 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
 
 import torch
-from loguru import logger
 from transformers import BatchFeature, PretrainedConfig, ProcessorMixin
 from typing_extensions import TypeVar
 
-from aphrodite.common.jsontree import JSONTree, json_map_leaves
 from aphrodite.common.logger import log_once
-from aphrodite.utils import get_allowed_kwarg_only_overrides
 from aphrodite.transformers_utils.processor import cached_processor_from_config
+from aphrodite.utils import get_allowed_kwarg_only_overrides
+from aphrodite.utils.jsontree import JSONTree, json_map_leaves
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import ModelConfig
     from aphrodite.common.sequence import SequenceData
+    from aphrodite.config import ModelConfig
     from aphrodite.multimodal import (MultiModalDataDict,
                                       MultiModalPlaceholderDict,
                                       MultiModalRegistry)

@@ -4,7 +4,7 @@ from typing import List, Optional
 import nvtx
 import torch
 
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.modeling.layers.rotary_embedding import (RotaryEmbedding,
                                                         get_rope)
 

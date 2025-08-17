@@ -12,7 +12,7 @@ import msgpack
 import torch
 import zmq
 
-from aphrodite.common.config import KVTransferConfig
+from aphrodite.config import KVTransferConfig
 from aphrodite.utils import current_stream, get_ip
 from aphrodite.distributed.device_communicators.pynccl_wrapper import (
     NCCLLibrary, buffer_type, cudaStream_t, ncclComm_t, ncclDataTypeEnum)

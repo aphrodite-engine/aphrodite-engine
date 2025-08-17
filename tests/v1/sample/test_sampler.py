@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from aphrodite.platforms import current_platform
-from aphrodite.common.utils import make_tensor_with_pad
+from aphrodite.utils import make_tensor_with_pad
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.sampler import Sampler
 

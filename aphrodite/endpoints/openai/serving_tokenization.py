@@ -5,7 +5,7 @@ import jinja2
 from fastapi import Request
 from loguru import logger
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption
 from aphrodite.endpoints.logger import RequestLogger
 # yapf conflicts with isort for this block

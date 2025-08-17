@@ -13,7 +13,7 @@ from transformers.models.whisper.modeling_whisper import sinusoids
 
 from aphrodite.attention import Attention, AttentionType
 from aphrodite.attention.layer import MultiHeadAttention
-from aphrodite.common.config import (AphroditeConfig, CacheConfig, ModelConfig,
+from aphrodite.config import (AphroditeConfig, CacheConfig, ModelConfig,
                                      SpeechToTextConfig)
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.inputs.data import PromptType

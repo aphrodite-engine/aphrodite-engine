@@ -5,7 +5,7 @@ import pytest
 import torch
 from transformers import AutoTokenizer
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.modeling.guided_decoding import (
     get_guided_decoding_logits_processor,
     get_local_guided_decoding_logits_processor)

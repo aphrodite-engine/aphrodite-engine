@@ -202,7 +202,7 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.backends.utils import get_mla_dims
 from aphrodite.attention.ops.merge_attn_states import merge_attn_states
 from aphrodite.attention.utils.fa_utils import get_flash_attn_version
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear, LinearBase,
                                               UnquantizedLinearMethod)

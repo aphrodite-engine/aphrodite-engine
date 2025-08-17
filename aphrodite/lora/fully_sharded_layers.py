@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
-from aphrodite.common.config import LoRAConfig
+from aphrodite.config import LoRAConfig
 from aphrodite.distributed.communication_op import (
     tensor_model_parallel_all_gather, tensor_model_parallel_all_reduce)
 from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank

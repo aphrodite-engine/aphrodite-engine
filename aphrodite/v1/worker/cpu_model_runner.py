@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.model_loader import get_model
 from aphrodite.v1.attention.backends.cpu_attn import TorchSDPAMetadataBuilderV1
 from aphrodite.v1.worker.gpu_model_runner import GPUModelRunner
@@ -49,11 +49,11 @@ class CPUModelRunner(GPUModelRunner):
             raise ValueError("Multiple KVCacheGroups is not"
                              "currently supported with CPU model runner.")
 
-        assert type(
-            self.attn_metadata_builders[0]) is TorchSDPAMetadataBuilderV1
+        assert type(self.attn_groups[0]
+                    [0].metadata_builder) is TorchSDPAMetadataBuilderV1
 
-        self.attn_metadata_builders[0].reorder_batch(self.input_batch,
-                                                     scheduler_output)
+        self.attn_groups[0][0].metadata_builder.reorder_batch(
+            self.input_batch, scheduler_output)
 
     def _postprocess_tenosrs(self) -> None:
         # Note: replace device tensors with cpu tensors

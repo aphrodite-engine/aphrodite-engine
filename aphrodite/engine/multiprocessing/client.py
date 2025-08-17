@@ -14,7 +14,7 @@ from zmq import Frame  # type: ignore[attr-defined]
 from zmq.asyncio import Socket
 
 from aphrodite import PoolingParams
-from aphrodite.common.config import (AphroditeConfig, DecodingConfig,
+from aphrodite.config import (AphroditeConfig, DecodingConfig,
                                      ModelConfig)
 # yapf: enable
 from aphrodite.common.envs import APHRODITE_RPC_TIMEOUT

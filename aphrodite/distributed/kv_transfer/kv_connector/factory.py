@@ -4,11 +4,12 @@ from typing import TYPE_CHECKING, Callable
 from loguru import logger
 
 import aphrodite.common.envs as envs
-from aphrodite.distributed.kv_transfer.kv_connector.base import KVConnectorBase
+from aphrodite.distributed.kv_transfer.kv_connector.base import (
+    KVConnectorBase, KVConnectorBaseType)
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import KVConnectorRole
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig
+    from aphrodite.config import KVTransferConfig, AphroditeConfig
 
 
 class KVConnectorFactory:
@@ -38,17 +39,7 @@ class KVConnectorFactory:
                              f"but found {envs.APHRODITE_USE_V1=}")
 
         kv_transfer_config = config.kv_transfer_config
-        connector_name = kv_transfer_config.kv_connector
-        if connector_name in cls._registry:
-            connector_cls = cls._registry[connector_name]()
-        else:
-            connector_module_path = kv_transfer_config.kv_connector_module_path
-            if connector_module_path is None:
-                raise ValueError(
-                    f"Unsupported connector type: {connector_name}")
-            connector_module = importlib.import_module(connector_module_path)
-            connector_cls = getattr(connector_module, connector_name)
-        assert issubclass(connector_cls, KVConnectorBase)
+        connector_cls = cls.get_connector_class(kv_transfer_config)
         logger.info("Creating v1 connector with name: {} and engine_id: {}",
                     connector_cls.__name__, kv_transfer_config.engine_id)
         # NOTE(Kuntai): v1 connector is explicitly separated into two roles.
@@ -60,6 +51,23 @@ class KVConnectorFactory:
         # - Should only be used inside the forward context & attention layer
         # We build separately to enforce strict separation
         return connector_cls(config, role)
+
+    @classmethod
+    def get_connector_class(
+            cls, kv_transfer_config: "KVTransferConfig"
+    ) -> type[KVConnectorBaseType]:
+        """Get the connector class by name."""
+        connector_name = kv_transfer_config.kv_connector
+        if connector_name in cls._registry:
+            connector_cls = cls._registry[connector_name]()
+        else:
+            connector_module_path = kv_transfer_config.kv_connector_module_path
+            if connector_module_path is None:
+                raise ValueError(
+                    f"Unsupported connector type: {connector_name}")
+            connector_module = importlib.import_module(connector_module_path)
+            connector_cls = getattr(connector_module, connector_name)
+        return connector_cls
 
 
 # Register various connectors here.

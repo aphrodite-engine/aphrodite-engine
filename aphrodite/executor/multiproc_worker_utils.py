@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
 import torch
 from loguru import logger
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.utils import (_maybe_force_spawn, decorate_logs,
                                     get_mp_context, run_method)
 

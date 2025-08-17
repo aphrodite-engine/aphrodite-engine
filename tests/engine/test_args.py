@@ -1,6 +1,6 @@
 import pytest
 
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.engine.args_tools import EngineArgs
 
 

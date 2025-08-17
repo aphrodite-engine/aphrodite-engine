@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common.utils import (get_max_shared_memory_bytes, is_hip,
+from aphrodite.utils import (get_max_shared_memory_bytes, is_hip,
                                     seed_everything)
 from tests.kernels.utils import opcheck
 

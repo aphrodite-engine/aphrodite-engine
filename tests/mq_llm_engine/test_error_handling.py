@@ -19,7 +19,7 @@ from aphrodite.endpoints.openai.args import make_arg_parser
 from aphrodite.lora.request import LoRARequest
 from aphrodite.common.sequence import SequenceGroupMetadata
 from aphrodite.usage.usage_lib import UsageContext
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 
 MODEL = "google/gemma-1.1-2b-it"
 ENGINE_ARGS = AsyncEngineArgs(model=MODEL, enforce_eager=True)

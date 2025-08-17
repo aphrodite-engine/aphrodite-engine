@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, Response
 import aphrodite.endpoints.api_server
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_aphrodite import AsyncAphrodite
-from aphrodite.common.utils import FlexibleArgumentParser
+from aphrodite.utils import FlexibleArgumentParser
 
 app = aphrodite.endpoints.api_server.app
 

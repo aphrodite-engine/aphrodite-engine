@@ -3,7 +3,7 @@ import torch
 
 from aphrodite import LLM, SamplingParams
 from aphrodite.device_allocator.cumem import CuMemAllocator
-from aphrodite.common.utils import GiB_bytes
+from aphrodite.utils import GiB_bytes
 
 from ..utils import create_new_process_for_each_test
 

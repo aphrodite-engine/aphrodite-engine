@@ -8,7 +8,7 @@ from transformers import MambaConfig
 
 from aphrodite.attention.backends.abstract import AttentionMetadata
 from aphrodite.common import envs
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed.parallel_state import get_pp_group

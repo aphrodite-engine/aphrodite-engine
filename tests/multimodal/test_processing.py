@@ -8,7 +8,7 @@ import pytest
 import torch
 from transformers import ProcessorMixin
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalFieldElem, MultiModalKwargs,
                                     MultiModalKwargsItem,
@@ -27,7 +27,7 @@ from aphrodite.multimodal.processing import (PlaceholderFeaturesInfo,
 # yapf: enable
 from aphrodite.multimodal.profiling import MultiModalProfiler
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
-from aphrodite.common.utils import full_groupby
+from aphrodite.utils import full_groupby
 
 from .utils import random_image
 

@@ -4,7 +4,7 @@ from typing import Callable, Union
 import torch
 import torch.distributed as dist
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.executor.executor_base import ExecutorBase
 from aphrodite.executor.uniproc_executor import (  # noqa
     ExecutorWithExternalLauncher as ExecutorWithExternalLauncherV0)

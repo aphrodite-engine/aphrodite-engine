@@ -5,7 +5,7 @@ import aphrodite.common.envs as envs
 from aphrodite._custom_ops import scaled_fp8_quant
 from aphrodite.compilation.activation_quant_fusion import ActivationQuantFusionPass
 from aphrodite.compilation.fx_utils import find_auto_fn, find_auto_fn_maybe
-from aphrodite.common.config import CompilationConfig, AphroditeConfig
+from aphrodite.config import CompilationConfig, AphroditeConfig
 from aphrodite.modeling.layers.activation import SiluAndMul
 
 from .backend import TestBackend

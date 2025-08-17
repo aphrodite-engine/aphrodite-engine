@@ -24,7 +24,7 @@ from torch import Tensor
 from torch.nn.functional import gumbel_softmax, pad, softmax
 from transformers import BatchFeature, PretrainedConfig
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.modeling.layers.linear import ReplicatedLinear
 from aphrodite.modeling.models.aimv2 import AIMv2Model

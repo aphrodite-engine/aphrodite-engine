@@ -9,7 +9,7 @@ from neuronx_distributed_inference.modules.generation.sampling import (
 from neuronx_distributed_inference.modules.lora_serving import (
     LoraCheckpoint, LoraServingConfig)
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
 from aphrodite.endpoints.openai.serving_models import LoRAModulePath

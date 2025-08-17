@@ -9,7 +9,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.attention.layer import Attention
-from aphrodite.common.config import (AphroditeConfig,
+from aphrodite.config import (AphroditeConfig,
                                      get_layers_from_aphrodite_config)
 from aphrodite.common.sequence import (ExecuteModelRequest,
                                        IntermediateTensors,

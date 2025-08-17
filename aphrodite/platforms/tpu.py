@@ -11,7 +11,7 @@ from aphrodite.utils import DEFAULT_MAX_NUM_BATCHED_TOKENS
 from .interface import Platform, PlatformEnum, _Backend
 
 if TYPE_CHECKING:
-    from aphrodite.common.config import AphroditeConfig, BlockSize, ModelConfig
+    from aphrodite.config import AphroditeConfig, BlockSize, ModelConfig
     from aphrodite.common.pooling_params import PoolingParams
 else:
     BlockSize = None
@@ -41,8 +41,8 @@ class TpuPlatform(Platform):
     @classmethod
     def get_attn_backend_cls(cls, selected_backend: _Backend, head_size: int,
                              dtype: torch.dtype, kv_cache_dtype: Optional[str],
-                             block_size: int, use_v1: bool,
-                             use_mla: bool) -> str:
+                             block_size: int, use_v1: bool, use_mla: bool,
+                             has_sink) -> str:
         if (selected_backend != _Backend.PALLAS
                 and selected_backend != _Backend.PALLAS_APHRODITE_V1):
             logger.info("Cannot use {} backend on TPU.", selected_backend)
@@ -94,7 +94,7 @@ class TpuPlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, aphrodite_config: AphroditeConfig) -> None:
-        from aphrodite.common.config import CompilationLevel
+        from aphrodite.config import CompilationLevel
 
         cache_config = aphrodite_config.cache_config
         # For v0, the default block size is 16.
@@ -129,18 +129,13 @@ class TpuPlatform(Platform):
         parallel_config = aphrodite_config.parallel_config
         scheduler_config = aphrodite_config.scheduler_config
         if parallel_config.worker_cls == "auto":
-            if scheduler_config.is_multi_step:
-                raise NotImplementedError(
-                    "Multi-step scheduling is not supported (and not "
-                    "needed) on Aphrodite V1. Please launch without "
-                    "--num-scheduler-steps.")
             parallel_config.worker_cls = "aphrodite.v1.worker.tpu_worker.TPUWorker"
 
         assert not aphrodite_config.speculative_config, (
             "Speculative decoding is not yet supported for TPU backend")
 
         if scheduler_config.is_multimodal_model and not \
-            scheduler_config.disable_chunked_mm_input:
+                scheduler_config.disable_chunked_mm_input:
             logger.warning("TPU does not support running Multimodal models"\
             " without setting `--disable_chunked_mm_input`. " \
             "Forcing --disable_chunked_mm_input.")

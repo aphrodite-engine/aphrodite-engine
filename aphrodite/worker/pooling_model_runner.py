@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 import torch
 
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sequence import (IntermediateTensors, PoolerOutput,
                                        SequenceData, SequenceGroupMetadata)

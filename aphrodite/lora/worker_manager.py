@@ -8,7 +8,7 @@ from aphrodite.adapter_commons.utils import (add_adapter_worker,
                                              list_adapters_worker,
                                              set_active_adapters_worker)
 from aphrodite.adapter_commons.worker_manager import AbstractWorkerManager
-from aphrodite.common.config import LoRAConfig
+from aphrodite.config import LoRAConfig
 from aphrodite.lora.models import (LoRAModel, LoRAModelManager,
                                    LRUCacheLoRAModelManager,
                                    create_lora_manager)

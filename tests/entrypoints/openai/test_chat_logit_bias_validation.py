@@ -2,7 +2,7 @@ import openai
 import pytest
 import pytest_asyncio
 
-from aphrodite.common.config import ModelConfig
+from aphrodite.config import ModelConfig
 
 from ...utils import RemoteOpenAIServer
 

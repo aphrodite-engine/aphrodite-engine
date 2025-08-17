@@ -8,7 +8,7 @@ from transformers import FalconH1Config
 
 from aphrodite.attention.layer import Attention
 from aphrodite.common import envs
-from aphrodite.common.config import AphroditeConfig, CacheConfig
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import get_tensor_model_parallel_world_size

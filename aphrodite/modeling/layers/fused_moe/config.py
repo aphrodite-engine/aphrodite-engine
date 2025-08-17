@@ -9,7 +9,7 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.common.logger import log_once
-from aphrodite.common.config import ParallelConfig
+from aphrodite.config import ParallelConfig
 from aphrodite.distributed import get_dp_group, get_tensor_model_parallel_rank
 from aphrodite.quantization.base_config import QuantizationConfig
 from aphrodite.utils import cdiv
@@ -188,7 +188,8 @@ class FusedMoEParallelConfig:
     @property
     def use_flashinfer_cutlass_kernels(self):
         return (envs.APHRODITE_USE_FLASHINFER_MOE_FP4
-                and has_flashinfer_cutlass_fused_moe())
+                and has_flashinfer_cutlass_fused_moe()
+                and envs.APHRODITE_FLASHINFER_MOE_BACKEND == "throughput")
 
     @staticmethod
     def make(tp_size_: int, dp_size_: int,
@@ -319,6 +320,8 @@ class FusedMoEConfig:
 
     max_num_tokens: int = envs.APHRODITE_MOE_DP_CHUNK_SIZE
 
+    has_bias: bool = False
+
     def __post_init__(self):
         if self.dp_size > 1:
             log_once(
@@ -411,7 +414,8 @@ class FusedMoEConfig:
         in_dtype: torch.dtype,
         max_num_tokens: int = envs.APHRODITE_MOE_DP_CHUNK_SIZE,
         quant_config: Optional[Union[FusedMoEQuantConfig,
-                                     QuantizationConfig]] = None
+                                     QuantizationConfig]] = None,
+        has_bias: bool = False,
     ) -> "FusedMoEConfig":
 
         _quant_config: Optional[FusedMoEQuantConfig] = None
@@ -481,4 +485,5 @@ class FusedMoEConfig:
             in_dtype=in_dtype,
             quant_config=_quant_config,
             max_num_tokens=max_num_tokens,
+            has_bias=has_bias,
         )

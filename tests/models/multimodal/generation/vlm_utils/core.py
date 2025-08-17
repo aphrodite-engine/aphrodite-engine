@@ -4,7 +4,7 @@ from typing import Any, Callable, Optional
 import torch
 from transformers.models.auto.auto_factory import _BaseAutoModelClass
 
-from aphrodite.common.config import RunnerOption
+from aphrodite.config import RunnerOption
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 from .....conftest import HfRunner, AphroditeRunner

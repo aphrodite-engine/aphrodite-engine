@@ -7,7 +7,7 @@ import torch.nn as nn
 from huggingface_hub import hf_hub_download
 from transformers import AutoModelForCausalLM
 
-from aphrodite.common.config import LoadConfig, ModelConfig, AphroditeConfig
+from aphrodite.config import LoadConfig, ModelConfig, AphroditeConfig
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.utils import (
     initialize_model, process_weights_after_loading, set_default_torch_dtype)
@@ -66,6 +66,17 @@ class GGUFModelLoader(BaseModelLoader):
             for idx in range(config.num_hidden_layers):
                 gguf_to_hf_name_map[f"blk.{idx}.exp_probs_b.bias"] = \
                         f"model.layers.{idx}.mlp.gate.e_score_correction_bias"
+                gguf_to_hf_name_map[f"blk.{idx}.ffn_down_exps.weight"] = \
+                        f"model.layers.{idx}.mlp.experts.0.down_proj.weight"
+                gguf_to_hf_name_map[f"blk.{idx}.ffn_gate_exps.weight"] = \
+                        f"model.layers.{idx}.mlp.experts.0.gate_proj.weight"
+                gguf_to_hf_name_map[f"blk.{idx}.ffn_up_exps.weight"] = \
+                        f"model.layers.{idx}.mlp.experts.0.up_proj.weight"
+        if model_type in ("qwen2_moe", "qwen3_moe"):
+            model_type = model_type.replace("_", "")
+            # GGUF layer map assumes that we will have a merged expert weights
+            # so we need to map them manually
+            for idx in range(config.num_hidden_layers):
                 gguf_to_hf_name_map[f"blk.{idx}.ffn_down_exps.weight"] = \
                         f"model.layers.{idx}.mlp.experts.0.down_proj.weight"
                 gguf_to_hf_name_map[f"blk.{idx}.ffn_gate_exps.weight"] = \

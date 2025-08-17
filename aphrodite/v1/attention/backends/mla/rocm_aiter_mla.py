@@ -5,7 +5,7 @@ import torch
 
 import aphrodite.common.envs as envs
 from aphrodite.attention.ops.rocm_aiter_mla import aiter_mla_decode_fwd
-from aphrodite.common.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.utils import cdiv
 # yapf conflicts with isort for this docstring
 # yapf: disable
