@@ -41,7 +41,7 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import SupportsEagle, SupportsLoRA, SupportsPP
+from .interfaces import SupportsEagle3, SupportsLoRA, SupportsPP
 from .qwen2 import Qwen2MLP as Qwen3MLP
 from .qwen2 import Qwen2Model
 from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,

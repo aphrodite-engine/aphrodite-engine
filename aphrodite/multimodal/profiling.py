@@ -9,6 +9,7 @@ from loguru import logger
 from PIL import Image
 
 import aphrodite.common.envs as envs
+from aphrodite.common.logger import log_once
 
 from .inputs import (MultiModalDataDict, MultiModalEncDecInputs,
                      MultiModalInputs, MultiModalKwargs,
@@ -208,7 +209,8 @@ class MultiModalProfiler(Generic[_I]):
         # NOTE: Whisper allows total_len > seq_len.
         elif total_len > seq_len and not envs.APHRODITE_USE_V1:
             # `max_num_batched_tokens` is defined by `SchedulerConfig`
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "The encoder sequence length used for profiling (max_num_batched_tokens / max_num_seqs = {}) "  # noqa: E501
                 "is too short to hold the multi-modal embeddings in the worst case ({} tokens in total, out of which {} are reserved for multi-modal embeddings). "  # noqa: E501
                 "This may cause certain multi-modal inputs to fail during inference, even when the input text is short. "  # noqa: E501
@@ -233,7 +235,8 @@ class MultiModalProfiler(Generic[_I]):
         # V0 does not support chunked prefill.
         if total_len > seq_len and not envs.APHRODITE_USE_V1:
             # `max_num_batched_tokens` is defined by `SchedulerConfig`
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "The sequence length used for profiling (max_num_batched_tokens / max_num_seqs = {}) "  # noqa: E501
                 "is too short to hold the multi-modal embeddings in the worst case ({} tokens in total, out of which {} are reserved for multi-modal embeddings). "  # noqa: E501
                 "This may cause certain multi-modal inputs to fail during inference, even when the input text is short. "  # noqa: E501
@@ -273,7 +276,8 @@ class MultiModalProfiler(Generic[_I]):
                                       for k in max_tokens_per_item.keys()
                                       & mm_counts.keys())
             if total_mm_tokens > seq_len:
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     "The sequence length ({}) is smaller than the pre-defined"
                     " worst-case total number of multimodal tokens ({}). "
                     "This may cause certain multi-modal inputs to fail during "

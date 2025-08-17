@@ -8,6 +8,7 @@ from pydantic.dataclasses import dataclass
 from typing_extensions import Self
 
 import aphrodite.common.envs as envs
+from aphrodite.common.logger import log_once
 from aphrodite.config.utils import config
 from aphrodite.utils import GiB_bytes, get_cpu_memory
 
@@ -146,7 +147,8 @@ class CacheConfig:
                 f"{self.gpu_memory_utilization}.")
 
         if self.kv_sharing_fast_prefill:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "--kv-sharing-fast-prefill is currently work in progress "
                 "and not functional yet (i.e. no prefill savings)")
 

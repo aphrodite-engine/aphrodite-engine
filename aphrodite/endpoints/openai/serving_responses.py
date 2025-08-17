@@ -29,6 +29,7 @@ from openai.types.responses.response_reasoning_item import (
 from openai_harmony import Message as OpenAIHarmonyMessage
 
 from aphrodite.common import envs
+from aphrodite.common.logger import log_once
 from aphrodite.common.outputs import CompletionOutput
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import ModelConfig
@@ -124,7 +125,8 @@ class OpenAIServingResponses(OpenAIServing):
         # Aphrodite's default behavior is not.
         self.enable_store = envs.APHRODITE_ENABLE_RESPONSES_API_STORE
         if self.enable_store:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "`APHRODITE_ENABLE_RESPONSES_API_STORE` is enabled. This may "
                 "cause a memory leak since we never remove responses from "
                 "the store.")

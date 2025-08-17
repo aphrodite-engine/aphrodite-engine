@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Generic, Optional, Protocol, TypeVar
 import torch.nn as nn
 from loguru import logger
 
+from aphrodite.common.logger import log_once
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.transformers_utils.tokenizer import (
     AnyTokenizer, cached_tokenizer_from_config)
@@ -143,7 +144,8 @@ class MultiModalRegistry:
         if all(
                 mm_config.get_limit_per_prompt(modality) == 0
                 for modality in supported_modalities):
-            logger.info_once(
+            log_once(
+                "INFO",
                 "All limits of multimodal modalities supported by the model "
                 "are set to 0, running in text-only mode.")
             return False
@@ -361,7 +363,8 @@ class MultiModalRegistry:
         # Having more tokens is over-conservative but otherwise fine
         token_ids = dummy_data.prompt_token_ids
         if len(token_ids) < seq_len:
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "Expected at least {} dummy encoder tokens for profiling, but found {} tokens instead.",  # noqa: E501
                 seq_len,
                 len(token_ids),

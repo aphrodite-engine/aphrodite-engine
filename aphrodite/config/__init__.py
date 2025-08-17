@@ -766,7 +766,8 @@ class ModelConfig:
                 and not envs.APHRODITE_USE_V1
                 and (backend := envs.APHRODITE_ATTENTION_BACKEND)
                 in ("XFORMERS", "FLASHINFER")):
-            logger.warning_once(
+            log_once(
+                "WARNING",
                 "{} has interleaved attention, which is currently not "
                 "supported by the {} backend. Disabling sliding window and "
                 "capping the max length to the sliding window size ({}).",

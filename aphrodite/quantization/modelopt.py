@@ -936,11 +936,11 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
             flashinfer_moe_backend = envs.APHRODITE_FLASHINFER_MOE_BACKEND
             if flashinfer_moe_backend == "throughput":
                 self.flashinfer_moe_backend = FlashinferMoeBackend.CUTLASS
-                logger.info_once("Using FlashInfer CUTLASS kernels for "
+                log_once("INFO", "Using FlashInfer CUTLASS kernels for "
                                  "ModelOptNvFp4FusedMoE.")
             elif flashinfer_moe_backend == "latency":
                 self.flashinfer_moe_backend = FlashinferMoeBackend.TENSORRT_LLM
-                logger.info_once("Using FlashInfer TensorRT-LLM kernels for "
+                log_once("INFO", "Using FlashInfer TensorRT-LLM kernels for "
                                  "ModelOptNvFp4FusedMoE.")
             else:
                 allowed_backends = ["throughput", "latency"]

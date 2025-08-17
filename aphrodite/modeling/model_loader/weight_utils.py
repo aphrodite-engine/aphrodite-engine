@@ -787,7 +787,8 @@ def maybe_remap_kv_scale_name(name: str, params_dict: dict) -> Optional[str]:
                 remapped_name = re.sub(pattern, replacement, name)
                 if remapped_name not in params_dict:
                     scale_type = name.split(".")[-1]
-                    logger.warning_once(
+                    log_once(
+                        "WARNING",
                         "Found {} in the checkpoint (e.g. {}), but not found the expected name in the model (e.g. {}). {} is not loaded.",  # noqa: E501
                         scale_type,
                         name,

@@ -8,6 +8,7 @@ from pydantic import TypeAdapter
 from pydantic.dataclasses import dataclass
 
 import aphrodite.common.envs as envs
+from aphrodite.common.logger import log_once
 from aphrodite.compilation.inductor_pass import (CallableInductorPass,
                                                  InductorPass)
 from aphrodite.config.utils import config
@@ -64,11 +65,13 @@ class PassConfig:
     def __post_init__(self) -> None:
         if not self.enable_noop:
             if self.enable_fusion:
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     "Fusion enabled but reshape elimination disabled. "
                     "RMSNorm/SiluMul + quant (fp8) fusion might not work")
             if self.enable_attn_fusion:
-                logger.warning_once(
+                log_once(
+                    "WARNING",
                     "Fusion enabled but reshape elimination disabled. "
                     "Attention + quant (fp8) fusion might not work")
 

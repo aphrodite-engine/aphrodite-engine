@@ -284,7 +284,7 @@ class Qwen2Model(nn.Module):
         quant_config = aphrodite_config.quant_config
 
         # TODO (@robertgshaw2): see if this can be moved out
-        if is_interleaved(vllm_config.model_config.hf_text_config):
+        if is_interleaved(aphrodite_config.model_config.hf_text_config):
             assert config.max_window_layers == config.num_hidden_layers, (
                 "Sliding window for some but all layers is not supported. "
                 "This model uses sliding window but `max_window_layers` = {} "

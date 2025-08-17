@@ -22,7 +22,7 @@ class NewRequestData:
 
     req_id: str
     prompt_token_ids: list[int]
-    mm_inputs: list[MultiModalKwargsItem]
+    mm_kwargs: list[MultiModalKwargsItem]
     mm_hashes: list[str]
     mm_positions: list[PlaceholderRange]
     sampling_params: Optional[SamplingParams]
