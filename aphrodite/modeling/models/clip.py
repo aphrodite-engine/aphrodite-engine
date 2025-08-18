@@ -12,6 +12,7 @@ import torch.nn as nn
 from transformers import CLIPTextConfig, CLIPVisionConfig
 
 from aphrodite.attention.layer import MultiHeadAttention
+from aphrodite.attention import Attention, AttentionType
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
@@ -480,11 +481,31 @@ class CLIPTextEncoderLayer(nn.Module):
             patch_size=32,
         )
 
-        self.self_attn = CLIPAttention(
-            vision_like,
-            quant_config=quant_config,
-            prefix=f"{prefix}.self_attn",
-        )
+        # Text attention must be causal (decoder-style) per CLIPText
+        self.q_proj = ColumnParallelLinear(config.hidden_size,
+                                           config.hidden_size,
+                                           bias=True,
+                                           quant_config=quant_config,
+                                           prefix=f"{prefix}.self_attn.q_proj")
+        self.k_proj = ColumnParallelLinear(config.hidden_size,
+                                           config.hidden_size,
+                                           bias=True,
+                                           quant_config=quant_config,
+                                           prefix=f"{prefix}.self_attn.k_proj")
+        self.v_proj = ColumnParallelLinear(config.hidden_size,
+                                           config.hidden_size,
+                                           bias=True,
+                                           quant_config=quant_config,
+                                           prefix=f"{prefix}.self_attn.v_proj")
+        self.text_attn = Attention(num_heads=vision_like.num_attention_heads,
+                                   head_size=vision_like.hidden_size // vision_like.num_attention_heads,
+                                   scale=(vision_like.hidden_size // vision_like.num_attention_heads) ** -0.5,
+                                   attn_type=AttentionType.DECODER)
+        self.out_proj = RowParallelLinear(vision_like.hidden_size,
+                                          vision_like.hidden_size,
+                                          bias=True,
+                                          quant_config=quant_config,
+                                          prefix=f"{prefix}.self_attn.out_proj")
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
         self.mlp = CLIPMLP(
             vision_like,
@@ -496,8 +517,12 @@ class CLIPTextEncoderLayer(nn.Module):
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
-        hidden_states, _ = self.self_attn(hidden_states=hidden_states)
-        hidden_states = residual + hidden_states
+        q, _ = self.q_proj(hidden_states)
+        k, _ = self.k_proj(hidden_states)
+        v, _ = self.v_proj(hidden_states)
+        attn_out = self.text_attn(q, k, v)
+        attn_out, _ = self.out_proj(attn_out)
+        hidden_states = residual + attn_out
 
         residual = hidden_states
         hidden_states = self.layer_norm2(hidden_states)
@@ -1113,73 +1138,25 @@ class CLIPTextModel(nn.Module, SupportsQuant):
         return self.encoder(hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        params_dict = dict(self.named_parameters())
-        loaded_params: set[str] = set()
+        # Map HF names to our module names, then delegate to AutoWeightsLoader
+        def map_name(n: str) -> Optional[str]:
+            if ".vision_model" in n or n.startswith("visual."):
+                return None
+            if n.startswith("model."):
+                n = n[len("model."):]
+            if n.startswith("text_model."):
+                n = n[len("text_model."):]
+            if n.startswith("embeddings.") or n.startswith("encoder."):
+                return n
+            if n.startswith("final_layer_norm."):
+                return n.replace("final_layer_norm.", "encoder.final_layer_norm.")
+            if n.startswith("layers."):
+                return f"encoder.{n}"
+            return n
 
-        # Accept both CLIPModel and CLIPTextModel weight prefixes
-        for name, loaded_weight in weights:
-            # Keep only text branch
-            if ".vision_model" in name or name.startswith("visual."):
-                continue
-
-            if name.startswith("model."):
-                name = name[len("model."):]
-            if name.startswith("text_model."):
-                name = name[len("text_model."):]
-
-            # Map final_layer_norm
-            if name.startswith("final_layer_norm."):
-                name = name.replace("final_layer_norm.", "encoder.final_layer_norm.")
-
-            # Self-attention q/k/v -> qkv stacking
-            if ".self_attn." in name:
-                if any(x in name for x in ("q_proj", "k_proj", "v_proj")):
-                    for param_name, weight_name, shard_id in (
-                        ("qkv_proj", "q_proj", "q"),
-                        ("qkv_proj", "k_proj", "k"),
-                        ("qkv_proj", "v_proj", "v"),
-                    ):
-                        if weight_name not in name:
-                            continue
-                        mapped = name.replace(weight_name, param_name)
-                        if not mapped.startswith("encoder."):
-                            mapped = mapped.replace("encoder.layers", "encoder.layers")
-                            mapped = "encoder." + mapped if not mapped.startswith("encoder.") else mapped
-                        if mapped in params_dict:
-                            param = params_dict[mapped]
-                            weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                            weight_loader(param, loaded_weight, shard_id)
-                            loaded_params.add(mapped)
-                        break
-                    continue
-
-            # Prefix encoder.* for other encoder weights if missing
-            if name.startswith("encoder.") or name.startswith("embeddings."):
-                mapped = name
-            elif name.startswith("layers."):
-                mapped = f"encoder.{name}"
-            else:
-                mapped = name
-
-            if mapped in params_dict:
-                param = params_dict[mapped]
-                weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                weight_loader(param, loaded_weight)
-                loaded_params.add(mapped)
-            else:
-                # Ignore unrelated weights (e.g., projections, logit_scale)
-                continue
-
-        # Fallback to auto loader for any remaining straightforward params
-        remaining = [(n, w) for n, w in weights if n not in loaded_params]
-        if remaining:
-            try:
-                loader = AutoWeightsLoader(self)
-                loaded_params.update(loader.load_weights(remaining))
-            except Exception:
-                pass
-
-        return loaded_params
+        remapped = ((mapped, w) for (n, w) in weights if (mapped := map_name(n)) is not None)
+        loader = AutoWeightsLoader(self)
+        return loader.load_weights(remapped)
 
 
 class CLIPTextEosPooler(Pooler):
