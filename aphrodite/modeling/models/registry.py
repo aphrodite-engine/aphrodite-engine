@@ -142,6 +142,7 @@ _TEXT_GENERATION_MODELS = {
 
 _EMBEDDING_MODELS = {
     # [Text-only]
+    "CLIPTextModel": ("clip", "CLIPTextModel"),
     "BertModel": ("bert", "BertEmbeddingModel"),
     "DeciLMForCausalLM": ("nemotron_nas", "DeciLMForCausalLM"),
     "Gemma2Model": ("gemma2", "Gemma2ForCausalLM"),
@@ -170,6 +171,8 @@ _EMBEDDING_MODELS = {
     "RobertaModel": ("roberta", "RobertaEmbeddingModel"),
     "TeleChat2ForCausalLM": ("telechat2", "TeleChat2ForCausalLM"),
     "XLMRobertaModel": ("roberta", "RobertaEmbeddingModel"),
+    # Some CLIP variants expose text-only heads
+    "CLIPModel": ("clip", "CLIPTextModel"),
     # [Multimodal]
     "LlavaNextForConditionalGeneration": ("llava_next", "LlavaNextForConditionalGeneration"),  # noqa: E501
     "Phi3VForCausalLM": ("phi3v", "Phi3VForCausalLM"),
