@@ -283,6 +283,11 @@ _VAE_MODELS = {
     # [Variational Autoencoders]
     "AutoencoderKL": ("vae", "AutoencoderKL"),
 }
+
+_UNET_MODELS = {
+    # [UNet Models for Diffusion]
+    "UNet2DConditionModel": ("unet", "UNet2DConditionModel"),
+}
 # yapf: enable
 
 _APHRODITE_MODELS = {
@@ -294,6 +299,7 @@ _APHRODITE_MODELS = {
     **_TRANSFORMERS_SUPPORTED_MODELS,
     **_TRANSFORMERS_BACKEND_MODELS,
     **_VAE_MODELS,
+    **_UNET_MODELS,
 }
 
 # This variable is used as the args for subprocess.run(). We

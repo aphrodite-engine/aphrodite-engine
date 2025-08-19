@@ -84,6 +84,9 @@ class Worker(LocalOrDistributedWorkerBase):
         elif model_config.runner_type == "vae":
             from aphrodite.worker.vae_model_runner import VAEModelRunner
             ModelRunnerClass = VAEModelRunner
+        elif model_config.runner_type == "unet":
+            from aphrodite.worker.unet_model_runner import UNetModelRunner
+            ModelRunnerClass = UNetModelRunner
         elif self.model_config.is_encoder_decoder:
             ModelRunnerClass = EncoderDecoderModelRunner
         self.model_runner: GPUModelRunnerBase = ModelRunnerClass(

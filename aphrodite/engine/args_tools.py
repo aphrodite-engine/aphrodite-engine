@@ -438,7 +438,7 @@ class EngineArgs:
     deepspeed_fp_bits: Optional[int] = None
     quant_llm_fp_bits: Optional[int] = None
     quant_llm_exp_bits: Optional[int] = None
-    
+
     # Device arguments
     device: Optional[Union[Device, torch.device]] = DeviceConfig.device
 
@@ -1014,10 +1014,10 @@ class EngineArgs:
             SpeculatorsConfig)
 
         if self.speculative_config is None:
-            # Skip speculative config for VAE models
-            if self.runner == "vae":
+            # Skip speculative config for VAE and UNet models
+            if self.runner in ("vae", "unet"):
                 return None
-            
+
             hf_config = get_config(self.hf_config_path or self.model,
                                    self.trust_remote_code, self.revision,
                                    self.code_revision, self.config_format)

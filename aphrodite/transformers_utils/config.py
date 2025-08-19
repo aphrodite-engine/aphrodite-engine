@@ -101,6 +101,69 @@ class AutoencoderKLConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
 
+class UNet2DConditionModelConfig(PretrainedConfig):
+    """Config for UNet2DConditionModel (Stable Diffusion UNet) models."""
+    model_type = "unet_2d_condition"
+
+    def __init__(
+        self,
+        in_channels: int = 4,
+        out_channels: int = 4,
+        block_out_channels: list[int] = None,
+        layers_per_block: int = 2,
+        attention_head_dim: int = 8,
+        cross_attention_dim: int = 768,
+        norm_num_groups: int = 32,
+        act_fn: str = "silu",
+        down_block_types: list[str] = None,
+        up_block_types: list[str] = None,
+        sample_size: int = 64,
+        time_embedding_dim: int = 1280,
+        **kwargs
+    ):
+        if block_out_channels is None:
+            block_out_channels = [320, 640, 1280, 1280]
+        if down_block_types is None:
+            down_block_types = [
+                "CrossAttnDownBlock2D",
+                "CrossAttnDownBlock2D", 
+                "CrossAttnDownBlock2D",
+                "DownBlock2D"
+            ]
+        if up_block_types is None:
+            up_block_types = [
+                "UpBlock2D",
+                "CrossAttnUpBlock2D",
+                "CrossAttnUpBlock2D", 
+                "CrossAttnUpBlock2D"
+            ]
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.block_out_channels = block_out_channels
+        self.layers_per_block = layers_per_block
+        self.attention_head_dim = attention_head_dim
+        self.cross_attention_dim = cross_attention_dim
+        self.norm_num_groups = norm_num_groups
+        self.act_fn = act_fn
+        self.down_block_types = down_block_types
+        self.up_block_types = up_block_types
+        self.sample_size = sample_size
+        self.time_embedding_dim = time_embedding_dim
+
+        # Add dummy attributes that Aphrodite expects for cache calculation
+        # UNet models don't actually use KV cache, but these are needed for
+        # compatibility with the config system
+        self.hidden_size = max(block_out_channels)  # Use max channel size
+        self.num_attention_heads = max(
+            block_out_channels) // attention_head_dim
+        self.num_hidden_layers = len(block_out_channels) * layers_per_block
+
+        kwargs.setdefault("architectures", ["UNet2DConditionModel"])
+
+        super().__init__(**kwargs)
+
+
 _CONFIG_REGISTRY: dict[str, type[PretrainedConfig]] = {
     "chatglm": ChatGLMConfig,
     "deepseek_vl_v2": DeepseekVLV2Config,
@@ -113,6 +176,7 @@ _CONFIG_REGISTRY: dict[str, type[PretrainedConfig]] = {
     "medusa": MedusaConfig,
     "eagle": EAGLEConfig,
     "autoencoder_kl": AutoencoderKLConfig,
+    "unet_2d_condition": UNet2DConditionModelConfig,
     "speculators": SpeculatorsConfig,
     "nemotron": NemotronConfig,
     "ovis": OvisConfig,
@@ -449,6 +513,13 @@ def get_config(
                 "model_type" not in config_dict:
             config_dict["model_type"] = "autoencoder_kl"
             config_dict["architectures"] = ["AutoencoderKL"]
+
+        # Special handling for UNet models - inject model_type if _class_name
+        # is UNet2DConditionModel
+        if config_dict.get("_class_name") == "UNet2DConditionModel" and \
+                "model_type" not in config_dict:
+            config_dict["model_type"] = "unet_2d_condition"
+            config_dict["architectures"] = ["UNet2DConditionModel"]
 
         # Use custom model class if it's in our registry
         model_type = config_dict.get("model_type")
