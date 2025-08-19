@@ -523,7 +523,7 @@ async def tokenize(request: TokenizeRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
     elif isinstance(generator, TokenizeResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -557,7 +557,7 @@ async def detokenize(request: DetokenizeRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
     elif isinstance(generator, DetokenizeResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -653,7 +653,7 @@ async def create_responses(request: ResponsesRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
     elif isinstance(generator, ResponsesResponse):
         return JSONResponse(content=generator.model_dump())
     return StreamingResponse(content=generator, media_type="text/event-stream")
@@ -720,7 +720,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
 
     elif isinstance(generator, ChatCompletionResponse):
         return JSONResponse(content=generator.model_dump())
@@ -759,7 +759,7 @@ async def create_messages(request: AnthropicMessagesRequest,
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
 
     elif isinstance(generator, AnthropicMessagesResponse):
         return JSONResponse(content=generator.model_dump())
@@ -804,7 +804,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
     elif isinstance(generator, CompletionResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -833,7 +833,7 @@ async def create_embedding(request: EmbeddingRequest, raw_request: Request):
 
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
     elif isinstance(generator, EmbeddingResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -861,7 +861,7 @@ async def create_pooling(request: PoolingRequest, raw_request: Request):
     generator = await handler.create_pooling(request, raw_request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
     elif isinstance(generator, PoolingResponse):
         return JSONResponse(content=generator.model_dump())
 
@@ -881,7 +881,7 @@ async def create_classify(request: ClassificationRequest,
     generator = await handler.create_classify(request, raw_request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
 
     elif isinstance(generator, ClassificationResponse):
         return JSONResponse(content=generator.model_dump())
@@ -910,7 +910,7 @@ async def create_score(request: ScoreRequest, raw_request: Request):
     generator = await handler.create_score(request, raw_request)
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
-                            status_code=response.error.code)
+                            status_code=generator.error.code)
     elif isinstance(generator, ScoreResponse):
         return JSONResponse(content=generator.model_dump())
 
