@@ -65,6 +65,42 @@ def _get_hf_token() -> Optional[str]:
     return None
 
 
+class AutoencoderKLConfig(PretrainedConfig):
+    """Config for AutoencoderKL (VAE) models."""
+    model_type = "autoencoder_kl"
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 3,
+        latent_channels: int = 4,
+        block_out_channels: list[int] = None,
+        layers_per_block: int = 2,
+        scaling_factor: float = 0.18215,
+        **kwargs
+    ):
+        if block_out_channels is None:
+            block_out_channels = [128, 256, 512, 512]
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.latent_channels = latent_channels
+        self.block_out_channels = block_out_channels
+        self.layers_per_block = layers_per_block
+        self.scaling_factor = scaling_factor
+
+        # Add dummy attributes that Aphrodite expects for cache calculation
+        # VAE models don't actually use these, but they're needed for
+        # compatibility
+        self.hidden_size = latent_channels * 64  # Dummy value
+        self.num_attention_heads = 1  # Dummy value
+        self.num_hidden_layers = 1  # Dummy value
+
+        kwargs.setdefault("architectures", ["AutoencoderKL"])
+
+        super().__init__(**kwargs)
+
+
 _CONFIG_REGISTRY: dict[str, type[PretrainedConfig]] = {
     "chatglm": ChatGLMConfig,
     "deepseek_vl_v2": DeepseekVLV2Config,
@@ -76,6 +112,7 @@ _CONFIG_REGISTRY: dict[str, type[PretrainedConfig]] = {
     "mlp_speculator": MLPSpeculatorConfig,
     "medusa": MedusaConfig,
     "eagle": EAGLEConfig,
+    "autoencoder_kl": AutoencoderKLConfig,
     "speculators": SpeculatorsConfig,
     "nemotron": NemotronConfig,
     "ovis": OvisConfig,
@@ -405,6 +442,14 @@ def get_config(
             token=_get_hf_token(),
             **kwargs,
         )
+
+        # Special handling for VAE models - inject model_type if _class_name
+        # is AutoencoderKL
+        if config_dict.get("_class_name") == "AutoencoderKL" and \
+                "model_type" not in config_dict:
+            config_dict["model_type"] = "autoencoder_kl"
+            config_dict["architectures"] = ["AutoencoderKL"]
+
         # Use custom model class if it's in our registry
         model_type = config_dict.get("model_type")
         if model_type is None:

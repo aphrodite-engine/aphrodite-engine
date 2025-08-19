@@ -9,12 +9,11 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.attention.layer import Attention
-from aphrodite.config import (AphroditeConfig,
-                                     get_layers_from_aphrodite_config)
 from aphrodite.common.sequence import (ExecuteModelRequest,
                                        IntermediateTensors,
                                        SequenceGroupMetadata,
                                        SequenceGroupMetadataDelta)
+from aphrodite.config import AphroditeConfig, get_layers_from_aphrodite_config
 from aphrodite.device_allocator.cumem import CuMemAllocator
 from aphrodite.distributed import (ensure_model_parallel_initialized,
                                    init_distributed_environment,
@@ -82,6 +81,9 @@ class Worker(LocalOrDistributedWorkerBase):
         ModelRunnerClass: Type[GPUModelRunnerBase] = ModelRunner
         if model_config.runner_type == "pooling":
             ModelRunnerClass = PoolingModelRunner
+        elif model_config.runner_type == "vae":
+            from aphrodite.worker.vae_model_runner import VAEModelRunner
+            ModelRunnerClass = VAEModelRunner
         elif self.model_config.is_encoder_decoder:
             ModelRunnerClass = EncoderDecoderModelRunner
         self.model_runner: GPUModelRunnerBase = ModelRunnerClass(

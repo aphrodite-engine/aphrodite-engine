@@ -278,6 +278,11 @@ _TRANSFORMERS_BACKEND_MODELS = {
     "TransformersForCausalLM": ("transformers", "TransformersForCausalLM"),
     "TransformersForMultimodalLM": ("transformers", "TransformersForMultimodalLM"), # noqa: E501
 }
+
+_VAE_MODELS = {
+    # [Variational Autoencoders]
+    "AutoencoderKL": ("vae", "AutoencoderKL"),
+}
 # yapf: enable
 
 _APHRODITE_MODELS = {
@@ -288,6 +293,7 @@ _APHRODITE_MODELS = {
     **_SPECULATIVE_DECODING_MODELS,
     **_TRANSFORMERS_SUPPORTED_MODELS,
     **_TRANSFORMERS_BACKEND_MODELS,
+    **_VAE_MODELS,
 }
 
 # This variable is used as the args for subprocess.run(). We
