@@ -86,9 +86,9 @@ TaskOption = Literal["auto", "generate", "embedding", "embed", "classify",
 _ResolvedTask = Literal["generate", "transcription", "encode", "embed",
                         "classify", "reward", "draft"]
 
-RunnerOption = Literal["auto", "generate", "pooling", "draft"]
+RunnerOption = Literal["auto", "generate", "pooling", "draft", "vae"]
 
-RunnerType = Literal["generate", "pooling", "draft"]
+RunnerType = Literal["generate", "pooling", "draft", "vae"]
 
 ConvertOption = Literal["auto", "none", "embed", "classify", "reward"]
 
@@ -98,12 +98,14 @@ _RUNNER_TASKS: dict[RunnerType, list[TaskOption]] = {
     "generate": ["generate", "transcription"],
     "pooling": ["embedding", "embed", "classify", "score", "reward"],
     "draft": ["draft"],
+    "vae": ["vae_encode", "vae_decode"],
 }
 
 _RUNNER_CONVERTS: dict[RunnerType, list[ConvertType]] = {
     "generate": [],
     "pooling": ["embed", "classify", "reward"],
     "draft": [],
+    "vae": [],
 }
 
 # Some model suffixes are based on auto classes from Transformers:
@@ -123,6 +125,8 @@ _SUFFIX_TO_DEFAULTS: list[tuple[str, tuple[RunnerType, ConvertType]]] = [
     ("ClassificationModel", ("pooling", "classify")),
     ("ForRewardModeling", ("pooling", "reward")),
     ("RewardModel", ("pooling", "reward")),
+    # VAE models
+    ("AutoencoderKL", ("vae", "none")),
     # Let other `*Model`s take priority
     ("Model", ("pooling", "embed")),
 ]
@@ -561,10 +565,12 @@ class ModelConfig:
                     "this may affect the random state of the Python process "
                     "that launched Aphrodite.", self.seed)
 
-        if self.runner != "draft":
-            # If we're not running the draft model, check for speculators
-            # config. If speculators config, set model / tokenizer to be
-            # target model
+        if self.runner != "draft" and self.runner != "vae":
+            # If we're not running the draft model or VAE model, check for
+            # speculators config. If speculators config, set model / tokenizer
+            # to be target model
+            # Skip speculator check for VAE models since they don't follow
+            # transformers conventions
             self.model, self.tokenizer = maybe_override_with_speculators_target_model(  # noqa: E501
                 model=self.model,
                 tokenizer=self.tokenizer,
@@ -1100,6 +1106,8 @@ class ModelConfig:
                                                      convert_type)
         if runner_type == "draft":
             return ["draft"]
+        if runner_type == "vae":
+            return ["vae_encode", "vae_decode"]
 
         assert_never(runner_type)
 

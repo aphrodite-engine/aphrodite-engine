@@ -113,6 +113,9 @@ def init_tokenizer_from_configs(model_config: ModelConfig,
         truncation_side = "left"
     elif runner_type == "pooling":
         truncation_side = "right"
+    elif runner_type == "vae":
+        # VAE models don't use tokenizers - return None
+        return None
     else:
         assert_never(runner_type)
 

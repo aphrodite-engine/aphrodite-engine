@@ -13,7 +13,7 @@ from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.models.interfaces import supports_transcription
 from aphrodite.modeling.models.interfaces_base import (
     is_pooling_model, is_text_generation_model)
-from aphrodite.tasks import GenerationTask, PoolingTask, SupportedTask
+from aphrodite.tasks import GenerationTask, PoolingTask, SupportedTask, VAETask
 
 if TYPE_CHECKING:
     from aphrodite.attention import AttentionMetadata
@@ -244,6 +244,18 @@ class ModelRunnerBase(ABC, Generic[T]):
 
         return list(model.pooler.get_supported_tasks())
 
+    def get_supported_vae_tasks(self) -> list[VAETask]:
+        """Get supported VAE tasks."""
+        # Import here to avoid circular imports
+        from aphrodite.tasks import VAE_TASKS
+        model = self.get_model()
+
+        # Check if model has encode/decode methods (VAE interface)
+        if hasattr(model, "encode") and hasattr(model, "decode"):
+            return list(VAE_TASKS)
+
+        return []
+
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
 
@@ -251,6 +263,8 @@ class ModelRunnerBase(ABC, Generic[T]):
             tasks.extend(self.get_supported_generation_tasks())
         if self.model_config.runner_type == "pooling":
             tasks.extend(self.get_supported_pooling_tasks())
+        if self.model_config.runner_type == "vae":
+            tasks.extend(self.get_supported_vae_tasks())
 
         return tuple(tasks)
 
