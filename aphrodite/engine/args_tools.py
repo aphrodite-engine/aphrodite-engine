@@ -438,6 +438,9 @@ class EngineArgs:
     deepspeed_fp_bits: Optional[int] = None
     quant_llm_fp_bits: Optional[int] = None
     quant_llm_exp_bits: Optional[int] = None
+    
+    # Device arguments
+    device: Optional[Union[Device, torch.device]] = DeviceConfig.device
 
     def __post_init__(self):
         # support `EngineArgs(compilation_config={...})`
@@ -1060,7 +1063,8 @@ class EngineArgs:
         current_platform.pre_register_and_update()
 
         device_config = DeviceConfig(
-            device=cast(Device, current_platform.device_type))
+            device=self.device if self.device is not None else
+            cast(Device, current_platform.device_type))
         model_config = self.create_model_config()
 
         # * If APHRODITE_USE_V1 is unset, we enable V1 for "supported features"
