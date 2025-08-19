@@ -6,14 +6,15 @@ from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional, Type,
 import torch
 import torch.nn as nn
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.models.interfaces import supports_transcription
 from aphrodite.modeling.models.interfaces_base import (
     is_pooling_model, is_text_generation_model)
-from aphrodite.tasks import GenerationTask, PoolingTask, SupportedTask, VAETask
+from aphrodite.tasks import (GenerationTask, PoolingTask, SupportedTask,
+                             UNetTask, VAETask)
 
 if TYPE_CHECKING:
     from aphrodite.attention import AttentionMetadata
@@ -256,6 +257,18 @@ class ModelRunnerBase(ABC, Generic[T]):
 
         return []
 
+    def get_supported_unet_tasks(self) -> list[UNetTask]:
+        """Get supported UNet tasks."""
+        # Import here to avoid circular imports
+        from aphrodite.tasks import UNET_TASKS
+        model = self.get_model()
+
+        # Check if model has denoise capability (UNet interface)
+        if hasattr(model, 'is_unet_model') and model.is_unet_model:
+            return list(UNET_TASKS)
+
+        return []
+
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
 
@@ -265,6 +278,8 @@ class ModelRunnerBase(ABC, Generic[T]):
             tasks.extend(self.get_supported_pooling_tasks())
         if self.model_config.runner_type == "vae":
             tasks.extend(self.get_supported_vae_tasks())
+        if self.model_config.runner_type == "unet":
+            tasks.extend(self.get_supported_unet_tasks())
 
         return tuple(tasks)
 

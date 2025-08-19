@@ -9,4 +9,7 @@ POOLING_TASKS = get_args(PoolingTask)
 VAETask = Literal["vae_encode", "vae_decode"]
 VAE_TASKS = get_args(VAETask)
 
-SupportedTask = Literal[GenerationTask, PoolingTask, VAETask]
+UNetTask = Literal["denoise_step"]
+UNET_TASKS = get_args(UNetTask)
+
+SupportedTask = Literal[GenerationTask, PoolingTask, VAETask, UNetTask]
