@@ -155,6 +155,12 @@ class ScaledMMReduceScatterPattern(BasePattern):
             from aphrodite.utils import is_torch_equal_or_newer
             if is_torch_equal_or_newer("2.8.0"):
                 # Torch 2.8.0+ API signature
+                # Calculate output shape: input @ mat2 shape with first dim
+                # divided by tp_size
+                mm_shape = list(input.shape[:-1]) + [mat2.shape[-1]]
+                output_shape = mm_shape.copy()
+                output_shape[0] = output_shape[0] // self.tp_size
+
                 gemm_rs = torch.ops.symm_mem.\
                     fused_scaled_matmul_reduce_scatter(
                     input,
@@ -162,8 +168,9 @@ class ScaledMMReduceScatterPattern(BasePattern):
                     scale_a,
                     scale_b,
                     "avg",
-                    0,  # scatter_dim
-                    self.tp.device_group.group_name,  # group_name
+                    scatter_dim_after_maybe_reshape=0,
+                    group_name=self.tp.device_group.group_name,
+                    output_shape=output_shape,
                     bias=None,
                     result_scale=None,
                     out_dtype=self.dtype,
@@ -287,6 +294,12 @@ class CutlassScaledMMReduceScatterPattern(BasePattern):
             from aphrodite.utils import is_torch_equal_or_newer
             if is_torch_equal_or_newer("2.8.0"):
                 # Torch 2.8.0+ API signature
+                # Calculate output shape: input @ mat2 shape with first dim
+                # divided by tp_size
+                mm_shape = list(input.shape[:-1]) + [mat2.shape[-1]]
+                output_shape = mm_shape.copy()
+                output_shape[0] = output_shape[0] // self.tp_size
+
                 gemm_rs = torch.ops.symm_mem.\
                     fused_scaled_matmul_reduce_scatter(
                     input,
@@ -294,8 +307,9 @@ class CutlassScaledMMReduceScatterPattern(BasePattern):
                     scale_a,
                     scale_b,
                     "avg",
-                    0,  # scatter_dim
-                    self.tp.device_group.group_name,  # group_name
+                    scatter_dim_after_maybe_reshape=0,
+                    group_name=self.tp.device_group.group_name,
+                    output_shape=output_shape,
                     bias=None,
                     result_scale=None,
                     out_dtype=self.dtype,
