@@ -152,7 +152,6 @@ class ScaledMMReduceScatterPattern(BasePattern):
         def replacement(input: torch.Tensor, mat2: torch.Tensor,
                         scale_a: torch.Tensor,
                         scale_b: torch.Tensor) -> torch.Tensor:
-            # Import the utility function to check torch version
             from aphrodite.utils import is_torch_equal_or_newer
             if is_torch_equal_or_newer("2.8.0"):
                 # Torch 2.8.0+ API signature
@@ -285,7 +284,6 @@ class CutlassScaledMMReduceScatterPattern(BasePattern):
         def replacement(input: torch.Tensor, mat2: torch.Tensor,
                         scale_a: torch.Tensor, scale_b: torch.Tensor,
                         cutlass_mm_output: torch.Tensor) -> torch.Tensor:
-            # Import the utility function to check torch version
             from aphrodite.utils import is_torch_equal_or_newer
             if is_torch_equal_or_newer("2.8.0"):
                 # Torch 2.8.0+ API signature
