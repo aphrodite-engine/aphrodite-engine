@@ -152,16 +152,37 @@ class ScaledMMReduceScatterPattern(BasePattern):
         def replacement(input: torch.Tensor, mat2: torch.Tensor,
                         scale_a: torch.Tensor,
                         scale_b: torch.Tensor) -> torch.Tensor:
-            gemm_rs = torch.ops.symm_mem.fused_scaled_matmul_reduce_scatter(
-                input,
-                mat2,
-                scale_a,
-                scale_b,
-                "avg",
-                scatter_dim=0,
-                out_dtype=self.dtype,
-                group_name=self.tp.device_group.group_name,
-            )
+            # Import the utility function to check torch version
+            from aphrodite.utils import is_torch_equal_or_newer
+            if is_torch_equal_or_newer("2.8.0"):
+                # Torch 2.8.0+ API signature
+                gemm_rs = torch.ops.symm_mem.\
+                    fused_scaled_matmul_reduce_scatter(
+                    input,
+                    mat2,
+                    scale_a,
+                    scale_b,
+                    "avg",
+                    0,  # scatter_dim
+                    self.tp.device_group.group_name,  # group_name
+                    bias=None,
+                    result_scale=None,
+                    out_dtype=self.dtype,
+                    use_fast_accum=False,
+                )
+            else:
+                # Torch 2.7.1 and earlier API signature
+                gemm_rs = torch.ops.symm_mem.\
+                    fused_scaled_matmul_reduce_scatter(
+                    input,
+                    mat2,
+                    scale_a,
+                    scale_b,
+                    "avg",
+                    scatter_dim=0,
+                    out_dtype=self.dtype,
+                    group_name=self.tp.device_group.group_name,
+                )
 
             return gemm_rs
 
@@ -264,16 +285,37 @@ class CutlassScaledMMReduceScatterPattern(BasePattern):
         def replacement(input: torch.Tensor, mat2: torch.Tensor,
                         scale_a: torch.Tensor, scale_b: torch.Tensor,
                         cutlass_mm_output: torch.Tensor) -> torch.Tensor:
-            gemm_rs = torch.ops.symm_mem.fused_scaled_matmul_reduce_scatter(
-                input,
-                mat2,
-                scale_a,
-                scale_b,
-                "avg",
-                scatter_dim=0,
-                out_dtype=self.dtype,
-                group_name=self.tp.device_group.group_name,
-            )
+            # Import the utility function to check torch version
+            from aphrodite.utils import is_torch_equal_or_newer
+            if is_torch_equal_or_newer("2.8.0"):
+                # Torch 2.8.0+ API signature
+                gemm_rs = torch.ops.symm_mem.\
+                    fused_scaled_matmul_reduce_scatter(
+                    input,
+                    mat2,
+                    scale_a,
+                    scale_b,
+                    "avg",
+                    0,  # scatter_dim
+                    self.tp.device_group.group_name,  # group_name
+                    bias=None,
+                    result_scale=None,
+                    out_dtype=self.dtype,
+                    use_fast_accum=False,
+                )
+            else:
+                # Torch 2.7.1 and earlier API signature
+                gemm_rs = torch.ops.symm_mem.\
+                    fused_scaled_matmul_reduce_scatter(
+                    input,
+                    mat2,
+                    scale_a,
+                    scale_b,
+                    "avg",
+                    scatter_dim=0,
+                    out_dtype=self.dtype,
+                    group_name=self.tp.device_group.group_name,
+                )
 
             return gemm_rs
 
