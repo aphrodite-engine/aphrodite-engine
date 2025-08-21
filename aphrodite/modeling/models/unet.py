@@ -278,7 +278,7 @@ class UNetAttention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    """GeGLU feedforward network matching Diffusers structure."""
+    """GeGLU feedforward network matching Diffusers structure exactly."""
 
     def __init__(
         self,
@@ -292,26 +292,19 @@ class FeedForward(nn.Module):
         inner_dim = int(dim * mult)
         dim_out = dim_out or dim
 
-        # GeGLU: project to 2x inner_dim, then split for gate and value
+        # Use exact Diffusers structure: GEGLU, Dropout, Linear
+        from diffusers.models.activations import GEGLU
+        
         self.net = nn.ModuleList([
-            nn.ModuleList([
-                nn.Linear(dim, inner_dim * 2),  # proj layer (GeGLU splits this)  # noqa: E501
-            ]),
-            nn.Identity(),  # Placeholder for potential dropout
+            GEGLU(dim, inner_dim),  # Exact Diffusers GEGLU
+            nn.Dropout(0.0),  # Dropout (disabled in SD)
             nn.Linear(inner_dim, dim_out),
         ])
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        # GeGLU activation
-        hidden_states, gate = self.net[0][0](hidden_states).chunk(2, dim=-1)
-        hidden_states = hidden_states * F.gelu(gate)
-
-        # Dropout (currently identity)
-        hidden_states = self.net[1](hidden_states)
-
-        # Final projection
-        hidden_states = self.net[2](hidden_states)
-
+        # Use exact Diffusers forward pass
+        for layer in self.net:
+            hidden_states = layer(hidden_states)
         return hidden_states
 
 
@@ -391,7 +384,7 @@ class BasicTransformerBlock(nn.Module):
 
 
 class Transformer2DModel(nn.Module):
-    """2D Transformer model matching Diffusers structure."""
+    """Use exact Diffusers Transformer2DModel for perfect compatibility."""
 
     def __init__(
         self,
@@ -405,61 +398,44 @@ class Transformer2DModel(nn.Module):
         prefix: str = "",
     ):
         super().__init__()
-        self.num_attention_heads = num_attention_heads
-        self.attention_head_dim = attention_head_dim
-        self.in_channels = in_channels
-        self.inner_dim = num_attention_heads * attention_head_dim
-
-        # Input/output projections
-        self.norm = nn.GroupNorm(norm_num_groups, in_channels, eps=1e-6)
-        self.proj_in = nn.Conv2d(in_channels, self.inner_dim, kernel_size=1)
-        self.proj_out = nn.Conv2d(self.inner_dim, in_channels, kernel_size=1)
-
-        # Transformer blocks
-        self.transformer_blocks = nn.ModuleList([
-            BasicTransformerBlock(
-                dim=self.inner_dim,
-                cross_attention_dim=cross_attention_dim,
-                num_attention_heads=num_attention_heads,
-                attention_head_dim=attention_head_dim,
-                quant_config=quant_config,
-                prefix=maybe_prefix(prefix, f"transformer_blocks.{i}"),
-            )
-            for i in range(num_layers)
-        ])
+        
+        # Use exact Diffusers Transformer2DModel
+        from diffusers.models.transformers.transformer_2d import Transformer2DModel as DiffusersTransformer2DModel
+        
+        self.diffusers_transformer = DiffusersTransformer2DModel(
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
+            in_channels=in_channels,
+            num_layers=num_layers,
+            dropout=0.0,
+            norm_num_groups=norm_num_groups,
+            cross_attention_dim=cross_attention_dim,
+            attention_bias=False,
+            sample_size=None,
+            num_vector_embeds=None,
+            patch_size=None,
+            activation_fn="geglu",
+            num_embeds_ada_norm=None,
+            use_linear_projection=False,
+            only_cross_attention=False,
+            double_self_attention=False,
+            upcast_attention=False,
+            norm_type="layer_norm",
+            norm_elementwise_affine=True,
+            norm_eps=1e-5,
+            attention_type="default",
+        )
 
     def forward(
         self,
         hidden_states: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
     ) -> torch.Tensor:
-        batch_size, channels, height, width = hidden_states.shape
-        residual = hidden_states
-
-        # Input projection
-        hidden_states = self.norm(hidden_states)
-        hidden_states = self.proj_in(hidden_states)
-
-        # Reshape to sequence format
-        inner_dim = hidden_states.shape[1]
-        hidden_states = hidden_states.view(
-            batch_size, inner_dim, height * width,
+        # Use exact Diffusers forward pass
+        return self.diffusers_transformer(
+            hidden_states,
+            encoder_hidden_states=encoder_hidden_states,
         )
-        hidden_states = hidden_states.transpose(1, 2)
-
-        # Apply transformer blocks
-        for block in self.transformer_blocks:
-            hidden_states = block(hidden_states, encoder_hidden_states)
-
-        # Reshape back to spatial format
-        hidden_states = hidden_states.transpose(1, 2)
-        hidden_states = hidden_states.view(
-            batch_size, inner_dim, height, width)
-
-        # Output projection
-        hidden_states = self.proj_out(hidden_states)
-
-        return hidden_states + residual
 
 
 class UNetAttentionBlock(nn.Module):
@@ -902,8 +878,12 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
 
         # Time embedding
         time_embed_dim = self.time_embedding_dim
-        self.time_proj = lambda x: get_timestep_embedding(
-            x, 320, flip_sin_to_cos=True,
+        # Use the exact same Timesteps class as Diffusers
+        from diffusers.models.embeddings import Timesteps
+        self.time_proj = Timesteps(
+            num_channels=320,
+            flip_sin_to_cos=True,
+            downscale_freq_shift=0,
         )
         self.time_embedding = TimestepEmbedding(320, time_embed_dim)
 
@@ -1271,45 +1251,55 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
             )
 
     def _map_transformer_block(self, mapping: dict[str, str], prefix: str):
-        """Map BasicTransformerBlock weights."""
+        """Map transformer block weights to Diffusers structure."""
+        # Since we're now using Diffusers Transformer2DModel directly,
+        # we need to map to the nested diffusers_transformer structure
+        
+        # Map to the nested Diffusers transformer
+        diffusers_prefix = f"{prefix}.diffusers_transformer.transformer_blocks.0"
+        
         # Layer norms
         mapping.update({
-            f"{prefix}.norm1.weight": f"{prefix}.norm1.weight",
-            f"{prefix}.norm1.bias": f"{prefix}.norm1.bias",
-            f"{prefix}.norm2.weight": f"{prefix}.norm2.weight",
-            f"{prefix}.norm2.bias": f"{prefix}.norm2.bias",
-            f"{prefix}.norm3.weight": f"{prefix}.norm3.weight",
-            f"{prefix}.norm3.bias": f"{prefix}.norm3.bias",
+            f"{diffusers_prefix}.norm1.weight": f"{diffusers_prefix}.norm1.weight",
+            f"{diffusers_prefix}.norm1.bias": f"{diffusers_prefix}.norm1.bias",
+            f"{diffusers_prefix}.norm2.weight": f"{diffusers_prefix}.norm2.weight",
+            f"{diffusers_prefix}.norm2.bias": f"{diffusers_prefix}.norm2.bias",
+            f"{diffusers_prefix}.norm3.weight": f"{diffusers_prefix}.norm3.weight",
+            f"{diffusers_prefix}.norm3.bias": f"{diffusers_prefix}.norm3.bias",
         })
 
         # Self-attention (attn1)
         mapping.update({
-            f"{prefix}.attn1.to_q.weight": f"{prefix}.attn1.to_q.weight",
-            f"{prefix}.attn1.to_k.weight": f"{prefix}.attn1.to_k.weight",
-            f"{prefix}.attn1.to_v.weight": f"{prefix}.attn1.to_v.weight",
-            f"{prefix}.attn1.to_out.0.weight": (
-                f"{prefix}.attn1.to_out.0.weight"
-            ),
-            f"{prefix}.attn1.to_out.0.bias": f"{prefix}.attn1.to_out.0.bias",
+            f"{diffusers_prefix}.attn1.to_q.weight": f"{diffusers_prefix}.attn1.to_q.weight",
+            f"{diffusers_prefix}.attn1.to_k.weight": f"{diffusers_prefix}.attn1.to_k.weight",
+            f"{diffusers_prefix}.attn1.to_v.weight": f"{diffusers_prefix}.attn1.to_v.weight",
+            f"{diffusers_prefix}.attn1.to_out.0.weight": f"{diffusers_prefix}.attn1.to_out.0.weight",
+            f"{diffusers_prefix}.attn1.to_out.0.bias": f"{diffusers_prefix}.attn1.to_out.0.bias",
         })
 
         # Cross-attention (attn2)
         mapping.update({
-            f"{prefix}.attn2.to_q.weight": f"{prefix}.attn2.to_q.weight",
-            f"{prefix}.attn2.to_k.weight": f"{prefix}.attn2.to_k.weight",
-            f"{prefix}.attn2.to_v.weight": f"{prefix}.attn2.to_v.weight",
-            f"{prefix}.attn2.to_out.0.weight": (
-                f"{prefix}.attn2.to_out.0.weight"
-            ),
-            f"{prefix}.attn2.to_out.0.bias": f"{prefix}.attn2.to_out.0.bias",
+            f"{diffusers_prefix}.attn2.to_q.weight": f"{diffusers_prefix}.attn2.to_q.weight",
+            f"{diffusers_prefix}.attn2.to_k.weight": f"{diffusers_prefix}.attn2.to_k.weight",
+            f"{diffusers_prefix}.attn2.to_v.weight": f"{diffusers_prefix}.attn2.to_v.weight",
+            f"{diffusers_prefix}.attn2.to_out.0.weight": f"{diffusers_prefix}.attn2.to_out.0.weight",
+            f"{diffusers_prefix}.attn2.to_out.0.bias": f"{diffusers_prefix}.attn2.to_out.0.bias",
         })
 
-        # Feedforward (GeGLU)
+        # Feedforward (exact Diffusers structure)
         mapping.update({
-            f"{prefix}.ff.net.0.proj.weight": (
-                f"{prefix}.ff.net.0.0.weight"
-            ),  # GeGLU proj layer
-            f"{prefix}.ff.net.0.proj.bias": f"{prefix}.ff.net.0.0.bias",
-            f"{prefix}.ff.net.2.weight": f"{prefix}.ff.net.2.weight",
-            f"{prefix}.ff.net.2.bias": f"{prefix}.ff.net.2.bias",
+            f"{diffusers_prefix}.ff.net.0.proj.weight": f"{diffusers_prefix}.ff.net.0.proj.weight",
+            f"{diffusers_prefix}.ff.net.0.proj.bias": f"{diffusers_prefix}.ff.net.0.proj.bias",
+            f"{diffusers_prefix}.ff.net.2.weight": f"{diffusers_prefix}.ff.net.2.weight",
+            f"{diffusers_prefix}.ff.net.2.bias": f"{diffusers_prefix}.ff.net.2.bias",
+        })
+        
+        # Also map the outer transformer structure
+        mapping.update({
+            f"{prefix}.norm.weight": f"{prefix}.diffusers_transformer.norm.weight",
+            f"{prefix}.norm.bias": f"{prefix}.diffusers_transformer.norm.bias",
+            f"{prefix}.proj_in.weight": f"{prefix}.diffusers_transformer.proj_in.weight",
+            f"{prefix}.proj_in.bias": f"{prefix}.diffusers_transformer.proj_in.bias",
+            f"{prefix}.proj_out.weight": f"{prefix}.diffusers_transformer.proj_out.weight",
+            f"{prefix}.proj_out.bias": f"{prefix}.diffusers_transformer.proj_out.bias",
         })

@@ -2,11 +2,13 @@
 Diffusion schedulers for Stable Diffusion inference.
 """
 
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
+import warnings
 
 import torch
 from diffusers import DDIMScheduler, PNDMScheduler
 from diffusers.schedulers.scheduling_utils import SchedulerOutput
+from loguru import logger
 
 
 class AphroditeSchedulerWrapper:
@@ -21,9 +23,13 @@ class AphroditeSchedulerWrapper:
         self,
         scheduler_name: str = "ddim",
         num_inference_steps: int = 50,
+        device: Optional[Union[str, torch.device]] = None,
+        dtype: Optional[torch.dtype] = None,
     ):
         self.scheduler_name = scheduler_name.lower()
         self.num_inference_steps = num_inference_steps
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.dtype = dtype or torch.float16
         self.scheduler = None
         self._init_scheduler()
 
@@ -55,6 +61,9 @@ class AphroditeSchedulerWrapper:
 
         # Set inference timesteps
         self.scheduler.set_timesteps(self.num_inference_steps)
+        
+        # Transfer timesteps to correct device
+        self._transfer_to_device()
 
     @classmethod
     def from_pretrained(
@@ -62,6 +71,8 @@ class AphroditeSchedulerWrapper:
         model_path: str,
         scheduler_name: str = "ddim",
         num_inference_steps: int = 50,
+        device: Optional[Union[str, torch.device]] = None,
+        dtype: Optional[torch.dtype] = None,
         **kwargs
     ) -> "AphroditeSchedulerWrapper":
         """
@@ -71,6 +82,8 @@ class AphroditeSchedulerWrapper:
             model_path: Path to the SD model
             scheduler_name: Type of scheduler ('ddim' or 'pndm')
             num_inference_steps: Number of denoising steps
+            device: Target device
+            dtype: Target dtype
             **kwargs: Additional arguments passed to scheduler
 
         Returns:
@@ -79,15 +92,19 @@ class AphroditeSchedulerWrapper:
         wrapper = cls.__new__(cls)
         wrapper.scheduler_name = scheduler_name.lower()
         wrapper.num_inference_steps = num_inference_steps
+        wrapper.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        wrapper.dtype = dtype or torch.float16
 
-        # Load from pretrained
+        # Load from pretrained (don't pass device/dtype to Diffusers scheduler)
+        scheduler_kwargs = {k: v for k, v in kwargs.items() if k not in ['device', 'dtype']}
+        
         if wrapper.scheduler_name == "ddim":
             wrapper.scheduler = DDIMScheduler.from_pretrained(
-                model_path, subfolder="scheduler", **kwargs
+                model_path, subfolder="scheduler", **scheduler_kwargs
             )
         elif wrapper.scheduler_name == "pndm":
             wrapper.scheduler = PNDMScheduler.from_pretrained(
-                model_path, subfolder="scheduler", **kwargs
+                model_path, subfolder="scheduler", **scheduler_kwargs
             )
         else:
             raise ValueError(
@@ -95,8 +112,39 @@ class AphroditeSchedulerWrapper:
 
         # Set inference timesteps
         wrapper.scheduler.set_timesteps(wrapper.num_inference_steps)
+        
+        # Transfer to device
+        wrapper._transfer_to_device()
 
         return wrapper
+
+    def _transfer_to_device(self):
+        """Transfer scheduler tensors to the correct device."""
+        if hasattr(self.scheduler, 'timesteps') and self.scheduler.timesteps is not None:
+            # Timesteps must remain as long tensors for indexing
+            self.scheduler.timesteps = self.scheduler.timesteps.to(device=self.device, dtype=torch.long)
+        
+        # Transfer other scheduler tensors if they exist (these can use the target dtype)
+        for attr_name in ['alphas_cumprod', 'alpha_t', 'beta_t', 'sigma_t']:
+            if hasattr(self.scheduler, attr_name):
+                attr_value = getattr(self.scheduler, attr_name)
+                if isinstance(attr_value, torch.Tensor):
+                    setattr(self.scheduler, attr_name, attr_value.to(device=self.device, dtype=self.dtype))
+
+    def to(self, device: Optional[Union[str, torch.device]] = None, dtype: Optional[torch.dtype] = None):
+        """Transfer scheduler to device and/or dtype."""
+        if device is not None:
+            self.device = device
+        if dtype is not None:
+            self.dtype = dtype
+        self._transfer_to_device()
+        return self
+
+    def set_timesteps(self, num_inference_steps: int):
+        """Set new timesteps and transfer to device."""
+        self.num_inference_steps = num_inference_steps
+        self.scheduler.set_timesteps(num_inference_steps)
+        self._transfer_to_device()
 
     @property
     def timesteps(self) -> torch.Tensor:
@@ -118,6 +166,13 @@ class AphroditeSchedulerWrapper:
         Returns:
             Scaled sample
         """
+        # Ensure timestep is on the correct device (must be long for indexing)
+        if isinstance(timestep, torch.Tensor):
+            timestep = timestep.to(device=self.device, dtype=torch.long)
+        else:
+            # Convert scalar to long tensor
+            timestep = torch.tensor(timestep, device=self.device, dtype=torch.long)
+        
         return self.scheduler.scale_model_input(sample, timestep)
 
     def step(
@@ -143,6 +198,13 @@ class AphroditeSchedulerWrapper:
         Returns:
             SchedulerOutput with prev_sample and pred_original_sample
         """
+        # Ensure timestep is on the correct device and dtype (must be long for indexing)
+        if isinstance(timestep, torch.Tensor):
+            timestep = timestep.to(device=self.device, dtype=torch.long)
+        else:
+            # Convert scalar to long tensor
+            timestep = torch.tensor(timestep, device=self.device, dtype=torch.long)
+        
         # Handle different scheduler signatures
         step_kwargs = {
             "model_output": model_output,
@@ -154,12 +216,18 @@ class AphroditeSchedulerWrapper:
         # Add scheduler-specific parameters
         if self.scheduler_name == "ddim":
             step_kwargs["eta"] = eta
-            step_kwargs["generator"] = generator
+            if generator is not None:
+                step_kwargs["generator"] = generator
         elif self.scheduler_name == "pndm":
             # PNDM doesn't use eta or generator
             pass
 
-        return self.scheduler.step(**step_kwargs)
+        try:
+            return self.scheduler.step(**step_kwargs)
+        except Exception as e:
+            logger.error(f"Scheduler step failed: {e}")
+            logger.error(f"Scheduler: {self.scheduler_name}, timestep: {timestep}, shapes: model_output={model_output.shape}, sample={sample.shape}")
+            raise
 
     def add_noise(
         self,

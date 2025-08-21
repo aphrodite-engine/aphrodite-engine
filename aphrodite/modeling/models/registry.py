@@ -288,6 +288,11 @@ _UNET_MODELS = {
     # [UNet Models for Diffusion]
     "UNet2DConditionModel": ("unet", "UNet2DConditionModel"),
 }
+
+_PIPELINE_MODELS = {
+    # [Complete Pipelines]
+    "StableDiffusionPipeline": ("sd_pipeline", "StableDiffusionPipeline"),
+}
 # yapf: enable
 
 _APHRODITE_MODELS = {
@@ -300,6 +305,7 @@ _APHRODITE_MODELS = {
     **_TRANSFORMERS_BACKEND_MODELS,
     **_VAE_MODELS,
     **_UNET_MODELS,
+    **_PIPELINE_MODELS,
 }
 
 # This variable is used as the args for subprocess.run(). We

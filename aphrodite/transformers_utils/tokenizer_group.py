@@ -119,6 +119,9 @@ def init_tokenizer_from_configs(model_config: ModelConfig,
     elif runner_type == "unet":
         # UNet models don't use tokenizers - return None
         return None
+    elif runner_type == "sd_pipeline":
+        # SD pipeline models handle tokenizer loading internally - return None
+        return None
     else:
         assert_never(runner_type)
 

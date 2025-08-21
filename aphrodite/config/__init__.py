@@ -81,14 +81,15 @@ else:
 DataclassInstanceT = TypeVar("DataclassInstanceT", bound=DataclassInstance)
 
 TaskOption = Literal["auto", "generate", "embedding", "embed", "classify",
-                     "score", "reward", "transcription", "draft"]
+                     "score", "reward", "transcription", "draft", "vae_encode", 
+                     "vae_decode", "denoise_step", "text2img"]
 
 _ResolvedTask = Literal["generate", "transcription", "encode", "embed",
                         "classify", "reward", "draft"]
 
-RunnerOption = Literal["auto", "generate", "pooling", "draft", "vae", "unet"]
+RunnerOption = Literal["auto", "generate", "pooling", "draft", "vae", "unet", "sd_pipeline"]
 
-RunnerType = Literal["generate", "pooling", "draft", "vae", "unet"]
+RunnerType = Literal["generate", "pooling", "draft", "vae", "unet", "sd_pipeline"]
 
 ConvertOption = Literal["auto", "none", "embed", "classify", "reward"]
 
@@ -100,6 +101,7 @@ _RUNNER_TASKS: dict[RunnerType, list[TaskOption]] = {
     "draft": ["draft"],
     "vae": ["vae_encode", "vae_decode"],
     "unet": ["denoise_step"],
+    "sd_pipeline": ["text2img"],
 }
 
 _RUNNER_CONVERTS: dict[RunnerType, list[ConvertType]] = {
@@ -108,6 +110,7 @@ _RUNNER_CONVERTS: dict[RunnerType, list[ConvertType]] = {
     "draft": [],
     "vae": [],
     "unet": [],
+    "sd_pipeline": [],
 }
 
 # Some model suffixes are based on auto classes from Transformers:
@@ -569,11 +572,11 @@ class ModelConfig:
                     "this may affect the random state of the Python process "
                     "that launched Aphrodite.", self.seed)
 
-        if self.runner not in ("draft", "vae", "unet"):
-            # If we're not running the draft model, VAE model, or UNet model,
+        if self.runner not in ("draft", "vae", "unet", "sd_pipeline"):
+            # If we're not running the draft model, VAE model, UNet model, or SD pipeline,
             # check for speculators config. If speculators config, set model /
             # tokenizer to be target model
-            # Skip speculator check for VAE/UNet models since they don't follow
+            # Skip speculator check for VAE/UNet/SD pipeline models since they don't follow
             # transformers conventions
             self.model, self.tokenizer = maybe_override_with_speculators_target_model(  # noqa: E501
                 model=self.model,
@@ -651,7 +654,8 @@ class ModelConfig:
                                self.code_revision,
                                self.config_format,
                                hf_overrides_kw=hf_overrides_kw,
-                               hf_overrides_fn=hf_overrides_fn)
+                               hf_overrides_fn=hf_overrides_fn,
+                               runner_type=self.runner)
 
         self.hf_config = hf_config
 
@@ -1114,6 +1118,8 @@ class ModelConfig:
             return ["vae_encode", "vae_decode"]
         if runner_type == "unet":
             return ["denoise_step"]
+        if runner_type == "sd_pipeline":
+            return ["text2img"]
 
         assert_never(runner_type)
 

@@ -457,10 +457,31 @@ def get_config(
     hf_overrides_kw: Optional[dict[str, Any]] = None,
     hf_overrides_fn: Optional[Callable[[PretrainedConfig],
                                        PretrainedConfig]] = None,
+    runner_type: Optional[str] = None,
     **kwargs,
 ) -> PretrainedConfig:
-    # Separate model folder from file path for GGUF models
+    # Handle SD pipeline models specially
+    if runner_type == "sd_pipeline":
+        # For SD pipeline, create a mock config since SD models don't have a single config.json
+        # The actual component configs will be loaded by the pipeline itself
+        from transformers import PretrainedConfig
+        
+        config = PretrainedConfig(
+            model_type="sd_pipeline",
+            architectures=["StableDiffusionPipeline"],
+            torch_dtype="float16",
+        )
+        
+        # Set dummy attributes that Aphrodite expects
+        config.hidden_size = 768  # CLIP hidden size
+        config.num_attention_heads = 12  # CLIP attention heads
+        config.num_hidden_layers = 12  # CLIP layers
+        config.vocab_size = 49408  # CLIP vocab size
+        config.max_position_embeddings = 77  # CLIP max length
+        
+        return config
 
+    # Separate model folder from file path for GGUF models
     is_gguf = check_gguf_file(model)
     if is_gguf:
         kwargs["gguf_file"] = Path(model).name

@@ -1014,8 +1014,8 @@ class EngineArgs:
             SpeculatorsConfig)
 
         if self.speculative_config is None:
-            # Skip speculative config for VAE and UNet models
-            if self.runner in ("vae", "unet"):
+            # Skip speculative config for VAE, UNet, and SD pipeline models
+            if self.runner in ("vae", "unet", "sd_pipeline"):
                 return None
 
             hf_config = get_config(self.hf_config_path or self.model,

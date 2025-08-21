@@ -14,7 +14,7 @@ from aphrodite.modeling.models.interfaces import supports_transcription
 from aphrodite.modeling.models.interfaces_base import (
     is_pooling_model, is_text_generation_model)
 from aphrodite.tasks import (GenerationTask, PoolingTask, SupportedTask,
-                             UNetTask, VAETask)
+                             UNetTask, VAETask, SDPipelineTask)
 
 if TYPE_CHECKING:
     from aphrodite.attention import AttentionMetadata
@@ -269,6 +269,15 @@ class ModelRunnerBase(ABC, Generic[T]):
 
         return []
 
+    def get_supported_sd_pipeline_tasks(self) -> list[SDPipelineTask]:
+        from aphrodite.tasks import SD_PIPELINE_TASKS
+        
+        # SD pipeline runner supports all SD pipeline tasks
+        if self.model_config.runner_type == "sd_pipeline":
+            return list(SD_PIPELINE_TASKS)
+        
+        return []
+
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
         tasks = list[SupportedTask]()
 
@@ -280,6 +289,8 @@ class ModelRunnerBase(ABC, Generic[T]):
             tasks.extend(self.get_supported_vae_tasks())
         if self.model_config.runner_type == "unet":
             tasks.extend(self.get_supported_unet_tasks())
+        if self.model_config.runner_type == "sd_pipeline":
+            tasks.extend(self.get_supported_sd_pipeline_tasks())
 
         return tuple(tasks)
 
