@@ -1,13 +1,17 @@
 import itertools
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal, Optional, Protocol, Union, overload
+from typing import (Any, Callable, Literal, Optional, Protocol, Union, overload,
+                    TYPE_CHECKING)
 
 import torch
 import torch.nn as nn
 from loguru import logger
 from torch.func import functional_call
 from transformers import PretrainedConfig
+
+if TYPE_CHECKING:
+    from .offload_policy import OffloadPolicy
 
 import aphrodite.common.envs as envs
 from aphrodite.config import AphroditeConfig
@@ -305,8 +309,8 @@ def init_aphrodite_registered_model(
         hf_config = aphrodite_config.model_config.hf_config
 
     if hf_config is not None:
-        aphrodite_config = aphrodite_config.with_hf_config(hf_config,
-                                                 architectures=architectures)
+        aphrodite_config = aphrodite_config.with_hf_config(
+            hf_config, architectures=architectures)
 
     return initialize_model(aphrodite_config=aphrodite_config, prefix=prefix)
 
@@ -546,7 +550,9 @@ def set_cpu_offload_max_bytes(max_bytes: int) -> None:
     _CPU_OFFLOAD_MAX_BYTES = max_bytes
 
 
-def maybe_offload_to_cpu(module: torch.nn.Module) -> torch.nn.Module:
+def maybe_offload_to_cpu(module: torch.nn.Module,
+                         policy: Optional["OffloadPolicy"] = None
+                         ) -> torch.nn.Module:
     if (params := next(module.parameters(), None)) is None:
         return module
 
@@ -558,6 +564,11 @@ def maybe_offload_to_cpu(module: torch.nn.Module) -> torch.nn.Module:
     global _CPU_OFFLOAD_MAX_BYTES, _CPU_OFFLOAD_BYTES
     if _CPU_OFFLOAD_BYTES >= _CPU_OFFLOAD_MAX_BYTES:
         return module
+
+    # If no policy is explicitly provided, try to get the global policy
+    if policy is None:
+        from .offload_policy import get_global_offload_policy
+        policy = get_global_offload_policy()
 
     pin_memory = is_pin_memory_available()
     uva_available = is_uva_available()
@@ -572,11 +583,15 @@ def maybe_offload_to_cpu(module: torch.nn.Module) -> torch.nn.Module:
     # offload parameters to CPU
     # use pin_memory if possible, which helps cudagraph capture speed
     offloaded_parameters = False
-    for p in module.parameters():
+    for name, p in module.named_parameters():
         if _CPU_OFFLOAD_BYTES >= _CPU_OFFLOAD_MAX_BYTES:
             # we use per-parameter offloading
             # one module might have some parameters offloaded and some not
             break
+
+        # If we have a policy, check if this parameter should be offloaded
+        if policy is not None and not policy.should_offload(name, p):
+            continue
 
         # `torch.empty_like` does not support `pin_memory` argument
         cpu_data = torch.empty_strided(size=p.data.size(),
@@ -622,18 +637,26 @@ def make_layers(
     num_hidden_layers: int,
     layer_fn: LayerFn,
     prefix: str,
+    offload_policy: Optional["OffloadPolicy"] = None,
 ) -> tuple[int, int, torch.nn.ModuleList]:
     """Make a list of layers with the given layer function, taking
     pipeline parallelism into account.
     """
     from aphrodite.distributed.parallel_state import get_pp_group
     from aphrodite.distributed.utils import get_pp_indices
+
+    # If no policy is explicitly provided, try to get the global policy
+    if offload_policy is None:
+        from .offload_policy import get_global_offload_policy
+        offload_policy = get_global_offload_policy()
+
     start_layer, end_layer = get_pp_indices(num_hidden_layers,
                                             get_pp_group().rank_in_group,
                                             get_pp_group().world_size)
     modules = torch.nn.ModuleList(
         [PPMissingLayer() for _ in range(start_layer)] + [
-            maybe_offload_to_cpu(layer_fn(prefix=f"{prefix}.{idx}"))
+            maybe_offload_to_cpu(layer_fn(prefix=f"{prefix}.{idx}"),
+                                 offload_policy)
             for idx in range(start_layer, end_layer)
         ] + [PPMissingLayer() for _ in range(end_layer, num_hidden_layers)])
     return start_layer, end_layer, modules
@@ -716,8 +739,8 @@ def extract_layer_index(layer_name: str) -> int:
             int_vals.append(int(subname))
         except ValueError:
             continue
-    assert len(int_vals) == 1, (f"layer name {layer_name} should"
-                                " only contain one integer")
+    assert len(int_vals) == 1, (f"layer name {layer_name} should "
+                                "only contain one integer")
     return int_vals[0]
 
 

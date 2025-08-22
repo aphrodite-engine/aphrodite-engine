@@ -79,6 +79,11 @@ class CacheConfig:
     Note that this requires fast CPU-GPU interconnect, as part of the model is
     loaded from CPU memory to GPU memory on the fly in each model forward pass.
     """
+    smart_offload: bool = False
+    """Enable smart offloading that selectively targets parameters with low
+    computational intensity (embeddings, norms, biases) rather than blindly
+    offloading the first N bytes. This can significantly reduce the performance
+    impact of CPU offloading while still saving GPU memory."""
     calculate_kv_scales: bool = False
     """This enables dynamic calculation of `k_scale` and `v_scale` when
     kv_cache_dtype is fp8. If `False`, the scales will be loaded from the model

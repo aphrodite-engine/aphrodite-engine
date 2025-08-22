@@ -118,6 +118,14 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         set_cpu_offload_max_bytes(
             int(self.cache_config.cpu_offload_gb * 1024**3))
 
+        if (self.cache_config.smart_offload and
+            self.cache_config.cpu_offload_gb > 0):
+            from aphrodite.modeling.models.offload_policy import (
+                create_aggressive_policy, set_global_offload_policy)
+            policy = create_aggressive_policy(
+                int(self.cache_config.cpu_offload_gb * 1024**3))
+            set_global_offload_policy(policy)
+
         model_config = self.model_config
         cache_config = self.cache_config
         scheduler_config = self.scheduler_config

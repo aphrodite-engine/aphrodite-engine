@@ -20,11 +20,11 @@ import aphrodite.common.envs as envs
 from aphrodite.attention import AttentionMetadata, get_attn_backend
 from aphrodite.attention.backends.abstract import AttentionState
 from aphrodite.attention.backends.utils import CommonAttentionState
-from aphrodite.config import AphroditeConfig, CompilationLevel
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
 from aphrodite.compilation.counter import compilation_counter
+from aphrodite.config import AphroditeConfig, CompilationLevel
 from aphrodite.distributed import broadcast_tensor_dict, get_pp_group
 from aphrodite.distributed.kv_transfer import get_kv_transfer_group
 from aphrodite.distributed.parallel_state import (
@@ -1056,6 +1056,14 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
 
         set_cpu_offload_max_bytes(
             int(self.cache_config.cpu_offload_gb * 1024**3))
+
+        if (self.cache_config.smart_offload and
+            self.cache_config.cpu_offload_gb > 0):
+            from aphrodite.modeling.models.offload_policy import (
+                create_aggressive_policy, set_global_offload_policy)
+            policy = create_aggressive_policy(
+                int(self.cache_config.cpu_offload_gb * 1024**3))
+            set_global_offload_policy(policy)
 
         # Used to cache python objects
         self.inter_data_cache: Dict[int, PyObjectCache] = {}
