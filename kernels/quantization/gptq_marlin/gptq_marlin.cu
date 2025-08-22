@@ -519,7 +519,6 @@ void marlin_mm(const void* A, const void* B, void* C, void* C_tmp, void* b_bias,
   // ================================
   // MODIFICATION START: K Dimension Padding
   // ================================
-  int original_prob_k = prob_k;
   int k_pad = 0;
 
   // Calculate K dimension padding to make it divisible by available thread_k values
