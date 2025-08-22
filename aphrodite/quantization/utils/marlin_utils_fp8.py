@@ -1,4 +1,10 @@
-"""FP8 Marlin utilities for Aphrodite."""
+"""
+FP8 Marlin utilities for Aphrodite.
+
+This module provides utilities for using FP8 quantization with Marlin kernels
+on GPUs that lack native FP8 hardware support. It automatically handles
+dimension padding to ensure compatibility with all thread configurations.
+"""
 
 import torch
 from typing import Optional
@@ -46,49 +52,64 @@ def apply_fp8_marlin_linear(
     out_shape = input.shape[:-1] + (size_n, )
 
     # ================================
-    # MODIFICATION START: K Dimension Padding
+    # MODIFICATION START: K and N Dimension Padding
     # ================================
-    # Calculate K dimension padding to make it divisible by
-    # available thread_k values (64 or 128)
+    # The Marlin kernel requires both K and N dimensions to be divisible by
+    # specific thread sizes for optimal performance. This padding ensures
+    # compatibility with all available thread configurations.
+    # ================================
+    # Calculate K and N dimension padding to make them divisible by
+    # the largest available thread sizes to ensure compatibility with all
+    # thread configurations
     original_size_k = size_k
+    original_size_n = size_n
     padded_size_k = size_k
+    padded_size_n = size_n
     k_pad = 0
+    n_pad = 0
 
-    # Try to find a valid thread_k that divides size_k
-    if size_k % 64 == 0 or size_k % 128 == 0:
-        # No padding needed
-        pass
-    else:
-        # Need to pad K to make it divisible by 64 (smaller padding)
-        k_pad = 64 - (size_k % 64)
+    # Pad K dimension to be divisible by 128 (largest thread_k)
+    if size_k % 128 != 0:
+        k_pad = 128 - (size_k % 128)
         padded_size_k = size_k + k_pad
 
-        # Pad input tensor with zeros
+    # Pad N dimension to be divisible by 256 (largest thread_n)
+    if size_n % 256 != 0:
+        n_pad = 256 - (size_n % 256)
+        padded_size_n = size_n + n_pad
+
+    # Pad input tensor with zeros if needed
+    if k_pad > 0 or n_pad > 0:
         if k_pad > 0:
             padded_input = torch.zeros(
-                reshaped_x.shape[0], padded_size_k, 
-                dtype=reshaped_x.dtype, 
+                reshaped_x.shape[0], padded_size_k,
+                dtype=reshaped_x.dtype,
                 device=reshaped_x.device
             )
             padded_input[:, :size_k] = reshaped_x
             reshaped_x = padded_input
-
-            # Update size_k to use padded value
             size_k = padded_size_k
 
-            log_once(
-                "INFO",
-                "FP8 Marlin: K dimension padding applied. "
-                "Original size_k = {}, "
-                "padded to {} (padding = {})",
-                original_size_k,
-                padded_size_k,
-                k_pad
-            )
+        if n_pad > 0:
+            # Note: We don't need to pad the input for N dimension
+            # since it's the output dimension, but we need to update size_n
+            size_n = padded_size_n
+
+        log_once(
+            "INFO",
+            "FP8 Marlin: Dimension padding applied. "
+            "Original (K, N) = ({}, {}), "
+            "padded to ({}, {}) (K_pad = {}, N_pad = {})",
+            original_size_k, original_size_n,
+            padded_size_k, padded_size_n, k_pad, n_pad
+        )
 
     # ================================
-    # MODIFICATION END: K Dimension Padding
+    # MODIFICATION END: K and N Dimension Padding
     # ================================
+
+    # Now that dimensions are properly padded, we can call the Marlin kernel
+    # with confidence that it will work with all thread configurations
 
     use_atomic_add = should_use_atomic_add_reduce(m=reshaped_x.size(0),
                                                   n=size_n,
