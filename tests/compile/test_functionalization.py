@@ -67,7 +67,7 @@ def test_fix_functionalization(model: str, quant_key: QuantKey,
     # instantiate a full engine and manually compile the model 2x
     # (with and without FixFunctionalizationPass)
     llm = LLM(model=model, enforce_eager=True)
-    model_runner = llm.llm_engine.model_executor.driver_worker.model_runner
+    model_runner = llm.llm_engine.modeling.driver_worker.model_runner
     orig_model = model_runner.model
     # TODO mark inputs dynamic? (currently torch.compile is triggered 4x)
     # Can only do that by using the decorator but then we'd have to instantiate

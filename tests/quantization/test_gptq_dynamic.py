@@ -37,7 +37,7 @@ def test_gptq_with_dynamic(aphrodite_runner, model_id: str, use_marlin_kernel: b
     linear_method_cls = GPTQMarlinLinearMethod if use_marlin_kernel else (
         GPTQLinearMethod)
 
-    for name, submodule in (aphrodite_model.model.llm_engine.model_executor.
+    for name, submodule in (aphrodite_model.model.llm_engine.modeling.
                             driver_worker.model_runner.model.named_modules()):
         if name == "lm_head":
             assert isinstance(submodule.quant_method, linear_method_cls)

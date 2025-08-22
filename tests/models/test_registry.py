@@ -3,13 +3,13 @@ import warnings
 import pytest
 import torch.cuda
 
-from aphrodite.model_executor.models import (is_pooling_model,
+from aphrodite.modeling.models import (is_pooling_model,
                                         is_text_generation_model,
                                         supports_multimodal)
-from aphrodite.model_executor.models.adapters import (as_embedding_model,
+from aphrodite.modeling.models.adapters import (as_embedding_model,
                                                  as_reward_model,
                                                  as_seq_cls_model)
-from aphrodite.model_executor.models.registry import (_MULTIMODAL_MODELS,
+from aphrodite.modeling.models.registry import (_MULTIMODAL_MODELS,
                                                  _SPECULATIVE_DECODING_MODELS,
                                                  _TEXT_GENERATION_MODELS,
                                                  ModelRegistry)

@@ -106,7 +106,7 @@ def test_custom_quant(aphrodite_runner, model, monkeypatch):
                      quantization="custom_quant",
                      enforce_eager=True) as llm:
 
-        model = llm.model.llm_engine.model_executor.driver_worker.model_runner.model  # noqa: E501
+        model = llm.model.llm_engine.modeling.driver_worker.model_runner.model  # noqa: E501
         layer = model.model.layers[0]
         qkv_proj = layer.self_attn.qkv_proj
 

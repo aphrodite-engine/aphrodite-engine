@@ -12,7 +12,7 @@ MODELS = [
 
 
 def test_phimoe_routing_function():
-    from aphrodite.model_executor.models.phimoe import phimoe_routing_function
+    from aphrodite.modeling.models.phimoe import phimoe_routing_function
     test_case = {
         0: {
             "hidden_states":

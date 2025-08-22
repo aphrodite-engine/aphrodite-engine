@@ -36,8 +36,8 @@ def can_initialize(model_arch: str, monkeypatch: pytest.MonkeyPatch,
                               exist_overrides=model_info.hf_overrides)
 
     if model_arch in ("Llama4ForCausalLM", "EagleLlama4ForCausalLM"):
-        from aphrodite.model_executor.models.llama4 import Llama4ForCausalLM
-        from aphrodite.model_executor.models.registry import ModelRegistry
+        from aphrodite.modeling.models.llama4 import Llama4ForCausalLM
+        from aphrodite.modeling.models.registry import ModelRegistry
         ModelRegistry.register_model("Llama4ForCausalLM", Llama4ForCausalLM)
 
     # Avoid calling model.forward()
@@ -46,7 +46,7 @@ def can_initialize(model_arch: str, monkeypatch: pytest.MonkeyPatch,
         self.cache_config.num_cpu_blocks = 0
 
     def _initialize_kv_caches_v1(self, aphrodite_config):
-        kv_cache_specs = self.model_executor.get_kv_cache_specs()
+        kv_cache_specs = self.modeling.get_kv_cache_specs()
         scheduler_kv_cache_config = get_kv_cache_config(
             aphrodite_config,
             kv_cache_specs[0],

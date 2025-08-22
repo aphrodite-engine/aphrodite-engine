@@ -51,7 +51,7 @@ test_consistent_across_ranks(
 
 # make sure we can access the model parameters from the calling process
 # of the `LLM` instance.
-params = list(llm.llm_engine.model_executor.driver_worker.worker.model_runner.
+params = list(llm.llm_engine.modeling.driver_worker.worker.model_runner.
               model.parameters())
 test_consistent_across_ranks(len(params))
 

@@ -74,9 +74,9 @@ class EngineCore:
         self.log_stats = log_stats
 
         # Setup Model.
-        self.model_executor = executor_class(aphrodite_config)
+        self.modeling = executor_class(aphrodite_config)
         if executor_fail_callback is not None:
-            self.model_executor.register_failure_callback(
+            self.modeling.register_failure_callback(
                 executor_fail_callback)
 
         self.available_gpu_memory_for_kv_cache = -1
@@ -131,7 +131,7 @@ class EngineCore:
         # Batch queue for scheduled batches. This enables us to asynchronously
         # schedule and execute batches, and is required by pipeline parallelism
         # to eliminate pipeline bubbles.
-        self.batch_queue_size = self.model_executor.max_concurrent_batches
+        self.batch_queue_size = self.modeling.max_concurrent_batches
         self.batch_queue: Optional[queue.Queue[tuple[Future[ModelRunnerOutput],
                                                      SchedulerOutput]]] = None
         if self.batch_queue_size > 1:
@@ -144,7 +144,7 @@ class EngineCore:
         start = time.time()
 
         # Get all kv cache needed by the model
-        kv_cache_specs = self.model_executor.get_kv_cache_specs()
+        kv_cache_specs = self.modeling.get_kv_cache_specs()
 
         has_kv_cache = any(kv_cache_spec for kv_cache_spec in kv_cache_specs)
         if has_kv_cache:
@@ -160,7 +160,7 @@ class EngineCore:
                 # Profiles the peak memory usage of the model to determine how
                 # much memory can be allocated for kv cache.
                 available_gpu_memory = (
-                    self.model_executor.determine_available_memory())
+                    self.modeling.determine_available_memory())
                 self.available_gpu_memory_for_kv_cache = \
                     available_gpu_memory[0]
         else:
@@ -192,7 +192,7 @@ class EngineCore:
         scheduler_kv_cache_config = kv_cache_configs[0]
 
         # Initialize kv cache and warmup the execution
-        self.model_executor.initialize_from_config(kv_cache_configs)
+        self.modeling.initialize_from_config(kv_cache_configs)
 
         elapsed = time.time() - start
         logger.info(("init engine (profile, create kv cache, "
@@ -200,7 +200,7 @@ class EngineCore:
         return num_gpu_blocks, num_cpu_blocks, scheduler_kv_cache_config
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:
-        return self.model_executor.supported_tasks
+        return self.modeling.supported_tasks
 
     def add_request(self, request: Request, request_wave: int = 0):
         """Add request to the scheduler.
@@ -270,7 +270,7 @@ class EngineCore:
             return {}, False
         scheduler_output = self.scheduler.schedule()
         model_output = self.execute_model_with_error_logging(
-            self.model_executor.execute_model,  # type: ignore
+            self.modeling.execute_model,  # type: ignore
             scheduler_output)
         engine_core_outputs = self.scheduler.update_from_output(
             scheduler_output, model_output)  # type: ignore
@@ -303,7 +303,7 @@ class EngineCore:
         if not self.batch_queue.full():
             scheduler_output = self.scheduler.schedule()
             if scheduler_output.total_num_scheduled_tokens > 0:
-                future = self.model_executor.execute_model(scheduler_output)
+                future = self.modeling.execute_model(scheduler_output)
                 self.batch_queue.put_nowait(
                     (future, scheduler_output))  # type: ignore
 
@@ -331,13 +331,13 @@ class EngineCore:
 
     def shutdown(self):
         self.structured_output_manager.clear_backend()
-        if self.model_executor:
-            self.model_executor.shutdown()
+        if self.modeling:
+            self.modeling.shutdown()
         if self.scheduler:
             self.scheduler.shutdown()
 
     def profile(self, is_start: bool = True):
-        self.model_executor.profile(is_start)
+        self.modeling.profile(is_start)
 
     def reset_mm_cache(self):
         # NOTE: Since this is mainly for debugging, we don't attempt to
@@ -352,28 +352,28 @@ class EngineCore:
         self.scheduler.reset_prefix_cache()
 
     def sleep(self, level: int = 1):
-        self.model_executor.sleep(level)
+        self.modeling.sleep(level)
 
     def wake_up(self, tags: Optional[list[str]] = None):
-        self.model_executor.wake_up(tags)
+        self.modeling.wake_up(tags)
 
     def is_sleeping(self) -> bool:
-        return self.model_executor.is_sleeping
+        return self.modeling.is_sleeping
 
     def execute_dummy_batch(self):
-        self.model_executor.collective_rpc("execute_dummy_batch")
+        self.modeling.collective_rpc("execute_dummy_batch")
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
-        return self.model_executor.add_lora(lora_request)
+        return self.modeling.add_lora(lora_request)
 
     def remove_lora(self, lora_id: int) -> bool:
-        return self.model_executor.remove_lora(lora_id)
+        return self.modeling.remove_lora(lora_id)
 
     def list_loras(self) -> set[int]:
-        return self.model_executor.list_loras()
+        return self.modeling.list_loras()
 
     def pin_lora(self, lora_id: int) -> bool:
-        return self.model_executor.pin_lora(lora_id)
+        return self.modeling.pin_lora(lora_id)
 
     def save_sharded_state(
         self,
@@ -381,7 +381,7 @@ class EngineCore:
         pattern: Optional[str] = None,
         max_size: Optional[int] = None,
     ) -> None:
-        self.model_executor.save_sharded_state(path=path,
+        self.modeling.save_sharded_state(path=path,
                                                pattern=pattern,
                                                max_size=max_size)
 
@@ -390,14 +390,14 @@ class EngineCore:
                        timeout: Optional[float] = None,
                        args: tuple = (),
                        kwargs: Optional[dict[str, Any]] = None) -> list[_R]:
-        return self.model_executor.collective_rpc(method, timeout, args,
+        return self.modeling.collective_rpc(method, timeout, args,
                                                   kwargs)
 
     def save_tensorized_model(
         self,
         tensorizer_config,
     ) -> None:
-        self.model_executor.save_tensorized_model(
+        self.modeling.save_tensorized_model(
             tensorizer_config=tensorizer_config, )
 
     def preprocess_add_request(
@@ -1082,7 +1082,7 @@ class DPEngineCoreProc(EngineCoreProc):
         reconfig_request.new_data_parallel_master_port = \
             parallel_config.data_parallel_master_port
 
-        self.model_executor.reinitialize_distributed(reconfig_request)
+        self.modeling.reinitialize_distributed(reconfig_request)
         if reconfig_request.new_data_parallel_size > old_dp_size:
             assert self.available_gpu_memory_for_kv_cache > 0
             # pass available_gpu_memory_for_kv_cache from existing
@@ -1092,7 +1092,7 @@ class DPEngineCoreProc(EngineCoreProc):
                 self.dp_group, self.available_gpu_memory_for_kv_cache)
             # NOTE(yongji): newly joined workers require dummy_run even
             # CUDA graph is not used
-            self.model_executor.collective_rpc("compile_or_warm_up_model")
+            self.modeling.collective_rpc("compile_or_warm_up_model")
         if reconfig_request.new_data_parallel_rank == \
         ReconfigureRankType.SHUTDOWN_CURRENT_RANK:
             self.shutdown()

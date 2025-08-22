@@ -6,7 +6,7 @@ import transformers
 from transformers import AutoConfig, PreTrainedModel
 
 from aphrodite.config import ModelConfig
-from aphrodite.model_executor.models.utils import WeightsMapper
+from aphrodite.modeling.models.utils import WeightsMapper
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.transformers_utils.config import try_get_safetensors_metadata
 

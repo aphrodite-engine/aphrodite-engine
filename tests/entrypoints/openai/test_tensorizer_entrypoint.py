@@ -8,7 +8,7 @@ import pytest_asyncio
 import torch.cuda
 
 from aphrodite.engine.arg_utils import EngineArgs
-from aphrodite.model_executor.model_loader.tensorizer import (
+from aphrodite.modeling.model_loader.tensorizer import (
     TensorizerConfig, tensorize_lora_adapter, tensorize_aphrodite_model)
 
 from ...utils import RemoteOpenAIServer

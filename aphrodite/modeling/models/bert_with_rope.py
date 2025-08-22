@@ -509,7 +509,7 @@ class GteNewModel(BertWithRope):
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)
 
         # GteNewModel only gate_up_proj does not have bias.
-        # Hack method learned from aphrodite/model_executor/models/glm.py
+        # Hack method learned from aphrodite/modeling/models/glm.py
         for layer in self.encoder.layers:
             layer.mlp.gate_up_proj.bias = None
             layer.mlp.gate_up_proj.skip_bias_add = True

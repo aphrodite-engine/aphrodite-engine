@@ -1,6 +1,6 @@
 import torch
 
-from aphrodite.model_executor.models.utils import AutoWeightsLoader
+from aphrodite.modeling.models.utils import AutoWeightsLoader
 
 
 class ModuleWithBatchNorm(torch.nn.Module):

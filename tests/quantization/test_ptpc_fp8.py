@@ -26,7 +26,7 @@ def test_ptpc_fp8_rocm(aphrodite_runner, dtype: str, kv_cache_dtype: str) -> Non
                          quantization="ptpc_fp8",
                          kv_cache_dtype=kv_cache_dtype) as llm:
 
-            model = llm.model.llm_engine.model_executor.driver_worker.model_runner.model  # noqa: E501
+            model = llm.model.llm_engine.modeling.driver_worker.model_runner.model  # noqa: E501
             fc1 = model.model.decoder.layers[0].fc1
             assert isinstance(fc1.quant_method, PTPCFp8LinearMethod)
             if kv_cache_dtype == "ptpc_fp8":

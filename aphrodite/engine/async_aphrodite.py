@@ -339,7 +339,7 @@ class _AsyncLLMEngine(AphroditeEngine):
                     virtual_engine]
 
             # Execute the model.
-            outputs = await self.model_executor.execute_model_async(
+            outputs = await self.modeling.execute_model_async(
                 execute_model_req)
 
         else:
@@ -392,7 +392,7 @@ class _AsyncLLMEngine(AphroditeEngine):
 
     async def stop_remote_worker_execution_loop_async(self) -> None:
         """Stop the remote worker execution loop."""
-        await self.model_executor.stop_remote_worker_execution_loop_async()
+        await self.modeling.stop_remote_worker_execution_loop_async()
 
     async def get_tokenizer_async(self,
                                   lora_request: Optional[LoRARequest] = None
@@ -455,7 +455,7 @@ class _AsyncLLMEngine(AphroditeEngine):
         )
 
     async def check_health_async(self) -> None:
-        self.model_executor.check_health()
+        self.modeling.check_health()
 
     async def collective_rpc_async(self,
                                    method: str,

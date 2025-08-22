@@ -18,7 +18,7 @@ def test_profiling(
     max_num_seqs: int,
 ):
     # regression test for https://github.com/aphrodite-project/aphrodite/issues/13929
-    from aphrodite.model_executor.models.mllama import calc_token_per_chunk
+    from aphrodite.modeling.models.mllama import calc_token_per_chunk
 
     model_config_kwargs = {
         "max_model_len": max_model_len,

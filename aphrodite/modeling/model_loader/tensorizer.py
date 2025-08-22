@@ -674,7 +674,7 @@ def tensorize_aphrodite_model(engine_args: "EngineArgs",
 
     if not envs.APHRODITE_USE_V1:
         engine = LLMEngine.from_engine_args(engine_args)
-        engine.model_executor.collective_rpc(
+        engine.modeling.collective_rpc(
             "save_tensorized_model",
             kwargs={"tensorizer_config": tensorizer_config.to_serializable()},
         )

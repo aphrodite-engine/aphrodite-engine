@@ -57,7 +57,7 @@ def maybe_assert_ngram_worker(llm):
             and llm.llm_engine.speculative_config.method == "ngram"):
         from aphrodite.spec_decode.ngram_worker import NGramWorker
         assert isinstance(
-            llm.llm_engine.model_executor.driver_worker.proposer_worker,
+            llm.llm_engine.modeling.driver_worker.proposer_worker,
             NGramWorker)
 
 

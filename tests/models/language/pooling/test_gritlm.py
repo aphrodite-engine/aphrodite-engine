@@ -22,7 +22,7 @@ def _arr(arr):
 
 
 def test_find_array():
-    from aphrodite.model_executor.models.gritlm import GritLMMeanPool
+    from aphrodite.modeling.models.gritlm import GritLMMeanPool
 
     model_config = ModelConfig(
         MODEL_NAME,

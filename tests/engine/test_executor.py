@@ -105,4 +105,4 @@ def test_respect_ray(model):
         enforce_eager=True,  # reduce test time
     )
     engine = AphroditeEngine.from_engine_args(engine_args)
-    assert engine.model_executor.uses_ray
+    assert engine.modeling.uses_ray

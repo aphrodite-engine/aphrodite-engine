@@ -43,7 +43,7 @@ def run_intern_vit_test(
         for pixel_value in pixel_values
     ]
 
-    from aphrodite.model_executor.models.intern_vit import InternVisionModel
+    from aphrodite.modeling.models.intern_vit import InternVisionModel
     aphrodite_model = InternVisionModel(config)
     aphrodite_model.load_weights(hf_model.state_dict().items())
 

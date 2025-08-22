@@ -8,7 +8,7 @@ from aphrodite import LLM, SamplingParams
 from aphrodite.attention.backends.flash_attn import FlashAttentionMetadata
 from aphrodite.attention.selector import (_Backend, _cached_get_attn_backend,
                                      global_force_attn_backend_context_manager)
-from aphrodite.model_executor.models.mllama import MllamaForConditionalGeneration
+from aphrodite.modeling.models.mllama import MllamaForConditionalGeneration
 from aphrodite.multimodal.image import rescale_image_size
 from aphrodite.common.sequence import SampleLogprobs
 

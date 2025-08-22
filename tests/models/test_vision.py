@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from aphrodite.model_executor.models.vision import resolve_visual_encoder_outputs
+from aphrodite.modeling.models.vision import resolve_visual_encoder_outputs
 
 
 @pytest.mark.parametrize(

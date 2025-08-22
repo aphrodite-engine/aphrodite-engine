@@ -270,7 +270,7 @@ class PersimmonModel(nn.Module):
             param = params_dict[name]
 
             if "query_key_value" in name:
-                # copy from aphrodite/model_executor/models/bloom.py
+                # copy from aphrodite/modeling/models/bloom.py
                 # NOTE: Persimmon's fused QKV's output_dim has the shape of
                 # (num_heads * 3 * head_size), while the
                 # required shape is (3 * num_heads * head_size).

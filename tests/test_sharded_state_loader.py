@@ -55,7 +55,7 @@ def _run_writer(input_dir, output_dir, weights_patterns, **kwargs):
     llm_sharded_writer = LLM(model=input_dir, **kwargs)
 
     # Dump worker states to output directory
-    llm_sharded_writer.llm_engine.model_executor.save_sharded_state(
+    llm_sharded_writer.llm_engine.modeling.save_sharded_state(
         path=output_dir)
 
     # Copy metadata files to output directory

@@ -99,7 +99,7 @@ def test_model_tensor_schema(model_arch: str, aphrodite_runner: type[AphroditeRu
         self.cache_config.num_cpu_blocks = 0
 
     def _initialize_kv_caches_v1(self, aphrodite_config):
-        kv_cache_specs = self.model_executor.get_kv_cache_specs()
+        kv_cache_specs = self.modeling.get_kv_cache_specs()
         scheduler_kv_cache_config = get_kv_cache_config(
             aphrodite_config,
             kv_cache_specs[0],

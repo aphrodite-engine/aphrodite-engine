@@ -417,7 +417,7 @@ def h2ovl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
         def __call__(self, text: str, images: Union[Image, list[Image]],
                      **kwargs):
             # yapf: disable
-            from aphrodite.model_executor.models.h2ovl import (
+            from aphrodite.modeling.models.h2ovl import (
                 IMG_CONTEXT, IMG_END, IMG_START, image_to_pixel_values_h2ovl)
 
             # yapf: enable
@@ -476,7 +476,7 @@ def skyworkr1v_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
 
         def __call__(self, text: str, images: Union[Image, list[Image]],
                      **kwargs):
-            from aphrodite.model_executor.models.skyworkr1v import (
+            from aphrodite.modeling.models.skyworkr1v import (
                 IMG_CONTEXT, IMG_END, IMG_START,
                 image_to_pixel_values_skyworkr1v)
             images = [images] if isinstance(images, Image) else images
@@ -538,7 +538,7 @@ def internvl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             videos: Union[npt.NDArray, list[npt.NDArray]] = None,
             **kwargs,
         ):
-            from aphrodite.model_executor.models.internvl import (
+            from aphrodite.modeling.models.internvl import (
                 IMG_CONTEXT, IMG_END, IMG_START,
                 image_to_pixel_values_internvl, video_to_pixel_values_internvl)
             images = [images] if isinstance(images, Image) else images
@@ -819,7 +819,7 @@ def qwen2_5_omni_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
 
 
 def tarsier_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
-    from aphrodite.model_executor.models.tarsier import get_vision_encoder_info
+    from aphrodite.modeling.models.tarsier import get_vision_encoder_info
 
     vision_encoder_info = get_vision_encoder_info(hf_model.config)
 
