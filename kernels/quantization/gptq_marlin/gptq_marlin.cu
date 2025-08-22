@@ -17,6 +17,12 @@
 
 /*
  * Adapted from https://github.com/IST-DASLab/marlin
+ * 
+ * MODIFICATION NOTICE: K Dimension Padding: This implementation automatically pads
+ * the K dimension to make it divisible by the available thread_k values (64 or 128)
+ * when using GPTQ Marlin. This is necessary to ensure compatibility with models
+ * where the K dimension is not naturally divisible by these values, e.g. GLM-4.5
+ * models. The padding is done with zeros.
  */
 
 #ifndef MARLIN_NAMESPACE_NAME
@@ -509,6 +515,37 @@ void marlin_mm(const void* A, const void* B, void* C, void* C_tmp, void* b_bias,
 
   TORCH_CHECK(prob_m > 0 && prob_n > 0 && prob_k > 0, "Invalid MNK = [", prob_m,
               ", ", prob_n, ", ", prob_k, "]");
+
+  // ================================
+  // MODIFICATION START: K Dimension Padding
+  // ================================
+  int original_prob_k = prob_k;
+  int k_pad = 0;
+
+  // Calculate K dimension padding to make it divisible by available thread_k values
+  if (thread_k_init == -1) {
+    // Auto config - try 64 first, then 128
+    if (prob_k % 64 == 0) {
+      // No padding needed
+    } else if (prob_k % 128 == 0) {
+      // No padding needed
+    } else {
+      // Need to pad K to make it divisible by 64 (smaller padding)
+      k_pad = 64 - (prob_k % 64);
+      prob_k += k_pad;
+
+    }
+  } else {
+    // User-defined config - pad if necessary
+    if (prob_k % thread_k_init != 0) {
+      k_pad = thread_k_init - (prob_k % thread_k_init);
+      prob_k += k_pad;
+
+    }
+  }
+  // ================================
+  // MODIFICATION END: K Dimension Padding
+  // ================================
 
   int group_blocks = 0;
   if (has_act_order) {

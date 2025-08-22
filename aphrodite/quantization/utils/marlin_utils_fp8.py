@@ -1,9 +1,9 @@
-from typing import Optional
+"""FP8 Marlin utilities for Aphrodite."""
 
 import torch
-from loguru import logger
+from typing import Optional
 
-import aphrodite._custom_ops as ops
+from aphrodite import _custom_ops as ops
 from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.marlin_utils import (
@@ -44,6 +44,51 @@ def apply_fp8_marlin_linear(
 
     reshaped_x = input.reshape(-1, input.shape[-1])
     out_shape = input.shape[:-1] + (size_n, )
+
+    # ================================
+    # MODIFICATION START: K Dimension Padding
+    # ================================
+    # Calculate K dimension padding to make it divisible by
+    # available thread_k values (64 or 128)
+    original_size_k = size_k
+    padded_size_k = size_k
+    k_pad = 0
+
+    # Try to find a valid thread_k that divides size_k
+    if size_k % 64 == 0 or size_k % 128 == 0:
+        # No padding needed
+        pass
+    else:
+        # Need to pad K to make it divisible by 64 (smaller padding)
+        k_pad = 64 - (size_k % 64)
+        padded_size_k = size_k + k_pad
+
+        # Pad input tensor with zeros
+        if k_pad > 0:
+            padded_input = torch.zeros(
+                reshaped_x.shape[0], padded_size_k, 
+                dtype=reshaped_x.dtype, 
+                device=reshaped_x.device
+            )
+            padded_input[:, :size_k] = reshaped_x
+            reshaped_x = padded_input
+
+            # Update size_k to use padded value
+            size_k = padded_size_k
+
+            log_once(
+                "INFO",
+                "FP8 Marlin: K dimension padding applied. "
+                "Original size_k = {}, "
+                "padded to {} (padding = {})",
+                original_size_k,
+                padded_size_k,
+                k_pad
+            )
+
+    # ================================
+    # MODIFICATION END: K Dimension Padding
+    # ================================
 
     use_atomic_add = should_use_atomic_add_reduce(m=reshaped_x.size(0),
                                                   n=size_n,
