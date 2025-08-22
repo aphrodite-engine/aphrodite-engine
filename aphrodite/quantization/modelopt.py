@@ -1302,7 +1302,7 @@ class ModelOptNvFp4FusedMoE(FusedMoEMethodBase):
             self.flashinfer_moe_backend == FlashinferMoeBackend.TENSORRT_LLM:
             import flashinfer
 
-            from vllm.model_executor.models.llama4 import Llama4MoE
+            from vllm.modeling.models.llama4 import Llama4MoE
 
             a1_gscale = layer.w13_input_scale_quant
             (hidden_states_fp4,

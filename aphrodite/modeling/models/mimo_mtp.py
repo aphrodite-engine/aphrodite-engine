@@ -1,5 +1,5 @@
 # Adapted from
-# https://github.com/aphrodite-project/aphrodite/blob/v0.7.3/aphrodite/model_executor/models/deepseek_mtp.py
+# https://github.com/aphrodite-project/aphrodite/blob/v0.7.3/aphrodite/modeling/models/deepseek_mtp.py
 # Copyright 2025 Xiaomi Corporation.
 # Copyright 2023 The vLLM team.
 # Copyright 2024 DeepSeek-AI team.

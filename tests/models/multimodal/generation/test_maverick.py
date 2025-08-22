@@ -537,8 +537,8 @@ def check_attention_spec_interleaved_rope(
     rope_layers: list[int],
 ):
     """Check that the attention spec is correct."""
-    assert isinstance(llm.llm_engine.model_executor, Executor)
-    kv_cache_specs_per_rank = llm.llm_engine.model_executor.get_kv_cache_specs(
+    assert isinstance(llm.llm_engine.modeling, Executor)
+    kv_cache_specs_per_rank = llm.llm_engine.modeling.get_kv_cache_specs(
     )
     for rank in range(num_ranks):
         kv_cache_specs = kv_cache_specs_per_rank[rank]

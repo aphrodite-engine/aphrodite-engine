@@ -1064,10 +1064,10 @@ class AphroditeRunner:
         return [req_output.outputs.score for req_output in req_outputs]
 
     def apply_model(self, func: Callable[[nn.Module], _R]) -> list[_R]:
-        if hasattr(self.llm.llm_engine, "model_executor"):
+        if hasattr(self.llm.llm_engine, "modeling"):
             # This works either in V0 or in V1 with
             # APHRODITE_ENABLE_V1_MULTIPROCESSING=0
-            executor = self.llm.llm_engine.model_executor
+            executor = self.llm.llm_engine.modeling
             return executor.apply_model(func)
 
         # This works in V1 with APHRODITE_ALLOW_INSECURE_SERIALIZATION=1

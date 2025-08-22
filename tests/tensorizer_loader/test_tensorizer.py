@@ -287,7 +287,7 @@ def test_deserialized_encrypted_aphrodite_model_with_tp_has_same_outputs(
             enforce_eager=True,
     ) as base_model:
         outputs = base_model.generate(prompts, sampling_params)
-        base_model.model.llm_engine.model_executor.shutdown()
+        base_model.model.llm_engine.modeling.shutdown()
 
     # load model with two shards and serialize with encryption
     model_path = str(tmp_path / (model_ref + "-%02d.tensors"))

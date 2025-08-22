@@ -458,7 +458,7 @@ class GraniteMoeHybridModel(nn.Module):
             if "A_log" in n:
                 n = n.replace("A_log", "A")
 
-            # Logic analogous to: https://github.com/aphrodite-project/aphrodite/blob/f49e5aff11c986ed4d45202b1716c5d74786efa9/aphrodite/model_executor/models/granitemoeshared.py#L215
+            # Logic analogous to: https://github.com/aphrodite-project/aphrodite/blob/f49e5aff11c986ed4d45202b1716c5d74786efa9/aphrodite/modeling/models/granitemoeshared.py#L215
             # Mapping different experts' layout:
             #  from HF (input_linear, output_linear, router)
             #  to vLLM (experts_w13({e}.w1, {e}.w2), experts_w3({e}.w3), gate)

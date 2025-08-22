@@ -41,7 +41,7 @@ def run_with_evil_forward(engine_args: AsyncEngineArgs, ipc_path: str):
         ipc_path=ipc_path)
 
     # Raise error during first forward pass.
-    engine.engine.model_executor.execute_model = Mock(
+    engine.engine.modeling.execute_model = Mock(
         side_effect=RAISED_ERROR(RAISED_VALUE))
 
     # Run engine.
@@ -77,7 +77,7 @@ async def test_evil_forward(tmp_socket):
         client.close()
 
 
-def run_with_evil_model_executor_health(engine_args: AsyncEngineArgs,
+def run_with_evil_modeling_health(engine_args: AsyncEngineArgs,
                                         ipc_path: str):
     # Make engine.
     engine = MQLLMEngine.from_engine_args(
@@ -86,7 +86,7 @@ def run_with_evil_model_executor_health(engine_args: AsyncEngineArgs,
         ipc_path=ipc_path)
 
     # Raise error during first forward pass.
-    engine.engine.model_executor.check_health = Mock(side_effect=RAISED_ERROR)
+    engine.engine.modeling.check_health = Mock(side_effect=RAISED_ERROR)
 
     # Run engine.
     engine.start()
@@ -97,7 +97,7 @@ async def test_failed_health_check(tmp_socket):
     with RemoteMQLLMEngine(
             engine_args=ENGINE_ARGS,
             ipc_path=tmp_socket,
-            run_fn=run_with_evil_model_executor_health) as engine:
+            run_fn=run_with_evil_modeling_health) as engine:
 
         client = await engine.make_client()
         assert client.is_running
@@ -309,7 +309,7 @@ def run_with_evil_input_processing(engine_args: AsyncEngineArgs,
         usage_context=UsageContext.UNKNOWN_CONTEXT,
         ipc_path=ipc_path)
 
-    runner = engine.engine.model_executor.driver_worker.worker.model_runner
+    runner = engine.engine.modeling.driver_worker.worker.model_runner
 
     # Raise error in the model runner when adding a sequence group.
     # See class ModelInputForGPUBuilder

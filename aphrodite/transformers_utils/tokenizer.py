@@ -177,7 +177,7 @@ def get_tokenizer(
         from modelscope.hub.snapshot_download import snapshot_download
 
         # avoid circuit import
-        from aphrodite.model_executor.model_loader.weight_utils import get_lock
+        from aphrodite.modeling.model_loader.weight_utils import get_lock
 
         # Only set the tokenizer here, model will be downloaded on the workers.
         if not os.path.exists(tokenizer_name):

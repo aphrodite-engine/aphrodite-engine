@@ -30,7 +30,7 @@ def test_processor_override(
 ):
     """Ensure Phi3VMultiModalProcessor handles num_crops properly."""
     # Avoid initializing CUDA early
-    from aphrodite.model_executor.models.phi3v import _IMAGE_TOKEN_ID
+    from aphrodite.modeling.models.phi3v import _IMAGE_TOKEN_ID
 
     ctx = build_model_context(
         model_id,

@@ -12,7 +12,7 @@ import os
 import pytest
 
 from tests.quantization.utils import is_quant_method_supported
-from aphrodite.model_executor.layers.rotary_embedding import _ROPE_DICT
+from aphrodite.modeling.layers.rotary_embedding import _ROPE_DICT
 from aphrodite.platforms import current_platform
 
 from ..utils import check_logprobs_close

@@ -66,5 +66,5 @@ def test_model_print(
         model, dtype=dtype, enforce_eager=True) as aphrodite_model:
         # This test is for verifying whether the model's extra_repr
         # can be printed correctly.
-        print(aphrodite_model.model.llm_engine.model_executor.driver_worker.
+        print(aphrodite_model.model.llm_engine.modeling.driver_worker.
               model_runner.model)

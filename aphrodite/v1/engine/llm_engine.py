@@ -107,7 +107,7 @@ class LLMEngine:
 
         if not multiprocess_mode:
             # for v0 compatibility
-            self.model_executor = self.engine_core.engine_core.model_executor  # type: ignore
+            self.modeling = self.engine_core.engine_core.modeling  # type: ignore
 
         # Don't keep the dummy data in memory
         self.reset_mm_cache()

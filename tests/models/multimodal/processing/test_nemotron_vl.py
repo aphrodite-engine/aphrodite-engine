@@ -21,7 +21,7 @@ def _get_expected_num_patches(
     min_num: int,
     max_num: int,
 ):
-    from aphrodite.model_executor.models.internvl import (
+    from aphrodite.modeling.models.internvl import (
         calculate_internvl_targets, get_internvl_target_ratios)
 
     width, height = image.size

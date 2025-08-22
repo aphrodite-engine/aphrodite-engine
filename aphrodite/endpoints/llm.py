@@ -600,7 +600,7 @@ class LLM:
         Run a function directly on the model inside each worker,
         returning the result for each of them.
         """
-        executor = self.llm_engine.model_executor
+        executor = self.llm_engine.modeling
         return executor.apply_model(func)
 
     def _get_beam_search_lora_requests(
