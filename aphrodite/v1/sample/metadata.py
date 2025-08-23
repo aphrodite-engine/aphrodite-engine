@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional, Any
 
 import torch
 
@@ -62,6 +62,11 @@ class SamplingMetadata:
     # Top-nsigma Sampling
     top_nsigma: Optional[torch.Tensor]
 
+    # Mirostat Sampling
+    mirostat_mode: Optional[torch.Tensor]
+    mirostat_tau: Optional[torch.Tensor]
+    mirostat_eta: Optional[torch.Tensor]
+
     # Skew
     skew: Optional[torch.Tensor]
 
@@ -91,3 +96,6 @@ class SamplingMetadata:
     # Sampler priority and temperature_last for priority-based execution
     sampler_priority: Optional[List[SamplerID]] = None
     temperature_last: bool = False
+
+    # Persistent metadata for mirostat
+    persistent_data: dict[int, dict[str, Any]] = field(default_factory=dict)

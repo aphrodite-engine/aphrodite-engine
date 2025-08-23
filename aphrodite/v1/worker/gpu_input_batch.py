@@ -1,7 +1,7 @@
 # Datastructures defining an input batch
 
 from dataclasses import dataclass
-from typing import Optional, cast
+from typing import Optional, cast, Any
 
 import numpy as np
 import torch
@@ -48,8 +48,13 @@ class CachedRequestState:
 
     lora_request: Optional[LoRARequest] = None
 
+    # Persistent metadata for mirostat
+    persistent_data: dict[str, Any] = None
+
     def __post_init__(self):
         self.num_prompt_tokens = len(self.prompt_token_ids)
+        if self.persistent_data is None:
+            self.persistent_data = {}
 
     @property
     def num_tokens(self) -> int:
@@ -296,6 +301,33 @@ class InputBatch:
         self.top_nsigma_cpu = self.top_nsigma_cpu_tensor.numpy()
         self.top_nsigma_reqs: set[str] = set()
 
+        # Mirostat related data structures
+        self.mirostat_mode = torch.empty((max_num_reqs, ),
+                                         dtype=torch.int32,
+                                         device=device)
+        self.mirostat_mode_cpu_tensor = torch.empty((max_num_reqs, ),
+                                                    dtype=torch.int32,
+                                                    device="cpu",
+                                                    pin_memory=pin_memory)
+        self.mirostat_mode_cpu = self.mirostat_mode_cpu_tensor.numpy()
+        self.mirostat_tau = torch.empty((max_num_reqs, ),
+                                        dtype=torch.float32,
+                                        device=device)
+        self.mirostat_tau_cpu_tensor = torch.empty((max_num_reqs, ),
+                                                   dtype=torch.float32,
+                                                   device="cpu",
+                                                   pin_memory=pin_memory)
+        self.mirostat_tau_cpu = self.mirostat_tau_cpu_tensor.numpy()
+        self.mirostat_eta = torch.empty((max_num_reqs, ),
+                                        dtype=torch.float32,
+                                        device=device)
+        self.mirostat_eta_cpu_tensor = torch.empty((max_num_reqs, ),
+                                                   dtype=torch.float32,
+                                                   device="cpu",
+                                                   pin_memory=pin_memory)
+        self.mirostat_eta_cpu = self.mirostat_eta_cpu_tensor.numpy()
+        self.mirostat_reqs: set[str] = set()
+
         # Skew related data structures
         self.skew = torch.empty((max_num_reqs, ),
                                 dtype=torch.float32,
@@ -470,6 +502,9 @@ class InputBatch:
         self.sampler_priority: list[Optional[list[int]]] = [None] * max_num_reqs
         self.temperature_last: list[bool] = [False] * max_num_reqs
 
+        # Persistent metadata for mirostat
+        self.persistent_data: dict[int, dict[str, Any]] = {}
+
         # This is updated each time the batch constituents change.
         self.sampling_metadata = self._make_sampling_metadata()
 
@@ -610,6 +645,12 @@ class InputBatch:
             if sampling_params.nsigma > 0:
                 self.top_nsigma_reqs.add(req_id)
 
+            self.mirostat_mode_cpu[req_index] = sampling_params.mirostat_mode
+            self.mirostat_tau_cpu[req_index] = sampling_params.mirostat_tau
+            self.mirostat_eta_cpu[req_index] = sampling_params.mirostat_eta
+            if sampling_params.mirostat_mode == 2:
+                self.mirostat_reqs.add(req_id)
+
             self.skew_cpu[req_index] = sampling_params.skew
             if sampling_params.skew != 0:
                 self.skew_reqs.add(req_id)
@@ -686,6 +727,8 @@ class InputBatch:
             # No LoRA
             self.request_lora_mapping[req_index] = 0
 
+        self.persistent_data[req_index] = request.persistent_data.copy()
+
         return req_index
 
     def remove_request(self, req_id: str) -> Optional[int]:
@@ -717,6 +760,7 @@ class InputBatch:
         self.quadratic_reqs.discard(req_id)
         self.xtc_reqs.discard(req_id)
         self.top_nsigma_reqs.discard(req_id)
+        self.mirostat_reqs.discard(req_id)
         self.skew_reqs.discard(req_id)
         self.dry_reqs.discard(req_id)
         self.no_repeat_ngram_reqs.discard(req_id)
@@ -743,6 +787,10 @@ class InputBatch:
             self.allowed_token_ids_mask_cpu_tensor[req_index].fill_(False)
         self.bad_words_token_ids.pop(req_index, None)
         self.pooling_params.pop(req_id, None)
+
+        # Clean up persistent data
+        self.persistent_data.pop(req_index, None)
+
         return req_index
 
     def swap_states(self, i1: int, i2: int) -> None:
@@ -805,6 +853,12 @@ class InputBatch:
             self.xtc_probability_cpu[i2], self.xtc_probability_cpu[i1]
         self.top_nsigma_cpu[i1], self.top_nsigma_cpu[i2] =\
             self.top_nsigma_cpu[i2], self.top_nsigma_cpu[i1]
+        self.mirostat_mode_cpu[i1], self.mirostat_mode_cpu[i2] =\
+            self.mirostat_mode_cpu[i2], self.mirostat_mode_cpu[i1]
+        self.mirostat_tau_cpu[i1], self.mirostat_tau_cpu[i2] =\
+            self.mirostat_tau_cpu[i2], self.mirostat_tau_cpu[i1]
+        self.mirostat_eta_cpu[i1], self.mirostat_eta_cpu[i2] =\
+            self.mirostat_eta_cpu[i2], self.mirostat_eta_cpu[i1]
         self.skew_cpu[i1], self.skew_cpu[i2] =\
             self.skew_cpu[i2], self.skew_cpu[i1]
         self.dry_multiplier_cpu[i1], self.dry_multiplier_cpu[i2] =\
@@ -847,6 +901,10 @@ class InputBatch:
                 self.allowed_token_ids_mask_cpu_tensor[i2], \
                     self.allowed_token_ids_mask_cpu_tensor[i1]
         self.block_table.swap_row(i1, i2)
+
+        # Swap persistent data
+        self.persistent_data[i1], self.persistent_data[i2] = \
+            self.persistent_data[i2], self.persistent_data[i1]
 
     def condense(self) -> None:
         """Slide non-empty requests down into lower, empty indices.
@@ -898,6 +956,12 @@ class InputBatch:
             self.req_output_token_ids[last_req_index] = None
             self.req_id_to_index[req_id] = empty_index
 
+            # Move persistent data
+            self.persistent_data[empty_index] = \
+                self.persistent_data[last_req_index]
+            self.persistent_data[last_req_index] = {}
+
+            # Copy token data
             num_tokens = self.num_tokens[last_req_index]
             self.token_ids_cpu[empty_index, :num_tokens] = self.token_ids_cpu[
                 last_req_index, :num_tokens]
@@ -908,6 +972,8 @@ class InputBatch:
                 last_req_index]
             self.num_computed_tokens_cpu[
                 empty_index] = self.num_computed_tokens_cpu[last_req_index]
+
+            # Update the block table.
             self.block_table.move_row(last_req_index, empty_index)
             self.temperature_cpu[empty_index] = self.temperature_cpu[
                 last_req_index]
@@ -942,6 +1008,12 @@ class InputBatch:
                 self.xtc_probability_cpu[last_req_index]
             self.top_nsigma_cpu[empty_index] = \
                 self.top_nsigma_cpu[last_req_index]
+            self.mirostat_mode_cpu[empty_index] = self.mirostat_mode_cpu[
+                last_req_index]
+            self.mirostat_tau_cpu[empty_index] = self.mirostat_tau_cpu[
+                last_req_index]
+            self.mirostat_eta_cpu[empty_index] = self.mirostat_eta_cpu[
+                last_req_index]
             self.skew_cpu[empty_index] = self.skew_cpu[last_req_index]
             self.dry_multiplier_cpu[empty_index] = \
                 self.dry_multiplier_cpu[last_req_index]
@@ -1035,6 +1107,13 @@ class InputBatch:
                        self.xtc_probability, num_reqs)
         if not self.no_top_nsigma:
             copy_slice(self.top_nsigma_cpu_tensor, self.top_nsigma, num_reqs)
+        if not self.no_mirostat:
+            copy_slice(self.mirostat_mode_cpu_tensor,
+                       self.mirostat_mode, num_reqs)
+            copy_slice(self.mirostat_tau_cpu_tensor,
+                       self.mirostat_tau, num_reqs)
+            copy_slice(self.mirostat_eta_cpu_tensor,
+                       self.mirostat_eta, num_reqs)
         if not self.no_skew:
             copy_slice(self.skew_cpu_tensor, self.skew, num_reqs)
         if not self.no_dry:
@@ -1147,6 +1226,12 @@ class InputBatch:
                 None if self.no_xtc else self.xtc_probability[:num_reqs]),
             top_nsigma=(
                 None if self.no_top_nsigma else self.top_nsigma[:num_reqs]),
+            mirostat_mode=(
+                None if self.no_mirostat else self.mirostat_mode[:num_reqs]),
+            mirostat_tau=(
+                None if self.no_mirostat else self.mirostat_tau[:num_reqs]),
+            mirostat_eta=(
+                None if self.no_mirostat else self.mirostat_eta[:num_reqs]),
             skew=None if self.no_skew else self.skew[:num_reqs],
             generators=self.generators,
             max_num_logprobs=self.max_num_logprobs,
@@ -1161,6 +1246,7 @@ class InputBatch:
             sampler_priority=sampler_priority_processed,
             temperature_last=any(self.temperature_last[:num_reqs]),
             logitsprocs=self.logitsprocs,
+            persistent_data=self.persistent_data,
         )
 
     @property
@@ -1320,6 +1406,10 @@ class InputBatch:
     @property
     def no_top_nsigma(self) -> bool:
         return len(self.top_nsigma_reqs) == 0
+
+    @property
+    def no_mirostat(self) -> bool:
+        return len(self.mirostat_reqs) == 0
 
     @property
     def no_skew(self) -> bool:

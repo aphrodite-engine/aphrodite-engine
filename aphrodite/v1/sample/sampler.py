@@ -135,6 +135,24 @@ class Sampler(nn.Module):
         Returns:
             Modified logits tensor after applying samplers in priority order
         """
+        # Check if mirostat is active - if so, disable other samplers
+        has_mirostat = False
+        if (sampling_metadata.mirostat_mode is not None and 
+            sampling_metadata.mirostat_tau is not None and 
+            sampling_metadata.mirostat_eta is not None):
+            batch_size = len(sampling_metadata.output_token_ids)
+            has_mirostat = any(
+                sampling_metadata.mirostat_mode[i].item() == 2
+                for i in range(batch_size)
+            )
+
+        if has_mirostat:
+            # Mirostat is active - only apply mirostat and skip other samplers
+            logger.debug("Mirostat active - applying mirostat only")
+            logits = self.sampling_ops.apply_mirostat(
+                logits, sampling_metadata)
+            return logits
+
         # Determine the sampler execution order
         sampler_order = sampling_metadata.sampler_priority
         do_temp_last = sampling_metadata.temperature_last

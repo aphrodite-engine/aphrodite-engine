@@ -466,6 +466,9 @@ class ChatCompletionRequest(OpenAIBaseModel):
         validation_alias=AliasChoices("sampler_priority", "sampler_order"))
     allowed_token_ids: Optional[list[int]] = None
     bad_words: list[str] = Field(default_factory=list)
+    mirostat_mode: Optional[int] = 0
+    mirostat_tau: Optional[float] = 0.0
+    mirostat_eta: Optional[float] = 0.0
     # --8<-- [end:chat-completion-sampling-params]
 
     # doc: begin-chat-completion-extra-params
@@ -746,6 +749,9 @@ class ChatCompletionRequest(OpenAIBaseModel):
             logit_bias=self.logit_bias,
             bad_words=self.bad_words,
             allowed_token_ids=self.allowed_token_ids,
+            mirostat_mode=self.mirostat_mode,
+            mirostat_tau=self.mirostat_tau,
+            mirostat_eta=self.mirostat_eta,
             extra_args=extra_args or None,
         )
 
@@ -1065,6 +1071,9 @@ class CompletionRequest(OpenAIBaseModel):
     sampler_priority: Optional[Union[list[int], list[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority", "sampler_order"))
+    mirostat_mode: Optional[int] = 0
+    mirostat_tau: Optional[float] = 0.0
+    mirostat_eta: Optional[float] = 0.0
     # doc: end-completion-sampling-params
 
     # doc: begin-completion-extra-params
@@ -1308,6 +1317,9 @@ class CompletionRequest(OpenAIBaseModel):
             guided_decoding=guided_decoding,
             logit_bias=self.logit_bias,
             allowed_token_ids=self.allowed_token_ids,
+            mirostat_mode=self.mirostat_mode,
+            mirostat_tau=self.mirostat_tau,
+            mirostat_eta=self.mirostat_eta,
             extra_args=extra_args or None,
             )
 
