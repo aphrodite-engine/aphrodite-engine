@@ -228,6 +228,40 @@ class RotaryEmbedding(CustomOp):
                 key = torch.cat((key_rot, key_pass), dim=-1).reshape(key_shape)
         return query, key
 
+    def forward_triton(
+        self,
+        positions: torch.Tensor,
+        query: torch.Tensor,
+        key: Optional[torch.Tensor] = None,
+        offsets: Optional[torch.Tensor] = None,
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """A Triton-based implementation of forward()."""
+        from aphrodite.triton_ops.rotary_embedding import rotary_embedding
+
+        # Ensure cos_sin_cache is on the correct device and dtype
+        if self.cos_sin_cache.device != query.device or \
+           self.cos_sin_cache.dtype != query.dtype:
+            self.cos_sin_cache = self.cos_sin_cache.to(query.device,
+                                                       dtype=query.dtype)
+
+        # Apply offsets if provided
+        if offsets is not None:
+            positions = positions + offsets
+
+        # Flatten positions for the triton kernel
+        positions = positions.flatten()
+
+        # The triton kernel expects both query and key tensors.
+        # If key is None, fall back to native implementation
+        if key is None:
+            return self.forward_native(positions, query, key, offsets)
+
+        # Apply rotary embedding using triton kernel
+        rotary_embedding(
+            positions, query, key, self.head_size,
+            self.cos_sin_cache, is_neox=self.is_neox_style)
+        return query, key
+
     def extra_repr(self) -> str:
         s = f"head_size={self.head_size}, rotary_dim={self.rotary_dim}"
         s += f", max_position_embeddings={self.max_position_embeddings}"

@@ -6,12 +6,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from aphrodite.utils import LazyDict
+from aphrodite.common import envs
 from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling._custom_op import CustomOp
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
+from aphrodite.utils import LazyDict
+from aphrodite.triton_ops import gelu_tanh_and_mul, silu_and_mul
 
 
 @CustomOp.register("fatrelu_and_mul")
@@ -32,7 +34,7 @@ class FatreluAndMul(CustomOp):
         self.threshold = threshold
         if current_platform.is_cuda_alike():
             self.op = torch.ops._C.fatrelu_and_mul
-        elif current_platform.is_cpu():
+        elif current_platform.is_cpu() or envs.APHRODITE_USE_TRITON_BACKEND:
             self._forward_method = self.forward_native
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
@@ -70,6 +72,8 @@ class SiluAndMul(CustomOp):
             self.op = ipex_ops.silu_and_mul
         elif current_platform.is_cpu():
             self._forward_method = self.forward_native
+        elif envs.APHRODITE_USE_TRITON_BACKEND:
+            self.op = silu_and_mul
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
         """PyTorch-native implementation equivalent to forward()."""
@@ -97,6 +101,13 @@ class SiluAndMul(CustomOp):
         result = s * x_reshaped[:, d:]
         return result.view(*x.shape[:-1], d)
 
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        d = x.shape[-1] // 2
+        output_shape = (x.shape[:-1] + (d, ))
+        out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
+        self.op(out, x)
+        return out
+
 
 @CustomOp.register("mul_and_silu")
 class MulAndSilu(CustomOp):
@@ -116,7 +127,7 @@ class MulAndSilu(CustomOp):
         elif current_platform.is_xpu():
             from aphrodite._ipex_ops import ipex_ops
             self.op = ipex_ops.silu_and_mul
-        elif current_platform.is_cpu():
+        elif current_platform.is_cpu() or envs.APHRODITE_USE_TRITON_BACKEND:
             self._forward_method = self.forward_native
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
@@ -185,6 +196,10 @@ class GeluAndMulSparse(CustomOp):
     def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
         return self.forward_native(x)
 
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        # TODO: Implement Triton kernel for GeluAndMulSparse
+        return self.forward_native(x)
+
 
 @CustomOp.register("gelu_and_mul")
 class GeluAndMul(CustomOp):
@@ -213,6 +228,11 @@ class GeluAndMul(CustomOp):
                 self.op = ipex_ops.gelu_and_mul
             else:
                 self.op = ipex_ops.gelu_tanh_and_mul
+        elif envs.APHRODITE_USE_TRITON_BACKEND:
+            if approximate == "none":
+                self.forward_method = self.forward_native
+            elif approximate == "tanh":
+                self.forward_method = self.forward_triton
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
         """PyTorch-native implementation equivalent to forward()."""
@@ -233,6 +253,13 @@ class GeluAndMul(CustomOp):
         self.op(out, x)
         return out
 
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
+        d = x.shape[-1] // 2
+        output_shape = (x.shape[:-1] + (d, ))
+        out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
+        gelu_tanh_and_mul(out, x)
+        return out
+
     def extra_repr(self) -> str:
         return f'approximate={repr(self.approximate)}'
 
@@ -247,6 +274,8 @@ class NewGELU(CustomOp):
         elif current_platform.is_xpu():
             from aphrodite._ipex_ops import ipex_ops
             self.op = ipex_ops.gelu_new
+        elif envs.APHRODITE_USE_TRITON_BACKEND:
+            self.forward_method = self.forward_native
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
         """PyTorch-native implementation equivalent to forward()."""
@@ -273,6 +302,8 @@ class FastGELU(CustomOp):
         elif current_platform.is_xpu():
             from aphrodite._ipex_ops import ipex_ops
             self.op = ipex_ops.gelu_fast
+        elif envs.APHRODITE_USE_TRITON_BACKEND:
+            self.forward_method = self.forward_native
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
         """PyTorch-native implementation equivalent to forward()."""
@@ -298,6 +329,8 @@ class QuickGELU(CustomOp):
         elif current_platform.is_xpu():
             from aphrodite._ipex_ops import ipex_ops
             self.op = ipex_ops.gelu_quick
+        elif envs.APHRODITE_USE_TRITON_BACKEND:
+            self.forward_method = self.forward_native
 
     def forward_native(self, x: torch.Tensor) -> torch.Tensor:
         """PyTorch-native implementation equivalent to forward()."""
@@ -328,6 +361,9 @@ class ReLUSquaredActivation(CustomOp):
         return torch.square(F.relu(x))
 
     def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
+        return self.forward_native(x)
+
+    def forward_triton(self, x: torch.Tensor) -> torch.Tensor:
         return self.forward_native(x)
 
 

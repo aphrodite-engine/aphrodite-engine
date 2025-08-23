@@ -8,6 +8,7 @@ from compressed_tensors.quantization import (QuantizationArgs,
 from compressed_tensors.utils import combine_shards
 
 from aphrodite import _custom_ops as ops
+from aphrodite.common import envs
 from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
                                               QKVParallelLinear)
 from aphrodite.modeling.parameter import (BaseAphroditeParameter,
@@ -242,9 +243,13 @@ class CompressedTensors24(CompressedTensorsScheme):
             scale = getattr(layer, 'input_scale', None)
 
             if self.weights_dtype == torch.int8:
-                ops_output = ops.scaled_int8_quant(x, scale=scale)
-                q_input = ops_output[0]
-                input_scale = ops_output[1]
+                if envs.APHRODITE_USE_TRITON_BACKEND:
+                    from aphrodite.triton_ops import scaled_int8_quant_triton
+                    q_input, input_scale = scaled_int8_quant_triton(x, scale)
+                else:
+                    ops_output = ops.scaled_int8_quant(x, scale=scale)
+                    q_input = ops_output[0]
+                    input_scale = ops_output[1]
             else:
                 assert self.weights_dtype == torch.float8_e4m3fn
                 q_input, input_scale = self.quant_fp8(x, scale=scale)

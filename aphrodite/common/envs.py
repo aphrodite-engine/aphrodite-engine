@@ -164,6 +164,7 @@ if TYPE_CHECKING:
     APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8: bool = False
     APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16: bool = False
     APHRODITE_TUNED_CONFIG_FOLDER: Optional[str] = None
+    APHRODITE_USE_TRITON_BACKEND: bool = False
 
 
 def get_default_cache_root():
@@ -1176,6 +1177,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Allows aphrodite to find tuned config under customized folder
     "APHRODITE_TUNED_CONFIG_FOLDER":
     lambda: os.getenv("APHRODITE_TUNED_CONFIG_FOLDER", None),
+
+    # If set to 1, use the Triton backend for most operations.
+    "APHRODITE_USE_TRITON_BACKEND":
+    lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_BACKEND", "0"))),
 }
 
 # --8<-- [end:env-vars-definition]

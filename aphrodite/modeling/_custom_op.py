@@ -3,8 +3,9 @@ from typing import Optional
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.config import get_cached_compilation_config
+from aphrodite.common.envs import APHRODITE_USE_TRITON_BACKEND
 from aphrodite.common.logger import log_once
+from aphrodite.config import get_cached_compilation_config
 from aphrodite.platforms import current_platform
 
 
@@ -74,6 +75,11 @@ class CustomOp(nn.Module):
         # PyTorch-native implementation.
         return self.forward_native(*args, **kwargs)
 
+    def forward_triton(self, *args, **kwargs):
+        # By default, we assume that Triton ops are compatible with the
+        # PyTorch-native implementation.
+        return self.forward_native(*args, **kwargs)
+
     def forward_oot(self, *args, **kwargs):
         # By default, we assume that OOT ops are compatible with the
         # PyTorch-native implementation.
@@ -103,6 +109,8 @@ class CustomOp(nn.Module):
             return self.forward_xpu
         elif current_platform.is_neuron():
             return self.forward_neuron
+        elif APHRODITE_USE_TRITON_BACKEND:
+            return self.forward_triton
         elif current_platform.is_out_of_tree():
             return self.forward_oot
         else:

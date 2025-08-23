@@ -88,3 +88,12 @@ class TritonLanguagePlaceholder(types.ModuleType):
         self.dtype = None
         self.int64 = None
         self.int32 = None
+
+
+class TritonLibdevicePlaceholder(types.ModuleType):
+
+    def __init__(self):
+        super().__init__("triton.language.extra.libdevice")
+        self.tanh = None
+        self.erf = None
+        self.sqrt = None

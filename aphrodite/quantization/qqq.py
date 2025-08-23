@@ -4,6 +4,7 @@ import torch
 from torch.nn.parameter import Parameter
 
 from aphrodite import _custom_ops as ops
+from aphrodite.common import envs
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.parameter import (BaseAphroditeParameter,
                                           ChannelQuantScaleParameter,
@@ -255,7 +256,11 @@ class QQQLinearMethod(LinearMethodBase):
         size_k = x_2d.shape[1]
         size_n = s_ch.shape[1]
 
-        x_int8, s_tok, _ = ops.scaled_int8_quant(x_2d)
+        if envs.APHRODITE_USE_TRITON_BACKEND:
+            from aphrodite.triton_ops import scaled_int8_quant_triton
+            x_int8, s_tok = scaled_int8_quant_triton(x_2d)
+        else:
+            x_int8, s_tok, _ = ops.scaled_int8_quant(x_2d)
 
         output_2d = ops.marlin_qqq_gemm(x_int8, qweight, s_tok, s_ch, s_group,
                                         workspace, size_m, size_n, size_k)

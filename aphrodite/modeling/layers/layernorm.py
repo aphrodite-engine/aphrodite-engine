@@ -193,6 +193,14 @@ class RMSNorm(CustomOp):
             self.variance_epsilon,
         )
 
+    def forward_triton(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        from aphrodite.triton_ops import rms_norm
+        return rms_norm(x, self.weight.data, self.variance_epsilon)
+
     def extra_repr(self) -> str:
         s = f"hidden_size={self.weight.data.size(0)}"
         s += f", eps={self.variance_epsilon}"
@@ -264,3 +272,11 @@ class GemmaRMSNorm(CustomOp):
                 self.forward_static)
             self._is_compiled = True
         return self.forward_native(x, residual)
+
+    def forward_triton(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        from aphrodite.triton_ops import gemma_rms_norm
+        return gemma_rms_norm(x, self.weight.data, self.variance_epsilon)
