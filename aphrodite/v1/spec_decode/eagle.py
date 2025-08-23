@@ -197,7 +197,7 @@ class EagleProposer:
         sample_hidden_states = last_hidden_states[last_token_indices]
         logits = self.model.compute_logits(sample_hidden_states, None)
         positions = target_positions[last_token_indices]
-        hidden_states = hidden_states[last_token_indices]
+        hidden_states = last_hidden_states[last_token_indices]
 
         if isinstance(attn_metadata, TreeAttentionMetadata):
             # Draft using tree attention.
