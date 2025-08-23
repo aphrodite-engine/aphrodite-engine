@@ -305,12 +305,24 @@ class EagleProposer:
             with set_forward_context(per_layer_attn_metadata,
                                      self.aphrodite_config,
                                      num_tokens=input_batch_size):
-                last_hidden_states, hidden_states = self.model(
-                    input_ids=input_ids,
-                    positions=self.positions[:input_batch_size],
-                    hidden_states=self.hidden_states[:input_batch_size],
-                    inputs_embeds=inputs_embeds,
-                )
+                if self.method == "deepseek_mtp":
+                    # MTP models return only the final hidden states
+                    last_hidden_states = self.model(
+                        input_ids=input_ids,
+                        positions=self.positions[:input_batch_size],
+                        hidden_states=self.hidden_states[:input_batch_size],
+                        inputs_embeds=inputs_embeds,
+                    )
+                    # For MTP models, we don't have intermediate hidden states
+                    # Use the last hidden states for both purposes
+                    hidden_states = last_hidden_states
+                else:
+                    last_hidden_states, hidden_states = self.model(
+                        input_ids=input_ids,
+                        positions=self.positions[:input_batch_size],
+                        hidden_states=self.hidden_states[:input_batch_size],
+                        inputs_embeds=inputs_embeds,
+                    )
             hidden_states = hidden_states[:batch_size]
             logits = self.model.compute_logits(last_hidden_states[:batch_size],
                                                None)
