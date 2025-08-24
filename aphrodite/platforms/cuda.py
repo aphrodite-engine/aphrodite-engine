@@ -491,8 +491,12 @@ class CudaPlatformBase(Platform):
         fp8_attention = kv_cache_dtype.startswith("fp8")
         will_use_fa = (not envs.is_set("APHRODITE_ATTENTION_BACKEND")
                        ) or envs.APHRODITE_ATTENTION_BACKEND == "FLASH_ATTN_APHRODITE_V1"
+        will_use_fi = (envs.APHRODITE_ATTENTION_BACKEND
+                       in ("FLASHINFER_APHRODITE_V1", "FLASHINFER"))
         supported = False
         if cls.is_device_capability(100):
+            supported = True
+        elif will_use_fi:
             supported = True
         elif fp8_attention and will_use_fa:
             from aphrodite.attention.utils.fa_utils import (
