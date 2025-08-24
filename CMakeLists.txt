@@ -916,6 +916,6 @@ endif()
 if (APHRODITE_GPU_LANG STREQUAL "CUDA")
     include(cmake/external_project/flashmla.cmake)
 
-    # vllm-flash-attn should be last as it overwrites some CMake functions
-    include(cmake/external_project/vllm_flash_attn.cmake)
+    # # vllm-flash-attn should be last as it overwrites some CMake functions
+    # include(cmake/external_project/vllm_flash_attn.cmake)
 endif()

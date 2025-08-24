@@ -1,4 +1,4 @@
-"""Attention layer with FlashAttention."""
+"""Attention layer with FlashAttention for V0."""
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import accumulate
