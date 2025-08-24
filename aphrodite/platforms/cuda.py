@@ -261,7 +261,7 @@ class CudaPlatformBase(Platform):
             TRITON_ATTN_APHRODITE_V1 = "aphrodite.v1.attention.backends.triton_attn.TritonAttentionBackend"  # noqa: E501
             FLASH_ATTN_V1 = "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"  # noqa: E501
             TREE_ATTN_V1 = "aphrodite.v1.attention.backends.tree_attn.TreeAttentionBackend"  # noqa: E501
-            XFORMERS_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
+            XFORMERS_APHRODITE_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
 
             if selected_backend == _Backend.FLASHINFER:
                 log_once("INFO", "Using FlashInfer backend on V1 engine.")
@@ -282,9 +282,9 @@ class CudaPlatformBase(Platform):
             elif selected_backend == _Backend.TREE_ATTN:
                 log_once("INFO", "Using Tree Attention backend on V1 engine.")
                 return TREE_ATTN_V1
-            elif selected_backend == _Backend.XFORMERS_APHRODITE_V1:
+            elif selected_backend == _Backend.XFORMERS:
                 log_once("INFO", "Using XFormers backend on V1 engine.")
-                return XFORMERS_V1
+                return XFORMERS_APHRODITE_V1
 
             from aphrodite.attention.selector import is_attn_backend_supported
 
@@ -353,8 +353,12 @@ class CudaPlatformBase(Platform):
                 set_kv_cache_layout("HND")
             return "aphrodite.attention.backends.flashinfer.FlashInferBackend"
         elif selected_backend == _Backend.XFORMERS:
-            logger.info("Using XFormers backend.")
-            return "aphrodite.attention.backends.xformers.XFormersBackend"
+            if use_v1:
+                logger.info("Using XFormers backend on V1 engine.")
+                return "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"
+            else:
+                logger.info("Using XFormers backend.")
+                return "aphrodite.attention.backends.xformers.XFormersBackend"
         elif selected_backend == _Backend.DUAL_CHUNK_FLASH_ATTN:
             logger.info("Using DualChunkFlashAttention backend.")
             return ("aphrodite.attention.backends.dual_chunk_flash_attn."

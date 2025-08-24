@@ -1488,6 +1488,7 @@ class EngineArgs:
             "FLEX_ATTENTION",
             "TREE_ATTN",
             "XFORMERS_APHRODITE_V1",
+            "XFORMERS",
         ]
         if (envs.is_set("APHRODITE_ATTENTION_BACKEND")
                 and envs.APHRODITE_ATTENTION_BACKEND not in V1_BACKENDS):
