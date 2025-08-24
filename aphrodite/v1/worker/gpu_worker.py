@@ -23,7 +23,8 @@ from aphrodite.modeling import set_random_seed
 from aphrodite.modeling.warmup.kernel_warmup import kernel_warmup
 from aphrodite.platforms import current_platform
 from aphrodite.tasks import SupportedTask
-from aphrodite.utils import GiB_bytes, MemorySnapshot, memory_profiling
+from aphrodite.utils import (GiB_bytes, MemorySnapshot,
+                             is_torch_equal_or_newer, memory_profiling)
 from aphrodite.v1.engine import (ReconfigureDistributedRequest,
                                  ReconfigureRankType)
 from aphrodite.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
@@ -152,11 +153,13 @@ class Worker(WorkerBase):
         if self.device_config.device.type == "cuda":
             # torch.distributed.all_reduce does not free the input tensor until
             # the synchronization point. This causes the memory usage to grow
-            # as the number of all_reduce calls increases. This env var disables
-            # this behavior.
+            # as the number of all_reduce calls increases. This env var
+            # disables this behavior.
             # Related issue:
             # https://discuss.pytorch.org/t/cuda-allocation-lifetime-for-inputs-to-distributed-all-reduce/191573
-            os.environ["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
+            # Not needed for torch 2.8.0+
+            if not is_torch_equal_or_newer("2.8.0"):
+                os.environ["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
 
             # This env var set by Ray causes exceptions with graph building.
             os.environ.pop("NCCL_ASYNC_ERROR_HANDLING", None)
@@ -632,6 +635,7 @@ def init_worker_distributed_environment(
     backend: str = "nccl",
 ) -> None:
     """Initialize the distributed environment."""
+
     parallel_config = aphrodite_config.parallel_config
     set_custom_all_reduce(not parallel_config.disable_custom_all_reduce)
 

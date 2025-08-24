@@ -968,6 +968,7 @@ def init_distributed_environment(
     local_rank: int = -1,
     backend: str = "nccl",
 ):
+
     logger.debug(
         "world_size={} rank={} local_rank={} "
         "distributed_init_method={} backend={}", world_size, rank, local_rank,
@@ -1126,11 +1127,26 @@ def initialize_model_parallel(
                                     backend,
                                     group_name="ep")
 
-    logger.info(
-        "rank {} in world size {} is assigned as "
-        "DP rank {}, PP rank {}, TP rank {}, EP rank {}", rank, world_size,
-        _DP.rank_in_group, _PP.rank_in_group, _TP.rank_in_group,
-        _EP.rank_in_group)
+    parallel_info = []
+    if _DP.world_size > 1:
+        parallel_info.append(
+            f"Data Parallel: {_DP.rank_in_group}/{_DP.world_size}")
+    if _PP.world_size > 1:
+        parallel_info.append(
+            f"Pipeline Parallel: {_PP.rank_in_group}/{_PP.world_size}")
+    if _TP.world_size > 1:
+        parallel_info.append(
+            f"Tensor Parallel: {_TP.rank_in_group}/{_TP.world_size}")
+    if _EP.world_size > 1:
+        parallel_info.append(
+            f"Expert Parallel: {_EP.rank_in_group}/{_EP.world_size}")
+
+    if parallel_info:
+        logger.info(
+            "Process {} of {} - {}", rank, world_size, ", ".join(parallel_info)
+        )
+    else:
+        logger.info("Process {} of {} - Single GPU mode", rank, world_size)
 
 
 def ensure_model_parallel_initialized(

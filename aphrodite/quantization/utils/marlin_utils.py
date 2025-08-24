@@ -348,9 +348,9 @@ def maybe_warn_marlin_atomic_add(device, dtype):
     if device_capability[0] < 9 and dtype == torch.bfloat16:
         log_once(
             "WARNING",
-            "You are running Marlin kernel with bf16 on GPUs before SM90. "
-            "You can consider change to fp16 to achieve better performance "
-            "if possible.")
+            "You are running the Marlin kernel with dtype=bf16 on Ampere or "
+            "older GPUs. Please consider changing to dtype=fp16 to achieve "
+            "better performance.")
 
 
 def maybe_warn_marlin_atomic_add_env():
@@ -362,7 +362,7 @@ def maybe_warn_marlin_atomic_add_env():
         "INFO",
         "Marlin kernel can achieve better performance for small size_n "
         "with experimental use_atomic_add feature. "
-        "You can consider set environment variable "
+        "Please consider setting environment variable "
         "APHRODITE_MARLIN_USE_ATOMIC_ADD to 1 if possible.")
 
 

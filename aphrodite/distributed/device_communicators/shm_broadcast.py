@@ -282,8 +282,8 @@ class MessageQueue:
             remote_addr_ipv6=remote_addr_ipv6,
         )
 
-        logger.info("Aphrodite message queue communication handle: {}",
-                    self.handle)
+        logger.debug("Aphrodite message queue communication handle: {}",
+                     self.handle)
 
     def export_handle(self) -> Handle:
         return self.handle

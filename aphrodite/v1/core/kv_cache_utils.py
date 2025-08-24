@@ -990,11 +990,11 @@ def _get_kv_cache_config_uniform_page_size(
     # Print the KV cache size and maximum concurrency.
     num_tokens = num_blocks // len(grouped_layers) * min_block_size
     num_tokens_str = f"{num_tokens:,}"
-    logger.info("GPU KV cache size: {} tokens", num_tokens_str)
+    logger.debug("GPU KV cache size: {} tokens", num_tokens_str)
     max_model_len_str = f"{aphrodite_config.model_config.max_model_len:,}"
     max_concurrency = get_max_concurrency_for_kv_cache_config(
         aphrodite_config, kv_cache_config)
-    logger.info("Maximum concurrency for {} tokens per request: {:.2f}x",
+    logger.debug("Maximum concurrency for {} tokens per request: {:.2f}x",
                 max_model_len_str, max_concurrency)
     return kv_cache_config
 

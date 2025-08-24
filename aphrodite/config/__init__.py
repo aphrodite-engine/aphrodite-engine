@@ -1847,7 +1847,7 @@ class ModelConfig:
         # `llm as reranker` models defaults to not using pad_token.
         return getattr(self.hf_config, "use_pad_token", True)
 
-    def get_and_verify_max_len(self, max_model_len: int):
+    def get_and_verify_max_len(self, max_model_len: Optional[int]):
         # Consider max_model_len in tokenizer_config only when
         # pooling models use absolute position_embedding.
         tokenizer_config = None
@@ -1857,6 +1857,10 @@ class ModelConfig:
                 self.tokenizer,
                 trust_remote_code=self.trust_remote_code,
                 revision=self.tokenizer_revision)
+
+        # Store the original value to determine if it's user-supplied
+        original_max_model_len = max_model_len
+
         max_model_len = _get_and_verify_max_len(
             hf_config=self.hf_text_config,
             tokenizer_config=tokenizer_config,
@@ -1865,7 +1869,10 @@ class ModelConfig:
             sliding_window=self.get_sliding_window(),
             spec_target_max_model_len=self.spec_target_max_model_len,
             encoder_config=self.encoder_config)
-        logger.info("Using max model len {}", max_model_len)
+
+        if original_max_model_len is None:
+            logger.info("Using max model len {}", max_model_len)
+
         return max_model_len
 
 
