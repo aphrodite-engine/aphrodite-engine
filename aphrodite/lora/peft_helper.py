@@ -43,9 +43,6 @@ class PEFTHelper:
         error_msg = []
         warning_msg = []
 
-        if self.modules_to_save:
-            warning_msg.append(
-                "Aphrodite only supports modules_to_save being None.")
         if self.use_dora:
             error_msg.append("Aphrodite does not yet support DoRA.")
         return error_msg, warning_msg

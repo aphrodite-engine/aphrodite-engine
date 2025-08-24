@@ -15,10 +15,10 @@ from aphrodite.adapter_commons.utils import (add_adapter, deactivate_adapter,
                                              get_adapter, list_adapters,
                                              remove_adapter,
                                              set_adapter_mapping)
-from aphrodite.config import LoRAConfig
 from aphrodite.common.logger import log_once
-from aphrodite.utils import is_pin_memory_available
-from aphrodite.lora.layers import BaseLayerWithLoRA, LoRAMapping
+from aphrodite.config import LoRAConfig
+from aphrodite.lora.layers import (BaseLayerWithLoRA, LoRAMapping,
+                                   ModulesToSaveWrapper)
 from aphrodite.lora.lora import LoRALayerWeights, PackedLoRALayerWeights
 from aphrodite.lora.peft_helper import PEFTHelper
 from aphrodite.lora.punica_wrapper import get_punica_wrapper
@@ -34,7 +34,7 @@ from aphrodite.modeling.models.interfaces import is_pooling_model
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.models.utils import PPMissingLayer, WeightsMapper
 from aphrodite.modeling.utils import get_packed_modules_mapping
-from aphrodite.common.logger import log_once
+from aphrodite.utils import is_pin_memory_available
 
 _GLOBAL_LORA_ID = 0
 
@@ -107,6 +107,7 @@ class LoRAModel(AdapterModel):
         lora_model_id: int,
         tensors: dict[str, torch.Tensor],
         peft_helper: PEFTHelper,
+        enable_lora_modules_to_save: bool = False,
         device: str = "cuda",
         dtype: Optional[torch.dtype] = None,
         embeddings: Optional[dict[str, torch.Tensor]] = None,
@@ -121,8 +122,8 @@ class LoRAModel(AdapterModel):
         skipped_weights = []
 
         for tensor_name, tensor in tensors.items():
-            parse_result = parse_fine_tuned_lora_name(tensor_name,
-                                                      weights_mapper)
+            parse_result = parse_fine_tuned_lora_name(
+                tensor_name, enable_lora_modules_to_save, weights_mapper)
 
             # Skip unsupported weights instead of failing
             if parse_result is None:
@@ -159,8 +160,12 @@ class LoRAModel(AdapterModel):
                 loras[module_name].lora_a = tensor.to(device=device,
                                                       dtype=dtype).t()
                 if pin_memory:
-                    loras[module_name].lora_a = loras[
-                        module_name].lora_a.pin_memory()
+                    loras[module_name].lora_a_pin_memory()
+            elif is_lora_a is None:  # this is modules_to_save tensor
+                loras[module_name].lora_b = tensor.to(device=device,
+                                                      dtype=dtype)
+                if pin_memory:
+                    loras[module_name].lora_b_pin_memory()
             else:
                 loras[module_name].lora_b = tensor.to(device=device,
                                                       dtype=dtype).t()
@@ -194,10 +199,12 @@ class LoRAModel(AdapterModel):
             cls,
             lora_dir: str,
             expected_lora_modules: list[str],
+            expected_modules_to_save: list[str],
             peft_helper: PEFTHelper,
             *,
             lora_model_id: Optional[int] = None,
             device: str = "cuda",
+            enable_lora_modules_to_save: bool = False,
             dtype: Optional[torch.dtype] = None,
             target_embedding_padding: Optional[int] = None,
             embedding_modules: Optional[dict[str, str]] = None,
@@ -230,14 +237,15 @@ class LoRAModel(AdapterModel):
 
         def check_unexpected_modules(modules: dict):
             for lora_module in f.keys():  # noqa
-                parse_result = parse_fine_tuned_lora_name(
-                    lora_module, weights_mapper)
-                if parse_result is None:
-                    # Skip unsupported weights
-                    continue
-                module_name, _, _ = parse_result
+                module_name, is_lora_a, _ = parse_fine_tuned_lora_name(
+                    lora_module, enable_lora_modules_to_save,
+                    weights_mapper)
                 part_name = module_name.split(".")[-1]
-                if part_name not in expected_lora_modules:
+                is_expected_module_to_save = (is_lora_a is None) and (
+                    part_name in expected_modules_to_save)
+
+                if (part_name not in expected_lora_modules
+                    ) and not is_expected_module_to_save:
                     unexpected_modules.append(module_name)
             if unexpected_modules:
                 raise ValueError(
@@ -321,6 +329,7 @@ class LoRAModel(AdapterModel):
             lora_model_id,
             tensors,
             peft_helper=peft_helper,
+            enable_lora_modules_to_save=enable_lora_modules_to_save,
             device=device,
             dtype=dtype,
             embeddings=embeddings,
@@ -512,7 +521,9 @@ class LoRAModelManager(AdapterModelManager):
                            packed_moduled_lst, self.model.config))
 
             # (yard1): TODO make this more robust
-            if "lm_head" in module_name:
+            # replace lm_head by A*B lora if needed
+            if (("lm_head" in module_name)
+                    and not self.lora_config.enable_lora_modules_to_save):
                 logits_processor_module_name = 'logits_processor'
                 parent_module = _parent_module(module_name)
                 if parent_module:
@@ -561,7 +572,8 @@ class LoRAModelManager(AdapterModelManager):
             parts = module_name.split(".")
             if module_name not in self.packed_modules:
                 assert embedding_modules is not None
-                if parts[-1] in embedding_modules:
+                if (parts[-1] in embedding_modules) or isinstance(
+                        module, ModulesToSaveWrapper):
                     input_dim = (module.base_layer.org_vocab_size +
                                  self.lora_config.lora_extra_vocab_size if
                                  hasattr(module.base_layer, "org_vocab_size")
@@ -573,15 +585,26 @@ class LoRAModelManager(AdapterModelManager):
                                              hasattr(module.base_layer,
                                                      "embedding_dim") else
                                              module.base_layer.weight.shape[1])
-                    lora = LoRALayerWeights.create_dummy_lora_weights(
-                        module_name,
-                        input_dim,
-                        output_dim,
-                        rank,
-                        module.lora_a_stacked[0].dtype,
-                        "cpu",
-                        embeddings_tensor_dim=embeddings_tensor_dim,
-                        bias_enabled=bias_enabled)
+                    if isinstance(module, ModulesToSaveWrapper):
+                        lora = LoRALayerWeights.create_dummy_lora_weights(
+                            module_name,
+                            input_dim,
+                            output_dim,
+                            None,
+                            module.dtype,
+                            "cpu",
+                            embeddings_tensor_dim=embeddings_tensor_dim,
+                            bias_enabled=bias_enabled)
+                    else:
+                        lora = LoRALayerWeights.create_dummy_lora_weights(
+                            module_name,
+                            input_dim,
+                            output_dim,
+                            rank,
+                            module.lora_a_stacked[0].dtype,
+                            "cpu",
+                            embeddings_tensor_dim=embeddings_tensor_dim,
+                            bias_enabled=bias_enabled)
                 else:
                     lora = LoRALayerWeights.create_dummy_lora_weights(
                         module_name,

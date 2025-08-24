@@ -227,6 +227,7 @@ class SupportsLoRA(Protocol):
     embedding_modules: ClassVar[dict[str, str]] = {}
     embedding_padding_modules: ClassVar[list[str]] = []
     packed_modules_mapping: ClassVar[dict[str, list[str]]] = {}
+    modules_to_save: ClassVar[list[str]] = ["lm_head", "embed_tokens"]
 
 
 # We can't use runtime_checkable with ClassVar for issubclass checks
