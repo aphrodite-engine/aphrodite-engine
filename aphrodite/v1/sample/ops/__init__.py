@@ -7,6 +7,7 @@ from aphrodite.v1.sample.ops.dry import apply_all_dry
 from aphrodite.v1.sample.ops.epsilon_cutoff import epsilon_cutoff
 from aphrodite.v1.sample.ops.eta_cutoff import eta_cutoff
 from aphrodite.v1.sample.ops.min_p import min_p
+from aphrodite.v1.sample.ops.mirostat import mirostat
 from aphrodite.v1.sample.ops.no_repeat_ngram import no_repeat_ngram
 from aphrodite.v1.sample.ops.penalties import apply_all_penalties
 from aphrodite.v1.sample.ops.quadratic import quadratic
@@ -151,6 +152,13 @@ class SamplingOps:
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
         return top_nsigma(logits, sampling_metadata)
+
+    def apply_mirostat(
+        self,
+        logits: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+    ) -> torch.Tensor:
+        return mirostat(logits, sampling_metadata)
 
     def apply_skew(
         self,

@@ -1757,6 +1757,12 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             req_state = self.requests[req_id]
             req_state.output_token_ids.extend(sampled_ids)
 
+        for req_idx in range(len(self.input_batch.req_ids)):
+            if req_idx in sampling_metadata.persistent_data:
+                self.input_batch.persistent_data[req_idx].update(
+                    sampling_metadata.persistent_data[req_idx]
+                )
+
         if not self.speculative_config:
             # Speculative decoding is not enabled.
             spec_token_ids = None
@@ -2393,6 +2399,9 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             output_token_ids=[[] for _ in range(num_reqs)],
             allowed_token_ids_mask=None,
             bad_words_token_ids={},
+            mirostat_mode=None,
+            mirostat_tau=None,
+            mirostat_eta=None,
             logitsprocs=LogitsProcessorManager(),
         )
         try:

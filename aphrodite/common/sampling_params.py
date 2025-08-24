@@ -399,6 +399,20 @@ class SamplingParams(
     (e.g. 3.0) keep more tokens, lower values (e.g. 1.0) are more
     selective. Must be positive. 0 to disable.
     """
+    mirostat_mode: int = 0
+    """
+    Can either be 0 (disabled) or 2 (Mirostat v2).
+    """
+    mirostat_tau: float = 0.0
+    """
+    Target "surprisal" that mirostat works towards.
+    Range [0, inf).
+    """
+    mirostat_eta: float = 0.0
+    """
+    Rate at which mirostat updates its internal surprisal value.
+    Range [0, inf).
+    """
     dry_multiplier: float = 0.0
     """
     Float that controls the magnitude of the DRY sampling
@@ -544,6 +558,9 @@ class SamplingParams(
         xtc_threshold: Optional[float] = None,
         xtc_probability: Optional[float] = None,
         nsigma: Optional[float] = None,
+        mirostat_mode: Optional[int] = None,
+        mirostat_tau: Optional[float] = None,
+        mirostat_eta: Optional[float] = None,
         dry_multiplier: Optional[float] = None,
         dry_base: Optional[float] = None,
         dry_allowed_length: Optional[int] = None,
@@ -628,6 +645,9 @@ class SamplingParams(
             xtc_threshold=0.1 if xtc_threshold is None else xtc_threshold,
             xtc_probability=0 if xtc_probability is None else xtc_probability,
             nsigma=0.0 if nsigma is None else nsigma,
+            mirostat_mode=0 if mirostat_mode is None else mirostat_mode,
+            mirostat_tau=0.0 if mirostat_tau is None else mirostat_tau,
+            mirostat_eta=0.0 if mirostat_eta is None else mirostat_eta,
             dry_multiplier=0.0 if dry_multiplier is None else dry_multiplier,
             dry_base=1.75 if dry_base is None else dry_base,
             dry_allowed_length=
@@ -699,6 +719,9 @@ class SamplingParams(
         "xtc_threshold": 0.1,
         "xtc_probability": 0,
         "nsigma": 0.0,
+        "mirostat_mode": 0,
+        "mirostat_tau": 0.0,
+        "mirostat_eta": 0.0,
         "dry_multiplier": 0.0,
         "dry_base": 1.75,
         "dry_allowed_length": 2,
@@ -879,6 +902,12 @@ class SamplingParams(
             raise ValueError(
                 "nsigma must be non-negative, got "
                 f"{self.nsigma}.")
+        if self.mirostat_mode not in [0, 2]:
+            raise ValueError(f"mirostat_mode must be 0 or 2, got {self.mirostat_mode}.")
+        if self.mirostat_tau < 0.0:
+            raise ValueError(f"mirostat_tau must be non-negative, got {self.mirostat_tau}.")
+        if self.mirostat_eta < 0.0:
+            raise ValueError(f"mirostat_eta must be non-negative, got {self.mirostat_eta}.")
         if self.dry_multiplier < 0.0:
             raise ValueError(
                 "dry_multiplier must be non-negative, got "
