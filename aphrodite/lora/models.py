@@ -237,9 +237,15 @@ class LoRAModel(AdapterModel):
 
         def check_unexpected_modules(modules: dict):
             for lora_module in f.keys():  # noqa
-                module_name, is_lora_a, _ = parse_fine_tuned_lora_name(
+                parse_result = parse_fine_tuned_lora_name(
                     lora_module, enable_lora_modules_to_save,
                     weights_mapper)
+
+                # Skip unsupported weight names
+                if parse_result is None:
+                    continue
+
+                module_name, is_lora_a, _ = parse_result
                 part_name = module_name.split(".")[-1]
                 is_expected_module_to_save = (is_lora_a is None) and (
                     part_name in expected_modules_to_save)
@@ -498,7 +504,7 @@ class LoRAModelManager(AdapterModelManager):
             #  - given an input 'x.y.z' return 'x.y'
             #  - given an input 'x' return ''
             return module_name.rpartition('.')[0]
-
+        # Handle all modules in a single loop
         for module_name, module in self.model.named_modules(
                 remove_duplicate=False):
             if isinstance(module, PPMissingLayer):
@@ -512,6 +518,28 @@ class LoRAModelManager(AdapterModelManager):
                     "Regarding multimodal models, Aphrodite currently only "
                     "supports adding LoRA to language model, {} will be "
                     "ignored.", module_name)
+                continue
+
+            parts = module_name.split(".")[-1]
+
+            # Handle modules_to_save first
+            if (self.lora_config.enable_lora_modules_to_save and
+                    parts in ModulesToSaveWrapper.implemented_layers):
+                # Create ModulesToSaveWrapper for these layers
+                new_module = ModulesToSaveWrapper(module)
+                new_module.create_lora_weights(
+                    self.lora_slots, self.lora_config, self.model.config)
+
+                # Replace the module
+                replace_submodule(self.model, module_name, new_module)
+
+                # Register it
+                self.register_module(module_name, new_module)
+                new_module.set_mapping(self.punica_wrapper)
+                continue
+
+            # Skip if this module is already a ModulesToSaveWrapper
+            if isinstance(module, ModulesToSaveWrapper):
                 continue
             parts = module_name.split(".")[-1]
             packed_moduled_lst = self.packed_modules_mapping.get(parts, [])

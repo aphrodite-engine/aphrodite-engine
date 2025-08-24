@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def _get_lora_device(base_layer: nn.Module) -> torch.device:
-    # code borrowed from https://github.com/fmmoret/vllm/blob/fm-support-lora-on-quantized-models/vllm/lora/layers.py#L34
+    # code borrowed from https://github.com/fmmoret/vllm/blob/fm-support-lora-on-quantized-models/vllm/lora/layers.py#L34  # noqa: E501
     """Returns the device for where to place the LoRA tensors."""
     # unquantizedLinear
     if hasattr(base_layer, "weight"):
@@ -1213,12 +1213,24 @@ class ModulesToSaveWrapper(BaseLayerWithLoRA):
                                     ParallelLMHead]) -> None:
         super().__init__()
         self.base_layer = base_layer
-        self.device = _get_lora_device(self.base_layer)
+        # Get device directly from base_layer to avoid recursion
+        if hasattr(base_layer, 'weight'):
+            self.device = base_layer.weight.device
+        elif hasattr(base_layer, 'device'):
+            self.device = base_layer.device
+        else:
+            self.device = torch.device(
+                'cuda' if torch.cuda.is_available() else 'cpu')
 
         self.tp_size = get_tensor_model_parallel_world_size()
         self.tp_rank = get_tensor_model_parallel_rank()
 
-        self._org_vocab_size = None
+        # Initialize org_vocab_size from base_layer to avoid recursion
+        if hasattr(base_layer, 'org_vocab_size'):
+            self._org_vocab_size = base_layer.org_vocab_size
+        else:
+            # Fallback to num_embeddings if org_vocab_size doesn't exist
+            self._org_vocab_size = base_layer.num_embeddings
 
         self._base_layer_replacement = None
 
@@ -1226,6 +1238,9 @@ class ModulesToSaveWrapper(BaseLayerWithLoRA):
             "num_embeddings": base_layer.num_embeddings,
             "embedding_dim": base_layer.embedding_dim
         }
+        
+        # Initialize dtype as a regular attribute
+        self.dtype = getattr(base_layer, 'dtype', None)
 
     @property
     def padded_vocab_size(self):
@@ -1254,6 +1269,19 @@ class ModulesToSaveWrapper(BaseLayerWithLoRA):
     @property
     def weight(self):
         return self.base_layer.weight
+
+    @property
+    def num_embeddings(self):
+        return self.base_layer.num_embeddings
+
+    @property
+    def num_embeddings_padded(self):
+        return self.base_layer.num_embeddings_padded
+
+    # Add specific properties to avoid __getattr__ recursion
+    @property
+    def quant_method(self):
+        return getattr(self.base_layer, 'quant_method', None)
 
     def apply(self, lm_head: 'ModulesToSaveWrapper',
               hidden_states: torch.Tensor,
@@ -1286,13 +1314,14 @@ class ModulesToSaveWrapper(BaseLayerWithLoRA):
 
         self.dtype = lora_config.lora_dtype
 
-        self._orig_vocab_size = (self.base_layer.org_vocab_size +
+        # Use the already-initialized _org_vocab_size to avoid recursion
+        self._orig_vocab_size = (self._org_vocab_size +
                                  lora_config.lora_extra_vocab_size)
 
         # lora_tensors - lm_head tensors in case of ParallelLMHead base
         # or embed_tokens tensors in case of VocabParallelEmbedding
         self._lora_tensors = torch.zeros(
-            (max_loras, self._orig_vocab_size, self.base_layer.embedding_dim),
+            (max_loras, self._orig_vocab_size, self.embedding_dim),
             dtype=self.base_layer.weight.dtype,
             device=self.device,
         )

@@ -80,6 +80,9 @@ class WorkerLoRAManager(AbstractWorkerManager):
 
     def _load_adapter(self, lora_request: LoRARequest) -> LoRAModel:
         try:
+            # Get the model first to avoid variable scope issues
+            model = self._adapter_manager.model
+
             supported_lora_modules = (
                 self._adapter_manager.supported_lora_modules)
             packed_modules_mapping = (
@@ -107,7 +110,6 @@ class WorkerLoRAManager(AbstractWorkerManager):
             # For some models like Qwen2VL, we need to use
             # hf_to_aphrodite_mapper
             # to ensure correct loading of lora weights.
-            model = self._adapter_manager.model
             hf_to_aphrodite_mapper = getattr(model, "hf_to_aphrodite_mapper",
                                              None)
 
