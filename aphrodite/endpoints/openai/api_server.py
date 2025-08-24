@@ -1809,10 +1809,9 @@ def build_app(args: Namespace) -> FastAPI:
     app.include_router(router)
 
     # Include KoboldAI API routes if enabled
-    if envs.APHRODITE_KOBOLD_API:
-        app.include_router(kai_api, prefix="/api/v1")
-        app.include_router(extra_api, prefix="/api/extra")
-        logger.info("KoboldAI API routes enabled")
+    app.include_router(kai_api, prefix="/api/v1")
+    app.include_router(extra_api, prefix="/api/extra")
+    logger.info("KoboldAI API routes enabled")
 
     app.root_path = args.root_path
 
@@ -2228,6 +2227,9 @@ async def run_server_worker(listen_address,
             f"Chat API:                        {protocol}://{host_name}:{port_str}{root_path}/v1/chat/completions"
         )  # noqa: E501
         logger.info(
+            f"Responses API:                   {protocol}://{host_name}:{port_str}{root_path}/v1/responses"
+        )  # noqa: E501
+        logger.info(
             f"Anthropic Messages API:          {protocol}://{host_name}:{port_str}{root_path}/v1/messages"
         )  # noqa: E501
         logger.info(
@@ -2266,14 +2268,12 @@ async def run_server_worker(listen_address,
         logger.info(
             f"Tokenization API:                {protocol}://{host_name}:{port_str}{root_path}/v1/tokenize"
         )  # noqa: E501
-
-        if envs.APHRODITE_KOBOLD_API:
-            logger.info(
-                f"KoboldAI API:                    {protocol}://{host_name}:{port_str}{root_path}/api/v1"
-            )  # noqa: E501
-            logger.info(
-                f"KoboldAI Extra:                  {protocol}://{host_name}:{port_str}{root_path}/api/extra"
-            )  # noqa: E501
+        logger.info(
+            f"KoboldAI API:                    {protocol}://{host_name}:{port_str}{root_path}/api/v1"
+        )  # noqa: E501
+        logger.info(
+            f"KoboldAI Extra:                  {protocol}://{host_name}:{port_str}{root_path}/api/extra"
+        )  # noqa: E501
 
         shutdown_task = await serve_http(
             app,
