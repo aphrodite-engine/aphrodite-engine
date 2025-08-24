@@ -33,12 +33,13 @@ from aphrodite.common.sampling_params import (BeamSearchParams,
                                               RequestOutputKind,
                                               SamplingParams)
 from aphrodite.common.sequence import Logprob
-from aphrodite.utils import random_uuid, resolve_obj_by_qualname
 from aphrodite.endpoints.chat_utils import (ChatCompletionMessageParam,
                                             random_tool_call_id)
 from aphrodite.endpoints.score_utils import (ScoreContentPartParam,
                                              ScoreMultiModalParam)
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+from aphrodite.utils import (generate_phrase_variants, random_uuid,
+                             resolve_obj_by_qualname)
 
 _LONG_INFO = torch.iinfo(torch.long)
 
@@ -461,6 +462,12 @@ class ChatCompletionRequest(OpenAIBaseModel):
     skew: Optional[float] = 0.0
     custom_token_bans: Optional[list[int]] = None
     token_ban_ranges: Optional[list[tuple[list[int], int, int]]] = None
+    banned_phrases: Optional[list[str]] = Field(
+        default=None,
+        description=("List of phrases that should be banned from generation. "
+                     "These will be tokenized and matched as complete "
+                     "sequences."),
+        validation_alias=AliasChoices("banned_phrases", "banned_strings"))
     sampler_priority: Optional[Union[list[int], list[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority", "sampler_order"))
@@ -686,6 +693,19 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 token_id = tokenizer.encode(f'a{s}')[-1]
                 dry_sequence_breaker_ids.append(token_id)
 
+        banned_phrases_token_ids = []
+        if self.banned_phrases:
+            for phrase in self.banned_phrases:
+                # Generate variants of the phrase to catch different
+                # tokenizations
+                phrase_variants = generate_phrase_variants(phrase)
+                for variant in phrase_variants:
+                    # Tokenize the variant
+                    token_ids = tokenizer.encode(variant,
+                                                 add_special_tokens=False)
+                    if token_ids:  # Only add non-empty tokenizations
+                        banned_phrases_token_ids.append(token_ids)
+
         extra_args: dict[str, Any] = self.aphrodite_xargs if \
             self.aphrodite_xargs else {}
         if self.kv_transfer_params:
@@ -752,6 +772,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             mirostat_mode=self.mirostat_mode,
             mirostat_tau=self.mirostat_tau,
             mirostat_eta=self.mirostat_eta,
+            banned_phrases_token_ids=banned_phrases_token_ids,
             extra_args=extra_args or None,
         )
 
@@ -1068,6 +1089,12 @@ class CompletionRequest(OpenAIBaseModel):
     skew: Optional[float] = 0.0
     custom_token_bans: Optional[list[int]] = None
     token_ban_ranges: Optional[list[tuple[list[int], int, int]]] = None
+    banned_phrases: Optional[list[str]] = Field(
+        default=None,
+        description=("List of phrases that should be banned from generation. "
+                     "These will be tokenized and matched as complete "
+                     "sequences."),
+        validation_alias=AliasChoices("banned_phrases", "banned_strings"))
     sampler_priority: Optional[Union[list[int], list[str]]] = Field(
         default=[],
         validation_alias=AliasChoices("sampler_priority", "sampler_order"))
@@ -1254,6 +1281,19 @@ class CompletionRequest(OpenAIBaseModel):
                 token_id = tokenizer.encode(f'a{s}')[-1]
                 dry_sequence_breaker_ids.append(token_id)
 
+        banned_phrases_token_ids = []
+        if self.banned_phrases:
+            for phrase in self.banned_phrases:
+                # Generate variants of the phrase to catch different
+                # tokenizations
+                phrase_variants = generate_phrase_variants(phrase)
+                for variant in phrase_variants:
+                    # Tokenize the variant
+                    token_ids = tokenizer.encode(variant,
+                                                 add_special_tokens=False)
+                    if token_ids:  # Only add non-empty tokenizations
+                        banned_phrases_token_ids.append(token_ids)
+
         extra_args: dict[str, Any] = \
             self.aphrodite_xargs if self.aphrodite_xargs else {}
         if self.kv_transfer_params:
@@ -1320,6 +1360,7 @@ class CompletionRequest(OpenAIBaseModel):
             mirostat_mode=self.mirostat_mode,
             mirostat_tau=self.mirostat_tau,
             mirostat_eta=self.mirostat_eta,
+            banned_phrases_token_ids=banned_phrases_token_ids,
             extra_args=extra_args or None,
             )
 

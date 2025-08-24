@@ -1,6 +1,6 @@
 # Datastructures defining an input batch
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, cast, Any
 
 import numpy as np
@@ -47,6 +47,8 @@ class CachedRequestState:
     mrope_position_delta: Optional[int] = None
 
     lora_request: Optional[LoRARequest] = None
+
+    _tokens_to_mask: list[int] = field(default_factory=list)
 
     # Persistent metadata for mirostat
     persistent_data: dict[str, Any] = None
