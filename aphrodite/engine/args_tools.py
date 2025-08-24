@@ -351,6 +351,7 @@ class EngineArgs:
     enable_lora_bias: bool = LoRAConfig.bias_enabled
     max_loras: int = LoRAConfig.max_loras
     max_lora_rank: int = LoRAConfig.max_lora_rank
+    enable_lora_modules_to_save: bool = LoRAConfig.enable_lora_modules_to_save
     default_mm_loras: Optional[Dict[str, str]] = \
         LoRAConfig.default_mm_loras
     fully_sharded_loras: bool = LoRAConfig.fully_sharded_loras
@@ -737,6 +738,8 @@ class EngineArgs:
         lora_group.add_argument("--max-loras", **lora_kwargs["max_loras"])
         lora_group.add_argument("--max-lora-rank",
                                 **lora_kwargs["max_lora_rank"])
+        lora_group.add_argument("--enable-lora-modules-to-save",
+                                **lora_kwargs["enable_lora_modules_to_save"])
         lora_group.add_argument("--lora-extra-vocab-size",
                                 **lora_kwargs["lora_extra_vocab_size"])
         lora_group.add_argument(
@@ -1325,6 +1328,7 @@ class EngineArgs:
         lora_config = LoRAConfig(
             bias_enabled=self.enable_lora_bias,
             max_lora_rank=self.max_lora_rank,
+            enable_lora_modules_to_save=self.enable_lora_modules_to_save,
             max_loras=self.max_loras,
             default_mm_loras=self.default_mm_loras,
             fully_sharded_loras=self.fully_sharded_loras,

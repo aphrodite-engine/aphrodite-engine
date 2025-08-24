@@ -25,7 +25,7 @@ from aphrodite.modeling.layers.linear import (ColumnParallelLinear, LinearBase,
 # yapf: enable
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+    ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.platforms import current_platform
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def _get_lora_device(base_layer: nn.Module) -> torch.device:
-    # code borrowed from https://github.com/fmmoret/vllm/blob/fm-support-lora-on-quantized-models/vllm/lora/layers.py#L34
+    # code borrowed from https://github.com/fmmoret/vllm/blob/fm-support-lora-on-quantized-models/vllm/lora/layers.py#L34  # noqa: E501
     """Returns the device for where to place the LoRA tensors."""
     # unquantizedLinear
     if hasattr(base_layer, "weight"):
@@ -104,7 +104,8 @@ class BaseLayerWithLoRA(nn.Module):
     def set_lora(
         self,
         index: int,
-        lora_a: torch.Tensor,
+        lora_a: Optional[
+            torch.Tensor],  # lora_a=None in case of modules_to_save
         lora_b: torch.Tensor,
         embeddings_tensor: Optional[torch.Tensor],
         bias: Optional[torch.Tensor] = None,
@@ -276,6 +277,8 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
         packed_modules_list: list,
         model_config: Optional[PretrainedConfig],
     ) -> bool:
+        if lora_config.enable_lora_modules_to_save:
+            return False
         return type(source_layer) is VocabParallelEmbedding
 
     @property
@@ -758,6 +761,7 @@ class QKVParallelLinearWithLoRA(ColumnParallelLinearWithLoRA):
 
     def __init__(self, base_layer: QKVParallelLinear) -> None:
         super().__init__(base_layer)
+        self.tp_size = get_tensor_model_parallel_world_size()
         self.q_proj_total_size = (self.base_layer.total_num_heads *
                                   self.base_layer.head_size)
         self.q_proj_shard_size = (self.base_layer.num_heads *
@@ -1186,3 +1190,176 @@ class LogitsProcessorWithLoRA(BaseLayerWithLoRA):
     ) -> bool:
         # Special handling for the LogitsProcessor.
         return False
+
+
+class ModulesToSaveWrapper(BaseLayerWithLoRA):
+    """
+    LoRA wrapper for lm_head layer, inspired by ModulesToSaveWrapper from peft
+    contains the copy of base_layer but with replaced weights
+    overrides getattr in a such way that 
+    returns the attribute of this base_layer copy,
+    so clients can call ModuleToSave exactly as base_layer module
+    
+    Args:
+        base_layer: layer to replace by Wrapper: 
+          VocabParallelEmbedding (for embed_tokens)
+          or ParallelLMHead (for lm_head)
+    """
+
+    implemented_layers = ['lm_head', 'embed_tokens']
+
+    def __init__(
+            self, base_layer: Union[VocabParallelEmbedding,
+                                    ParallelLMHead]) -> None:
+        super().__init__()
+        self.base_layer = base_layer
+        # Get device directly from base_layer to avoid recursion
+        if hasattr(base_layer, 'weight'):
+            self.device = base_layer.weight.device
+        elif hasattr(base_layer, 'device'):
+            self.device = base_layer.device
+        else:
+            self.device = torch.device(
+                'cuda' if torch.cuda.is_available() else 'cpu')
+
+        self.tp_size = get_tensor_model_parallel_world_size()
+        self.tp_rank = get_tensor_model_parallel_rank()
+
+        # Initialize org_vocab_size from base_layer to avoid recursion
+        if hasattr(base_layer, 'org_vocab_size'):
+            self._org_vocab_size = base_layer.org_vocab_size
+        else:
+            # Fallback to num_embeddings if org_vocab_size doesn't exist
+            self._org_vocab_size = base_layer.num_embeddings
+
+        self._base_layer_replacement = None
+
+        self._base_layer_kwargs = {
+            "num_embeddings": base_layer.num_embeddings,
+            "embedding_dim": base_layer.embedding_dim
+        }
+        
+        # Initialize dtype as a regular attribute
+        self.dtype = getattr(base_layer, 'dtype', None)
+
+    @property
+    def padded_vocab_size(self):
+        # number of embeddings with paddings and with max_lora_extra_vocab_size
+        return self.base_layer.num_embeddings_padded
+
+    @property
+    def org_vocab_size(self):
+        # vocab size with maximal amount of extra symbols added by loras
+        return self._org_vocab_size
+
+    @property
+    def embedding_dim(self):
+        return self.base_layer.embedding_dim
+
+    @property
+    def bias(self):
+        return self.base_layer.bias
+
+    @property
+    def linear_method(self):
+        if self.punica_wrapper.no_lora:
+            return self.base_layer.linear_method
+        return self
+
+    @property
+    def weight(self):
+        return self.base_layer.weight
+
+    @property
+    def num_embeddings(self):
+        return self.base_layer.num_embeddings
+
+    @property
+    def num_embeddings_padded(self):
+        return self.base_layer.num_embeddings_padded
+
+    # Add specific properties to avoid __getattr__ recursion
+    @property
+    def quant_method(self):
+        return getattr(self.base_layer, 'quant_method', None)
+
+    def apply(self, lm_head: 'ModulesToSaveWrapper',
+              hidden_states: torch.Tensor,
+              bias: Optional[torch.Tensor]) -> torch.Tensor:
+
+        assert isinstance(self.base_layer, ParallelLMHead)
+
+        logits = self.punica_wrapper.bgmv_sample(hidden_states,
+                                                 self._lora_tensors,
+                                                 self.base_layer.weight)
+
+        if bias is not None:
+            logits += bias
+
+        return logits
+
+    def embedding(self, embed_tokens: 'ModulesToSaveWrapper',
+                  masked_input: torch.LongTensor):
+        assert isinstance(self.base_layer, VocabParallelEmbedding)
+        embeddings = self.punica_wrapper.bgmv_embedding(
+            masked_input, self._lora_tensors, self.base_layer.weight)
+        return embeddings
+
+    def create_lora_weights(
+        self,
+        max_loras: int,
+        lora_config: LoRAConfig,
+        model_config: Optional[PretrainedConfig] = None,
+    ) -> None:
+
+        self.dtype = lora_config.lora_dtype
+
+        # Use the already-initialized _org_vocab_size to avoid recursion
+        self._orig_vocab_size = (self._org_vocab_size +
+                                 lora_config.lora_extra_vocab_size)
+
+        # lora_tensors - lm_head tensors in case of ParallelLMHead base
+        # or embed_tokens tensors in case of VocabParallelEmbedding
+        self._lora_tensors = torch.zeros(
+            (max_loras, self._orig_vocab_size, self.embedding_dim),
+            dtype=self.base_layer.weight.dtype,
+            device=self.device,
+        )
+        for index in range(max_loras):
+            self.reset_lora(index)
+
+    def reset_lora(self, index: int):
+        weights = self.base_layer.weight
+        self._lora_tensors[index, :weights.shape[0], :weights.shape[1]].copy_(
+            weights, non_blocking=True)
+
+    def set_lora(
+        self,
+        index: int,
+        lora_a: Optional[torch.Tensor],
+        lora_b: torch.Tensor,
+        embeddings_tensor: Optional[torch.Tensor],
+        bias: Optional[torch.Tensor] = None,
+    ):
+        assert lora_a is None
+        assert embeddings_tensor is None
+        assert bias is None, "bias is not implemented for ModulesToSave"
+
+        self.reset_lora(index)
+        self._lora_tensors[index, :lora_b.shape[0], :lora_b.shape[1]].copy_(
+            lora_b, non_blocking=True)
+
+    def forward(self, *args, **kwargs):
+        return type(self.base_layer).forward(self, *args, **kwargs)
+
+    @classmethod
+    def can_replace_layer(
+        cls,
+        source_layer: nn.Module,
+        lora_config: LoRAConfig,
+        packed_modules_list: list,
+        model_config: Optional[PretrainedConfig],
+    ) -> bool:
+        if not lora_config.enable_lora_modules_to_save:
+            return False
+        return type(source_layer) in (ParallelLMHead, VocabParallelEmbedding)

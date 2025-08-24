@@ -2530,6 +2530,10 @@ class LoRAConfig:
     per prompt. When run in offline mode, the lora IDs for n modalities
     will be automatically assigned to 1-n with the names of the modalities
     in alphabetic order."""
+    enable_lora_modules_to_save: bool = False
+    """
+    Enable handling of fully-trained lm_head and embed_tokens modules.
+    """
     bias_enabled: bool = False
     """Enable bias for LoRA adapters."""
 
