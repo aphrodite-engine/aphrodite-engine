@@ -598,7 +598,8 @@ class AphroditeBackend:
         from .monitor import torch_compile_start_time
         dynamo_time = time.time() - torch_compile_start_time
         if get_tensor_model_parallel_rank() == 0:
-            logger.info("Dynamo bytecode transform time: {:.2f} s", dynamo_time)
+            logger.info("Dynamo bytecode transform time: {:.2f}s",
+                        dynamo_time)
         self.compilation_config.compilation_time += dynamo_time
 
         # we control the compilation process, each instance can only be

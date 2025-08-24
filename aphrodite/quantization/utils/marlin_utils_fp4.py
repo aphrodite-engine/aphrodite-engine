@@ -123,10 +123,8 @@ def apply_fp4_marlin_linear(
 def prepare_fp4_layer_for_marlin(layer: torch.nn.Module) -> None:
     log_once(
         "WARNING",
-        "Your GPU does not have native support for FP4 computation but "
-        "FP4 quantization is being used. Weight-only FP4 compression will "
-        "be used leveraging the Marlin kernel. This may degrade "
-        "performance for compute-heavy workloads.")
+        "Using Marlin for emulating FP4 quantization, as your GPU does not "
+        "natively support it.")
 
     is_nvfp4 = hasattr(layer, "weight_scale_2")
     group_size = 16 if is_nvfp4 else 32
@@ -192,10 +190,8 @@ def prepare_fp4_layer_for_marlin(layer: torch.nn.Module) -> None:
 def prepare_moe_fp4_layer_for_marlin(layer: torch.nn.Module) -> None:
     log_once(
         "WARNING",
-        "Your GPU does not have native support for FP4 computation but "
-        "FP4 quantization is being used. Weight-only FP4 compression will "
-        "be used leveraging the Marlin kernel. This may degrade "
-        "performance for compute-heavy workloads.")
+        "Using Marlin for emulating FP4 quantization, as your GPU does not "
+        "natively support it.")
 
     is_nvfp4 = hasattr(layer, "w13_weight_scale_2")
     group_size = 16 if is_nvfp4 else 32

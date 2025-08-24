@@ -1969,7 +1969,12 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         Args:
             eep_scale_up: the model loading is for elastic EP scale up.
         """
-        logger.info("Starting to load model {}...", self.model_config.model)
+        from aphrodite.distributed.parallel_state import (
+            get_tensor_model_parallel_rank)
+        rank = get_tensor_model_parallel_rank()
+
+        if rank == 0:
+            logger.info("Starting to load model {}...", self.model_config.model)
         if eep_scale_up:
             from aphrodite.distributed.parallel_state import get_ep_group
             num_local_physical_experts = torch.empty(1,
@@ -2001,7 +2006,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         with DeviceMemoryProfiler() as m:
             time_before_load = time.perf_counter()
             model_loader = get_model_loader(self.load_config)
-            logger.info("Loading model from scratch...")
+            logger.debug("Loading model from scratch...")
             self.model = model_loader.load_model(
                 aphrodite_config=self.aphrodite_config, model_config=self.model_config)
             if self.lora_config:
@@ -2023,7 +2028,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                         "aux_hidden_state_outputs was requested")
             time_after_load = time.perf_counter()
         self.model_memory_usage = m.consumed_memory
-        logger.info("Model loading took {:.4f} GiB and {:.6f} seconds",
+        logger.info("Model loading took {:.2f} GiB and {:.2f} seconds",
                     self.model_memory_usage / GiB_bytes,
                     time_after_load - time_before_load)
         prepare_communication_buffer_for_model(self.model)
@@ -2632,7 +2637,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             compilation_cases = reversed(self.cudagraph_batch_sizes)
             if is_global_first_rank() and self.load_config.use_tqdm_on_load:
                 with Progress(
-                    SpinnerColumn(),
                     TextColumn("[bold blue]{task.description}"),
                     BarColumn(),
                     TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),

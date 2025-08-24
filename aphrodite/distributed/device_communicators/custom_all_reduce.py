@@ -27,8 +27,9 @@ def _can_p2p(rank: int, world_size: int) -> bool:
         if i == rank:
             continue
         if envs.APHRODITE_SKIP_P2P_CHECK:
-            logger.info(
-                "Skipping P2P check and trusting the driver's P2P report.")
+            if rank == 0:
+                logger.info(
+                    "Skipping P2P check and trusting the driver's P2P report.")
             return torch.cuda.can_device_access_peer(rank, i)
         if not gpu_p2p_access_check(rank, i):
             return False
@@ -66,8 +67,9 @@ class CustomAllreduce:
         if not custom_ar:
             # disable because of missing custom allreduce library
             # e.g. in a non-GPU environment
-            logger.info("Custom allreduce is disabled because "
-                        "of missing custom allreduce library")
+            if self.rank == 0:
+                logger.info("Custom allreduce is disabled because "
+                            "of missing custom allreduce library")
             return
 
         self.group = group
@@ -77,9 +79,10 @@ class CustomAllreduce:
 
         if not all(in_the_same_node_as(group, source_rank=0)):
             # No need to initialize custom allreduce for multi-node case.
-            logger.warning(
-                "Custom allreduce is disabled because this process group"
-                " spans across nodes.")
+            if self.rank == 0:
+                logger.warning(
+                    "Custom allreduce is disabled because this process group"
+                    " spans across nodes.")
             return
 
         rank = dist.get_rank(group=self.group)
@@ -90,11 +93,12 @@ class CustomAllreduce:
             return
 
         if world_size not in CustomAllreduce._SUPPORTED_WORLD_SIZES:
-            logger.warning(
-                "Custom allreduce is disabled due to an unsupported world"
-                " size: {}. Supported world sizes: {}. To silence this "
-                "warning, specify disable_custom_all_reduce=True explicitly.",
-                world_size, str(CustomAllreduce._SUPPORTED_WORLD_SIZES))
+            if self.rank == 0:
+                logger.warning(
+                    "Custom allreduce is disabled due to an unsupported world"
+                    " size: {}. Supported world sizes: {}. To silence this "
+                    "warning, specify disable_custom_all_reduce=True explicitly.",
+                    world_size, str(CustomAllreduce._SUPPORTED_WORLD_SIZES))
             return
 
         if isinstance(device, int):
@@ -129,20 +133,22 @@ class CustomAllreduce:
         fully_connected = current_platform.is_fully_connected(
             physical_device_ids)
         if world_size > 2 and not fully_connected:
-            logger.warning(
-                "Custom allreduce is disabled because it's not supported on"
-                " more than two PCIe-only GPUs. To silence this warning, "
-                "specify disable_custom_all_reduce=True explicitly.")
+            if self.rank == 0:
+                logger.warning(
+                    "Custom allreduce is disabled because it's not supported on"
+                    " more than two PCIe-only GPUs. To silence this warning, "
+                    "specify disable_custom_all_reduce=True explicitly.")
             return
         # test P2P capability, this checks software/cudaruntime support
         # this is expensive to compute at the first time
         # then we cache the result
         # On AMD GPU, p2p is always enabled between XGMI connected GPUs
         if not current_platform.is_rocm() and not _can_p2p(rank, world_size):
-            logger.warning(
-                "Custom allreduce is disabled because your platform lacks "
-                "GPU P2P capability or P2P test failed. To silence this "
-                "warning, specify disable_custom_all_reduce=True explicitly.")
+            if self.rank == 0:
+                logger.warning(
+                    "Custom allreduce is disabled because your platform lacks "
+                    "GPU P2P capability or P2P test failed. To silence this "
+                    "warning, specify disable_custom_all_reduce=True explicitly.")
             return
 
         self.disabled = False
@@ -188,7 +194,8 @@ class CustomAllreduce:
 
     def register_graph_buffers(self):
         handle, offset = ops.get_graph_buffer_ipc_meta(self._ptr)
-        logger.info("Registering {} cuda graph addresses", len(offset))
+        if self.rank == 0:
+            logger.info("Registering {} cuda graph addresses", len(offset))
         # We cannot directly use `dist.all_gather_object` here
         # because it is incompatible with `gloo` backend under inference mode.
         # see https://github.com/pytorch/pytorch/issues/126032 for details.

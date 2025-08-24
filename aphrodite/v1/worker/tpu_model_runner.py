@@ -1198,7 +1198,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                         mesh=self.mesh)
                 else:
                     model_loader = get_model_loader(self.load_config)
-                    logger.info("Loading model from scratch...")
+                    logger.debug("Loading model from scratch...")
                     model = model_loader.load_model(
                         aphrodite_config=self.aphrodite_config,
                         model_config=self.model_config)

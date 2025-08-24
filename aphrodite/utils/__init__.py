@@ -1400,7 +1400,7 @@ def find_nccl_library() -> str:
 
     # manually load the nccl library
     if so_file:
-        logger.info(
+        logger.debug(
             "Found nccl from environment variable APHRODITE_NCCL_SO_PATH={}",
             so_file)
     else:
@@ -1410,7 +1410,7 @@ def find_nccl_library() -> str:
             so_file = "librccl.so.1"
         else:
             raise ValueError("NCCL only supports CUDA and ROCm backends.")
-        logger.info("Found nccl from library {}", so_file)
+        logger.debug("Found nccl from library {}", so_file)
     return so_file
 
 
