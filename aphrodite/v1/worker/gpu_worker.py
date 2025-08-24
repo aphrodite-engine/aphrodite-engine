@@ -635,10 +635,6 @@ def init_worker_distributed_environment(
     backend: str = "nccl",
 ) -> None:
     """Initialize the distributed environment."""
-    # Set environment variables to suppress PyTorch distributed logging
-    import os
-    os.environ["TORCH_DISTRIBUTED_DEBUG"] = "ERROR"
-    os.environ["GLOO_SOCKET_IFNAME"] = "lo"
 
     parallel_config = aphrodite_config.parallel_config
     set_custom_all_reduce(not parallel_config.disable_custom_all_reduce)

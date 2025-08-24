@@ -968,10 +968,6 @@ def init_distributed_environment(
     local_rank: int = -1,
     backend: str = "nccl",
 ):
-    # Set environment variables to suppress PyTorch distributed logging
-    import os
-    os.environ["TORCH_DISTRIBUTED_DEBUG"] = "ERROR"
-    os.environ["GLOO_SOCKET_IFNAME"] = "lo"
 
     logger.debug(
         "world_size={} rank={} local_rank={} "
