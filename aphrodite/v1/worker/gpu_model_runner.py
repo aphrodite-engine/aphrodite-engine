@@ -488,6 +488,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
+                _tokens_to_mask=new_req_data.tokens_to_mask,
             )
 
             # Only relevant for models using M-RoPE (e.g, Qwen2-VL)
@@ -568,6 +569,8 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 # The request is resumed from preemption.
                 # Replace the existing block IDs with the new ones.
                 req_state.block_ids = new_block_ids
+
+            req_state._tokens_to_mask = req_data.tokens_to_mask
 
             req_index = self.input_batch.req_id_to_index.get(req_id)
             if req_index is None:
@@ -1494,6 +1497,21 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             kv_connector_output=kv_connector_output,
         )
 
+    def apply_banned_phrase_masking(self, logits: torch.Tensor):
+        """Apply logit masking for requests with banned phrase tokens."""
+        for i, req_id in enumerate(self.input_batch.req_ids):
+            if req_id is None:
+                continue
+
+            request = self.requests.get(req_id)
+            if request is None:
+                continue
+
+            if hasattr(request, '_tokens_to_mask') and request._tokens_to_mask:
+                for token_id in request._tokens_to_mask:
+                    if token_id < logits.shape[1]:
+                        logits[i, token_id] = float('-inf')
+
     @torch.inference_mode()
     def execute_model(
         self,
@@ -1649,6 +1667,9 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # Apply structured output bitmasks if present
         if scheduler_output.grammar_bitmask is not None:
             self.apply_grammar_bitmask(scheduler_output, logits)
+
+        # Apply banned phrase logit masking if needed
+        self.apply_banned_phrase_masking(logits)
 
         # Sample the next token and get logprobs if needed.
         sampling_metadata = self.input_batch.sampling_metadata

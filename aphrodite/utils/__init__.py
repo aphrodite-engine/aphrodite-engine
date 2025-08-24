@@ -3398,3 +3398,49 @@ def tensor_progress_bar(iterable: Iterable[Tuple[str, torch.Tensor]],
                 progress.update(task, advance=steps)
     else:
         yield from iterable
+
+
+def generate_phrase_variants(phrase: str) -> list[str]:
+    """Generate variants of a phrase to catch different tokenizations.
+    Creates multiple versions of the phrase with different spacing and
+    capitalization to ensure all possible tokenizations are captured.
+    """
+    variants = []
+
+    # Original phrase
+    variants.append(phrase)
+
+    # Add space at beginning if not present
+    if not phrase.startswith(' '):
+        variants.append(' ' + phrase)
+
+    # Add space at end if not present
+    if not phrase.endswith(' '):
+        variants.append(phrase + ' ')
+
+    # Add space at both ends if not present
+    if not phrase.startswith(' ') and not phrase.endswith(' '):
+        variants.append(' ' + phrase + ' ')
+
+    # Capitalize first letter if not already
+    if phrase and phrase[0].islower():
+        capitalized = phrase[0].upper() + phrase[1:]
+        variants.append(capitalized)
+
+        # Also add capitalized versions with spaces
+        if not phrase.startswith(' '):
+            variants.append(' ' + capitalized)
+        if not phrase.endswith(' '):
+            variants.append(capitalized + ' ')
+        if not phrase.startswith(' ') and not phrase.endswith(' '):
+            variants.append(' ' + capitalized + ' ')
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_variants = []
+    for variant in variants:
+        if variant not in seen:
+            seen.add(variant)
+            unique_variants.append(variant)
+
+    return unique_variants

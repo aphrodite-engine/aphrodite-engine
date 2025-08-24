@@ -541,6 +541,10 @@ class Scheduler(SchedulerInterface):
             structured_output_request_ids,
             scheduled_spec_decode_tokens,
         )
+
+        self._update_phrase_detection_for_all_requests(
+            scheduled_running_reqs + scheduled_resumed_reqs
+        )
         # Construct the scheduler output.
         new_reqs_data = [
             NewRequestData.from_request(req,
@@ -659,12 +663,23 @@ class Scheduler(SchedulerInterface):
         resumed_from_preemption = [False] * len(running_reqs)
         resumed_from_preemption += [True] * len(resumed_reqs)
 
+        # Get tokens_to_mask from the first available request
+        # Handle case where running_reqs might be empty
+        tokens_to_mask = []
+        if running_reqs:
+            req = running_reqs[0]
+            tokens_to_mask = getattr(req, "_tokens_to_mask", [])
+        elif resumed_reqs:
+            req = resumed_reqs[0]
+            tokens_to_mask = getattr(req, "_tokens_to_mask", [])
+
         return CachedRequestData(
             req_ids=req_ids,
             resumed_from_preemption=resumed_from_preemption,
             new_token_ids=new_token_ids,
             new_block_ids=new_block_ids,
             num_computed_tokens=num_computed_tokens,
+            tokens_to_mask=tokens_to_mask,
         )
 
     def _try_schedule_encoder_inputs(
@@ -962,6 +977,35 @@ class Scheduler(SchedulerInterface):
     def get_request_counts(self) -> tuple[int, int]:
         """Returns (num_running_reqs, num_waiting_reqs)."""
         return len(self.running), len(self.waiting)
+
+    def _update_phrase_detection_for_all_requests(
+        self,
+        requests: list[Request],
+    ) -> None:
+        """Update phrase detection state for all scheduled requests."""
+        for request in requests:
+            self._update_phrase_detection_state_for_current_tokens(request)
+
+    def _update_phrase_detection_state_for_current_tokens(
+        self,
+        request: Request,
+    ) -> None:
+        """Update phrase detection state based on current output tokens."""
+        banned_phrases = request.sampling_params.banned_phrases_token_ids
+        if not banned_phrases:
+            request._tokens_to_mask = []
+            return
+
+        tokens_to_mask = set()
+        for phrase_tokens in banned_phrases:
+            if not phrase_tokens:
+                continue
+
+            # Always ban the first token of any banned phrase
+            first_token = phrase_tokens[0]
+            tokens_to_mask.add(first_token)
+
+        request._tokens_to_mask = list(tokens_to_mask)
 
     def add_request(self, request: Request) -> None:
         self.waiting.add_request(request)

@@ -512,6 +512,10 @@ class SamplingParams(
     token sequence is not allowed when the next generated token
     can complete the sequence.
     """
+    banned_phrases_token_ids: Optional[List[List[int]]] = None
+    """
+    List of token sequences that are not allowed to be generated.
+    """
 
     @staticmethod
     def from_optional(
@@ -577,6 +581,7 @@ class SamplingParams(
         allowed_token_ids: Optional[List[int]] = None,
         extra_args: Optional[dict[str, Any]] = None,
         bad_words: Optional[List[str]] = None,
+        banned_phrases_token_ids: Optional[List[List[int]]] = None,
     ) -> "SamplingParams":
         if logit_bias is not None:
             # Convert token_id to integer
@@ -672,6 +677,7 @@ class SamplingParams(
             allowed_token_ids=allowed_token_ids,
             extra_args=extra_args,
             bad_words=bad_words,
+            banned_phrases_token_ids=banned_phrases_token_ids,
         )
 
 
@@ -738,6 +744,7 @@ class SamplingParams(
         "allowed_token_ids": None,
         "bad_words": None,
         "extra_args": None,
+        "banned_phrases_token_ids": None,
     }
 
     def __post_init__(self) -> None:
@@ -952,6 +959,11 @@ class SamplingParams(
             self.bad_words = []
         else:
             self.bad_words = list(self.bad_words)
+
+        if self.banned_phrases_token_ids is not None and not isinstance(
+                self.banned_phrases_token_ids, list):
+            raise ValueError(
+                "banned_phrases_token_ids must be a list of lists of integers")
 
         if self.sampler_priority is not None:
             if not self.sampler_priority:
