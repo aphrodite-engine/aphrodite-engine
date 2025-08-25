@@ -429,6 +429,10 @@ class EngineArgs:
     enable_multimodal_encoder_data_parallel: bool = \
         ParallelConfig.enable_multimodal_encoder_data_parallel
 
+    num_iterp: int = SchedulerConfig.num_iterp
+    kv_thresh: float = SchedulerConfig.kv_thresh
+    minp: int = SchedulerConfig.minp
+
     async_scheduling: bool = SchedulerConfig.async_scheduling
 
     kv_sharing_fast_prefill: bool = \
@@ -831,6 +835,13 @@ class EngineArgs:
             **scheduler_kwargs["disable_hybrid_kv_cache_manager"])
         scheduler_group.add_argument("--async-scheduling",
                                      **scheduler_kwargs["async_scheduling"])
+        scheduler_group.add_argument("--num-iterp",
+                                     **scheduler_kwargs["num_iterp"])
+
+        scheduler_group.add_argument("--kv-thresh",
+                                     **scheduler_kwargs["kv_thresh"])
+
+        scheduler_group.add_argument("--minp", **scheduler_kwargs["minp"])
 
         # Aphrodite arguments
         aphrodite_kwargs = get_kwargs(AphroditeConfig)
