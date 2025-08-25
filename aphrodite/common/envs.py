@@ -160,6 +160,7 @@ if TYPE_CHECKING:
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
     APHRODITE_NO_DEPRECATION_WARNING: bool = False
+    APHRODITE_DISABLE_FLASH_ATTN: bool = False
     APHRODITE_DYNAMIC_ROPE_SCALING: bool = False
     APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8: bool = False
     APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16: bool = False
@@ -1158,6 +1159,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, aphrodite will not show deprecation warnings
     "APHRODITE_NO_DEPRECATION_WARNING":
     lambda: bool(int(os.getenv("APHRODITE_NO_DEPRECATION_WARNING", "0"))),
+
+    # If set, aphrodite will disable compilation of flash attention kernels
+    "APHRODITE_DISABLE_FLASH_ATTN_COMPILE":
+    lambda: bool(int(os.getenv("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "0"))),
 
     # If set, aphrodite will use dynamic rope scaling.
     "APHRODITE_DYNAMIC_ROPE_SCALING":
