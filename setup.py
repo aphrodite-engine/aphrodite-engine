@@ -639,16 +639,21 @@ if not envs.APHRODITE_USE_PRECOMPILED:
         ext_modules.append(CMakeExtension(name="aphrodite._rocm_C"))
 
     if _is_cuda():
-        ext_modules.append(CMakeExtension(
-            name="aphrodite.aphrodite_flash_attn._vllm_fa2_C"))
-        # Build FA3/_flashmla when using precompiled artifacts or nvcc >= 12.3.
+        if not envs.APHRODITE_DISABLE_FLASH_ATTN_COMPILE:
+            ext_modules.append(CMakeExtension(
+                name="aphrodite.aphrodite_flash_attn._vllm_fa2_C"))
+            # Build FA3 when using precompiled artifacts or nvcc >= 12.3.
+            if envs.APHRODITE_USE_PRECOMPILED or \
+                    get_nvcc_cuda_version() >= Version("12.3"):
+                ext_modules.append(
+                    CMakeExtension(
+                        name="aphrodite.aphrodite_flash_attn._vllm_fa3_C"))
+
+        # Build flashmla when using precompiled artifacts or nvcc >= 12.3.
+        # Optional since this doesn't get built (produce an .so file) when
+        # not targeting a hopper system
         if envs.APHRODITE_USE_PRECOMPILED or \
                 get_nvcc_cuda_version() >= Version("12.3"):
-            ext_modules.append(
-                CMakeExtension(
-                    name="aphrodite.aphrodite_flash_attn._vllm_fa3_C"))
-            # Optional since this doesn't get built (produce an .so file) when
-            # not targeting a hopper system
             ext_modules.append(
                 CMakeExtension(name="aphrodite._flashmla_C", optional=True))
         ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator"))

@@ -916,6 +916,11 @@ endif()
 if (APHRODITE_GPU_LANG STREQUAL "CUDA")
     include(cmake/external_project/flashmla.cmake)
 
-    # vllm-flash-attn should be last as it overwrites some CMake functions
-    include(cmake/external_project/vllm_flash_attn.cmake)
+    # Only build flash attention if not disabled
+    if (NOT DEFINED ENV{APHRODITE_DISABLE_FLASH_ATTN} OR NOT $ENV{APHRODITE_DISABLE_FLASH_ATTN})
+        # vllm-flash-attn should be last as it overwrites some CMake functions
+        include(cmake/external_project/vllm_flash_attn.cmake)
+    else()
+        message(STATUS "Flash attention compilation disabled by APHRODITE_DISABLE_FLASH_ATTN")
+    endif()
 endif()
