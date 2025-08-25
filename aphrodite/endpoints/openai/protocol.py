@@ -476,6 +476,9 @@ class ChatCompletionRequest(OpenAIBaseModel):
     mirostat_mode: Optional[int] = 0
     mirostat_tau: Optional[float] = 0.0
     mirostat_eta: Optional[float] = 0.0
+    enable_deepconf: Optional[bool] = False
+    deepconf_window_size: Optional[int] = 2048
+    deepconf_threshold: Optional[float] = 17
     # --8<-- [end:chat-completion-sampling-params]
 
     # doc: begin-chat-completion-extra-params
@@ -774,6 +777,9 @@ class ChatCompletionRequest(OpenAIBaseModel):
             mirostat_eta=self.mirostat_eta,
             banned_phrases_token_ids=banned_phrases_token_ids,
             extra_args=extra_args or None,
+            enable_deepconf=self.enable_deepconf,
+            deepconf_window_size=self.deepconf_window_size,
+            deepconf_threshold=self.deepconf_threshold,
         )
 
     def _get_guided_json_from_tool(
@@ -1101,6 +1107,9 @@ class CompletionRequest(OpenAIBaseModel):
     mirostat_mode: Optional[int] = 0
     mirostat_tau: Optional[float] = 0.0
     mirostat_eta: Optional[float] = 0.0
+    enable_deepconf: Optional[bool] = False
+    deepconf_window_size: Optional[int] = 2048
+    deepconf_threshold: Optional[float] = 17
     # doc: end-completion-sampling-params
 
     # doc: begin-completion-extra-params
@@ -1362,6 +1371,9 @@ class CompletionRequest(OpenAIBaseModel):
             mirostat_eta=self.mirostat_eta,
             banned_phrases_token_ids=banned_phrases_token_ids,
             extra_args=extra_args or None,
+            enable_deepconf=self.enable_deepconf,
+            deepconf_window_size=self.deepconf_window_size,
+            deepconf_threshold=self.deepconf_threshold,
             )
 
     @model_validator(mode="before")
