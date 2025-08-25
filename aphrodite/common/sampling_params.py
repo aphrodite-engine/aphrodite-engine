@@ -516,6 +516,45 @@ class SamplingParams(
     """
     List of token sequences that are not allowed to be generated.
     """
+    enable_deepconf: Optional[bool] = False
+    """
+    Enable DeepConf (Deep Think with Confidence) for confidence-based early
+    stopping. When enabled, the model will automatically stop generation when
+    its confidence drops below a certain threshold, as measured by a sliding
+    window of token-level confidence scores. This helps prevent low-quality
+    continuations and improves reasoning efficiency.
+    The confidence is calculated as the negative average of the logprobs of
+    non-sampled candidate tokens, where higher confidence indicates the model
+    was more certain about its token choice.
+    """
+    deepconf_window_size: Optional[int] = 2048
+    """
+    Size of the sliding window for confidence calculation in DeepConf.
+    This parameter controls how many recent tokens are considered when
+    computing the moving average confidence score. A larger window provides
+    more stable confidence estimates but may be less responsive to recent
+    confidence drops.
+    The window uses a sliding average approach where each token's confidence is
+    calculated as the negative average of the logprobs of all non-sampled
+    candidate tokens. The system maintains a running sum and deque to
+    efficiently compute the moving average without storing all historical
+    values. Default: 2048 tokens.
+    """
+    deepconf_threshold: Optional[float] = 17
+    """
+    Confidence threshold for early stopping in DeepConf.
+    When the moving average confidence over the sliding window drops below this
+    threshold, generation will stop early. This threshold should be calibrated
+    based on the specific model and task.
+    The threshold is compared against the average confidence of the last
+    `deepconf_window_size` tokens. Lower thresholds are more conservative and
+    allow generation to continue longer, while higher thresholds trigger
+    earlier stopping for potentially better efficiency.
+    The optimal threshold varies by model and dataset. The DeepConf paper found
+    that thresholds around 17 worked well across multiple models and
+    mathematical reasoning tasks, achieving up to 84.7% token reduction
+    while maintaining or improving accuracy. Default: 17.
+    """
 
     @staticmethod
     def from_optional(
@@ -582,6 +621,9 @@ class SamplingParams(
         extra_args: Optional[dict[str, Any]] = None,
         bad_words: Optional[List[str]] = None,
         banned_phrases_token_ids: Optional[List[List[int]]] = None,
+        enable_deepconf: Optional[bool]= False,
+        deepconf_window_size: Optional[int] = 2048,
+        deepconf_threshold: Optional[float] = 17,
     ) -> "SamplingParams":
         if logit_bias is not None:
             # Convert token_id to integer
@@ -590,7 +632,7 @@ class SamplingParams(
                 int(token): min(100.0, max(-100.0, bias))
                 for token, bias in logit_bias.items()
             }
-        
+
         return SamplingParams(
             n=1 if n is None else n,
             best_of=best_of,
@@ -678,8 +720,10 @@ class SamplingParams(
             extra_args=extra_args,
             bad_words=bad_words,
             banned_phrases_token_ids=banned_phrases_token_ids,
+            enable_deepconf=enable_deepconf,
+            deepconf_window_size=deepconf_window_size,
+            deepconf_threshold=deepconf_threshold,
         )
-
 
     default_values = {
         "n": 1,
@@ -745,6 +789,9 @@ class SamplingParams(
         "bad_words": None,
         "extra_args": None,
         "banned_phrases_token_ids": None,
+        "enable_deepconf": False,
+        "deepconf_window_size": 2048,
+        "deepconf_threshold": 17,
     }
 
     def __post_init__(self) -> None:
@@ -964,6 +1011,16 @@ class SamplingParams(
                 self.banned_phrases_token_ids, list):
             raise ValueError(
                 "banned_phrases_token_ids must be a list of lists of integers")
+
+        if self.enable_deepconf:
+            if self.deepconf_window_size < 1:
+                raise ValueError(
+                    "deepconf_window_size must be at least 1, got "
+                    f"{self.deepconf_window_size}.")
+            if self.deepconf_threshold < 0:
+                raise ValueError(
+                    "deepconf_threshold must be non-negative, got "
+                    f"{self.deepconf_threshold}.")
 
         if self.sampler_priority is not None:
             if not self.sampler_priority:
