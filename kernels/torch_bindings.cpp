@@ -186,6 +186,11 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   ops.impl("apply_repetition_penalties_", torch::kCUDA,
            &apply_repetition_penalties_);
 
+  ops.def(
+      "topk_topp_sampling_(Tensor! logits, Tensor! output_ids, Tensor! top_k_values, "
+      "Tensor? maybe_top_k_arr, Tensor? maybe_top_p_arr, float top_k_val, float top_p_val) -> ()");
+  ops.impl("topk_topp_sampling_", torch::kCUDA, &topk_topp_sampling_);
+
   // Layernorm-quant
   // Apply Root Mean Square (RMS) Normalization to the input tensor.
   ops.def(

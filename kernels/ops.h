@@ -97,6 +97,12 @@ void apply_repetition_penalties_(torch::Tensor& logits,
                                  const torch::Tensor& output_mask,
                                  const torch::Tensor& repetition_penalties);
 
+void topk_topp_sampling_(torch::Tensor& logits, torch::Tensor& output_ids,
+                         torch::Tensor& top_k_values,
+                         std::optional<torch::Tensor> maybe_top_k_arr,
+                         std::optional<torch::Tensor> maybe_top_p_arr,
+                         double top_k_val, double top_p_val);
+
 void rms_norm_static_fp8_quant(torch::Tensor& out, torch::Tensor& input,
                                torch::Tensor& weight, torch::Tensor& scale,
                                double epsilon);
