@@ -187,9 +187,9 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
            &apply_repetition_penalties_);
 
   ops.def(
-      "topk_topp_sampling_(Tensor! logits, Tensor! output_ids, Tensor! top_k_values, "
-      "Tensor? maybe_top_k_arr, Tensor? maybe_top_p_arr, float top_k_val, float top_p_val) -> ()");
-  ops.impl("topk_topp_sampling_", torch::kCUDA, &topk_topp_sampling_);
+      "topk_topp_sampling(Tensor! logits, Tensor! output_ids, Tensor top_k_values, "
+      "Tensor? top_p_values, Tensor? curand_states, Tensor!? output_logprobs, bool normalize_logprobs) -> ()");
+  ops.impl("topk_topp_sampling", torch::kCUDA, &topk_topp_sampling);
 
   // Layernorm-quant
   // Apply Root Mean Square (RMS) Normalization to the input tensor.
@@ -706,65 +706,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "SymInt n, SymInt group_size, SymInt sm_count, SymInt sm_version, SymInt "
       "CUBLAS_M_THRESHOLD, bool has_zp, bool n32k16_reorder) -> Tensor");
   //  conditionally compiled so impl in source file
-
-  // Sampling Kernels
-  ops.def(
-      "sampling_from_probs(Tensor probs, Tensor uniform_samples, bool "
-      "deterministic) -> Tensor",
-      &sampling_from_probs);
-  ops.impl("sampling_from_probs", torch::kCUDA, &sampling_from_probs);
-
-  ops.def(
-      "top_k_sampling_from_probs(Tensor probs, Tensor uniform_samples,"
-      "                          Tensor? maybe_top_k_arr, int top_k_val,"
-      "                          bool deterministic) -> Tensor[]",
-      &top_k_sampling_from_probs);
-  ops.impl("top_k_sampling_from_probs", torch::kCUDA,
-           &top_k_sampling_from_probs);
-
-  ops.def(
-      "min_p_sampling_from_probs(Tensor probs, Tensor uniform_samples,"
-      "                          Tensor? maybe_min_p_arr, float min_p_val,"
-      "                          bool deterministic) -> Tensor[]",
-      &min_p_sampling_from_probs);
-  ops.impl("min_p_sampling_from_probs", torch::kCUDA,
-           &min_p_sampling_from_probs);
-
-  ops.def(
-      "top_p_sampling_from_probs(Tensor probs, Tensor uniform_samples,"
-      "                          Tensor? maybe_top_p_arr, float top_p_val,"
-      "                          bool deterministic) -> Tensor[]",
-      &top_p_sampling_from_probs);
-  ops.impl("top_p_sampling_from_probs", torch::kCUDA,
-           &top_p_sampling_from_probs);
-
-  ops.def(
-      "top_k_top_p_sampling_from_probs(Tensor probs, Tensor uniform_samples,"
-      "                          Tensor? maybe_top_k_arr, float top_k_val,"
-      "                          Tensor? maybe_top_p_arr, float top_p_val,"
-      "                          bool deterministic) -> Tensor[]",
-      &top_k_top_p_sampling_from_probs);
-  ops.impl("top_k_top_p_sampling_from_probs", torch::kCUDA,
-           &top_k_top_p_sampling_from_probs);
-
-  ops.def(
-      "top_k_renorm_prob(Tensor probs, Tensor? maybe_top_k_arr, int top_k_val) "
-      "-> Tensor",
-      &top_k_renorm_prob);
-  ops.impl("top_k_renorm_prob", torch::kCUDA, &top_k_renorm_prob);
-
-  ops.def(
-      "top_p_renorm_prob(Tensor probs, Tensor? maybe_top_p_arr, float "
-      "top_p_val) "
-      "-> Tensor",
-      &top_p_renorm_prob);
-  ops.impl("top_p_renorm_prob", torch::kCUDA, &top_p_renorm_prob);
-
-  ops.def(
-      "top_k_mask_logits(Tensor logits, Tensor? maybe_top_k_arr, int "
-      "top_k_val) -> Tensor",
-      &top_k_mask_logits);
-  ops.impl("top_k_mask_logits", torch::kCUDA, &top_k_mask_logits);
 
 #endif
 }

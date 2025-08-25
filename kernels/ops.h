@@ -97,11 +97,12 @@ void apply_repetition_penalties_(torch::Tensor& logits,
                                  const torch::Tensor& output_mask,
                                  const torch::Tensor& repetition_penalties);
 
-void topk_topp_sampling_(torch::Tensor& logits, torch::Tensor& output_ids,
-                         torch::Tensor& top_k_values,
-                         std::optional<torch::Tensor> maybe_top_k_arr,
-                         std::optional<torch::Tensor> maybe_top_p_arr,
-                         double top_k_val, double top_p_val);
+void topk_topp_sampling(torch::Tensor& logits, torch::Tensor& output_ids,
+                        torch::Tensor& top_k_values,
+                        std::optional<torch::Tensor> top_p_values,
+                        std::optional<torch::Tensor> curand_states,
+                        std::optional<torch::Tensor> output_logprobs,
+                        bool normalize_logprobs = false);
 
 void rms_norm_static_fp8_quant(torch::Tensor& out, torch::Tensor& input,
                                torch::Tensor& weight, torch::Tensor& scale,
@@ -211,39 +212,6 @@ void selective_scan_fwd(const torch::Tensor& u, const torch::Tensor& delta,
 
 torch::Tensor permute_cols(torch::Tensor const& A, torch::Tensor const& perm);
 
-// Sampling kernels
-#ifndef USE_ROCM
-torch::Tensor sampling_from_probs(torch::Tensor probs,
-                                  torch::Tensor uniform_samples,
-                                  bool deterministic);
-std::vector<torch::Tensor> top_p_sampling_from_probs(
-    torch::Tensor probs, torch::Tensor uniform_samples,
-    std::optional<torch::Tensor> maybe_top_p_arr, double top_p_val,
-    bool deterministic);
-std::vector<torch::Tensor> top_k_sampling_from_probs(
-    torch::Tensor probs, torch::Tensor uniform_samples,
-    std::optional<torch::Tensor> maybe_top_k_arr, int64_t top_k_val,
-    bool deterministic);
-std::vector<torch::Tensor> min_p_sampling_from_probs(
-    torch::Tensor probs, torch::Tensor uniform_samples,
-    std::optional<torch::Tensor> maybe_min_p_arr, double min_p_val,
-    bool deterministic);
-std::vector<torch::Tensor> top_k_top_p_sampling_from_probs(
-    torch::Tensor probs, torch::Tensor uniform_samples,
-    std::optional<torch::Tensor> maybe_top_k_arr, double top_k_val,
-    std::optional<torch::Tensor> maybe_top_p_arr, double top_p_val,
-    bool deterministic);
-torch::Tensor top_p_renorm_prob(torch::Tensor probs,
-                                std::optional<torch::Tensor> maybe_top_p_arr,
-                                double top_p_val);
-torch::Tensor top_k_renorm_prob(torch::Tensor probs,
-                                std::optional<torch::Tensor> maybe_top_k_arr,
-                                int64_t top_k_val);
-torch::Tensor top_k_mask_logits(torch::Tensor logits,
-                                std::optional<torch::Tensor> maybe_top_k_arr,
-                                int64_t top_k_val);
-
-#endif
 
 // Quantization kernels
 #ifndef USE_ROCM

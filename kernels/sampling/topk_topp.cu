@@ -17,24 +17,31 @@ constexpr int TOP_K_MAX = 256;
 template <typename T>
 struct TopK_2 {
   int idx = -1;
-  T val = -FLT_MAX;
+  T val;
 
   __device__ __forceinline__ void insert(T elem, int elem_idx) {
-    if (elem > val) {
+    // Use float comparison to avoid operator ambiguity
+    if (static_cast<float>(elem) > static_cast<float>(val)) {
       val = elem;
       idx = elem_idx;
     }
   }
 
   __device__ __forceinline__ void init() {
-    val = -FLT_MAX;
+    // Initialize with appropriate minimum value based on type
+    if constexpr (std::is_same_v<T, float>) {
+      val = -FLT_MAX;
+    } else {
+      val = static_cast<T>(-65504.0f);  // Half precision min
+    }
     idx = -1;
   }
 };
 
 template <typename T>
 __device__ __forceinline__ TopK_2<T> reduce_topk_op(const TopK_2<T>& a, const TopK_2<T>& b) {
-  return a.val > b.val ? a : b;
+  // Use float comparison to avoid operator ambiguity
+  return static_cast<float>(a.val) > static_cast<float>(b.val) ? a : b;
 }
 
 // Stage 1: Find top-k values per block
@@ -42,9 +49,9 @@ template <typename scalar_t, int BLOCK_SIZE, int BLOCKS_PER_SEQ>
 __global__ void topk_stage1_kernel(
     const scalar_t* __restrict__ logits,          // [num_seqs, vocab_size]
     scalar_t* __restrict__ tmp_logits,            // [num_seqs, vocab_size]
-    int* __restrict__ topk_tmp_id_buf,            // [num_seqs, BLOCKS_PER_SEQ * k]
-    scalar_t* __restrict__ topk_tmp_val_buf,      // [num_seqs, BLOCKS_PER_SEQ * k]
-    const int* __restrict__ topk_values,          // [num_seqs] - k values per sequence
+    int* __restrict__ topk_tmp_id_buf,           // [num_seqs, BLOCKS_PER_SEQ * k]
+    scalar_t* __restrict__ topk_tmp_val_buf,     // [num_seqs, BLOCKS_PER_SEQ * k]
+    const int* __restrict__ topk_values,         // [num_seqs] - k values per sequence
     const int num_seqs,
     const int vocab_size) {
 
@@ -86,7 +93,7 @@ __global__ void topk_stage1_kernel(
       topk_tmp_id_buf[tmp_buf_offset + ite] = total.idx;
       topk_tmp_val_buf[tmp_buf_offset + ite] = total.val;
       if (total.idx >= 0) {
-        tmp_logits[total.idx] = -FLT_MAX;
+        tmp_logits[total.idx] = static_cast<scalar_t>(-65504.0f);  // Safe min for half precision
       }
     }
     __syncthreads();
@@ -135,7 +142,7 @@ __global__ void topk_stage2_sampling_kernel(
   scalar_t* val_buf = topk_tmp_val_buf + seq_idx * stride;
 
   // Find top-k across all blocks
-  float max_logit;
+  float max_logit = -FLT_MAX;
   for (int ite = 0; ite < k; ite++) {
     TopK_2<float> partial;
     partial.init();
@@ -152,7 +159,7 @@ __global__ void topk_stage2_sampling_kernel(
         max_logit = total.val;
       }
       s_id[ite] = total.idx;
-      val_buf[total.idx] = -FLT_MAX;
+      val_buf[total.idx] = static_cast<scalar_t>(-65504.0f);  // Safe min for half precision
 
       // Convert to probability
       total.val = expf(total.val - max_logit);
@@ -198,8 +205,7 @@ __global__ void topk_stage2_sampling_kernel(
 
 }  // namespace aphrodite
 
-
-void topk_topp_sampling_(
+void topk_topp_sampling(
     torch::Tensor& logits,              // [num_seqs, vocab_size]
     torch::Tensor& output_ids,          // [num_seqs]
     const torch::Tensor& top_k_values,  // [num_seqs]
