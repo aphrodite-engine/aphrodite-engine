@@ -416,7 +416,7 @@ class OutputProcessor:
                 if req_state.logprobs_processor.check_conf_stop():
                     finish_reason = FinishReason.STOP
                     stop_reason = (
-                        f"<gconf<"
+                        f"<deepconf-"
                         f"{req_state.logprobs_processor.conf_threshold}>")
 
             # 4) Create and handle RequestOutput objects.
