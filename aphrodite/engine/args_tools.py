@@ -433,6 +433,10 @@ class EngineArgs:
     kv_thresh: float = SchedulerConfig.kv_thresh
     minp: int = SchedulerConfig.minp
 
+    enable_dcpp: bool = SchedulerConfig.enable_dcpp
+    dcpp_min_chunk: Optional[int] = SchedulerConfig.dcpp_min_chunk
+    dcpp_length_threshold: int = SchedulerConfig.dcpp_length_threshold
+
     async_scheduling: bool = SchedulerConfig.async_scheduling
 
     kv_sharing_fast_prefill: bool = \
@@ -842,6 +846,14 @@ class EngineArgs:
                                      **scheduler_kwargs["kv_thresh"])
 
         scheduler_group.add_argument("--minp", **scheduler_kwargs["minp"])
+
+        scheduler_group.add_argument("--enable-dcpp",
+                                     **scheduler_kwargs["enable_dcpp"])
+        scheduler_group.add_argument("--dcpp-min-chunk",
+                                     **scheduler_kwargs["dcpp_min_chunk"])
+        scheduler_group.add_argument(
+            "--dcpp-length-threshold",
+            **scheduler_kwargs["dcpp_length_threshold"])
 
         # Aphrodite arguments
         aphrodite_kwargs = get_kwargs(AphroditeConfig)
@@ -1329,6 +1341,14 @@ class EngineArgs:
             disable_hybrid_kv_cache_manager,
             async_scheduling=self.async_scheduling,
             single_user_mode=self.single_user_mode,
+            # Token Throttling fields
+            num_iterp=self.num_iterp,
+            kv_thresh=self.kv_thresh,
+            minp=self.minp,
+            # DCPP fields
+            enable_dcpp=self.enable_dcpp,
+            dcpp_min_chunk=self.dcpp_min_chunk,
+            dcpp_length_threshold=self.dcpp_length_threshold,
         )
 
         if not model_config.is_multimodal_model and self.default_mm_loras:

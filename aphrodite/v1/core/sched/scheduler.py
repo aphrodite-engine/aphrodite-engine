@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 import random
 import time
 from collections import defaultdict
@@ -15,6 +16,7 @@ from aphrodite.distributed.kv_transfer.kv_connector.factory import (
     KVConnectorFactory)
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
     KVConnectorBase_V1, KVConnectorRole)
+from aphrodite.modeling.flops_estimator import create_estimator_safely
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from aphrodite.v1.core.encoder_cache_manager import (EncoderCacheManager,
                                                      compute_encoder_budget)
@@ -261,6 +263,15 @@ class Scheduler(SchedulerInterface):
 
         self.token_budget = TokenBudget(self)
 
+        # DCPP estimator init (experimental): prefer in-memory hf_config,
+        # fallback to disk
+        self.attn_estimator = None
+        self.enable_dcpp = self.scheduler_config.enable_dcpp
+        self.dcpp_length_threshold = \
+            self.scheduler_config.dcpp_length_threshold
+        self.dcpp_min_chunk = self.scheduler_config.dcpp_min_chunk or 0
+        self._maybe_init_dcpp(aphrodite_config)
+
     def schedule(self) -> SchedulerOutput:
         # NOTE(woosuk) on the scheduling algorithm:
         # There's no "decoding phase" nor "prefill phase" in the scheduler.
@@ -314,6 +325,41 @@ class Scheduler(SchedulerInterface):
                     self.scheduler_config.long_prefill_token_threshold)
             num_new_tokens = min(num_new_tokens,
                                  token_budget.get(request.computed_prompt))
+
+            # DCPP: Dynamic chunk size adjustment for long sequences
+            dcpp_equitable_tokens = None
+            if (
+                self.enable_dcpp and request.is_dcpp
+                and self.attn_estimator is not None
+            ):
+                # Shorten length to reduce long kv history effect
+                # Target execution time is num_new_tokens execution time
+                # without history
+                dcpp_equitable_tokens = num_new_tokens
+                target_tokens = (
+                    self.scheduler_config.long_prefill_token_threshold
+                    if self.scheduler_config.long_prefill_token_threshold > 0
+                    else token_budget.get(request.computed_prompt))
+                num_new_tokens, dcpp_scheduled_chunk = (
+                    self.attn_estimator.compute_chunk_size_with_overhead(
+                        request.num_computed_tokens,
+                        request.num_tokens,
+                        target_tokens,
+                        self.block_size
+                    ))
+                # NOTE: Prevent short tail effect
+                floor = (self.dcpp_min_chunk if self.dcpp_min_chunk and 
+                         self.dcpp_min_chunk > 0 else 0)
+                num_new_tokens = min(num_new_tokens, dcpp_equitable_tokens)
+                num_new_tokens = min(
+                    request.num_tokens - request.num_computed_tokens,
+                    max(floor, num_new_tokens)
+                )
+                request.dcpp_scheduled_chunk = dcpp_scheduled_chunk
+                logger.debug(
+                    "DCPP adjusted chunk from {} to {} (hist={}, total={})",
+                    dcpp_equitable_tokens, num_new_tokens, 
+                    request.num_computed_tokens, request.num_tokens)
 
             # Make sure the input position does not exceed the max model len.
             # This is necessary when using spec decoding.
@@ -395,7 +441,15 @@ class Scheduler(SchedulerInterface):
             req_to_new_block_ids[request.request_id] = (
                 new_blocks.get_block_ids())
             num_scheduled_tokens[request.request_id] = num_new_tokens
-            token_budget.consume(num_new_tokens, request.computed_prompt)
+            # NOTE: If dcpp is enabled, use the original chunk size to update
+            # token budget but keep the shortened chunk size for the request to
+            # keep similar execution time between each step.
+            # Otherwise, use the scheduled chunk size
+            token_budget.consume(
+                (num_new_tokens if dcpp_equitable_tokens is None
+                 else dcpp_equitable_tokens),
+                request.computed_prompt
+            )
             req_index += 1
 
             # Speculative decode related.
@@ -517,10 +571,18 @@ class Scheduler(SchedulerInterface):
                         num_new_tokens = (
                             self.scheduler_config.long_prefill_token_threshold)
 
+                    # Enable DCPP for long sequences
+                    if (self.enable_dcpp and self.attn_estimator is not None
+                            and num_new_tokens > self.dcpp_length_threshold):
+                        logger.debug(
+                            "Enable DCPP for req {}: tokens={} threshold={}",
+                            request.request_id, num_new_tokens,
+                            self.dcpp_length_threshold)
+                        request.is_dcpp = True
+
                     # chunked prefill has to be enabled explicitly to allow
-                    # pooling requests to be chunked
-                    if not self.scheduler_config.chunked_prefill_enabled and \
-                        num_new_tokens > token_budget.get(False):
+                    if (not self.scheduler_config.chunked_prefill_enabled
+                            and num_new_tokens > token_budget.get(False)):
                         self.waiting.pop_request()
                         skipped_waiting_requests.prepend_request(request)
                         continue
@@ -633,8 +695,8 @@ class Scheduler(SchedulerInterface):
         assert (len(scheduled_new_reqs) + len(scheduled_resumed_reqs) +
                 len(scheduled_running_reqs) <= len(self.running))
 
-        # Get the longest common prefix among all requests in the running queue.
-        # This can be potentially used for cascade attention.
+        # Get the longest common prefix among all requests in the running
+        # queue. This can be potentially used for cascade attention.
         num_common_prefix_blocks = [0] * len(
             self.kv_cache_config.kv_cache_groups)
         if self.running:
@@ -1230,6 +1292,32 @@ class Scheduler(SchedulerInterface):
     def shutdown(self) -> None:
         if self.kv_event_publisher:
             self.kv_event_publisher.shutdown()
+
+    # -------------------------
+    # DCPP helpers
+    # -------------------------
+    def _maybe_init_dcpp(self, aphrodite_config) -> None:
+        """Initialize FLOPs estimator using a helper from flops_estimator.
+
+        Keeps changes minimal in scheduler; helper handles all fallbacks.
+        """
+        if not self.enable_dcpp:
+            return
+        hf_cfg = (getattr(aphrodite_config.model_config, "hf_text_config",
+                          None) or getattr(aphrodite_config.model_config,
+                                           "hf_config", None))
+        # Prefer HF config object; only use on-disk config.json if model is a
+        # local directory. ModelConfig does not expose `model_path`.
+        model_root = getattr(aphrodite_config.model_config, "model", None)
+        cfg_path = (os.path.join(model_root, "config.json")
+                    if isinstance(model_root, str) and
+                    os.path.isdir(model_root)
+                    else None)
+        self.attn_estimator = create_estimator_safely(
+            hf_config_obj=hf_cfg,
+            config_path=cfg_path,
+            scheduler_config=self.scheduler_config,
+        )
 
     ########################################################################
     # KV Connector Related Methods
