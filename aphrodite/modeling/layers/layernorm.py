@@ -15,6 +15,10 @@ def is_rocm_aiter_rmsnorm_enabled() -> bool:
         and envs.APHRODITE_ROCM_USE_AITER
 
 
+def is_cute_dsl_layernorm_enabled() -> bool:
+    return envs.APHRODITE_USE_CUTE_DSL_KERNELS
+
+
 def rms_norm(x: torch.Tensor, weight: torch.Tensor,
              variance_epsilon: float) -> torch.Tensor:
     from aphrodite import _custom_ops as ops
@@ -62,6 +66,45 @@ def rocm_aiter_rms_norm(x: torch.Tensor, weight: torch.Tensor,
     return rocm_aiter.rms_norm(x, weight, variance_epsilon)
 
 
+def cute_dsl_layernorm(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    eps: float = 1e-6,
+    return_rstd: bool = False,
+    return_mean: bool = False,
+) -> Union[torch.Tensor, tuple[torch.Tensor, ...]]:
+    """CUTE DSL layernorm implementation using CUTLASS/CUTE."""
+    from aphrodite.cute_ops.layernorm import layernorm as cute_layernorm
+
+    return cute_layernorm(
+        x=x,
+        weight=weight,
+        eps=eps,
+        return_rstd=return_rstd,
+        return_mean=return_mean,
+    )
+
+
+def cute_dsl_rms_norm(x: torch.Tensor, weight: torch.Tensor,
+                      variance_epsilon: float) -> torch.Tensor:
+    """CUTE DSL RMS norm wrapper for compatibility with existing interface."""
+    return cute_dsl_layernorm(x, weight, variance_epsilon)[0]
+
+
+def cute_dsl_fused_add_rms_norm(
+    x: torch.Tensor,
+    residual: torch.Tensor,
+    weight: torch.Tensor,
+    variance_epsilon: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """CUTE DSL fused add RMS norm wrapper for compatibility."""
+    # Add residual to x
+    x_with_residual = x + residual
+    # Apply RMS norm
+    normalized = cute_dsl_rms_norm(x_with_residual, weight, variance_epsilon)
+    return normalized, x_with_residual
+
+
 def rocm_aiter_fused_add_rms_norm(
         x: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor,
         variance_epsilon: float) -> tuple[torch.Tensor, torch.Tensor]:
@@ -89,11 +132,15 @@ def rocm_aiter_fused_add_rms_norm(
 
 def dispatch_cuda_rmsnorm_func(add_residual: bool):
     if add_residual:
-        if is_rocm_aiter_rmsnorm_enabled():
+        if is_cute_dsl_layernorm_enabled():
+            return cute_dsl_fused_add_rms_norm
+        elif is_rocm_aiter_rmsnorm_enabled():
             return rocm_aiter_fused_add_rms_norm
         return fused_add_rms_norm
 
-    if is_rocm_aiter_rmsnorm_enabled():
+    if is_cute_dsl_layernorm_enabled():
+        return cute_dsl_rms_norm
+    elif is_rocm_aiter_rmsnorm_enabled():
         return rocm_aiter_rms_norm
     return rms_norm
 
@@ -285,8 +332,7 @@ class PolyNorm(CustomOp):
     """Polynomial normalization.
     Computes x -> w_0 * RMSNorm(x^3) + w_1 * RMSNorm(x^2) + w_2 * RMSNorm(x) + b
     where w_n is the learned weight and b is the bias.
-    Refer to https://arxiv.org/html/2411.03884v1
-    """
+    Refer to https://arxiv.org/html/2411.03884v1"""
 
     def __init__(
         self,
