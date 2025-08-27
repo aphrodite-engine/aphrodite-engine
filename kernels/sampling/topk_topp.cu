@@ -209,9 +209,9 @@ void topk_topp_sampling(
     torch::Tensor& logits,              // [num_seqs, vocab_size]
     torch::Tensor& output_ids,          // [num_seqs]
     const torch::Tensor& top_k_values,  // [num_seqs]
-    const torch::optional<torch::Tensor>& top_p_values,  // [num_seqs] optional
-    const torch::optional<torch::Tensor>& curand_states, // [num_seqs] optional
-    torch::optional<torch::Tensor>& output_logprobs,     // [num_seqs] optional
+    const std::optional<torch::Tensor>& top_p_values,  // [num_seqs] optional
+    const std::optional<torch::Tensor>& curand_states, // [num_seqs] optional
+    std::optional<torch::Tensor>& output_logprobs,     // [num_seqs] optional
     bool normalize_logprobs = false) {
 
   TORCH_CHECK(logits.is_contiguous());

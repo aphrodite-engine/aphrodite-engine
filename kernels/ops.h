@@ -98,10 +98,10 @@ void apply_repetition_penalties_(torch::Tensor& logits,
                                  const torch::Tensor& repetition_penalties);
 
 void topk_topp_sampling(torch::Tensor& logits, torch::Tensor& output_ids,
-                        torch::Tensor& top_k_values,
-                        std::optional<torch::Tensor> top_p_values,
-                        std::optional<torch::Tensor> curand_states,
-                        std::optional<torch::Tensor> output_logprobs,
+                        const torch::Tensor& top_k_values,
+                        const std::optional<torch::Tensor>& top_p_values,
+                        const std::optional<torch::Tensor>& curand_states,
+                        std::optional<torch::Tensor>& output_logprobs,
                         bool normalize_logprobs = false);
 
 void rms_norm_static_fp8_quant(torch::Tensor& out, torch::Tensor& input,

@@ -349,6 +349,30 @@ def apply_repetition_penalties(logits: torch.Tensor, prompt_mask: torch.Tensor,
                                          repetition_penalties)
 
 
+def apply_top_k_top_p_cuda(
+    logits: torch.Tensor,
+    output_ids: torch.Tensor,
+    top_k_values: torch.Tensor,
+    top_p_values: Optional[torch.Tensor] = None,
+    curand_states: Optional[torch.Tensor] = None,
+    output_logprobs: Optional[torch.Tensor] = None,
+    normalize_logprobs: bool = False,
+) -> None:
+    """Apply top-k and top-p sampling using CUDA kernel.
+    Args:
+        logits: The logits tensor of shape [num_seqs, vocab_size].
+        output_ids: Output tensor for sampled token ids [num_seqs].
+        top_k_values: Top-k values per sequence [num_seqs].
+        top_p_values: Optional top-p values per sequence [num_seqs].
+        curand_states: Optional CUDA random states for sampling [num_seqs].
+        output_logprobs: Optional output for log probabilities [num_seqs].
+        normalize_logprobs: Whether to normalize log probabilities.
+    """
+    torch.ops._C.topk_topp_sampling(
+        logits, output_ids, top_k_values, top_p_values, curand_states,
+        output_logprobs, normalize_logprobs)
+
+
 def advance_step_flashattn(num_seqs: int, num_queries: int, block_size: int,
                            input_tokens: torch.Tensor,
                            sampled_token_ids: torch.Tensor,
