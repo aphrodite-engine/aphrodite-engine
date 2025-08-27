@@ -349,6 +349,30 @@ def apply_repetition_penalties(logits: torch.Tensor, prompt_mask: torch.Tensor,
                                          repetition_penalties)
 
 
+def apply_top_k_top_p_cuda(
+    logits: torch.Tensor,
+    output_ids: torch.Tensor,
+    top_k_values: torch.Tensor,
+    top_p_values: Optional[torch.Tensor] = None,
+    curand_states: Optional[torch.Tensor] = None,
+    output_logprobs: Optional[torch.Tensor] = None,
+    normalize_logprobs: bool = False,
+) -> None:
+    """Apply top-k and top-p sampling using CUDA kernel.
+    Args:
+        logits: The logits tensor of shape [num_seqs, vocab_size].
+        output_ids: Output tensor for sampled token ids [num_seqs].
+        top_k_values: Top-k values per sequence [num_seqs].
+        top_p_values: Optional top-p values per sequence [num_seqs].
+        curand_states: Optional CUDA random states for sampling [num_seqs].
+        output_logprobs: Optional output for log probabilities [num_seqs].
+        normalize_logprobs: Whether to normalize log probabilities.
+    """
+    torch.ops._C.topk_topp_sampling(
+        logits, output_ids, top_k_values, top_p_values, curand_states,
+        output_logprobs, normalize_logprobs)
+
+
 def advance_step_flashattn(num_seqs: int, num_queries: int, block_size: int,
                            input_tokens: torch.Tensor,
                            sampled_token_ids: torch.Tensor,
@@ -2020,129 +2044,3 @@ if hasattr(torch.ops._C, "int8_scaled_mm_with_quant"):
         M = mat1.size(0)
         N = mat2.size(0)
         return torch.empty((M, N), dtype=out_dtype)
-
-
-# Sampling Kernels
-def sampling_from_probs(probs: torch.Tensor,
-                        uniform_samplers: torch.Tensor,
-                        deterministic: bool = True,
-                        check_nan: bool = False) -> torch.Tensor:
-    if check_nan and torch.any(torch.isnan(probs)):
-        raise ValueError("NaN detected in probs")
-    return torch.ops._C.sampling_from_probs(probs, uniform_samplers,
-                                            deterministic)
-
-
-def _to_tensor_scalar_tuple(x):
-    if isinstance(x, torch.Tensor):
-        return (x, 0)
-    else:
-        return (None, x)
-
-
-def top_p_sampling_from_probs(
-        probs: torch.Tensor,
-        uniform_samples: torch.Tensor,
-        top_p: Union[torch.Tensor, float],
-        deterministic: bool = True,
-        check_nan: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
-    if check_nan and torch.any(torch.isnan(probs)):
-        raise ValueError("NaN detected in probs")
-    return torch.ops._C.top_p_sampling_from_probs(
-        probs, uniform_samples, *_to_tensor_scalar_tuple(top_p), deterministic)
-
-
-def top_k_sampling_from_probs(
-        probs: torch.Tensor,
-        uniform_samples: torch.Tensor,
-        top_k: Union[torch.Tensor, int],
-        deterministic: bool = True,
-        check_nan: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
-    if check_nan and torch.any(torch.isnan(probs)):
-        raise ValueError("NaN detected in probs")
-    return torch.ops._C.top_k_sampling_from_probs(
-        probs, uniform_samples, *_to_tensor_scalar_tuple(top_k), deterministic)
-
-
-def min_p_sampling_from_probs(
-        probs: torch.Tensor,
-        uniform_samples: torch.Tensor,
-        min_p: Union[torch.Tensor, float],
-        deterministic: bool = True,
-        check_nan: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
-    if check_nan and torch.any(torch.isnan(probs)):
-        raise ValueError("NaN detected in probs")
-    return torch.ops._C.min_p_sampling_from_probs(
-        probs, uniform_samples, *_to_tensor_scalar_tuple(min_p), deterministic)
-
-
-def top_k_mask_logits(
-    logits: torch.Tensor,
-    top_k: Union[torch.Tensor, int],
-) -> torch.Tensor:
-    return torch.ops._C.top_k_mask_logits(logits,
-                                          *_to_tensor_scalar_tuple(top_k))
-
-
-def top_p_renorm_prob(
-    probs: torch.Tensor,
-    top_p: Union[torch.Tensor, float],
-) -> torch.Tensor:
-    return torch.ops._C.top_p_renorm_prob(probs,
-                                          *_to_tensor_scalar_tuple(top_p))
-
-
-def top_k_renorm_prob(
-    probs: torch.Tensor,
-    top_k: Union[torch.Tensor, int],
-) -> torch.Tensor:
-    return torch.ops._C.top_k_renorm_prob(probs,
-                                          *_to_tensor_scalar_tuple(top_k))
-
-
-def top_k_top_p_sampling_from_logits(
-    probs: torch.Tensor,
-    uniform_samples: torch.Tensor,
-    top_k: Union[torch.Tensor, int],
-    top_p: Union[torch.Tensor, float],
-    filter_apply_order: str = "top_k_first",
-    deterministic: bool = True,
-    check_nan: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    if filter_apply_order == "top_k_first":
-        masked_logits = top_k_mask_logits(probs, top_k)
-        probs = torch.softmax(masked_logits, dim=-1)
-        return top_p_sampling_from_probs(probs, uniform_samples, top_p,
-                                         deterministic, check_nan)
-    elif filter_apply_order == "joint":
-        probs = torch.softmax(probs, dim=-1)
-        if check_nan and torch.any(torch.isnan(probs)):
-            raise ValueError("NaN detected in probs")
-        return torch.ops._C.top_k_top_p_sampling_from_logits(
-            probs, uniform_samples, *_to_tensor_scalar_tuple(top_k),
-            *_to_tensor_scalar_tuple(top_p), deterministic)
-    else:
-        raise ValueError(f"Invalid filter_apply_order: {filter_apply_order}")
-
-
-def top_k_top_p_sampling_from_probs(
-    probs: torch.Tensor,
-    uniform_samples: torch.Tensor,
-    top_k: Union[torch.Tensor, int],
-    top_p: Union[torch.Tensor, float],
-    filter_apply_order: str = "top_k_first",
-    deterministic: bool = True,
-    check_nan: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    if filter_apply_order == "top_k_first":
-        renorm_probs = top_k_renorm_prob(probs, top_k)
-        return top_p_sampling_from_probs(renorm_probs, uniform_samples, top_p,
-                                         deterministic, check_nan)
-    elif filter_apply_order == "joint":
-        if check_nan and torch.any(torch.isnan(probs)):
-            raise ValueError("NaN detected in probs")
-        return torch.ops._C.top_k_top_p_sampling_from_probs(
-            probs, uniform_samples, *_to_tensor_scalar_tuple(top_k),
-            *_to_tensor_scalar_tuple(top_p), deterministic)
-    else:
-        raise ValueError(f"Invalid filter_apply_order: {filter_apply_order}")

@@ -2,6 +2,7 @@ import torch
 
 _SAMPLING_EPS = 1e-5
 
+
 def _tensor_or_zeros(tens, like_tensor):
     return tens if tens is not None else torch.zeros_like(like_tensor)
 
