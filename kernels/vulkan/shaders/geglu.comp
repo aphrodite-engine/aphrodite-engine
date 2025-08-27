@@ -1,0 +1,18 @@
+#version 450
+
+#include "glu_head.comp"
+
+const float GELU_COEF_A    = 0.044715f;
+const float SQRT_2_OVER_PI = 0.7978845608f;
+
+float op(float a, float b) {
+    const float val = SQRT_2_OVER_PI * (a + GELU_COEF_A * a * a * a);
+    const float gelu = 0.5f * a * (1.0f + tanh(val));
+    // Match PyTorch half-precision behavior: cast GELU(a) to D_TYPE, multiply in D_TYPE with b, then return
+    D_TYPE gy = D_TYPE(gelu);
+    D_TYPE by = D_TYPE(b);
+    D_TYPE py = gy * by;
+    return float(py);
+}
+
+#include "glu_main.comp"
