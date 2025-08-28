@@ -96,7 +96,40 @@ void cutlass_group_gemm_caller(
   using ElementAB = typename Gemm::ElementAB;
   using ElementD = typename Gemm::ElementD;
 
+  TORCH_CHECK(a_tensors.dim() >= 2, "A tensors must have at least 2 dimensions");
+  TORCH_CHECK(b_tensors.dim() >= 2, "B tensors must have at least 2 dimensions");
+  TORCH_CHECK(out_tensors.dim() >= 2, "Output tensors must have at least 2 dimensions");
+  TORCH_CHECK(a_tensors.size(1) == b_tensors.size(1),
+              "Inner dimension mismatch: A.size(1)=", a_tensors.size(1),
+              " != B.size(1)=", b_tensors.size(1));
+  TORCH_CHECK(out_tensors.size(1) == b_tensors.size(0),
+              "Output dimension mismatch: out.size(1)=", out_tensors.size(1),
+              " != B.size(0)=", b_tensors.size(0));
+  TORCH_CHECK(a_tensors.size(0) == out_tensors.size(0),
+              "Batch dimension mismatch: A.size(0)=", a_tensors.size(0),
+              " != out.size(0)=", out_tensors.size(0));
+
   int num_experts = static_cast<int>(expert_offsets.size(0));
+
+  if (per_act_token) {
+    TORCH_CHECK(a_scales.numel() == a_tensors.size(0),
+                "A scales must have same number of elements as A rows when per_act_token=true: ",
+                a_scales.numel(), " != ", a_tensors.size(0));
+  } else {
+    TORCH_CHECK(a_scales.numel() == 1,
+                "A scales must be scalar when per_act_token=false: ",
+                a_scales.numel(), " != 1");
+  }
+
+  if (per_out_ch) {
+    TORCH_CHECK(b_scales.numel() == num_experts * b_tensors.size(0),
+                "B scales must have num_experts * B rows elements when per_out_ch=true: ",
+                b_scales.numel(), " != ", num_experts * b_tensors.size(0));
+  } else {
+    TORCH_CHECK(b_scales.numel() == num_experts,
+                "B scales must have num_experts elements when per_out_ch=false: ",
+                b_scales.numel(), " != ", num_experts);
+  }
 
   auto stream = at::cuda::getCurrentCUDAStream(a_tensors.device().index());
 
