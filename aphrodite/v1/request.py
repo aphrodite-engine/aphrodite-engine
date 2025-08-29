@@ -33,8 +33,6 @@ class Request:
         structured_output_request: Optional["StructuredOutputRequest"] = None,
         cache_salt: Optional[str] = None,
         priority: int = 0,
-        is_dcpp: Optional[bool] = False,
-        dcpp_scheduled_chunk: Optional[int] = 0
     ) -> None:
         self.request_id = request_id
         self.client_index = client_index
@@ -107,10 +105,6 @@ class Request:
         # The number of NaNs in logits. A value greater than 0
         # indicates that the output is corrupted
         self.num_nans_in_logits = 0
-
-        # DCPP fields
-        self.is_dcpp = is_dcpp
-        self.dcpp_scheduled_chunk = dcpp_scheduled_chunk
 
     @classmethod
     def from_engine_core_request(cls, request: EngineCoreRequest) -> "Request":
