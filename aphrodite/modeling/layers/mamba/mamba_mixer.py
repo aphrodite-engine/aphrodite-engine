@@ -1,9 +1,10 @@
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import torch
 from torch import nn
 from torch.nn.parameter import Parameter
 
+from aphrodite.attention.backends.abstract import AttentionMetadata
 from aphrodite.common import envs
 from aphrodite.config import get_current_aphrodite_config
 from aphrodite.distributed.parallel_state import (

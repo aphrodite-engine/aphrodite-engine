@@ -148,7 +148,8 @@ def _get_available_memory_bytes() -> Optional[int]:
 
 
 def is_sccache_available() -> bool:
-    return which("sccache") is not None
+    return which("sccache") is not None and \
+        not bool(int(os.getenv("APHRODITE_DISABLE_SCCACHE", "0")))
 
 
 def is_ccache_available() -> bool:
@@ -688,7 +689,9 @@ setup(
                   "mistral_common[audio]"],  # Required for audio processing
         "video": [],  # Kept for backwards compatibility
         # FlashInfer should be updated together with the Dockerfile
-        "flashinfer": ["flashinfer-python==0.2.9"],
+        "flashinfer": ["flashinfer-python==0.2.14.post1"],
+        # Optional deps for AMD FP4 quantization support
+        "petit-kernel": ["petit-kernel"],
     },
     ext_modules=ext_modules,
     cmdclass={"build_ext": cmake_build_ext} if len(ext_modules) > 0 else {},

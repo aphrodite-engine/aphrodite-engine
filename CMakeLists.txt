@@ -31,7 +31,7 @@ install(CODE "set(CMAKE_INSTALL_LOCAL_ONLY TRUE)" ALL_COMPONENTS)
 # Supported python versions.  These versions will be searched in order, the
 # first match will be selected.  These should be kept in sync with setup.py.
 #
-set(PYTHON_SUPPORTED_VERSIONS "3.9" "3.10" "3.11" "3.12")
+set(PYTHON_SUPPORTED_VERSIONS "3.9" "3.10" "3.11" "3.12" "3.13")
 
 # Supported AMD GPU architectures.
 set(HIP_SUPPORTED_ARCHS "gfx906;gfx908;gfx90a;gfx942;gfx950;gfx1030;gfx1100;gfx1101;gfx1200;gfx1201")
@@ -256,7 +256,6 @@ set(APHRODITE_EXT_SRC
   "kernels/quantization/gguf/gguf_kernel.cu"
   "kernels/quantization/activation_kernels.cu"
   "kernels/cuda_utils_kernels.cu"
-  "kernels/prepare_inputs/advance_step.cu"
   "kernels/all_reduce/custom_all_reduce.cu"
   "kernels/torch_bindings.cpp")
 
@@ -362,8 +361,10 @@ set(APHRODITE_EXT_SRC
     set_gencode_flags_for_srcs(
       SRCS "${MARLIN_TEMPLATE_KERNEL_SRC}"
       CUDA_ARCHS "${MARLIN_ARCHS}")
-    set_source_files_properties(${MARLIN_TEMPLATE_KERNEL_SRC}
-      PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
+    if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8)
+      set_source_files_properties(${MARLIN_TEMPLATE_KERNEL_SRC}
+        PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
+    endif()
 
     list(APPEND APHRODITE_EXT_SRC ${MARLIN_TEMPLATE_KERNEL_SRC})
     set(MARLIN_SRCS
@@ -376,8 +377,10 @@ set(APHRODITE_EXT_SRC
     set_gencode_flags_for_srcs(
       SRCS "${MARLIN_SRCS}"
       CUDA_ARCHS "${MARLIN_ARCHS}")
-    set_source_files_properties("kernels/quantization/gptq_marlin/gptq_marlin.cu"
-      PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
+    if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8)
+      set_source_files_properties("kernels/quantization/gptq_marlin/gptq_marlin.cu"
+        PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
+    endif()
     list(APPEND APHRODITE_EXT_SRC "${MARLIN_SRCS}")
     message(STATUS "Building Marlin kernels for archs: ${MARLIN_ARCHS}")
   else()
@@ -549,6 +552,7 @@ set(APHRODITE_EXT_SRC
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND FP4_ARCHS)
     set(SRCS
       "kernels/quantization/fp4/nvfp4_quant_kernels.cu"
+      "kernels/quantization/fp4/activation_nvfp4_quant_fusion_kernels.cu"
       "kernels/quantization/fp4/nvfp4_scaled_mm_sm120_kernels.cu")
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
@@ -567,6 +571,7 @@ set(APHRODITE_EXT_SRC
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND FP4_ARCHS)
     set(SRCS
       "kernels/quantization/fp4/nvfp4_quant_kernels.cu"
+      "kernels/quantization/fp4/activation_nvfp4_quant_fusion_kernels.cu"
       "kernels/quantization/fp4/nvfp4_experts_quant.cu"
       "kernels/quantization/fp4/nvfp4_scaled_mm_kernels.cu"
       "kernels/quantization/fp4/nvfp4_blockwise_moe_kernel.cu")
@@ -758,6 +763,33 @@ set(APHRODITE_EXT_SRC
                      "found in CUDA target architectures")
     endif()
   endif()
+
+  # Only build W4A8 kernels if we are building for something compatible with sm90a
+  cuda_archs_loose_intersection(W4A8_ARCHS "9.0a" "${CUDA_ARCHS}")
+  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.0 AND W4A8_ARCHS)
+    set(SRCS
+       "kernels/quantization/cutlass_w4a8/w4a8_mm_entry.cu")
+
+    set_gencode_flags_for_srcs(
+      SRCS "${SRCS}"
+      CUDA_ARCHS "${W4A8_ARCHS}")
+
+    list(APPEND VLLM_EXT_SRC "${SRCS}")
+
+    message(STATUS "Building W4A8 kernels for archs: ${W4A8_ARCHS}")
+  else()
+    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.0
+        AND W4A8_ARCHS)
+      message(STATUS "Not building W4A8 kernels as CUDA Compiler version is "
+                     "not >= 12.0, we recommend upgrading to CUDA 12.0 or "
+                     "later if you intend on running w4a16 quantized models on "
+                     "Hopper.")
+    else()
+      message(STATUS "Not building W4A8 kernels as no compatible archs "
+                     "found in CUDA target architectures")
+    endif()
+  endif()
+
 # if CUDA endif
 endif()
 
@@ -798,7 +830,9 @@ set(APHRODITE_MOE_EXT_SRC
   "kernels/moe/topk_softmax_kernels.cu")
 
 if(APHRODITE_GPU_LANG STREQUAL "CUDA")
-  list(APPEND APHRODITE_MOE_EXT_SRC "kernels/moe/moe_wna16.cu")
+  list(APPEND APHRODITE_MOE_EXT_SRC
+    "kernels/moe/moe_wna16.cu"
+    "kernels/moe/grouped_topk_kernels.cu")
 endif()
 
 if(APHRODITE_GPU_LANG STREQUAL "CUDA")
@@ -867,8 +901,10 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
     set_gencode_flags_for_srcs(
       SRCS "${MOE_WNAA16_MARLIN_SRC}"
       CUDA_ARCHS "${MARLIN_MOE_ARCHS}")
-    set_source_files_properties(${MOE_WNAA16_MARLIN_SRC}
-      PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
+    if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8)
+      set_source_files_properties(${MOE_WNAA16_MARLIN_SRC}
+        PROPERTIES COMPILE_FLAGS "-static-global-template-stub=false")
+    endif()
 
     list(APPEND APHRODITE_MOE_EXT_SRC ${MOE_WNAA16_MARLIN_SRC})
 

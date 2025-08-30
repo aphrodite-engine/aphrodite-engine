@@ -1,6 +1,7 @@
 include(FetchContent)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -187,11 +188,11 @@ else()
     set(USE_ACL OFF)
 endif()
 
-if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR ASIMD_FOUND)
+if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR ASIMD_FOUND OR POWER9_FOUND OR POWER10_FOUND OR POWER11_FOUND)
     FetchContent_Declare(
         oneDNN
         GIT_REPOSITORY https://github.com/oneapi-src/oneDNN.git
-        GIT_TAG  v3.8.1
+        GIT_TAG  v3.9
         GIT_PROGRESS TRUE
         GIT_SHALLOW TRUE
     )
@@ -203,7 +204,7 @@ if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR ASIMD_FOUND)
         endif()
         set(ONEDNN_AARCH64_USE_ACL "ON")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-rpath,$ENV{ACL_ROOT_DIR}/build/")
-        endif()
+    endif()
 
     set(ONEDNN_LIBRARY_TYPE "STATIC")
     set(ONEDNN_BUILD_DOC "OFF")
@@ -216,38 +217,25 @@ if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR ASIMD_FOUND)
     set(ONEDNN_ENABLE_ITT_TASKS "OFF")
     set(ONEDNN_ENABLE_MAX_CPU_ISA "OFF")
     set(ONEDNN_ENABLE_CPU_ISA_HINTS "OFF")
+    set(ONEDNN_VERBOSE "OFF")
     set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
     FetchContent_MakeAvailable(oneDNN)
 
-    list(APPEND LIBS dnnl)
-elseif(POWER10_FOUND)
-    FetchContent_Declare(
-        oneDNN
-        GIT_REPOSITORY https://github.com/oneapi-src/oneDNN.git
-        GIT_TAG v3.7.2
-        GIT_PROGRESS TRUE
-        GIT_SHALLOW TRUE
+    add_library(dnnl_ext OBJECT "kernels/cpu/dnnl_helper.cpp")
+    target_include_directories(
+        dnnl_ext
+        PUBLIC ${oneDNN_SOURCE_DIR}/include
+        PUBLIC ${oneDNN_BINARY_DIR}/include
+        PRIVATE ${oneDNN_SOURCE_DIR}/src
     )
 
-    set(ONEDNN_LIBRARY_TYPE "STATIC")
-    set(ONEDNN_BUILD_DOC "OFF")
-    set(ONEDNN_BUILD_EXAMPLES "OFF")
-    set(ONEDNN_BUILD_TESTS "OFF")
-    set(ONEDNN_ENABLE_WORKLOAD "INFERENCE")
-    set(ONEDNN_ENABLE_PRIMITIVE "MATMUL;REORDER")
-    set(ONEDNN_BUILD_GRAPH "OFF")
-    set(ONEDNN_ENABLE_JIT_PROFILING "OFF")
-    set(ONEDNN_ENABLE_ITT_TASKS "OFF")
-    set(ONEDNN_ENABLE_MAX_CPU_ISA "OFF")
-    set(ONEDNN_ENABLE_CPU_ISA_HINTS "OFF")
-    set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-
-    set(DNNL_CPU_RUNTIME "OMP")
-
-    FetchContent_MakeAvailable(oneDNN)
-    
-    list(APPEND LIBS dnnl)
+    target_link_libraries(dnnl_ext dnnl)
+    target_compile_options(dnnl_ext PRIVATE ${CXX_COMPILE_FLAGS} -fPIC)
+    list(APPEND LIBS dnnl_ext)
+    set(USE_ONEDNN ON)
+else()
+    set(USE_ONEDNN OFF)
 endif()
 
 message(STATUS "CPU extension compile flags: ${CXX_COMPILE_FLAGS}")
@@ -274,7 +262,6 @@ set(APHRODITE_EXT_SRC
 
 if (AVX512_FOUND AND NOT AVX512_DISABLED)
     set(APHRODITE_EXT_SRC
-        "kernels/cpu/quant.cpp"
         "kernels/cpu/shm.cpp"
         ${APHRODITE_EXT_SRC})
     if (ENABLE_AVX512BF16 AND ENABLE_AVX512VNNI)
@@ -288,14 +275,10 @@ if (AVX512_FOUND AND NOT AVX512_DISABLED)
             ${APHRODITE_EXT_SRC})
         add_compile_definitions(-DCPU_CAPABILITY_AVX512)
     endif()
-elseif(POWER10_FOUND)
-    set(APHRODITE_EXT_SRC
-        "kernels/cpu/quant.cpp"
-        ${APHRODITE_EXT_SRC})
 endif()
-if (ASIMD_FOUND)
+if(USE_ONEDNN)
     set(APHRODITE_EXT_SRC
-        "kernels/cpu/quant.cpp"
+        "kernels/cpu/dnnl_kernels.cpp"
         ${APHRODITE_EXT_SRC})
 endif()
 
