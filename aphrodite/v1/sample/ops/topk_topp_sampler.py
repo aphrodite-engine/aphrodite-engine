@@ -8,6 +8,7 @@ from packaging import version
 from aphrodite.common import envs
 from aphrodite.common.logger import log_once
 from aphrodite.platforms import current_platform
+from aphrodite._custom_ops import apply_top_k_top_p_cuda
 
 try:
     import flashinfer.sampling
@@ -18,8 +19,9 @@ except ImportError:
 try:
     from aphrodite.distributed.parallel_state import (
         get_tensor_model_parallel_rank)
+    rank = get_tensor_model_parallel_rank()
 except Exception:
-    get_tensor_model_parallel_rank = lambda: 0
+    rank = 0
 
 
 class TopKTopPSampler(nn.Module):
@@ -45,28 +47,34 @@ class TopKTopPSampler(nn.Module):
                     # earlier design.
                     # https://github.com/flashinfer-ai/flashinfer/releases/
                     # tag/v0.2.3
-                    if get_tensor_model_parallel_rank() == 0:
+                    if rank == 0:
                         logger.info(
                             "FlashInfer version >= 0.2.3 required. "
                             "Falling back to default sampling implementation.")
                     self.forward = self.forward_native
-                elif envs.APHRODITE_USE_SAMPLING_KERNELS is not False:
+                elif envs.APHRODITE_USE_SAMPLING_KERNELS is True:
+                    # Use custom CUDA kernel for top-k/top-p sampling
+                    if rank == 0:
+                        logger.info("Using custom CUDA kernel for top-p & "
+                                    "top-k sampling.")
+                    self.forward = self.forward_cuda_kernel
+                elif envs.APHRODITE_USE_FLASHINFER_SAMPLER is not None:
                     # NOTE: The V0 sampler doesn't use FlashInfer for
-                    # sampling unless APHRODITE_USE_SAMPLING_KERNELS=1 (i.e., by
+                    # sampling unless APHRODITE_USE_FLASHINFER_SAMPLER=1 (i.e., by
                     # default it is unused). For backward compatibility, we set
-                    # `APHRODITE_USE_SAMPLING_KERNELS` as None by default and
+                    # `APHRODITE_USE_FLASHINFER_SAMPLER` as None by default and
                     # interpret it differently in V0 and V1 samplers: In V0,
                     # None means False, while in V1, None means True. This is
                     # why we use the condition
-                    # `envs.APHRODITE_USE_SAMPLING_KERNELS is not False` here.
+                    # `envs.APHRODITE_USE_FLASHINFER_SAMPLER is not None` here.
                     logger.info("Using FlashInfer for top-p & top-k sampling.")
                     self.forward = self.forward_cuda
                 else:
                     if get_tensor_model_parallel_rank() == 0:
                         logger.warning(
                             "FlashInfer is available, but it is not enabled. "
-                            "Falling back to the PyTorch-native implementation "
-                            "of top-p & top-k sampling. For the best "
+                            "Falling back to the PyTorch-native implementation"
+                            " of top-p & top-k sampling. For the best "
                             "performance, please set "
                             "APHRODITE_USE_SAMPLING_KERNELS=1.")
                     self.forward = self.forward_native
@@ -135,6 +143,67 @@ class TopKTopPSampler(nn.Module):
         logits = apply_top_k_top_p_tpu(logits, k, p)
         probs = logits.softmax(dim=-1, dtype=torch.float32)
         return random_sample(probs, generators)
+
+    def forward_cuda_kernel(
+        self,
+        logits: torch.Tensor,
+        generators: dict[int, torch.Generator],
+        k: Optional[torch.Tensor],
+        p: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        """Use custom CUDA kernel for top-k and top-p sampling."""
+        if k is None and p is None:
+            # No filtering needed, use regular sampling
+            probs = logits.softmax(dim=-1, dtype=torch.float32)
+            return random_sample(probs, generators)
+
+        if generators:
+            log_once(
+                "WARNING",
+                "Custom CUDA kernel does not support per-request generators. "
+                "Falling back to PyTorch-native implementation.")
+            return self.forward_native(logits, generators, k, p)
+
+        num_seqs = logits.size(0)
+        vocab_size = logits.size(1)
+
+        # Prepare output tensor for the CUDA kernel
+        output_ids = torch.empty(num_seqs, dtype=torch.int64,
+                                 device=logits.device)
+
+        # Prepare top-k and top-p values
+        # Convert to the format expected by CUDA kernel
+        if k is not None:
+            top_k_values = k.to(dtype=torch.int32, device=logits.device)
+        else:
+            top_k_values = torch.full((num_seqs,), vocab_size,
+                                      dtype=torch.int32, device=logits.device)
+
+        if p is not None:
+            top_p_values = p.to(dtype=torch.float32, device=logits.device)
+        else:
+            top_p_values = None
+
+        # Call the CUDA kernel
+        # Note: We don't use curand_states for now, relying on the
+        # kernel's internal randomness
+        try:
+            apply_top_k_top_p_cuda(
+                logits=logits,
+                output_ids=output_ids,
+                top_k_values=top_k_values,
+                top_p_values=top_p_values,
+                curand_states=None,  # Not using CUDA random states for now
+                output_logprobs=None,  # Not requesting log probabilities
+                normalize_logprobs=False
+            )
+            return output_ids
+        except Exception as e:
+            log_once(
+                "WARNING",
+                f"Custom CUDA kernel failed: {e}. Falling back to "
+                "PyTorch-native implementation.")
+            return self.forward_native(logits, generators, k, p)
 
 
 def apply_top_k_top_p_tpu(
