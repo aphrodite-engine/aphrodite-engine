@@ -124,8 +124,8 @@ def _torch_cuda_wrapper():
             self.record = lambda: None
             self.synchronize = lambda: None
 
+    cuda_event = torch.cuda.Event
     try:
-        cuda_event = torch.cuda.Event
         torch.cuda.Event = _EventPlaceholder
         yield
     finally:
@@ -137,9 +137,9 @@ def _set_global_compilation_settings(config: AphroditeConfig):
     import torch._inductor.config
 
     inductor_config = config.compilation_config.inductor_compile_config
+    # Note: The MKLDNN and CPPGEMM backend requires freezing parameters.
+    freezing_value = torch._inductor.config.freezing
     try:
-        # Note: The MKLDNN and CPPGEMM backend requires freezing parameters.
-        freezing_value = torch._inductor.config.freezing
         if inductor_config.get("max_autotune", False):
             torch._inductor.config.freezing = True
         yield
