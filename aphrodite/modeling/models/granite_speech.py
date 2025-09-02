@@ -548,7 +548,7 @@ class GraniteSpeechForConditionalGeneration(
 
         raise ValueError("Only audio modality is supported")
 
-    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
         quant_config = aphrodite_config.quant_config
