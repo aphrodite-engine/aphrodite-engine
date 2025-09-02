@@ -455,7 +455,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     stop_token_ids: Optional[list[int]] = []
     skip_special_tokens: Optional[bool] = True
     spaces_between_special_tokens: Optional[bool] = True
-    truncate_prompt_tokens: Optional[Annotated[int, Field(ge=1)]] = None
+    truncate_prompt_tokens: Optional[Annotated[int, Field(ge=-1)]] = None
     temperature_last: Optional[bool] = False
     prompt_logprobs: Optional[int] = None
     xtc_threshold: Optional[float] = 0.1
@@ -1093,7 +1093,7 @@ class CompletionRequest(OpenAIBaseModel):
     min_tokens: Optional[int] = 0
     skip_special_tokens: Optional[bool] = True
     spaces_between_special_tokens: Optional[bool] = True
-    truncate_prompt_tokens: Optional[Annotated[int, Field(ge=1)]] = None
+    truncate_prompt_tokens: Optional[Annotated[int, Field(ge=-1)]] = None
     allowed_token_ids: Optional[list[int]] = None
     include_stop_str_in_output: Optional[bool] = False
     add_special_tokens: Optional[bool] = False
@@ -1558,8 +1558,10 @@ class EmbeddingCompletionRequest(OpenAIBaseModel):
     # doc: end-embedding-extra-params
 
     def to_pooling_params(self):
-        return PoolingParams(dimensions=self.dimensions,
-                             normalize=self.normalize)
+        return PoolingParams(
+            truncate_prompt_tokens=self.truncate_prompt_tokens,
+            dimensions=self.dimensions,
+            normalize=self.normalize)
 
 
 class EmbeddingChatRequest(OpenAIBaseModel):
@@ -1626,8 +1628,10 @@ class EmbeddingChatRequest(OpenAIBaseModel):
         return data
 
     def to_pooling_params(self):
-        return PoolingParams(dimensions=self.dimensions,
-                             normalize=self.normalize)
+        return PoolingParams(
+            truncate_prompt_tokens=self.truncate_prompt_tokens,
+            dimensions=self.dimensions,
+            normalize=self.normalize)
 
 
 EmbeddingRequest = Union[EmbeddingCompletionRequest, EmbeddingChatRequest]
@@ -1664,7 +1668,9 @@ class ScoreRequest(OpenAIBaseModel):
     # --8<-- [end:score-extra-params]
 
     def to_pooling_params(self):
-        return PoolingParams(activation=self.activation)
+        return PoolingParams(
+            truncate_prompt_tokens=self.truncate_prompt_tokens,
+            activation=self.activation)
 
 
 class RerankRequest(OpenAIBaseModel):
@@ -1696,7 +1702,9 @@ class RerankRequest(OpenAIBaseModel):
     # doc: end-rerank-extra-params
 
     def to_pooling_params(self):
-        return PoolingParams(activation=self.activation)
+        return PoolingParams(
+            truncate_prompt_tokens=self.truncate_prompt_tokens,
+            activation=self.activation)
 
 
 class RerankDocument(BaseModel):
@@ -1854,7 +1862,9 @@ class ClassificationRequest(OpenAIBaseModel):
     # --8<-- [end:classification-extra-params]
 
     def to_pooling_params(self):
-        return PoolingParams(activation=self.activation)
+        return PoolingParams(
+            truncate_prompt_tokens=self.truncate_prompt_tokens,
+            activation=self.activation)
 
 
 class ClassificationData(OpenAIBaseModel):
