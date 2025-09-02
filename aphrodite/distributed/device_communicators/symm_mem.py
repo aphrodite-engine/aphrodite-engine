@@ -47,7 +47,7 @@ class SymmMemCommunicator:
         ).as_version_str()
         if self.device_capability not in SYMM_MEM_ALL_REDUCE_MAX_SIZES:
             logger.warning(
-                f"SymmMemCommunicator: Device capability {} not supported, "
+                "SymmMemCommunicator: Device capability {} not supported, "
                 "communicator is not available.",
                 self.device_capability,
             )
@@ -55,7 +55,7 @@ class SymmMemCommunicator:
         if self.world_size not in SYMM_MEM_ALL_REDUCE_MAX_SIZES[
                 self.device_capability]:
             logger.warning(
-                f"SymmMemCommunicator: World size {} not supported, "
+                "SymmMemCommunicator: World size {} not supported, "
                 "communicator is not available.",
                 self.world_size,
             )

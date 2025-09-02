@@ -401,7 +401,7 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
                 # is wrapped on a full or piecewise fx graph.
                 self.module.__dict__[target] = static_graph_wrapper_class(
                     runnable=piecewise_backend,
-                    aphrodite_config=self.aphrodite_config.aphrodite_config,
+                    aphrodite_config=self.aphrodite_config,
                     runtime_mode=CUDAGraphMode.PIECEWISE,
                     cudagraph_options=CUDAGraphOptions(
                         debug_log_enable=piecewise_backend.is_first_graph,

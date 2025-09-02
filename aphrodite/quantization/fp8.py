@@ -520,7 +520,6 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 self.allow_deep_gemm = True
             else:
                 log_once("WARNING", "DeepGemm not supported on the current platform.")
-                    "DeepGemm not supported on the current platform.")
 
         # Check for CutlassBlockScaledGroupedGemm support.
         self.allow_cutlass_block_scaled_grouped_gemm = False

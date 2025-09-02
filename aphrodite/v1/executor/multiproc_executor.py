@@ -482,6 +482,7 @@ class WorkerProc:
 
                 except EOFError:
                     e.__suppress_context__ = True
+                    print(f"Error: {e}")
                     raise e from None
 
                 finally:
