@@ -21,8 +21,7 @@ from aphrodite.common.outputs import (PoolingRequestOutput, RequestOutput,
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import RequestOutputKind, SamplingParams
 from aphrodite.common.sequence import (ExecuteModelRequest,
-                                       ParallelSampleSequenceGroup,
-                                       PoolingSequenceGroupOutput, Sequence,
+                                       ParallelSampleSequenceGroup, Sequence,
                                        SequenceGroup, SequenceGroupBase,
                                        SequenceGroupMetadata,
                                        SequenceGroupOutput, SequenceStatus)
@@ -43,6 +42,7 @@ from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
+from aphrodite.multimodal.cache import processor_only_cache_from_config
 from aphrodite.multimodal.processing import EncDecMultiModalProcessor
 from aphrodite.processing.scheduler import (ScheduledSequenceGroup,
                                             SchedulerOutputs)
@@ -92,8 +92,7 @@ class SchedulerContext:
 
     def __init__(self) -> None:
         self.output_queue: Deque[OutputData] = deque()
-        self.request_outputs: List[Union[RequestOutput,
-                                         PoolingRequestOutput]] = []
+        self.request_outputs: List[RequestOutput] = []
         self.seq_group_metadata_list: Optional[
             List[SequenceGroupMetadata]] = None
         self.scheduler_outputs: Optional[SchedulerOutputs] = None
@@ -258,14 +257,17 @@ class AphroditeEngine:
         self.generation_config_fields = (
             self.model_config.try_get_generation_config())
 
-        self.input_preprocessor = InputPreprocessor(self.model_config,
-                                                    self.tokenizer,
-                                                    mm_registry)
+        self.input_preprocessor = InputPreprocessor(
+            self.model_config,
+            self.tokenizer,
+            mm_registry,
+            mm_processor_cache=processor_only_cache_from_config(
+                self.model_config, mm_registry),
+        )
 
         self.modeling = executor_class(aphrodite_config=aphrodite_config)
 
-        if self.model_config.runner_type != "pooling":
-            self._initialize_kv_caches()
+        self._initialize_kv_caches()
 
         # If usage stat is enabled, collect relevant info.
         if is_usage_stats_enabled():
@@ -546,7 +548,7 @@ class AphroditeEngine:
         self,
         request_id: str,
         processed_inputs: ProcessorInputs,
-        params: Union[SamplingParams, PoolingParams],
+        params: SamplingParams,
         arrival_time: float,
         lora_request: Optional[LoRARequest],
         trace_headers: Optional[Mapping[str, str]] = None,
@@ -583,7 +585,7 @@ class AphroditeEngine:
             seq_id, encoder_inputs, block_size, eos_token_id, lora_request,
         ))
 
-        # Create a SequenceGroup based on SamplingParams or PoolingParams
+        # Create a SequenceGroup based on SamplingParams
         if isinstance(params, SamplingParams):
             seq_group = self._create_sequence_group_with_sampling(
                 request_id,
@@ -594,18 +596,8 @@ class AphroditeEngine:
                 trace_headers=trace_headers,
                 encoder_seq=encoder_seq,
                 priority=priority)
-        elif isinstance(params, PoolingParams):
-            seq_group = self._create_sequence_group_with_pooling(
-                request_id,
-                seq,
-                params,
-                arrival_time=arrival_time,
-                lora_request=lora_request,
-                encoder_seq=encoder_seq,
-                priority=priority)
         else:
-            raise ValueError(
-                "Either SamplingParams or PoolingParams must be provided.")
+            raise ValueError("SamplingParams must be provided.")
 
         # Add the sequence group to the scheduler with least unfinished seqs.
         costs = [
@@ -624,7 +616,7 @@ class AphroditeEngine:
         self,
         request_id: str,
         prompt: PromptType,
-        params: Union[SamplingParams, PoolingParams],
+        params: SamplingParams,
         arrival_time: Optional[float] = None,
         lora_request: Optional[LoRARequest] = None,
         tokenization_kwargs: Optional[dict[str, Any]] = None,
@@ -641,9 +633,7 @@ class AphroditeEngine:
             request_id: The unique ID of the request.
             prompt: The prompt to the LLM. See :class:`~aphrodite.inputs.PromptType`
                 for more details about the format of each input.
-            params: Parameters for sampling or pooling.
                 :class:`~aphrodite.SamplingParams` for text generation.
-                :class:`~aphrodite.PoolingParams` for pooling.
             arrival_time: The arrival time of the request. If None, we use
                 the current monotonic time.
             lora_request: The LoRA request to add.
@@ -765,30 +755,6 @@ class AphroditeEngine:
 
         return seq_group
 
-    def _create_sequence_group_with_pooling(
-        self,
-        request_id: str,
-        seq: Sequence,
-        pooling_params: PoolingParams,
-        arrival_time: float,
-        lora_request: Optional[LoRARequest],
-        encoder_seq: Optional[Sequence] = None,
-        priority: int = 0,
-    ) -> SequenceGroup:
-        """Creates a SequenceGroup with PoolingParams."""
-        # Defensive copy of PoolingParams, which are used by the pooler
-        pooling_params = pooling_params.clone()
-        # Create the sequence group.
-        seq_group = SequenceGroup(
-            request_id=request_id,
-            seqs=[seq],
-            arrival_time=arrival_time,
-            lora_request=lora_request,
-            pooling_params=pooling_params,
-            encoder_seq=encoder_seq,
-            priority=priority)
-        return seq_group
-
     def abort_request(self, request_id: Union[str, Iterable[str]]) -> None:
         """Aborts a request(s) with the given ID.
 
@@ -853,8 +819,8 @@ class AphroditeEngine:
 
     def reset_mm_cache(self) -> bool:
         """Reset the multi-modal cache."""
-        return self.input_preprocessor.mm_registry.reset_processor_cache(
-            self.model_config)
+        self.input_preprocessor.clear_cache()
+        return True
 
     def reset_prefix_cache(self, device: Optional[Device] = None) -> bool:
         """Reset prefix cache for all devices."""
@@ -863,18 +829,6 @@ class AphroditeEngine:
         for scheduler in self.scheduler:
             success = success and scheduler.reset_prefix_cache(device)
         return success
-
-    @staticmethod
-    def _process_sequence_group_outputs(
-        seq_group: SequenceGroup,
-        outputs: List[PoolingSequenceGroupOutput],
-    ) -> None:
-        seq_group.pooled_data = outputs[0].data
-
-        for seq in seq_group.get_seqs():
-            seq.status = SequenceStatus.FINISHED_STOPPED
-
-        return
 
     def _process_model_outputs(self,
                                ctx: SchedulerContext,
@@ -970,13 +924,10 @@ class AphroditeEngine:
                             seq_group.metrics.model_execute_time = (
                                 o.model_execute_time)
 
-            if self.model_config.runner_type == "pooling":
-                self._process_sequence_group_outputs(seq_group, output)
-            else:
-                self.output_processor.process_prompt_logprob(seq_group, output)
-                if seq_group_meta.do_sample:
-                    self.output_processor.process_outputs(
-                        seq_group, output, is_async)
+            self.output_processor.process_prompt_logprob(seq_group, output)
+            if seq_group_meta.do_sample:
+                self.output_processor.process_outputs(seq_group, output,
+                                                      is_async)
 
             if seq_group.is_finished():
                 finished_now.append(i)
@@ -1096,7 +1047,7 @@ class AphroditeEngine:
                 seq.append_token_id(sample.output_token, sample.logprobs,
                                     sample.output_embed)
 
-    def step(self) -> List[Union[RequestOutput, PoolingRequestOutput]]:
+    def step(self) -> List[RequestOutput]:
         """Performs one decoding iteration and returns newly generated results.
 
         .. figure:: https://i.imgur.com/sv2HssD.png

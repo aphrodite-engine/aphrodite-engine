@@ -23,15 +23,15 @@ import torch.nn as nn
 from transformers import (BatchFeature, FuyuConfig, FuyuImageProcessor,
                           FuyuProcessor)
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.linear import ColumnParallelLinear
 from aphrodite.modeling.models.persimmon import PersimmonForCausalLM
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
                                         MultiModalDataItems)
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
@@ -225,7 +225,7 @@ class FuyuMultiModalProcessor(BaseMultiModalProcessor[FuyuProcessingInfo]):
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_config = self.info.get_hf_config()
         bos_token_id = hf_config.bos_token_id

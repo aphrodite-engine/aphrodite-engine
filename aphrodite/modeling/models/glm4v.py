@@ -15,8 +15,8 @@ from transformers.image_utils import ImageInput
 from transformers.tokenization_utils_base import TextInput
 
 from aphrodite.attention.layer import MultiHeadAttention
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul, get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
@@ -28,7 +28,7 @@ from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import MultiModalDataItems
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
@@ -501,7 +501,7 @@ class GLM4VMultiModalProcessor(BaseMultiModalProcessor[GLM4VProcessingInfo]):
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_config = self.info.get_hf_config()
 

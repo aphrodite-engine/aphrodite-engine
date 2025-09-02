@@ -104,6 +104,14 @@ class StructuredOutputManager:
                     tokenizer=self.tokenizer,
                     vocab_size=vocab_size,
                 )
+            elif backend == "lm-format-enforcer":
+                from aphrodite.v1.structured_output.backend_lm_format_enforcer import (  # noqa: E501
+                    LMFormatEnforcerBackend)
+                self.backend = LMFormatEnforcerBackend(
+                    self.aphrodite_config,
+                    tokenizer=self.tokenizer,
+                    vocab_size=vocab_size,
+                )
             else:
                 raise ValueError(
                     f"Unsupported structured output backend: {backend}")

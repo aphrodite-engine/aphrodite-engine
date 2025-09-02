@@ -6,8 +6,12 @@ from typing import Callable, TypeVar, Union, overload
 _T = TypeVar("_T")
 _U = TypeVar("_U")
 
-JSONTree = Union[dict[str, "JSONTree[_T]"], list["JSONTree[_T]"],
-                 tuple["JSONTree[_T]", ...], _T]
+JSONTree = Union[
+    dict[str, "JSONTree[_T]"],
+    list["JSONTree[_T]"],
+    tuple["JSONTree[_T]", ...],
+    _T,
+]
 """A nested JSON structure where the leaves need not be JSON-serializable."""
 
 
@@ -76,3 +80,8 @@ def json_reduce_leaves(
         json_iter_leaves(value),
         initial,
     )
+
+
+def json_count_leaves(value: JSONTree[_T]) -> int:
+    """Count the number of leaves in a nested JSON structure."""
+    return sum(1 for _ in json_iter_leaves(value))

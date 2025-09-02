@@ -21,6 +21,7 @@
 """Inference-only GLM-4.5 model compatible with HuggingFace weights."""
 import typing
 from collections.abc import Callable, Iterable
+from itertools import islice
 from typing import Any, Optional, Union
 
 import torch
@@ -29,10 +30,10 @@ from torch import nn
 from transformers.models.glm4_moe import Glm4MoeConfig
 
 from aphrodite.attention import Attention
-from aphrodite.config import (AphroditeConfig, CacheConfig,
-                                     get_current_aphrodite_config)
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import (AphroditeConfig, CacheConfig,
+                              get_current_aphrodite_config)
 from aphrodite.distributed import (get_ep_group, get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import SiluAndMul
@@ -40,7 +41,6 @@ from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
                                               QKVParallelLinear,
-                                              ReplicatedLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
@@ -114,7 +114,6 @@ class Glm4MoE(nn.Module):
         if config.hidden_act != "silu":
             raise ValueError(f"Unsupported activation: {config.hidden_act}. "
                              "Only silu is supported for now.")
-
         # NOTE In the transformers implementation, the gate isn't an nn.Linear,
         # so we cannot use ReplicatedLinear here.
         # See: https://github.com/huggingface/transformers/blob/v4.55.1/src/transformers/models/glm4_moe/modeling_glm4_moe.py#L260
@@ -124,16 +123,15 @@ class Glm4MoE(nn.Module):
             bias=False,
             dtype=torch.float32,
         )
-
         self.gate.e_score_correction_bias = nn.Parameter(
             torch.empty(config.n_routed_experts, dtype=torch.float32))
 
         # Load balancing settings.
         aphrodite_config = get_current_aphrodite_config()
-        parallel_config = aphrodite_config.parallel_config
+        eplb_config = aphrodite_config.parallel_config.eplb_config
         self.enable_eplb = enable_eplb
 
-        self.n_redundant_experts = parallel_config.num_redundant_experts
+        self.n_redundant_experts = eplb_config.num_redundant_experts
         self.n_logical_experts = self.n_routed_experts
         self.n_physical_experts = (self.n_logical_experts +
                                    self.n_redundant_experts)
@@ -157,6 +155,7 @@ class Glm4MoE(nn.Module):
             topk_group=config.topk_group,
             prefix=f"{prefix}.experts",
             scoring_func="sigmoid",
+            routed_scaling_factor=self.routed_scaling_factor,
             e_score_correction_bias=self.gate.e_score_correction_bias,
             enable_eplb=self.enable_eplb,
             num_redundant_experts=self.n_redundant_experts)
@@ -439,8 +438,7 @@ class Glm4MoeModel(nn.Module):
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
 
-        for i in range(self.start_layer, self.end_layer):
-            layer = self.layers[i]
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:

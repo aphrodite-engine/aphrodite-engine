@@ -46,7 +46,8 @@ if HAS_TRITON:
     from aphrodite.modeling.layers.fused_moe.batched_triton_or_deep_gemm_moe import (  # noqa: E501
         BatchedTritonOrDeepGemmExperts)
     from aphrodite.modeling.layers.fused_moe.cutlass_moe import (
-        CutlassExpertsFp8, cutlass_moe_fp4, cutlass_moe_fp8)
+        CutlassBatchedExpertsFp8, CutlassExpertsFp8, cutlass_moe_fp4,
+        cutlass_moe_fp8)
     from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import (
         DeepGemmExperts)
     from aphrodite.modeling.layers.fused_moe.fused_batched_moe import (
@@ -66,6 +67,7 @@ if HAS_TRITON:
         "cutlass_moe_fp8",
         "cutlass_moe_fp4",
         "CutlassExpertsFp8",
+        "CutlassBatchedExpertsFp8",
         "TritonExperts",
         "BatchedTritonExperts",
         "DeepGemmExperts",

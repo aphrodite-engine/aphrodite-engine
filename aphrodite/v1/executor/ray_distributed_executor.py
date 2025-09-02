@@ -9,6 +9,7 @@ from aphrodite.v1.engine import (ReconfigureDistributedRequest,
                                  ReconfigureRankType)
 from aphrodite.v1.executor.abstract import Executor
 from aphrodite.v1.outputs import ModelRunnerOutput
+from aphrodite.v1.core.sched.output import SchedulerOutput
 
 
 class FutureWrapper(Future):
@@ -60,7 +61,7 @@ class RayDistributedExecutor(RayDistributedExecutorV0, Executor):
 
     def execute_model(
         self,
-        scheduler_output,
+        scheduler_output: SchedulerOutput,
     ) -> Union[ModelRunnerOutput, Future[ModelRunnerOutput]]:
         """Execute the model on the Ray workers.
 

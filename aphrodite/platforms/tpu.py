@@ -20,6 +20,9 @@ else:
     PoolingParams = None
 
 
+USE_TPU_COMMONS = False
+
+
 class TpuPlatform(Platform):
     _enum = PlatformEnum.TPU
     device_name: str = "tpu"
@@ -94,7 +97,7 @@ class TpuPlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, aphrodite_config: AphroditeConfig) -> None:
-        from aphrodite.config import CompilationLevel
+        from aphrodite.config import CompilationLevel, CUDAGraphMode
 
         cache_config = aphrodite_config.cache_config
         # For v0, the default block size is 16.
@@ -104,8 +107,16 @@ class TpuPlatform(Platform):
 
         # TPU only supports DYNAMO_ONCE compilation level
         if compilation_config.level != CompilationLevel.DYNAMO_ONCE:
-            logger.info("[TPU] Forcing DYNAMO_ONCE compilation level")
+            logger.info("[TPU] Forcing DYNAMO_ONCE compilation level, and "
+                        "disabling cudagraph.")
             compilation_config.level = CompilationLevel.DYNAMO_ONCE
+
+        if compilation_config.cudagraph_mode is None or \
+                compilation_config.cudagraph_mode.max_cudagraph_mode() \
+                    != CUDAGraphMode.NONE:
+            logger.info("[TPU] CUDA graph is not supported on TPU, "
+                        "disabling cudagraphs.")
+            compilation_config.cudagraph_mode = CUDAGraphMode.NONE
 
         if compilation_config.backend == "":
             compilation_config.backend = "openxla"
@@ -182,13 +193,15 @@ class TpuPlatform(Platform):
             raise ValueError("Torch XLA does not support per-request seed.")
 
     @classmethod
-    def is_kv_cache_dtype_supported(cls, kv_cache_dtype: str) -> bool:
+    def is_kv_cache_dtype_supported(cls, kv_cache_dtype: str,
+                                    model_config: "ModelConfig") -> bool:
         return True
 
 
 try:
     from tpu_commons.platforms import TpuPlatform as TpuCommonsPlatform
     TpuPlatform = TpuCommonsPlatform  # type: ignore
+    USE_TPU_COMMONS = True
 except ImportError:
     logger.info("tpu_commons not found, using Aphrodite's TpuPlatform")
     pass

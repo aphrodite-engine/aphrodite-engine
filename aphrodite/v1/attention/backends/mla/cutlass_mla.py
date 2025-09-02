@@ -5,7 +5,9 @@ import torch
 from loguru import logger
 
 import aphrodite._custom_ops as ops
-from aphrodite.attention.backends.abstract import (AttentionType,
+from aphrodite.common.logger import log_once
+from aphrodite.attention.backends.abstract import (AttentionLayer,
+                                                   AttentionType,
                                                    is_quantized_kv_cache)
 from aphrodite.v1.attention.backends.mla.common import (
     MLACommonBackend, MLACommonImpl, MLACommonMetadata,
@@ -15,8 +17,8 @@ from aphrodite.v1.attention.backends.utils import AttentionCGSupport
 
 class CutlassMLAMetadataBuilder(MLACommonMetadataBuilder[MLACommonMetadata]):
     # enable full CUDA Graph support for decode-only capture
-    attn_cudagraph_support: ClassVar[
-        AttentionCGSupport] = AttentionCGSupport.PURE_DECODE_ONLY
+    cudagraph_support: ClassVar[
+        AttentionCGSupport] = AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
 
 
 class CutlassMLABackend(MLACommonBackend):
@@ -109,7 +111,7 @@ class CutlassMLAImpl(MLACommonImpl[MLACommonMetadata]):
         self._use_old_cutlass_mla = False
         force_old_cutlass = os.environ.get("FORCE_OLD_CUTLASS_MLA", None)
         if force_old_cutlass:
-            logger.warning("Forcing old cutlass mla kernel")
+            log_once("WARNING", "Forcing old cutlass mla kernel")
             self._use_old_cutlass_mla = True
 
         # TODO: Currently, num_kv_splits is limited to 16 to avoid hanging
@@ -117,8 +119,8 @@ class CutlassMLAImpl(MLACommonImpl[MLACommonMetadata]):
         #       FORCE_NUM_KV_SPLITS=1
         force_num_kv_splits = os.environ.get("FORCE_NUM_KV_SPLITS", None)
         if force_num_kv_splits:
-            logger.warning("Forcing num_kv_splits to {}",
-                           int(force_num_kv_splits))
+            log_once("WARNING", "Forcing num_kv_splits to {}",
+                     int(force_num_kv_splits))
             self._num_kv_splits = int(force_num_kv_splits)
         else:
             self._num_kv_splits = -1  # => Auto-detect
@@ -272,6 +274,7 @@ class CutlassMLAImpl(MLACommonImpl[MLACommonMetadata]):
         q_pe: torch.Tensor,
         kv_c_and_k_pe_cache: torch.Tensor,
         attn_metadata: MLACommonMetadata,
+        layer: AttentionLayer,
     ) -> torch.Tensor:
         if self._use_old_cutlass_mla:
             # TODO: Remove the old cutlass MLA kernel after more extensive

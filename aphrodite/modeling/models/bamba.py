@@ -9,9 +9,9 @@ from transformers import BambaConfig
 
 from aphrodite.attention.layer import Attention
 from aphrodite.common import envs
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.forward_context import get_forward_context
@@ -25,7 +25,7 @@ from aphrodite.modeling.layers.mamba.mamba2_metadata import (
     Mamba2Metadata, prepare_mamba2_metadata)
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
 from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateShapeCalculator)
+    MambaStateDtypeCalculator, MambaStateShapeCalculator)
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
@@ -81,25 +81,28 @@ class BambaMixerDecoderLayer(nn.Module):
     def __init__(self,
                  config: BambaConfig,
                  layer_idx: int,
+                 model_config: Optional[ModelConfig] = None,
                  cache_config: Optional[CacheConfig] = None,
                  quant_config: Optional[QuantizationConfig] = None,
                  prefix: str = "") -> None:
         super().__init__()
         self.config = config
-        self.mamba = MambaMixer2(hidden_size=config.hidden_size,
-                                 ssm_state_size=config.mamba_d_state,
-                                 conv_kernel_size=config.mamba_d_conv,
-                                 intermediate_size=config.mamba_expand *
-                                 config.hidden_size,
-                                 use_conv_bias=config.mamba_conv_bias,
-                                 use_bias=config.mamba_proj_bias,
-                                 n_groups=config.mamba_n_groups,
-                                 num_heads=config.mamba_n_heads,
-                                 head_dim=config.mamba_d_head,
-                                 rms_norm_eps=config.rms_norm_eps,
-                                 activation=config.hidden_act,
-                                 quant_config=quant_config,
-                                 prefix=f"{prefix}.mixer")
+        self.mamba = MambaMixer2(hidden_size= config.hidden_size,
+                                ssm_state_size = config.mamba_d_state,
+                                conv_kernel_size = config.mamba_d_conv,
+                                intermediate_size = config.mamba_expand *\
+                                                    config.hidden_size,
+                                use_conv_bias = config.mamba_conv_bias,
+                                use_bias = config.mamba_proj_bias,
+                                n_groups=config.mamba_n_groups,
+                                num_heads=config.mamba_n_heads,
+                                head_dim=config.mamba_d_head,
+                                rms_norm_eps=config.rms_norm_eps,
+                                activation=config.hidden_act,
+                                model_config=model_config,
+                                cache_config=cache_config,
+                                quant_config=quant_config,
+                                prefix=f"{prefix}.mixer")
 
         self.feed_forward = BambaMLP(config, quant_config=quant_config)
         self.input_layernorm = RMSNorm(config.hidden_size,
@@ -136,6 +139,7 @@ class BambaAttentionDecoderLayer(nn.Module):
         self,
         config: BambaConfig,
         layer_idx: int,
+        model_config: Optional[ModelConfig] = None,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -264,6 +268,7 @@ class BambaModel(nn.Module):
         super().__init__()
 
         config: BambaConfig = aphrodite_config.model_config.hf_config
+        model_config = aphrodite_config.model_config
         cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
         lora_config = aphrodite_config.lora_config
@@ -287,6 +292,7 @@ class BambaModel(nn.Module):
             return layer_class(
                 config,
                 layer_idx,
+                model_config,
                 cache_config,
                 quant_config=quant_config,
                 prefix=prefix,
@@ -337,8 +343,7 @@ class BambaModel(nn.Module):
 
         residual = None
         num_attn = 0
-        for i in range(len(self.layers)):
-            layer = self.layers[i]
+        for i, layer in enumerate(self.layers):
             if isinstance(layer, BambaAttentionDecoderLayer):
                 num_attn += 1
 
@@ -436,6 +441,18 @@ class BambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
     embedding_padding_modules = ["lm_head"]
 
     @classmethod
+    def get_mamba_state_dtype_from_config(
+        cls,
+        aphrodite_config: "AphroditeConfig",
+    ) -> tuple[torch.dtype, torch.dtype]:
+
+        return MambaStateDtypeCalculator.mamba2_state_dtype(
+            aphrodite_config.model_config.dtype,
+            aphrodite_config.cache_config.mamba_cache_dtype,
+            aphrodite_config.cache_config.mamba_ssm_cache_dtype,
+        )
+
+    @classmethod
     def get_mamba_state_shape_from_config(
         cls,
         aphrodite_config: "AphroditeConfig",
@@ -526,10 +543,13 @@ class BambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
                 mamba_state_shape = \
                     self.get_mamba_state_shape_from_config(
                         self.aphrodite_config, use_v1=False)
+                mamba_state_dtype = \
+                    self.get_mamba_state_dtype_from_config(
+                    self.aphrodite_config)
                 self.mamba_cache = MambaCacheManager(self.aphrodite_config,
-                                                     self.lm_head.weight.dtype,
                                                      num_mamba_layers,
-                                                     *mamba_state_shape)
+                                                     *mamba_state_shape,
+                                                     *mamba_state_dtype)
 
             mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)
 

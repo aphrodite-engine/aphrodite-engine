@@ -7,6 +7,7 @@ import torch
 from typing_extensions import Self
 
 from aphrodite.config import AphroditeConfig
+from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.utils import cdiv, get_dtype_size
 
 
@@ -176,14 +177,15 @@ class SlidingWindowSpec(AttentionSpec):
 @dataclass(frozen=True)
 class MambaSpec(KVCacheSpec):
     shapes: tuple[tuple[int, ...], ...]
-    dtype: torch.dtype
+    dtypes: tuple[torch.dtype]
     page_size_padded: Optional[int] = None
     mamba_type: str = "mamba2"
 
     @property
     def page_size_bytes(self) -> int:
-        num_elements = sum(prod(shape) for shape in self.shapes)
-        page_size = num_elements * get_dtype_size(self.dtype)
+        page_size = sum(
+            prod(shape) * get_dtype_size(dtype)
+            for (shape, dtype) in zip(self.shapes, self.dtypes))
         if self.page_size_padded is not None:
             assert self.page_size_padded >= page_size
             return self.page_size_padded
@@ -194,6 +196,28 @@ class MambaSpec(KVCacheSpec):
         # the same as page_size_bytes.
         # Need to update this when supporting prefix caching.
         return self.page_size_bytes
+
+
+@dataclass(frozen=True)
+class EncoderOnlyAttentionSpec(AttentionSpec):
+
+    def max_memory_usage_bytes(self, aphrodite_config: AphroditeConfig) -> int:
+        # Encoder-only layers do not need KV cache
+        return 0
+
+
+@dataclass(frozen=True)
+class CrossAttentionSpec(AttentionSpec):
+    """
+    KV cache spec for cross-attention layers in encoder-decoder models.
+    """
+
+    def max_memory_usage_bytes(self, aphrodite_config: AphroditeConfig) -> int:
+        # For cross-attention, we need to cache encoder states
+        # Get encoder length (e.g., 1500 for Whisper).
+        max_encoder_len = MULTIMODAL_REGISTRY.\
+            get_encdec_max_encoder_len(aphrodite_config.model_config)
+        return cdiv(max_encoder_len, self.block_size) * self.page_size_bytes
 
 
 @dataclass

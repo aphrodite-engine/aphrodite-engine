@@ -172,17 +172,20 @@ class CudaPlatformBase(Platform):
                 logger.info("Forcing kv cache block size to 128 for "
                             "CUTLASS_MLA backend.")
 
+        # lazy import to avoid circular import
+        from aphrodite.config import CUDAGraphMode
+
         compilation_config = aphrodite_config.compilation_config
         if (envs.APHRODITE_ALL2ALL_BACKEND == "deepep_high_throughput"
                 and parallel_config.data_parallel_size > 1
-                and compilation_config.use_cudagraph):
+                and compilation_config.cudagraph_mode != CUDAGraphMode.NONE):
             logger.info(
-                "Data Parallel: Forcing enforce eager to be True since DP "
+                "Data Parallel: disabling cudagraphs since DP "
                 "with DeepEP high-throughput kernels are not CUDA Graph "
                 "compatible. The DeepEP low-latency kernels are CUDA Graph "
                 "compatible. Set the all_to_all backend to deepep_low_latency "
                 "to use those kernels instead.")
-            compilation_config.use_cudagraph = False
+            compilation_config.cudagraph_mode = CUDAGraphMode.NONE
             if model_config is not None:
                 model_config.enforce_eager = True
 
@@ -263,14 +266,7 @@ class CudaPlatformBase(Platform):
             TREE_ATTN_V1 = "aphrodite.v1.attention.backends.tree_attn.TreeAttentionBackend"  # noqa: E501
             XFORMERS_APHRODITE_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
 
-            if selected_backend == _Backend.FLASHINFER:
-                log_once("INFO", "Using FlashInfer backend on V1 engine.")
-                if cls.has_device_capability(100):
-                    from aphrodite.v1.attention.backends.utils import (
-                        set_kv_cache_layout)
-                    set_kv_cache_layout("HND")
-                return FLASHINFER_V1
-            elif selected_backend == _Backend.FLEX_ATTENTION:
+            if selected_backend == _Backend.FLEX_ATTENTION:
                 log_once("INFO", "Using FlexAttention backend on V1 engine.")
                 return FLEX_ATTENTION_V1
             elif selected_backend == _Backend.TRITON_ATTN_APHRODITE_V1:
@@ -412,10 +408,6 @@ class CudaPlatformBase(Platform):
                 if (fp8_kv_cache and not flash_attn_supports_fp8()):
                     logger.info(
                         "Cannot use FlashAttention backend for FP8 KV cache.")
-                    logger.warning(
-                        "Please use FlashInfer backend with FP8 KV Cache for "
-                        "better performance by setting environment variable "
-                        "APHRODITE_ATTENTION_BACKEND=FLASHINFER")
                     target_backend = _Backend.XFORMERS
             except ImportError:
                 logger.info(
@@ -453,8 +445,12 @@ class CudaPlatformBase(Platform):
         return True
 
     @classmethod
-    def get_piecewise_backend_cls(cls) -> str:
-        return "aphrodite.compilation.cuda_piecewise_backend.CUDAPiecewiseBackend"  # noqa
+    def opaque_attention_op(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_static_graph_wrapper_cls(cls) -> str:
+        return "aphrodite.compilation.cuda_graph.CUDAGraphWrapper"
 
     @classmethod
     def stateless_init_device_torch_dist_pg(
@@ -491,22 +487,64 @@ class CudaPlatformBase(Platform):
         return cuda_device_count_stateless()
 
     @classmethod
-    def is_kv_cache_dtype_supported(cls, kv_cache_dtype: str) -> bool:
+    def is_kv_cache_dtype_supported(cls, kv_cache_dtype: str,
+                                    model_config: "ModelConfig") -> bool:
         fp8_attention = kv_cache_dtype.startswith("fp8")
-        will_use_fa = (not envs.is_set("APHRODITE_ATTENTION_BACKEND")
-                       ) or envs.APHRODITE_ATTENTION_BACKEND == "FLASH_ATTN_APHRODITE_V1"
-        will_use_fi = (envs.APHRODITE_ATTENTION_BACKEND
-                       in ("FLASHINFER_APHRODITE_V1", "FLASHINFER"))
+        attention_backend = envs.APHRODITE_ATTENTION_BACKEND
         supported = False
-        if cls.is_device_capability(100):
-            supported = True
-        elif will_use_fi:
-            supported = True
-        elif fp8_attention and will_use_fa:
-            from aphrodite.attention.utils.fa_utils import (
-                flash_attn_supports_fp8)
-            supported = flash_attn_supports_fp8()
+        if model_config is not None and model_config.use_mla:
+            # Default to CutlassMLA for blackwell,
+            # FlashMLA otherwise
+            if attention_backend is None:
+                if cls.is_device_capability(100):
+                    attention_backend = "CUTLASS_MLA"
+                else:
+                    attention_backend = "FLASHMLA"
+
+            # Only FlashMLA supports fp8
+            if attention_backend == "FLASHMLA":
+                supported = True
+            else:
+                supported = (not fp8_attention)
+        else:
+            # Default to FlashAttention
+            if attention_backend is None:
+                attention_backend = "FLASH_ATTN_APHRODITE_V1"
+
+            # All Blackwell backends support fp8
+            if cls.is_device_capability(100):
+                supported = True
+            elif attention_backend == "FLASH_ATTN_APHRODITE_V1":
+                if fp8_attention:
+                    from aphrodite.attention.utils.fa_utils import (
+                        flash_attn_supports_fp8)
+                    supported = flash_attn_supports_fp8()
+                else:
+                    supported = True
+            elif attention_backend in (
+                "FLASHINFER_APHRODITE_V1", "FLASHINFER"):
+                supported = True
         return supported
+
+    @classmethod
+    def check_if_supports_dtype(cls, torch_dtype: torch.dtype):
+        if torch_dtype == torch.bfloat16:  # noqa: SIM102
+            if not cls.has_device_capability(80):
+                capability = cls.get_device_capability()
+                gpu_name = cls.get_device_name()
+
+                if capability is None:
+                    compute_str = "does not have a compute capability"
+                else:
+                    version_str = capability.as_version_str()
+                    compute_str = f"has compute capability {version_str}"
+
+                raise ValueError(
+                    "Bfloat16 is only supported on GPUs "
+                    "with compute capability of at least 8.0. "
+                    f"Your {gpu_name} GPU {compute_str}. "
+                    "You can use float16 instead by explicitly setting the "
+                    "`dtype` flag in CLI, for example: --dtype=half.")
 
 
 # NVML utils

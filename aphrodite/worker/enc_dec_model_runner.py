@@ -11,12 +11,10 @@ from aphrodite.attention.backends.abstract import (AttentionBackend,
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
 from aphrodite.attention.selector import (get_env_variable_attn_backend,
                                           get_global_forced_attn_backend)
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.sequence import (IntermediateTensors, PoolerOutput,
+from aphrodite.common.sequence import (IntermediateTensors,
                                        SequenceGroupMetadata)
-from aphrodite.utils import (STR_NOT_IMPL_ENC_DEC_BACKEND,
-                                    make_tensor_with_pad)
+from aphrodite.config import AphroditeConfig
 from aphrodite.forward_context import set_forward_context
 from aphrodite.inputs import INPUT_REGISTRY, InputRegistry
 from aphrodite.lora.request import LoRARequest
@@ -25,6 +23,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import (MULTIMODAL_REGISTRY, MultiModalKwargs,
                                   MultiModalRegistry)
 from aphrodite.platforms import _Backend
+from aphrodite.utils import STR_NOT_IMPL_ENC_DEC_BACKEND, make_tensor_with_pad
 from aphrodite.worker.model_runner import (
     GPUModelRunnerBase, ModelInputForGPUBuilder,
     ModelInputForGPUWithSamplingMetadata)
@@ -159,7 +158,7 @@ class EncoderDecoderModelRunner(GPUModelRunnerBase[EncoderDecoderModelInput]):
         kv_caches: List[torch.Tensor],
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
-    ) -> Optional[List[PoolerOutput]]:
+    ) -> Optional[List[SamplerOutput]]:
         if num_steps > 1:
             raise ValueError("num_steps > 1 is not supported in "
                              "EncoderDecoderModelRunner")

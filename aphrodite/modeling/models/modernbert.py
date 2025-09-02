@@ -5,7 +5,8 @@ import torch
 from torch import nn
 from transformers import ModernBertConfig
 
-from aphrodite.attention import Attention, AttentionType
+from aphrodite.attention.layers.encoder_only_attention import (
+    EncoderOnlyAttention)
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
@@ -19,10 +20,11 @@ from aphrodite.modeling.layers.rotary_embedding import RotaryEmbedding
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.tasks import PoolingTask
+from aphrodite.v1.pool.metadata import PoolingMetadata
 
-from .interfaces import SupportsCrossEncoding, default_pooling_type
+from .interfaces import SupportsCrossEncoding
+from .interfaces_base import default_pooling_type
 from .utils import WeightsMapper, maybe_prefix
 
 
@@ -100,12 +102,12 @@ class ModernBertAttention(nn.Module):
                                                     head_size=self.head_dim,
                                                     dim=self.head_dim,
                                                     base=rope_theta)
-        self.attn = Attention(self.num_heads,
-                              self.head_dim,
-                              self.scaling,
-                              prefix=f"{layer_id}.attn",
-                              attn_type=AttentionType.ENCODER_ONLY,
-                              per_layer_sliding_window=sliding_window)
+        self.attn = EncoderOnlyAttention(
+            self.num_heads,
+            self.head_dim,
+            self.scaling,
+            prefix=f"{layer_id}.attn",
+            per_layer_sliding_window=sliding_window)
         self.Wo = RowParallelLinear(config.hidden_size,
                                     config.hidden_size,
                                     bias=config.attention_bias)

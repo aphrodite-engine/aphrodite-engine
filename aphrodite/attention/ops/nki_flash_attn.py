@@ -5,7 +5,6 @@ import torch
 from neuronxcc import nki
 from neuronxcc.nki.language import par_dim
 
-
 from aphrodite.utils import cdiv
 
 

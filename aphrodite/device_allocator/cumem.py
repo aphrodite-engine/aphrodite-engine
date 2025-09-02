@@ -149,8 +149,12 @@ class CuMemAllocator:
         self.pointer_to_data: dict[int, AllocationData] = {}
         self.current_tag: str = CuMemAllocator.default_tag
         self.allocator_and_pools: dict[str, Any] = {}
+        # Creating strong references to the two callbacks here to prevent
+        # these ephemeral bound-method objects being garbage collected.
+        self.python_malloc_callback = self._python_malloc_callback
+        self.python_free_callback = self._python_free_callback
 
-    def python_malloc_callback(self, allocation_handle: HandleType) -> None:
+    def _python_malloc_callback(self, allocation_handle: HandleType) -> None:
         """
         Internal method to store the allocation data
         when memory is allocated in the memory pool."""
@@ -159,7 +163,7 @@ class CuMemAllocator:
             allocation_handle, self.current_tag)
         return
 
-    def python_free_callback(self, ptr: int) -> HandleType:
+    def _python_free_callback(self, ptr: int) -> HandleType:
         """
         Internal method to look up the allocation data
         when memory is freed in the memory pool."""

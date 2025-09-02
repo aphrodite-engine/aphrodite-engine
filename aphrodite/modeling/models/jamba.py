@@ -1,5 +1,6 @@
 """Inference-only Jamba model."""
 from collections.abc import Iterable
+from itertools import islice
 from typing import Optional
 
 import torch
@@ -9,7 +10,8 @@ from transformers import JambaConfig
 from aphrodite.attention.layer import Attention
 from aphrodite.common import envs
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.config import AphroditeConfig, CacheConfig
+from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.fused_moe import FusedMoE
@@ -20,7 +22,7 @@ from aphrodite.modeling.layers.linear import (QKVParallelLinear,
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer import MambaMixer
 from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateShapeCalculator)
+    MambaStateDtypeCalculator, MambaStateShapeCalculator)
 from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
@@ -92,6 +94,7 @@ class JambaMambaDecoderLayer(nn.Module):
     def __init__(self,
                  config: JambaConfig,
                  layer_idx: int,
+                 model_config: Optional[ModelConfig] = None,
                  cache_config: Optional[CacheConfig] = None,
                  quant_config: Optional[QuantizationConfig] = None,
                  is_lora_enabled: Optional[bool] = False,
@@ -112,6 +115,8 @@ class JambaMambaDecoderLayer(nn.Module):
                                 rms_norm_eps=config.rms_norm_eps,
                                 activation=config.hidden_act,
                                 is_lora_enabled = self.is_lora_enabled,
+                                model_config=model_config,
+                                cache_config=cache_config,
                                 prefix=f"{prefix}.mixer",
                                 )
 
@@ -149,10 +154,10 @@ class JambaMambaDecoderLayer(nn.Module):
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
 
-        hidden_states = self.mamba(hidden_states, mamba_cache_params)
+        output = torch.empty_like(hidden_states)
+        self.mamba(hidden_states, output, mamba_cache_params)
         # Fully Connected
-        hidden_states, residual = self.pre_ff_layernorm(
-            hidden_states, residual)
+        hidden_states, residual = self.pre_ff_layernorm(output, residual)
         hidden_states = self.feed_forward(hidden_states)
         return hidden_states, residual
 
@@ -162,6 +167,7 @@ class JambaAttentionDecoderLayer(nn.Module):
     def __init__(self,
                  config: JambaConfig,
                  layer_idx: int,
+                 model_config: Optional[ModelConfig] = None,
                  cache_config: Optional[CacheConfig] = None,
                  quant_config: Optional[QuantizationConfig] = None,
                  prefix: str = "",
@@ -272,12 +278,14 @@ ALL_DECODER_LAYER_TYPES = {
 }
 
 
+@support_torch_compile
 class JambaModel(nn.Module):
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
 
         config = aphrodite_config.model_config.hf_config
+        model_config = aphrodite_config.model_config
         cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
         lora_config = aphrodite_config.lora_config
@@ -302,6 +310,7 @@ class JambaModel(nn.Module):
                 config.layers_block_type[layer_idx]]
             return layer_class(config,
                                layer_idx,
+                               model_config,
                                cache_config,
                                quant_config=quant_config,
                                prefix=prefix,
@@ -340,7 +349,7 @@ class JambaModel(nn.Module):
 
         kv_cache_index = 0
         mamba_cache_index = 0
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             layer_mamba_cache_params = None
             if isinstance(layer, JambaAttentionDecoderLayer):
                 kv_cache_index += 1
@@ -515,13 +524,14 @@ class JambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
         if not envs.APHRODITE_USE_V1:
             if self.mamba_cache is None:
                 num_layers = self.model_config.get_num_layers_by_block_type(
-                    self.aphrodite_config.parallel_config,
-                    LayerBlockType.mamba)
+                    self.aphrodite_config.parallel_config, LayerBlockType.mamba)
                 state_shape = self.get_mamba_state_shape_from_config(
                     self.aphrodite_config)
+                state_dtype = self.get_mamba_state_dtype_from_config(
+                    self.aphrodite_config)
                 self.mamba_cache = MambaCacheManager(self.aphrodite_config,
-                                                     self.lm_head.weight.dtype,
-                                                     num_layers, *state_shape)
+                                                     num_layers, *state_shape,
+                                                     *state_dtype)
 
             mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)
 
@@ -535,6 +545,18 @@ class JambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
 
     def get_seqlen_agnostic_capture_inputs(self, batch_size: int):
         return self.mamba_cache.get_seqlen_agnostic_capture_inputs(batch_size)
+
+    @classmethod
+    def get_mamba_state_dtype_from_config(
+        cls,
+        aphrodite_config: "AphroditeConfig",
+    ) -> tuple[torch.dtype, torch.dtype]:
+
+        return MambaStateDtypeCalculator.mamba1_state_dtype(
+            aphrodite_config.model_config.dtype,
+            aphrodite_config.cache_config.mamba_cache_dtype,
+            aphrodite_config.cache_config.mamba_ssm_cache_dtype,
+        )
 
     @classmethod
     def get_mamba_state_shape_from_config(

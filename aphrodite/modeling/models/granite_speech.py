@@ -29,8 +29,8 @@ import torch.nn.functional as F
 from torch import nn
 from transformers import BatchFeature, PretrainedConfig
 
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
@@ -38,7 +38,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import (AudioProcessorItems,
                                         MultiModalDataItems,
                                         MultiModalDataParser)
@@ -117,7 +117,7 @@ class GraniteSpeechMultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> list[PromptUpdate]:
         processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         tokenizer = self.info.get_tokenizer()

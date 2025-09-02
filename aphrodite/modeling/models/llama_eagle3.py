@@ -6,8 +6,8 @@ import torch.nn as nn
 from loguru import logger
 from transformers import LlamaConfig
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import QKVParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor

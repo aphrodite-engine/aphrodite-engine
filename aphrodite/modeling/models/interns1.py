@@ -14,15 +14,15 @@ from transformers.activations import ACT2FN
 from transformers.models.got_ocr2.image_processing_got_ocr2_fast import (
     GotOcr2ImageProcessorFast)
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.interns1_vit import InternS1VisionModel
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs, NestedTensors)
+                                         MultiModalKwargsItems, NestedTensors)
 from aphrodite.multimodal.parse import (ImageEmbeddingItems,
                                         ImageProcessorItems, ImageSize,
                                         MultiModalDataItems)
@@ -399,7 +399,7 @@ class InternS1MultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         img_context_token = hf_processor.image_token
@@ -407,15 +407,16 @@ class InternS1MultiModalProcessor(
         end_image_token = hf_processor.end_image_token
         video_token = hf_processor.video_token
 
-        if "video_num_patches" in out_mm_kwargs:
-            video_num_patches = out_mm_kwargs["video_num_patches"]
+        out_mm_data = out_mm_kwargs.get_data()
+        if "video_num_patches" in out_mm_data:
+            video_num_patches = out_mm_data["video_num_patches"]
             assert isinstance(video_num_patches, torch.Tensor)
             video_num_patches = video_num_patches.tolist()
         else:
             video_num_patches = []
 
-        if "image_num_patches" in out_mm_kwargs:
-            image_num_patches = out_mm_kwargs["image_num_patches"]
+        if "image_num_patches" in out_mm_data:
+            image_num_patches = out_mm_data["image_num_patches"]
             assert isinstance(image_num_patches, torch.Tensor)
             image_num_patches = image_num_patches.tolist()
         else:

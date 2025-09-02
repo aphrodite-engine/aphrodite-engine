@@ -4,7 +4,7 @@ from typing import Union
 import regex as re
 from loguru import logger
 
-from aphrodite.endpoints.chat_utils import random_tool_call_id
+from aphrodite.endpoints.chat_utils import make_tool_call_id
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  DeltaFunctionCall,
                                                  DeltaMessage, DeltaToolCall,
@@ -262,7 +262,7 @@ class DeepSeekV3ToolParser(ToolParser):
                         DeltaToolCall(
                             index=self.current_tool_id,
                             type="function",
-                            id=random_tool_call_id(),
+                            id=make_tool_call_id(),
                             function=DeltaFunctionCall(
                                 name=function_name).model_dump(
                                     exclude_none=True),

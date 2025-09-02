@@ -7,6 +7,7 @@ from torch.distributed import ProcessGroup
 
 from aphrodite.config import get_current_aphrodite_config
 from aphrodite.platforms import current_platform
+from aphrodite.platforms.tpu import USE_TPU_COMMONS
 
 from .base_device_communicator import DeviceCommunicatorBase
 
@@ -14,16 +15,17 @@ USE_RAY = parallel_config = get_current_aphrodite_config(
 ).parallel_config.distributed_executor_backend == "ray"
 
 
-if current_platform.is_tpu():
-    import torch_xla
-    import torch_xla.core.xla_model as xm
-    import torch_xla.runtime as xr
-    from torch_xla._internal import pjrt
-    from torch_xla.distributed.xla_multiprocessing import (
-        create_optimized_replica_groups)
-
-    if USE_RAY:
-        from aphrodite.executor import ray_utils
+if not USE_TPU_COMMONS:
+    logger.info("tpu_commons not found, using Aphrodite's TpuCommunicator")
+    if current_platform.is_tpu():
+        import torch_xla
+        import torch_xla.core.xla_model as xm
+        import torch_xla.runtime as xr
+        from torch_xla._internal import pjrt
+        from torch_xla.distributed.xla_multiprocessing import (
+            create_optimized_replica_groups)
+        if USE_RAY:
+            from aphrodite.executor import ray_utils
 
 
 class TpuCommunicator(DeviceCommunicatorBase):
@@ -90,10 +92,7 @@ class TpuCommunicator(DeviceCommunicatorBase):
         return xm.all_gather(input_, dim=dim)
 
 
-try:
+if USE_TPU_COMMONS:
     from tpu_commons.distributed.device_communicators import (
         TpuCommunicator as TpuCommonsCommunicator)
     TpuCommunicator = TpuCommonsCommunicator  # type: ignore
-except ImportError:
-    logger.info("tpu_commons not found, using Aphrodite's TpuCommunicator")
-    pass

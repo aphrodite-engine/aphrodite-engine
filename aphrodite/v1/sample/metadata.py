@@ -4,7 +4,7 @@ from typing import List, Optional, Any
 import torch
 
 from aphrodite.common.sampling_params import SamplerID
-from aphrodite.v1.sample.logits_processor import LogitsProcessorManager
+from aphrodite.v1.sample.logits_processor import LogitsProcessors
 
 
 @dataclass
@@ -91,7 +91,7 @@ class SamplingMetadata:
     bad_words_token_ids: dict[int, list[list[int]]]
 
     # Loaded logits processors
-    logitsprocs: LogitsProcessorManager
+    logitsprocs: LogitsProcessors
 
     # Sampler priority and temperature_last for priority-based execution
     sampler_priority: Optional[List[SamplerID]] = None

@@ -30,9 +30,9 @@ class Dynamic4bitLinearKernel(MPLinearKernel):
             return False, "Dynamic4bitLinearKernel on Arm requires"\
                 " Float32 activations"
         if c.full_weight_shape[0] % c.group_size != 0:
-            return False, f"Group size ({c.group_size}) does not evenly divide" \
-                          " the number of input features " \
-                          f"({c.full_weight_shape[0]})"
+            return False, f"Group size ({c.group_size}) does not evenly divide"\
+                " the number of input features "\
+                f"({c.full_weight_shape[0]})"
         if current_platform.get_cpu_architecture() == CpuArchEnum.ARM:
             try:
                 # Attempt to retrieve the operation

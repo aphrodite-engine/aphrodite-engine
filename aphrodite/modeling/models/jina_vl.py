@@ -6,8 +6,8 @@ import torch.nn as nn
 from loguru import logger
 from transformers import BatchFeature, PretrainedConfig
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.inputs import TokensPrompt
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)

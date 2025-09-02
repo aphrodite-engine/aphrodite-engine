@@ -21,8 +21,8 @@ class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
     def can_implement(
             cls, c: ScaledMMLinearLayerConfig) -> tuple[bool, Optional[str]]:
 
-        if (not current_platform.is_cuda() and not current_platform.is_cpu()):
-            return False, "CutlassScaledMM requires running on CUDA or CPU."
+        if not current_platform.is_cuda():
+            return False, "CutlassScaledMM requires running on CUDA."
 
         return True, None
 
@@ -84,8 +84,7 @@ class CutlassScaledMMLinearKernel(ScaledMMLinearKernel):
         # azp_adj is the AZP adjustment term, used to account for weights.
         # It does not depend on scales or azp, so it is the same for
         # static and dynamic quantization.
-        # For more details, see csrc/quantization/cutlass_w8a8/Epilogues.md
-        # https://github.com/aphrodite-project/aphrodite/blob/8d59dbb00044a588cab96bcdc028006ed922eb06/csrc/quantization/cutlass_w8a8/Epilogues.md
+        # For more details, see kernels/quantization/cutlass_w8a8/Epilogues.md
         if not self.config.input_symmetric:
             weight = getattr(layer, self.w_q_name)
             azp_adj = weight.sum(dim=0, keepdim=True, dtype=torch.int32)

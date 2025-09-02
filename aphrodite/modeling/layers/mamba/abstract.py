@@ -1,10 +1,16 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import torch
 
+from aphrodite.modeling.layers.attention_layer_base import AttentionLayerBase
 
-class MambaBase(ABC):
+if TYPE_CHECKING:
+    from aphrodite.attention.backends.abstract import AttentionBackend
+
+
+class MambaBase(AttentionLayerBase):
     """
     Base class for Mamba-like layers which support the v1 engine.
     Inherit from this class if you implement a custom layer.
@@ -29,4 +35,9 @@ class MambaBase(ABC):
     @property
     @abstractmethod
     def mamba_type(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_attn_backend(self) -> type["AttentionBackend"]:
+        """Get the attention backend class for this Mamba layer."""
         pass

@@ -8,11 +8,11 @@ from torch.distributed import ProcessGroup
 
 import aphrodite.common.envs as envs
 from aphrodite import _custom_ops as ops
-from aphrodite.utils import cuda_device_count_stateless
-from aphrodite.distributed.device_communicators.custom_all_reduce_utils import (
-    gpu_p2p_access_check)
+from aphrodite.distributed.device_communicators.all_reduce_utils import (
+    CUSTOM_ALL_REDUCE_MAX_SIZES, gpu_p2p_access_check)
 from aphrodite.distributed.parallel_state import in_the_same_node_as
 from aphrodite.platforms import current_platform
+from aphrodite.utils import cuda_device_count_stateless
 
 try:
     ops.meta_size()
@@ -108,7 +108,16 @@ class CustomAllreduce:
         # now `device` is a `torch.device` object
         assert isinstance(device, torch.device)
         self.device = device
-
+        device_capability = current_platform.get_device_capability(
+        ).as_version_str()
+        if (
+            current_platform.is_cuda() and
+            envs.APHRODITE_ALLREDUCE_USE_SYMM_MEM
+            and device_capability in CUSTOM_ALL_REDUCE_MAX_SIZES
+        ):
+            max_size = min(
+                CUSTOM_ALL_REDUCE_MAX_SIZES[device_capability][world_size],
+                max_size)
         cuda_visible_devices = envs.CUDA_VISIBLE_DEVICES
         if cuda_visible_devices:
             device_ids = list(map(int, cuda_visible_devices.split(",")))

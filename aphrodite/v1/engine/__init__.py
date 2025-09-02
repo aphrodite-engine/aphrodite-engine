@@ -8,7 +8,7 @@ import torch
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.lora.request import LoRARequest
-from aphrodite.multimodal.inputs import MultiModalKwargsItem, PlaceholderRange
+from aphrodite.multimodal.inputs import MultiModalFeatureSpec
 from aphrodite.v1.metrics.stats import SchedulerStats
 from aphrodite.v1.outputs import LogprobsLists, LogprobsTensors
 
@@ -44,9 +44,7 @@ class EngineCoreRequest(
 
     request_id: str
     prompt_token_ids: list[int]
-    mm_kwargs: Optional[list[MultiModalKwargsItem]]
-    mm_hashes: Optional[list[str]]
-    mm_placeholders: Optional[list[PlaceholderRange]]
+    mm_features: Optional[list[MultiModalFeatureSpec]]
     sampling_params: Optional[SamplingParams]
     pooling_params: Optional[PoolingParams]
     eos_token_id: Optional[int]

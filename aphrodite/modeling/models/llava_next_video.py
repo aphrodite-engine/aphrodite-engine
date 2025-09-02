@@ -15,7 +15,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import (ImageSize, MultiModalDataItems,
                                         VideoEmbeddingItems,
                                         VideoProcessorItems)
@@ -184,7 +184,7 @@ class LlavaNextVideoMultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_config = self.info.get_hf_config()
         video_token_id = hf_config.video_token_index

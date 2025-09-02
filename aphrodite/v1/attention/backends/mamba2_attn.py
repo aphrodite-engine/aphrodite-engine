@@ -1,17 +1,17 @@
 import math
 from dataclasses import dataclass
-from typing import ClassVar, Optional
+from typing import Optional
 
 import torch
 
 from aphrodite.attention.backends.abstract import AttentionBackend
 from aphrodite.attention.backends.utils import PAD_SLOT_ID
 from aphrodite.config import AphroditeConfig
-from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
-                                                   AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata,
+from aphrodite.v1.attention.backends.mamba_attn import (
+    BaseMambaAttentionMetadataBuilder)
+from aphrodite.v1.attention.backends.utils import (CommonAttentionMetadata,
                                                    split_decodes_and_prefills)
-from aphrodite.v1.kv_cache_interface import AttentionSpec, MambaSpec
+from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 
 def _query_start_loc_to_chunk_indices_offsets(query_start_loc: torch.Tensor,
@@ -86,29 +86,14 @@ class Mamba2AttentionMetadata:
 
 
 class Mamba2AttentionMetadataBuilder(
-        AttentionMetadataBuilder[Mamba2AttentionMetadata]):
-    attn_cudagraph_support: ClassVar[AttentionCGSupport] = \
-        AttentionCGSupport.PURE_DECODE_ONLY
-
-    reorder_batch_threshold: ClassVar[int] = 1
+        BaseMambaAttentionMetadataBuilder[Mamba2AttentionMetadata]):
 
     def __init__(self, kv_cache_spec: AttentionSpec, layer_names: list[str],
                  aphrodite_config: AphroditeConfig, device: torch.device):
-        assert isinstance(kv_cache_spec, MambaSpec)
-        self.kv_cache_spec = kv_cache_spec
+        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device)
         self.chunk_size = aphrodite_config.model_config.get_mamba_chunk_size()
-        self.aphrodite_config = aphrodite_config
-        self.compilation_config = aphrodite_config.compilation_config
         assert self.chunk_size is not None, (
             "chunk_size needs to be set in the model config for Mamba2 models")
-        self.decode_cudagraph_max_bs = min(
-            self.aphrodite_config.scheduler_config.max_num_seqs,
-            self.compilation_config.max_capture_size)
-        self.state_indices_tensor = torch.empty(
-            (self.decode_cudagraph_max_bs, ),
-            dtype=torch.int32,
-            device=device,
-        )
 
     def build(self,
               common_prefix_len: int,
@@ -185,23 +170,3 @@ class Mamba2AttentionMetadataBuilder(
             state_indices_tensor=state_indices_tensor,
         )
         return attn_metadata
-
-    def build_for_cudagraph_capture(
-            self, common_attn_metadata: CommonAttentionMetadata):
-        """
-        This method builds the metadata for full cudagraph capture.
-        Currently, only decode is supported for full cudagraphs with Mamba.
-        """
-        m = common_attn_metadata
-
-        assert m.num_reqs == m.num_actual_tokens, \
-            "Mamba only supports decode-only full CUDAGraph capture. " \
-            "Make sure all cudagraph capture sizes <= max_num_seq."
-
-        m.max_query_len = 1  # decode-only
-
-        return self.build(0, m)
-
-    def can_run_in_cudagraph(
-            self, common_attn_metadata: CommonAttentionMetadata) -> bool:
-        return common_attn_metadata.max_query_len == 1

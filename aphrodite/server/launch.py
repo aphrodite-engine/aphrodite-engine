@@ -9,11 +9,13 @@ from fastapi import FastAPI, Request, Response
 from loguru import logger
 
 from aphrodite.common import envs
-from aphrodite.utils import find_process_using_port
+from aphrodite.endpoints.constants import (
+    H11_MAX_HEADER_COUNT_DEFAULT, H11_MAX_INCOMPLETE_EVENT_SIZE_DEFAULT)
 from aphrodite.endpoints.ssl import SSLCertRefresher
 from aphrodite.engine.async_aphrodite import AsyncEngineDeadError
 from aphrodite.engine.multiprocessing import MQEngineDeadError
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.utils import find_process_using_port
 from aphrodite.v1.engine.exceptions import EngineDeadError, EngineGenerateError
 
 
@@ -21,6 +23,11 @@ async def serve_http(app: FastAPI,
                      sock: Optional[socket.socket],
                      enable_ssl_refresh: bool = False,
                      **uvicorn_kwargs: Any):
+    """
+    Start a FastAPI app using Uvicorn, with support for custom Uvicorn config
+    options.  Supports http header limits via h11_max_incomplete_event_size and
+    h11_max_header_count.
+    """
     for route in app.routes:
         methods = getattr(route, "methods", None)
         path = getattr(route, "path", None)
@@ -28,7 +35,21 @@ async def serve_http(app: FastAPI,
         if methods is None or path is None:
             continue
 
+    # Extract header limit options if present
+    h11_max_incomplete_event_size = uvicorn_kwargs.pop(
+        "h11_max_incomplete_event_size", None)
+    h11_max_header_count = uvicorn_kwargs.pop("h11_max_header_count", None)
+
+    # Set safe defaults if not provided
+    if h11_max_incomplete_event_size is None:
+        h11_max_incomplete_event_size = H11_MAX_INCOMPLETE_EVENT_SIZE_DEFAULT
+    if h11_max_header_count is None:
+        h11_max_header_count = H11_MAX_HEADER_COUNT_DEFAULT
+
     config = uvicorn.Config(app, **uvicorn_kwargs)
+    # Set header limits
+    config.h11_max_incomplete_event_size = h11_max_incomplete_event_size
+    config.h11_max_header_count = h11_max_header_count
     config.load()
     server = uvicorn.Server(config)
     _add_shutdown_handlers(app, server)

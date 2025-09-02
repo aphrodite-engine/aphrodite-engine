@@ -7,15 +7,15 @@ from torch import nn
 from transformers import MambaConfig
 
 from aphrodite.common import envs
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.distributed import get_tensor_model_parallel_world_size
+from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer import MambaMixer
 from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateShapeCalculator)
+    MambaStateDtypeCalculator, MambaStateShapeCalculator)
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
@@ -38,6 +38,7 @@ class MambaDecoderLayer(nn.Module):
 
     def __init__(self,
                  config: MambaConfig,
+                 model_config: Optional[ModelConfig] = None,
                  cache_config: Optional[CacheConfig] = None,
                  quant_config: Optional[QuantizationConfig] = None,
                  is_lora_enabled: Optional[bool] = False,
@@ -59,6 +60,8 @@ class MambaDecoderLayer(nn.Module):
                                 rms_norm_eps=mixer_rms_eps,
                                 activation=config.hidden_act,
                                 is_lora_enabled=self.is_lora_enabled,
+                                model_config=model_config,
+                                cache_config=cache_config,
                                 prefix=f"{prefix}.mixer")
 
         self.norm = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
@@ -76,16 +79,19 @@ class MambaDecoderLayer(nn.Module):
         else:
             hidden_states, residual = self.norm(hidden_states, residual)
 
-        hidden_states = self.mixer(hidden_states, mamba_cache_params)
-        return hidden_states, residual
+        output = torch.empty_like(hidden_states)
+        self.mixer(hidden_states, output, mamba_cache_params)
+        return output, residual
 
 
+@support_torch_compile
 class MambaModel(nn.Module):
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
 
         config = aphrodite_config.model_config.hf_config
+        model_config = aphrodite_config.model_config
         cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
         lora_config = aphrodite_config.lora_config
@@ -106,6 +112,7 @@ class MambaModel(nn.Module):
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
             lambda prefix: MambaDecoderLayer(config,
+                                             model_config=model_config,
                                              cache_config=cache_config,
                                              quant_config=quant_config,
                                              is_lora_enabled=is_lora_enabled,
@@ -233,17 +240,19 @@ class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree, SupportsPP):
                 intermediate_tensors: Optional[IntermediateTensors] = None,
                 inputs_embeds: Optional[torch.Tensor] = None,
                 **kwargs):
+
         mamba_cache_params = None
         if not envs.APHRODITE_USE_V1:
             if self.mamba_cache is None:
                 num_layers = self.model_config.get_num_layers_by_block_type(
-                    self.aphrodite_config.parallel_config,
-                    LayerBlockType.mamba)
+                    self.aphrodite_config.parallel_config, LayerBlockType.mamba)
                 state_shape = self.get_mamba_state_shape_from_config(
                     self.aphrodite_config)
+                state_dtype = self.get_mamba_state_dtype_from_config(
+                    self.aphrodite_config)
                 self.mamba_cache = MambaCacheManager(self.aphrodite_config,
-                                                     self.lm_head.weight.dtype,
-                                                     num_layers, *state_shape)
+                                                     num_layers, *state_shape,
+                                                     *state_dtype)
 
             mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)
 
@@ -251,6 +260,18 @@ class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree, SupportsPP):
                                       intermediate_tensors, inputs_embeds)
 
         return hidden_states
+
+    @classmethod
+    def get_mamba_state_dtype_from_config(
+        cls,
+        aphrodite_config: "AphroditeConfig",
+    ) -> tuple[torch.dtype, torch.dtype]:
+
+        return MambaStateDtypeCalculator.mamba1_state_dtype(
+            aphrodite_config.model_config.dtype,
+            aphrodite_config.cache_config.mamba_cache_dtype,
+            aphrodite_config.cache_config.mamba_ssm_cache_dtype,
+        )
 
     @classmethod
     def get_mamba_state_shape_from_config(

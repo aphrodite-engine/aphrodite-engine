@@ -1,4 +1,4 @@
-# Copyright 2024 The Aphrodite team.
+# Copyright 2024 The vLLM team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 """Wrapper around `transformers` models"""
 from collections.abc import Iterable, Mapping
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Literal, Optional, Union
 
 import regex as re
@@ -39,7 +40,7 @@ from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
-from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalKwargs
+from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalKwargsItems
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
                                          MultiModalInputs, PlaceholderRange)
@@ -57,6 +58,21 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, WeightsMapper,
                     maybe_prefix)
 
 
+def get_feature_request_tip(
+    model: str,
+    trust_remote_code: bool,
+) -> str:
+    hf_url = f"a discussion at https://huggingface.co/{model}/discussions/new"
+    gh_url = "an issue at https://github.com/huggingface/transformers/issues/new/choose"
+    url = hf_url if trust_remote_code else gh_url
+    prefix = f"Please open {url} to request support for this feature. "
+    if Path(model).exists():
+        prefix = ""
+    doc_url = "https://docs.aphrodite.ai/en/latest/models/supported_models.html#writing-custom-models"
+    tip = f"See {doc_url} for instructions on how to add support yourself."
+    return f"{prefix}{tip}"
+
+
 def aphrodite_flash_attention_forward(
         # Transformers args
         module: torch.nn.Module,
@@ -66,7 +82,7 @@ def aphrodite_flash_attention_forward(
         attention_mask: torch.Tensor,
         # Transformers kwargs
         scaling: Optional[float] = None,
-        # Aphrodite kwargs
+        # vLLM kwargs
         attention_instances: Optional[dict[Attention]] = None,
         **kwargs):
     self_attn = attention_instances[module.layer_idx]
@@ -85,12 +101,32 @@ def log_replacement(name: str, old_module: nn.Module, new_module: nn.Module):
     logger.debug("{}: {} -> {}", name, old_module, new_module)
 
 
+def can_enable_torch_compile(aphrodite_config: AphroditeConfig) -> bool:
+    """
+    Callable to be passed to `@support_torch_compile`'s `enable_if` argument.
+
+    Defaults to `True` but is disabled in the following situations:
+
+    - The model uses dynamic rope scaling.
+    """
+    enable = True
+    text_config = aphrodite_config.model_config.hf_config.get_text_config()
+    # Dynamic rope scaling is not compatible with torch.compile
+    rope_scaling: dict = getattr(text_config, "rope_scaling", None) or {}
+    if rope_scaling.get("rope_type") == "dynamic":
+        enable = False
+    return enable
+
+
 def replace_linear_class(
-    linear: nn.Linear, style: Literal["colwise", "rowwise"],
-    quant_config: QuantizationConfig
+    linear: nn.Linear,
+    style: Literal["colwise", "rowwise"],
+    quant_config: QuantizationConfig,
+    *,
+    prefix: str = "",
 ) -> Union[ColumnParallelLinear, RowParallelLinear, ReplicatedLinear]:
     """
-    Replace nn.Linear with one of Aphrodite's tensor parallel linear classes.
+    Replace nn.Linear with one of vLLM's tensor parallel linear classes.
 
     Args:
         linear (nn.Linear): `nn.Linear` to be replaced.
@@ -121,6 +157,7 @@ def replace_linear_class(
         output_size=linear.out_features,
         bias=linear.bias is not None,
         quant_config=quant_config,
+        prefix=prefix,
         return_bias=False,
         **aphrodite_linear_kwargs,
     )
@@ -234,7 +271,7 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ):
         """
         Given the original multi-modal items for this modality
@@ -257,7 +294,7 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
         hf_processor_mm_kwargs,
         num_image_patches: torch.Tensor = None,
     ):
-        # HF Processors always return a mask but Aphrodite doesn't need it
+        # HF Processors always return a mask but vLLM doesn't need it
         hf_inputs.pop("attention_mask", None)
         mm_fields = {
             key: MultiModalFieldConfig.flat_from_sizes("image",
@@ -307,10 +344,10 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
         mm_data: MultiModalDataDict,
         hf_processor_mm_kwargs: Mapping[str, object],
         tokenization_kwargs: Optional[Mapping[str, object]] = None,
-        return_mm_hashes: bool = False,
+        mm_hash_overrides: Optional[dict[str, list[str]]] = None,
     ) -> MultiModalInputs:
         """
-        Process multi-modal inputs to be used in Aphrodite.
+        Process multi-modal inputs to be used in vLLM.
 
         Apply HF Processor on prompt text and multi-modal data together,
         outputting token IDs and processed tensors.
@@ -369,14 +406,16 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
             mm_tokens_per_modality["num_image_patches"]
         ) if "num_image_patches" in mm_tokens_per_modality else None
         processed_data['num_image_patches'] = num_image_patches
-        mm_kwargs = MultiModalKwargs.from_hf_inputs(
+        mm_kwargs = MultiModalKwargsItems.from_hf_inputs(
             processed_data,
             self._get_mm_fields_config(processed_data, hf_processor_mm_kwargs,
                                        num_image_patches),
         )
+        # Use overrides if provided; fallback to data-dependent hashing.
+        mm_hashes = (mm_hash_overrides if mm_hash_overrides is not None else
+                     self._hash_mm_items(mm_items, hf_processor_mm_kwargs,
+                                         tokenization_kwargs))
 
-        mm_hashes = self._hash_mm_items(mm_items, hf_processor_mm_kwargs,
-                                        tokenization_kwargs)
         return MultiModalInputs(
             type="multimodal",
             prompt=prompt,
@@ -454,8 +493,11 @@ class TransformersBase(nn.Module, SupportsQuant, SupportsLoRA, SupportsPP):
             return
 
         if not self.model.supports_pp_plan:
+            tip = get_feature_request_tip(self.model_config.model,
+                                          self.model_config.trust_remote_code)
             raise ValueError(
-                f"{type(self.model)} does not support pipeline parallel yet!")
+                f"{type(self.model)} does not support pipeline parallel. {tip}"
+            )
 
         module_lists = []
         module_list_idx = None
@@ -509,8 +551,10 @@ class TransformersBase(nn.Module, SupportsQuant, SupportsLoRA, SupportsPP):
         models_with_tp_plan = filter(supports_tp_plan, pretrained_models)
 
         if not any(models_with_tp_plan) and self.tp_size > 1:
+            tip = get_feature_request_tip(self.model_config.model,
+                                          self.model_config.trust_remote_code)
             raise ValueError(
-                f"{type(self.model)} does not support tensor parallel yet!")
+                f"{type(self.model)} does not support tensor parallel. {tip}")
 
         def _tensor_parallel(module: nn.Module,
                              prefix: str = "",
@@ -526,7 +570,7 @@ class TransformersBase(nn.Module, SupportsQuant, SupportsLoRA, SupportsPP):
                     for k, v in tp_plan.items()
                 }
 
-            # Some weight loaders expect linear layers to inherit from Aphrodite's
+            # Some weight loaders expect linear layers to inherit from vLLM's
             # LinearBase class, so we set a default style which causes any
             # unspecified linear layers to be replaced with ReplicatedLinear
             for child_name, child_module in module.named_children():
@@ -535,8 +579,10 @@ class TransformersBase(nn.Module, SupportsQuant, SupportsLoRA, SupportsPP):
                     generator = (p for p in tp_plan if re.match(p, qual_name))
                     pattern = next(generator, None)
                     style = tp_plan.get(pattern, "replicate")
-                    new_module = replace_linear_class(child_module, style,
-                                                      self.quant_config)
+                    new_module = replace_linear_class(child_module,
+                                                      style,
+                                                      self.quant_config,
+                                                      prefix=qual_name)
                     setattr(module, child_name, new_module)
                     log_replacement(qual_name, child_module, new_module)
                 else:
@@ -639,7 +685,7 @@ class TransformersBase(nn.Module, SupportsQuant, SupportsLoRA, SupportsPP):
         return loader.load_weights(weights, mapper=self.hf_to_aphrodite_mapper)
 
 
-@support_torch_compile
+@support_torch_compile(enable_if=can_enable_torch_compile)
 class TransformersModel(TransformersBase):
     hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_prefix={
@@ -651,7 +697,7 @@ class TransformersModel(TransformersBase):
         })
 
 
-@support_torch_compile
+@support_torch_compile(enable_if=can_enable_torch_compile)
 class TransformersForCausalLM(TransformersBase):
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
@@ -691,10 +737,30 @@ class TransformersForCausalLM(TransformersBase):
         return logits
 
 
+def flatten_and_concat(x: list[torch.Tensor]) -> torch.Tensor:
+    """Flatten until a list of tensors can be concatenated then do concat"""
+
+    def _can_concat(x: list[torch.Tensor]):
+        return len(set(map(lambda _x: _x.shape[1:], x))) == 1
+
+    if _can_concat(x):
+        return torch.concat(x)
+    return flatten_and_concat(flatten_bn(x))
+
+
 @MULTIMODAL_REGISTRY.register_processor(
     MultiModalProcessor,
     info=MultiModalProcessingInfo,
     dummy_inputs=MultiModalDummyInputsBuilder)
+@support_torch_compile(
+    # set `positions` to last dim to support Qwen-mrope
+    dynamic_arg_dims={
+        "input_ids": 0,
+        "positions": -1,
+        "intermediate_tensors": 0,
+        "inputs_embeds": 0,
+    },
+    enable_if=can_enable_torch_compile)
 class TransformersForMultimodalLM(TransformersForCausalLM, SupportsMultiModal):
     # Backwards compatibility for prev released models. State dicts back then
     # had different formats and cannot be loaded with `AutoModel` mapping as is
@@ -763,8 +829,7 @@ class TransformersForMultimodalLM(TransformersForCausalLM, SupportsMultiModal):
             if isinstance(pixel_values, torch.Tensor):
                 pixel_values = flatten_bn(pixel_values).to(self.dtype)
             elif is_list_of(pixel_values, torch.Tensor):
-                pixel_values = flatten_bn(flatten_bn(pixel_values),
-                                          concat=True).to(self.dtype)
+                pixel_values = flatten_and_concat(pixel_values).to(self.dtype)
             else:
                 raise ValueError(
                     f"Unsupported pixel_values type {type(pixel_values)}. "
@@ -787,7 +852,7 @@ class TransformersForMultimodalLM(TransformersForCausalLM, SupportsMultiModal):
 
                 # Embeddings have to be 2D tensors of length `num_images`
                 # but transformers returns concat tensors if each patch
-                # is of different size. We split it back to make Aphrodite happy
+                # is of different size. We split it back to make vLLM happy
                 vision_embeddings = torch.split(
                     vision_embeddings,
                     num_image_patches.flatten().tolist())

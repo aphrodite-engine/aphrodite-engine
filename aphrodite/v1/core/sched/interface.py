@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from aphrodite.v1.core.sched.output import SchedulerOutput
     from aphrodite.v1.engine import EngineCoreOutputs
     from aphrodite.v1.metrics.stats import SchedulerStats
-    from aphrodite.v1.outputs import ModelRunnerOutput
+    from aphrodite.v1.outputs import DraftTokenIds, ModelRunnerOutput
     from aphrodite.v1.request import Request, RequestStatus
 
 
@@ -61,9 +61,17 @@ class SchedulerInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def update_draft_token_ids(
+        self,
+        draft_token_ids: "DraftTokenIds",
+    ) -> None:
+        """Update the draft token ids for the scheduled requests."""
+        raise NotImplementedError
+
+    @abstractmethod
     def add_request(self, request: "Request") -> None:
         """Add a new request to the scheduler's internal queue.
-        
+
         Args:
             request: The new request being added.
         """

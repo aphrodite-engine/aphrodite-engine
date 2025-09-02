@@ -9,28 +9,24 @@ from transformers import BatchFeature, Gemma3Config, Gemma3Processor
 from transformers.models.gemma3.processing_gemma3 import Gemma3ProcessorKwargs
 
 import aphrodite.common.envs as envs
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.layernorm import GemmaRMSNorm
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
                                         MultiModalDataItems)
 # yapf: disable
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             BoundPromptUpdate,
-                                             PlaceholderFeaturesInfo,
-                                             PromptReplacement,
-                                             PromptTargetMatch, PromptUpdate,
-                                             PromptUpdateDetails,
-                                             find_mm_placeholders,
-                                             replace_token_matches)
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor, BaseProcessingInfo, MultiModalPromptUpdates,
+    MultiModalPromptUpdatesApplyResult, PlaceholderFeaturesInfo,
+    PromptReplacement, PromptUpdate, PromptUpdateDetails,
+    replace_token_matches)
 # yapf: enable
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
@@ -312,7 +308,7 @@ class Gemma3MultiModalProcessor(BaseMultiModalProcessor[Gemma3ProcessingInfo]):
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, Any],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         image_token = hf_processor.boi_token
@@ -338,14 +334,10 @@ class Gemma3MultiModalProcessor(BaseMultiModalProcessor[Gemma3ProcessingInfo]):
     def _apply_token_matches(
         self,
         prompt: list[int],
-        mm_matches: Mapping[str, Sequence[PromptTargetMatch]],
-        mm_item_counts: Mapping[str, int],
-    ) -> list[int]:
-        token_ids = super()._apply_token_matches(
-            prompt,
-            mm_matches,
-            mm_item_counts,
-        )
+        mm_prompt_updates: MultiModalPromptUpdates,
+    ) -> tuple[list[int], MultiModalPromptUpdatesApplyResult]:
+        token_ids, res = super()._apply_token_matches(prompt,
+                                                      mm_prompt_updates)
 
         # "\n\n\n" and "\n\n\n\n" are single tokens
         # Since our replacement can insert "\n\n" next to "\n"
@@ -374,13 +366,12 @@ class Gemma3MultiModalProcessor(BaseMultiModalProcessor[Gemma3ProcessingInfo]):
             [newline_4],
         )
 
-        return token_ids
+        return token_ids, res
 
     def _find_mm_placeholders(
         self,
-        mm_prompt_updates: Mapping[str, Sequence[BoundPromptUpdate]],
         new_token_ids: list[int],
-        mm_item_counts: Mapping[str, int],
+        mm_prompt_updates: MultiModalPromptUpdates,
     ) -> Mapping[str, list[PlaceholderFeaturesInfo]]:
         # We need to detect "\n\n" inside "\n\n\n" and "\n\n\n\n"
         tokenizer = self.info.get_tokenizer()
@@ -405,8 +396,8 @@ class Gemma3MultiModalProcessor(BaseMultiModalProcessor[Gemma3ProcessingInfo]):
             repl_token_ids.extend(repl_toks)
             repl_orig_idxs.extend(orig_idx for _ in range(len(repl_toks)))
 
-        repls = find_mm_placeholders(mm_prompt_updates, repl_token_ids,
-                                     mm_item_counts)
+        repls = super()._find_mm_placeholders(repl_token_ids,
+                                              mm_prompt_updates)
 
         return {
             modality: [

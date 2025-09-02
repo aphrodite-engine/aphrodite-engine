@@ -7,9 +7,8 @@ from transformers import AriaConfig, AriaTextConfig, BatchFeature
 from transformers.models.aria.modeling_aria import AriaCrossAttention
 from transformers.models.aria.processing_aria import AriaProcessor
 
-from aphrodite.config import (AphroditeConfig, CacheConfig,
-                                     QuantizationConfig)
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, CacheConfig, QuantizationConfig
 from aphrodite.distributed import get_tensor_model_parallel_rank
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.fused_moe import FusedMoE
@@ -23,7 +22,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import MultiModalDataItems
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
@@ -470,7 +469,7 @@ class AriaMultiModalProcessor(BaseMultiModalProcessor[AriaProcessingInfo]):
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_config = self.info.get_hf_config()
         image_token_id = hf_config.image_token_index

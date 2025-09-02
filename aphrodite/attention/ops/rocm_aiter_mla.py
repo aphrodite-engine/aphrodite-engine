@@ -2,9 +2,8 @@ from typing import Optional
 
 import torch
 
-from aphrodite.utils import (direct_register_custom_op,
-                                    is_torch_equal_or_newer)
 from aphrodite.platforms import current_platform
+from aphrodite.utils import direct_register_custom_op, is_torch_equal_or_newer
 
 
 def get_aiter_mla_metadata(max_batch_size: int, block_size: int,
@@ -36,7 +35,7 @@ def aiter_mla_decode_fwd(
     logit_cap: float = 0.0,
 ):
 
-    torch.ops.aphroditerocm_aiter_mla_decode_fwd(q,
+    torch.ops.aphrodite.rocm_aiter_mla_decode_fwd(q,
                                              kv_buffer.view(
                                                  -1, 1, 1, q.shape[-1]),
                                              o,

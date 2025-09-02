@@ -1,4 +1,6 @@
 """
+# MLA Common Components
+
 This file implements common components for MLA implementations.
 
 First we define:
@@ -195,7 +197,6 @@ from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional, Tuple,
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.common import envs
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionLayer,
                                                    AttentionMetadata,
@@ -208,13 +209,14 @@ from aphrodite.attention.backends.utils import (PAD_SLOT_ID,
                                                 is_block_tables_empty)
 from aphrodite.attention.ops.merge_attn_states import merge_attn_states
 from aphrodite.attention.utils.fa_utils import get_flash_attn_version
-from aphrodite.utils import (async_tensor_h2d, cdiv,
-                                    make_tensor_with_pad, round_down)
+from aphrodite.common import envs
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear, LinearBase,
                                               UnquantizedLinearMethod)
 from aphrodite.multimodal import MultiModalPlaceholderMap
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import HAS_TRITON
+from aphrodite.utils import (async_tensor_h2d, cdiv, make_tensor_with_pad,
+                             round_down)
 
 if HAS_TRITON:
     from aphrodite.attention.ops.triton_flash_attention import triton_attention
@@ -233,8 +235,7 @@ except ImportError:
         flash_attn_varlen_func = None
 
 if TYPE_CHECKING:
-    from aphrodite.worker.model_runner import (
-        ModelInputForGPUBuilder, ModelInputForGPUWithSamplingMetadata)
+    from aphrodite.worker.model_runner import ModelInputForGPUBuilder
 
 is_hip = current_platform.is_rocm()
 
@@ -443,10 +444,10 @@ class MLACommonMetadata(AttentionMetadata):
     """
     # Whether or not if cuda graph is enabled.
     # Cuda-graph is currently enabled for decoding only.
-    # TODO: Move `use_cuda_graph` out since it's unrelated to attention.
+    # TODO(woosuk): Move `use_cuda_graph` out since it's unrelated to attention.
     use_cuda_graph: bool
 
-    # NOTE: Definition of context_len, query_len, and seq_len.
+    # NOTE(sang): Definition of context_len, query_len, and seq_len.
     # |---------- N-1 iteration --------|
     # |---------------- N iteration ---------------------|
     # |- tokenA -|......................|-- newTokens ---|
@@ -630,90 +631,6 @@ class MLACommonMetadata(AttentionMetadata):
             is_profile_run=self.is_profile_run)
         return self._cached_decode_metadata
 
-    def advance_step(self,
-                     model_input: "ModelInputForGPUWithSamplingMetadata",
-                     sampled_token_ids: Optional[torch.Tensor],
-                     block_size: int,
-                     num_seqs: int,
-                     num_queries: int,
-                     turn_prefills_into_decodes: bool = False):
-        """
-        Update metadata in-place to advance one decode step.
-        """
-        # When using cudagraph, the num_seqs is padded to the next captured
-        # batch sized, but num_queries tracks the actual number of requests in
-        # the batch. For --enforce-eager mode, num_seqs == num_queries
-        if num_seqs != num_queries:
-            assert num_seqs > num_queries
-
-        if turn_prefills_into_decodes:
-            # When Multi-Step is enabled with Chunked-Prefill, prefills and
-            # decodes are scheduled together. In the first step, all the
-            # prefills turn into decodes. This update reflects that
-            # conversion.
-            assert self.num_decode_tokens + self.num_prefills == num_seqs
-            self.num_decode_tokens += self.num_prefills
-            self.num_prefills = 0
-            self.num_prefill_tokens = 0
-            self.max_prefill_seq_len = 0
-            self.max_query_len = 1
-
-            self.slot_mapping = self.slot_mapping[:num_seqs]
-        else:
-            assert self.seq_lens is not None
-            assert self.max_decode_seq_len == max(self.seq_lens)
-
-        assert self.num_prefills == 0
-        assert self.num_prefill_tokens == 0
-        assert self.num_decode_tokens == num_seqs
-        assert self.slot_mapping.shape == (num_seqs, )
-
-        assert self.seq_lens is not None
-        assert len(self.seq_lens) == num_seqs
-        assert self.seq_lens_tensor is not None
-        assert self.seq_lens_tensor.shape == (num_seqs, )
-        assert self.max_query_len == 1
-        assert self.max_prefill_seq_len == 0
-
-        assert self.query_start_loc is not None
-        assert self.query_start_loc.shape == (num_queries + 1, )
-        assert self.seq_start_loc is not None
-        assert self.seq_start_loc.shape == (num_seqs + 1, )
-
-        assert self.context_lens_tensor is not None
-        assert self.context_lens_tensor.shape == (num_queries, )
-
-        assert self.block_tables is not None
-        assert self.block_tables.shape[0] == num_seqs
-
-        # Update query lengths. Note that we update only queries and not seqs,
-        # since tensors may be padded due to captured cuda graph batch size
-        for i in range(num_queries):
-            self.seq_lens[i] += 1
-        self.max_decode_seq_len = max(self.seq_lens)
-
-        self._ops_advance_step(num_seqs=num_seqs,
-                               num_queries=num_queries,
-                               block_size=block_size,
-                               input_tokens=model_input.input_tokens,
-                               sampled_token_ids=sampled_token_ids,
-                               input_positions=model_input.input_positions)
-
-    def _ops_advance_step(self, num_seqs: int, num_queries: int,
-                          block_size: int, input_tokens: torch.Tensor,
-                          sampled_token_ids: torch.Tensor,
-                          input_positions: torch.Tensor) -> None:
-        # here we use advance_step_flashinfo to update the paged_kv_* tensors
-        ops.advance_step_flashattn(num_seqs=num_seqs,
-                                   num_queries=num_queries,
-                                   block_size=block_size,
-                                   input_tokens=input_tokens,
-                                   sampled_token_ids=sampled_token_ids,
-                                   input_positions=input_positions,
-                                   seq_lens=self.seq_lens_tensor,
-                                   slot_mapping=self.slot_mapping,
-                                   block_tables=self.block_tables)
-
 
 class MLACommonMetadataBuilder(AttentionMetadataBuilder[T], Generic[T]):
     """
@@ -779,12 +696,12 @@ class MLACommonMetadataBuilder(AttentionMetadataBuilder[T], Generic[T]):
                 self.curr_seq_lens.append(curr_seq_len)
 
             # Compute block table.
-            # TODO: Combine chunked prefill and prefix caching by
+            # TODO(sang): Combine chunked prefill and prefix caching by
             # only allowing multiple of block_size chunk size.
             # NOTE: This only works for oooooooxxx style attention.
             block_table = []
             if prefix_cache_hit:
-                # NOTE: For flash-attn, the block table should
+                # NOTE(woosuk): For flash-attn, the block table should
                 # include the entries for the incoming prefill tokens.
                 block_table = block_tables[seq_id]
             elif ((chunked_prefill_enabled or not is_prompt)
@@ -921,8 +838,8 @@ class MLACommonMetadataBuilder(AttentionMetadataBuilder[T], Generic[T]):
                 self.context_chunk_workspace_size // num_prefills_with_context
 
             # align max_context_chunk to page_size by rounding down,
-            # currently the `gather_cache` kernel cannot handle
-            # `context_chunk_starts` that are not aligned to page_size
+            # currently the `gather_and_maybe_dequant_cache` kernel cannot
+            # handle `context_chunk_starts` that are not aligned to page_size
             max_context_chunk = round_down(max_context_chunk, self.page_size)
             assert max_context_chunk > 0
             num_chunks = cdiv(context_lens_tensor.max(), max_context_chunk)
@@ -1026,8 +943,8 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
 
         self.triton_fa_func = triton_attention
         # Handle the differences between the flash_attn_varlen from flash_attn
-        # and the one from aphrodite_flash_attn. The former is used on RoCM and
-        # the latter has an additional parameter to control FA2 vs FA3
+        # and the one from aphrodite_flash_attn. The former is used on RoCM and the
+        # latter has an additional parameter to control FA2 vs FA3
         self.flash_attn_varlen_func = flash_attn_varlen_func
         self.aphrodite_flash_attn_version = get_flash_attn_version()
         if self.aphrodite_flash_attn_version is not None:
@@ -1166,6 +1083,7 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         q: torch.Tensor,
         kv_c_and_k_pe_cache: torch.Tensor,
         attn_metadata: MLACommonMetadata,
+        k_scale: torch.Tensor,
     ):
         prefill_metadata = attn_metadata.prefill_metadata
         assert prefill_metadata is not None
@@ -1187,12 +1105,14 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         for i in range(iters):
             toks = prefill_metadata.context_chunk_seq_tot[i]
 
-            ops.gather_cache(
+            ops.gather_and_maybe_dequant_cache(
                 src_cache=kv_c_and_k_pe_cache,
                 dst=workspace,
                 block_table=prefill_metadata.block_tables,
                 cu_seq_lens=prefill_metadata.context_chunk_cu_seq_lens[i],
                 batch_size=prefill_metadata.num_prefills,
+                kv_cache_dtype=self.kv_cache_dtype,
+                scale=k_scale,
                 seq_starts=prefill_metadata.context_chunk_starts[i],
             )
 
@@ -1249,6 +1169,7 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         k_pe: torch.Tensor,
         kv_c_and_k_pe_cache: torch.Tensor,
         attn_metadata: MLACommonMetadata,
+        k_scale: torch.Tensor,
     ) -> torch.Tensor:
 
         prefill_metadata = attn_metadata.prefill_metadata
@@ -1281,7 +1202,7 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
             # ROCm flash_attn_varlen_func will return 3 objects instead of 2
             suffix_output, suffix_lse = output
             context_output, context_lse = self._compute_prefill_context( \
-                q, kv_c_and_k_pe_cache, attn_metadata)
+                q, kv_c_and_k_pe_cache, attn_metadata, k_scale)
 
             output = torch.empty_like(suffix_output)
             merge_attn_states(
@@ -1289,6 +1210,7 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
                 prefix_output=context_output,
                 prefix_lse=context_lse,
                 suffix_output=suffix_output,
+                suffix_lse=suffix_lse,
             )
 
         # unpad if necessary
@@ -1317,12 +1239,13 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         attn_metadata: T,
         output: Optional[torch.Tensor] = None,
         output_scale: Optional[torch.Tensor] = None,
+        output_block_scale: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if output is not None:
             raise NotImplementedError(
                 "output is not yet supported for MLAImplBase")
 
-        if output_scale is not None:
+        if output_scale is not None or output_block_scale is not None:
             raise NotImplementedError(
                 "fused output quantization is not yet supported"
                 " for MLAImplBase")
@@ -1370,8 +1293,9 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         if has_prefill:
             output[:num_prefill_tokens] = self._forward_prefill(
                 prefill_q, prefill_k_c_normed, prefill_k_pe, kv_cache,
-                attn_metadata)
+                attn_metadata, layer._k_scale)
 
+        if has_decode:
             decode_q_nope, decode_q_pe = decode_q.split(
                 [self.qk_nope_head_dim, self.qk_rope_head_dim], dim=-1)
             # Convert from (B, N, P) to (N, B, P)

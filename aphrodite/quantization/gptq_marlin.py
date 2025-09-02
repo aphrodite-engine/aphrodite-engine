@@ -8,7 +8,7 @@ import aphrodite.modeling.layers.fused_moe  # noqa
 from aphrodite import _custom_ops as ops
 from aphrodite.common.logger import log_once
 from aphrodite.modeling.layers.fused_moe.layer import (
-    FusedMoE, FusedMoEMethodBase, FusedMoeWeightScaleSupported,
+    FusedMoE, FusedMoEConfig, FusedMoEMethodBase, FusedMoeWeightScaleSupported,
     UnquantizedFusedMoEMethod)
 from aphrodite.modeling.layers.linear import LinearMethodBase, set_weight_attrs
 from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
@@ -52,7 +52,7 @@ def get_moe_quant_method(
             # Dynamic per module/layer rules may override base config
             override_config(cloned_config, prefix=prefix)
 
-        return moe_method_cls(cloned_config)
+        return moe_method_cls(cloned_config, layer.moe_config)
     return None
 
 
@@ -373,7 +373,12 @@ class GPTQMarlinLinearMethod(LinearMethodBase):
 class GPTQMarlinMoEMethod(FusedMoEMethodBase):
     """MoE Marlin method with quantization."""
 
-    def __init__(self, quant_config: GPTQMarlinConfig) -> None:
+    def __init__(
+        self,
+        quant_config: GPTQMarlinConfig,
+        moe: FusedMoEConfig,
+    ) -> None:
+        super().__init__(moe)
         self.quant_config = quant_config
         if self.quant_config.quant_type.size_bits == 4:
             self.quant_type = scalar_types.uint4b8
@@ -636,6 +641,7 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
         expert_map: Optional[torch.Tensor] = None,
         custom_routing_function: Optional[Callable] = None,
         scoring_func: str = "softmax",
+        routed_scaling_factor: float = 1.0,
         e_score_correction_bias: Optional[torch.Tensor] = None,
         apply_router_weight_on_input: bool = False,
         activation: str = "silu",
@@ -644,6 +650,8 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
         logical_to_physical_map: Optional[torch.Tensor] = None,
         logical_replica_count: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        assert self.fused_experts is None
+
         if enable_eplb:
             raise NotImplementedError(
                 "EPLB not supported for `GPTQMarlinMoEMethod` yet.")
@@ -660,7 +668,9 @@ class GPTQMarlinMoEMethod(FusedMoEMethodBase):
             num_expert_group=num_expert_group,
             custom_routing_function=custom_routing_function,
             scoring_func=scoring_func,
-            e_score_correction_bias=e_score_correction_bias)
+            routed_scaling_factor=routed_scaling_factor,
+            e_score_correction_bias=e_score_correction_bias,
+            indices_type=self.topk_indices_dtype)
 
         return torch.ops.aphrodite.fused_marlin_moe(
             x,

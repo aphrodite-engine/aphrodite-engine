@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from collections.abc import Iterable, Mapping, Sequence
-from typing import (Final, Literal, Optional, Protocol, TypedDict, TypeVar,
+from typing import (Annotated, Final, Literal, Optional, Protocol, TypeVar,
                     Union)
 
 import torch
@@ -9,8 +9,8 @@ from transformers import (BatchFeature, Mistral3Config, PixtralVisionConfig,
                           PretrainedConfig)
 from transformers.models.pixtral import PixtralProcessor
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.inputs import InputProcessingContext
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.layernorm import RMSNorm
@@ -19,18 +19,19 @@ from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
+from aphrodite.multimodal.cache import BaseMultiModalProcessorCache
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
                                         MultiModalDataItems)
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
-                                             ProcessingCache,
                                              PromptReplacement, PromptUpdate,
                                              PromptUpdateDetails)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
+from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
                          SupportsMultiModal, SupportsPP)
@@ -41,15 +42,23 @@ from .utils import (AutoWeightsLoader, WeightsMapper, flatten_bn,
 from .vision import get_vision_encoder_info
 
 
-class Mistral3ImagePixelInputs(TypedDict):
-    type: Literal["pixel_values_pixtral"]
-    pixel_values: Union[torch.Tensor, list[torch.Tensor]]
+class Mistral3ImagePixelInputs(TensorSchema):
     """
-    Shape: `(batch_size * num_images, num_channels, height, width)`
+    Dimensions:
+        - bn: Batch size * number of images
+        - c: Number of channels (3)
+        - h: Height of each image
+        - w: Width of each image
+    """
 
-    Note that `height` or `width` may be different per batch and image,
-    in which case the data is passed as a list instead of a batched tensor.
-    """
+    type: Literal["pixel_values_pixtral"] = "pixel_values_pixtral"
+
+    # Note that `height` or `width` may be different per batch and image,
+    # in which case the data is passed as a list instead of a batched tensor.
+    pixel_values: Annotated[
+        Union[torch.Tensor, list[torch.Tensor]],
+        TensorShape("bn", 3, "h", "w", dynamic_dims={"h", "w"}),
+    ]
 
 
 class Mistral3PatchMerger(nn.Module):
@@ -264,7 +273,7 @@ class Mistral3MultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         hf_config = self.info.get_hf_config()
@@ -312,7 +321,7 @@ def _build_mistral3_processor(
     info: _I,
     dummy_inputs: BaseDummyInputsBuilder[_I],
     *,
-    cache: Optional[ProcessingCache] = None,
+    cache: Optional[BaseMultiModalProcessorCache] = None,
 ) -> BaseMultiModalProcessor:
     assert isinstance(info, Mistral3ProcessingInfo)
     return Mistral3MultiModalProcessor(
@@ -454,19 +463,6 @@ class Mistral3ForConditionalGeneration(nn.Module, SupportsLoRA,
 
         self.make_empty_intermediate_tensors = (
             self.language_model.make_empty_intermediate_tensors)
-
-    def _validate_pixel_values(self, data: torch.Tensor) -> torch.Tensor:
-        h = w = self.config.vision_config.image_size
-        expected_dims = (3, h, w)
-        actual_dims = tuple(data.shape[1:])
-
-        if actual_dims != expected_dims:
-            expected_expr = ("batch_size", *map(str, expected_dims))
-            raise ValueError(
-                f"The expected shape of pixel values is {expected_expr}. "
-                f"You supplied {tuple(data.shape)}.")
-
-        return data
 
     def _parse_and_validate_image_input(
             self, **kwargs: object) -> Optional[Mistral3ImagePixelInputs]:

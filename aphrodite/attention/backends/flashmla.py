@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional, Tuple, Type
+from typing import List, Optional, Tuple, Type
 
 import torch
 
@@ -14,10 +14,6 @@ from aphrodite.attention.backends.mla.common import (MLACommonBackend,
 from aphrodite.attention.ops.flashmla import (flash_mla_with_kvcache,
                                               get_mla_metadata,
                                               is_flashmla_supported)
-
-if TYPE_CHECKING:
-    from aphrodite.worker.model_runner import (
-        ModelInputForGPUWithSamplingMetadata)
 
 
 class FlashMLABackend(MLACommonBackend):
@@ -59,16 +55,6 @@ class FlashMLAMetadata(MLACommonMetadata):
             decode_metadata.decode_num_splits=\
                 self.decode_num_splits
         return decode_metadata
-
-    def advance_step(self,
-                     model_input: "ModelInputForGPUWithSamplingMetadata",
-                     sampled_token_ids: Optional[torch.Tensor],
-                     block_size: int,
-                     num_seqs: int,
-                     num_queries: int,
-                     turn_prefills_into_decodes: bool = False):
-        raise NotImplementedError(
-            "advance_step is not implemented for FlashMLA")
 
 
 class FlashMLAMetadataBuilder(MLACommonMetadataBuilder[FlashMLAMetadata]):

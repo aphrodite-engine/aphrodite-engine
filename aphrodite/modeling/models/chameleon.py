@@ -1,5 +1,6 @@
 from collections.abc import Iterable, Mapping, Sequence
 from functools import cached_property
+from itertools import islice
 from typing import Annotated, Any, Literal, Optional, Union
 
 import torch
@@ -10,9 +11,9 @@ from transformers import (BatchFeature, ChameleonConfig, ChameleonProcessor,
                           ChameleonVQVAEConfig)
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import SiluAndMul
@@ -31,7 +32,7 @@ from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import MultiModalDataItems
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
@@ -150,7 +151,7 @@ class ChameleonMultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         tokenizer = self.info.get_tokenizer()
@@ -913,7 +914,7 @@ class ChameleonModel(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(
                 positions,
                 hidden_states,

@@ -13,11 +13,11 @@ from PIL import Image
 from transformers import PretrainedConfig
 
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import MultiModalKwargs
+from aphrodite.multimodal.inputs import MultiModalKwargsItems
 from aphrodite.multimodal.parse import (ImageEmbeddingItems,
                                         ImageProcessorItems,
                                         MultiModalDataItems)
-from aphrodite.multimodal.processing import (MultiModalHashes,
+from aphrodite.multimodal.processing import (MultiModalProcessingInfo,
                                              PromptReplacement, PromptUpdate,
                                              PromptUpdateDetails)
 from aphrodite.quantization import QuantizationConfig
@@ -424,18 +424,19 @@ class H2OVLMultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
 
-        if "image_num_patches" in out_mm_kwargs:
-            image_num_patches = out_mm_kwargs["image_num_patches"]
+        out_mm_data = out_mm_kwargs.get_data()
+        if "image_num_patches" in out_mm_data:
+            image_num_patches = out_mm_data["image_num_patches"]
             assert isinstance(image_num_patches, torch.Tensor)
             image_num_patches = image_num_patches.tolist()
-        elif "image_embeds" in out_mm_kwargs:
+        elif "image_embeds" in out_mm_data:
             # TODO: Use image size information in dictionary embedding inputs
             # to compute num_patches (similar to Qwen2-VL)
-            image_num_patches = [None] * len(out_mm_kwargs["image_embeds"])
+            image_num_patches = [None] * len(out_mm_data["image_embeds"])
         else:
             image_num_patches = []
 
@@ -476,9 +477,8 @@ class H2OVLMultiModalProcessor(
         mm_data_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
         tokenization_kwargs: Mapping[str, object],
-        *,
-        return_mm_hashes: bool,
-    ) -> tuple[list[int], MultiModalKwargs, Optional[MultiModalHashes], bool]:
+        mm_hash_overrides: Optional[dict[str, list[str]]] = None,
+    ) -> tuple[list[int], MultiModalProcessingInfo, bool]:
         # The processor logic is different for len(images) <= 1 vs > 1
         # Since the processing cache assumes that the processor output is
         # invariant of how many images are passed per prompt, we only
@@ -489,7 +489,7 @@ class H2OVLMultiModalProcessor(
                 mm_data_items=mm_data_items,
                 hf_processor_mm_kwargs=hf_processor_mm_kwargs,
                 tokenization_kwargs=tokenization_kwargs,
-                return_mm_hashes=return_mm_hashes,
+                mm_hash_overrides=mm_hash_overrides,
             )
 
         return super()._cached_apply_hf_processor(
@@ -497,7 +497,7 @@ class H2OVLMultiModalProcessor(
             mm_data_items=mm_data_items,
             hf_processor_mm_kwargs=hf_processor_mm_kwargs,
             tokenization_kwargs=tokenization_kwargs,
-            return_mm_hashes=return_mm_hashes,
+            mm_hash_overrides=mm_hash_overrides,
         )
 
 

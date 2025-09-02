@@ -133,6 +133,7 @@ def _fwd_kernel(Q,
             mask=(offs_m < cur_batch_query_len),
             other=float("-inf"),
         ).to(dtype=tl.float32)
+
     l_i = tl.full([BLOCK_M], 1.0, dtype=tl.float32)
     acc = tl.zeros([BLOCK_M, BLOCK_DMODEL_PADDED], dtype=tl.float32)  # [M,D]
 
@@ -745,7 +746,7 @@ def context_attention_fwd(q,
 
     # Turing does have tensor core for float32 multiplication
     # use ieee as fallback for triton kernels work. There is also
-    # warning on aphrodite/common/config.py to inform users this fallback
+    # warning on aphrodite/config.py to inform users this fallback
     # implementation
     IN_PRECISION = 'ieee' if IS_TURING and q_dtype_is_f32 else None
 

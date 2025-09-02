@@ -11,7 +11,7 @@ from huggingface_hub import get_safetensors_metadata, hf_hub_download
 from huggingface_hub import list_repo_files as hf_list_repo_files
 from huggingface_hub import try_to_load_from_cache
 from huggingface_hub.utils import (EntryNotFoundError, HfHubHTTPError,
-                                   HFValidationError, LocalEntryNotFoundError,
+                                   LocalEntryNotFoundError,
                                    RepositoryNotFoundError,
                                    RevisionNotFoundError)
 from loguru import logger
@@ -24,22 +24,7 @@ from transformers.models.auto.tokenization_auto import get_tokenizer_config
 from transformers.utils import CONFIG_NAME as HF_CONFIG_NAME
 
 from aphrodite.common import envs
-# yapf conflicts with isort for this block
-# yapf: disable
-from aphrodite.transformers_utils.configs import (ChatGLMConfig,
-                                                  DeepseekVLV2Config,
-                                                  EAGLEConfig, JAISConfig,
-                                                  KimiVLConfig, MedusaConfig,
-                                                  MLPSpeculatorConfig,
-                                                  Nemotron_Nano_VL_Config,
-                                                  NemotronConfig,
-                                                  OvisConfig,
-                                                  RWConfig, SpeculatorsConfig,
-                                                  Step3TextConfig,
-                                                  Step3VLConfig,
-                                                  UltravoxConfig)
-# yapf: enable
-from aphrodite.transformers_utils.configs.mistral import adapt_config_dict
+from aphrodite.common.logger import log_once
 from aphrodite.transformers_utils.utils import check_gguf_file
 
 if envs.APHRODITE_USE_MODELSCOPE:
@@ -164,26 +149,34 @@ class UNet2DConditionModelConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
 
-_CONFIG_REGISTRY: dict[str, type[PretrainedConfig]] = {
-    "chatglm": ChatGLMConfig,
-    "deepseek_vl_v2": DeepseekVLV2Config,
-    "kimi_vl": KimiVLConfig,
-    "Llama_Nemotron_Nano_VL": Nemotron_Nano_VL_Config,
-    "RefinedWeb": RWConfig,  # For tiiuae/falcon-40b(-instruct)
-    "RefinedWebModel": RWConfig,  # For tiiuae/falcon-7b(-instruct)
-    "jais": JAISConfig,
-    "mlp_speculator": MLPSpeculatorConfig,
-    "medusa": MedusaConfig,
-    "eagle": EAGLEConfig,
-    "autoencoder_kl": AutoencoderKLConfig,
-    "unet_2d_condition": UNet2DConditionModelConfig,
-    "speculators": SpeculatorsConfig,
-    "nemotron": NemotronConfig,
-    "ovis": OvisConfig,
-    "ultravox": UltravoxConfig,
-    "step3_vl": Step3VLConfig,
-    "step3_text": Step3TextConfig,
-}
+class LazyConfigDict(dict):
+
+    def __getitem__(self, key):
+        import aphrodite.transformers_utils.configs as configs
+        return getattr(configs, super().__getitem__(key))
+
+
+_CONFIG_REGISTRY: dict[str, type[PretrainedConfig]] = LazyConfigDict(
+    chatglm="ChatGLMConfig",
+    deepseek_vl_v2="DeepseekVLV2Config",
+    kimi_vl="KimiVLConfig",
+    Llama_Nemotron_Nano_VL="Nemotron_Nano_VL_Config",
+    RefinedWeb="RWConfig",  # For tiiuae/falcon-40b(-instruct)
+    RefinedWebModel="RWConfig",  # For tiiuae/falcon-7b(-instruct)
+    jais="JAISConfig",
+    mlp_speculator="MLPSpeculatorConfig",
+    medusa="MedusaConfig",
+    eagle="EAGLEConfig",
+    autoencoder_kl="AutoencoderKLConfig",
+    unet_2d_condition="UNet2DConditionModelConfig",
+    speculators="SpeculatorsConfig",
+    nemotron="NemotronConfig",
+    ovis="OvisConfig",
+    ultravox="UltravoxConfig",
+    step3_vl="Step3VLConfig",
+    step3_text="Step3TextConfig",
+)
+
 
 _CONFIG_ATTRS_MAPPING: dict[str, str] = {
     "llm_config": "text_config",
@@ -194,7 +187,7 @@ _AUTO_CONFIG_KWARGS_OVERRIDES: dict[str, dict[str, Any]] = {
         "has_no_defaults_at_init": True
     },
     # transformers regards mllama as is_encoder_decoder=False
-    # vllm needs is_encoder_decoder=True to enable cross-attention
+    # aphrodite needs is_encoder_decoder=True to enable cross-attention
     "mllama": {
         "is_encoder_decoder": True
     },
@@ -434,6 +427,7 @@ def maybe_override_with_speculators_target_model(
         gguf_model_repo = Path(model).parent
     else:
         gguf_model_repo = None
+    kwargs["local_files_only"] = huggingface_hub.constants.HF_HUB_OFFLINE
     config_dict, _ = PretrainedConfig.get_config_dict(
         model if gguf_model_repo is None else gguf_model_repo,
         revision=revision,
@@ -499,6 +493,7 @@ def get_config(
             raise ValueError(error_message) from e
 
     if config_format == ConfigFormat.HF:
+        kwargs["local_files_only"] = huggingface_hub.constants.HF_HUB_OFFLINE
         config_dict, _ = PretrainedConfig.get_config_dict(
             model,
             revision=revision,
@@ -573,6 +568,9 @@ def get_config(
                 model, revision, **kwargs)
             config_dict["max_position_embeddings"] = max_position_embeddings
 
+        from aphrodite.transformers_utils.configs.mistral import (
+            adapt_config_dict)
+
         config = adapt_config_dict(config_dict)
 
         # Mistral configs may define sliding_window as list[int]. Convert it
@@ -617,12 +615,32 @@ def get_config(
 
     if quantization_config is not None:
         config.quantization_config = quantization_config
+        # auto-enable DeepGEMM UE8M0 on Hopper if model config requests it
+        scale_fmt = quantization_config.get("scale_fmt", None)
+        if scale_fmt in ("ue8m0", ):
+            if not envs.is_set("APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER"):
+                os.environ["APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER"] = "1"
+                log_once(
+                    "INFO",
+                    ("Detected quantization_config.scale_fmt={}; "
+                     "enabling Hopper UE8M0."),
+                    scale_fmt,
+                )
+            elif not envs.APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER:
+                log_once(
+                    "WARNING",
+                    ("Model config requests UE8M0 "
+                     "(quantization_config.scale_fmt={}), but "
+                     "APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER=0 is set; "
+                     "Hopper UE8M0 disabled."),
+                    scale_fmt,
+                )
 
     if hf_overrides_kw:
-        logger.debug("Overriding HF config with {}", hf_overrides_kw)
+        log_once("DEBUG", "Overriding HF config with {}", hf_overrides_kw)
         config.update(hf_overrides_kw)
     if hf_overrides_fn:
-        logger.debug("Overriding HF config with {}", hf_overrides_fn)
+        log_once("DEBUG", "Overriding HF config with {}", hf_overrides_fn)
         config = hf_overrides_fn(config)
 
     patch_rope_scaling(config)
@@ -646,7 +664,7 @@ def try_get_local_file(model: Union[str, Path],
                                                      revision=revision)
             if isinstance(cached_filepath, str):
                 return Path(cached_filepath)
-        except HFValidationError:
+        except ValueError:
             ...
     return None
 
@@ -679,7 +697,7 @@ def get_hf_file_to_dict(file_name: str,
             return None
         except (RepositoryNotFoundError, RevisionNotFoundError,
                 EntryNotFoundError, LocalEntryNotFoundError) as e:
-            logger.debug("File or repository not found in hf_hub_download", e)
+            log_once("DEBUG", "File or repository not found in hf_hub_download", e)
             return None
         except HfHubHTTPError as e:
             logger.warning(
@@ -725,7 +743,7 @@ def get_pooling_config(model: str, revision: Optional[str] = 'main'):
     if modules_dict is None:
         return None
 
-    logger.info("Found sentence-transformers modules configuration.")
+    log_once("INFO", "Found sentence-transformers modules configuration.")
 
     pooling = next((item for item in modules_dict
                     if item["type"] == "sentence_transformers.models.Pooling"),
@@ -745,7 +763,7 @@ def get_pooling_config(model: str, revision: Optional[str] = 'main'):
         if pooling_type_name is not None:
             pooling_type_name = get_pooling_config_name(pooling_type_name)
 
-        logger.info("Found pooling configuration.")
+        log_once("INFO", "Found pooling configuration.")
         return {"pooling_type": pooling_type_name, "normalize": normalize}
 
     return None
@@ -827,7 +845,7 @@ def get_sentence_transformer_tokenizer_config(model: Union[str, Path],
     if not encoder_dict:
         return None
 
-    logger.info("Found sentence-transformers tokenize configuration.")
+    log_once("INFO", "Found sentence-transformers tokenize configuration.")
 
     if all(k in encoder_dict for k in ("max_seq_length", "do_lower_case")):
         return encoder_dict
@@ -1022,3 +1040,42 @@ def _maybe_retrieve_max_pos_from_hf(model, revision, **kwargs) -> int:
             exc_info=e)
 
     return max_position_embeddings
+
+
+def get_model_path(model: Union[str, Path], revision: Optional[str] = None):
+    if os.path.exists(model):
+        return model
+    assert huggingface_hub.constants.HF_HUB_OFFLINE
+    common_kwargs = {
+        "local_files_only": huggingface_hub.constants.HF_HUB_OFFLINE,
+        "revision": revision,
+    }
+
+    if envs.APHRODITE_USE_MODELSCOPE:
+        from modelscope.hub.snapshot_download import snapshot_download
+        return snapshot_download(model_id=model, **common_kwargs)
+
+    from huggingface_hub import snapshot_download
+    return snapshot_download(repo_id=model, **common_kwargs)
+
+
+def get_hf_file_bytes(file_name: str,
+                      model: Union[str, Path],
+                      revision: Optional[str] = 'main') -> Optional[bytes]:
+    """Get file contents from HuggingFace repository as bytes."""
+    file_path = try_get_local_file(model=model,
+                                   file_name=file_name,
+                                   revision=revision)
+
+    if file_path is None:
+        hf_hub_file = hf_hub_download(model,
+                                      file_name,
+                                      revision=revision,
+                                      token=_get_hf_token())
+        file_path = Path(hf_hub_file)
+
+    if file_path is not None and file_path.is_file():
+        with open(file_path, 'rb') as file:
+            return file.read()
+
+    return None

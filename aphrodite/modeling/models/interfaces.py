@@ -19,8 +19,8 @@ from .interfaces_base import is_pooling_model
 
 if TYPE_CHECKING:
     from aphrodite.attention import AttentionMetadata
-    from aphrodite.config import AphroditeConfig
     from aphrodite.common.sequence import IntermediateTensors
+    from aphrodite.config import AphroditeConfig
     from aphrodite.modeling.models.utils import WeightsMapper
 
 MultiModalEmbeddings = Union[list[Tensor], Tensor, tuple[Tensor, ...]]
@@ -44,6 +44,18 @@ class SupportsMultiModal(Protocol):
     Note:
         There is no need to redefine this flag if this class is in the
         MRO of your model class.
+    """
+
+    supports_multimodal_raw_input_only: ClassVar[bool] = False
+    """
+    A flag that indicates this model supports multi-modal inputs and processes
+    them in their raw form and not embeddings.
+    """
+
+    supports_encoder_tp_data: ClassVar[bool] = False
+    """
+    A flag that indicates whether this model supports
+    `multimodal_config.mm_encoder_tp_mode="data"`.
     """
 
     @classmethod
@@ -131,38 +143,14 @@ def supports_multimodal(
     return getattr(model, "supports_multimodal", False)
 
 
-@runtime_checkable
-class SupportsMultiModalWithRawInput(SupportsMultiModal, Protocol):
-    """The interface required for all multi-modal models."""
-
-    supports_multimodal_raw_input: ClassVar[Literal[True]] = True
-    """
-    A flag that indicates this model supports multi-modal inputs and processes
-    them in their raw form and not embeddings.
-
-    Note:
-        There is no need to redefine this flag if this class is in the
-        MRO of your model class.
-    """
+def supports_multimodal_raw_input_only(
+        model: Union[type[object], object]) -> bool:
+    return getattr(model, "supports_multimodal_raw_input_only", False)
 
 
-@overload
-def supports_multimodal_raw_input(
-        model: object) -> TypeIs[SupportsMultiModalWithRawInput]:
-    ...
-
-
-@overload
-def supports_multimodal_raw_input(
-        model: type[object]) -> TypeIs[type[SupportsMultiModalWithRawInput]]:
-    ...
-
-
-def supports_multimodal_raw_input(
-    model: Union[type[object], object]
-) -> Union[TypeIs[type[SupportsMultiModalWithRawInput]],
-           TypeIs[SupportsMultiModalWithRawInput]]:
-    return getattr(model, "supports_multimodal_raw_input", False)
+def supports_multimodal_encoder_tp_data(
+        model: Union[type[object], object]) -> bool:
+    return getattr(model, "supports_encoder_tp_data", False)
 
 
 @runtime_checkable
@@ -636,20 +624,6 @@ def supports_cross_encoding(
     return is_pooling_model(model) and _supports_cross_encoding(model)
 
 
-def default_pooling_type(pooling_type: str) -> object:
-    """Set default_pooling_type decorator. """
-
-    def func(model: object):
-        model.default_pooling_type = pooling_type
-        return model
-
-    return func
-
-
-def get_default_pooling_type(model: Union[type[object], object]) -> str:
-    return getattr(model, "default_pooling_type", "LAST")
-
-
 class SupportsQuant:
     """The interface required for all models that support quantization."""
 
@@ -679,8 +653,7 @@ class SupportsQuant:
     @staticmethod
     def _find_quant_config(*args, **kwargs) -> Optional[QuantizationConfig]:
         """Find quant config passed through model constructor args"""
-        from aphrodite.config import (
-            AphroditeConfig)  # avoid circular import
+        from aphrodite.config import AphroditeConfig  # avoid circular import
 
         args_values = list(args) + list(kwargs.values())
         for arg in args_values:
@@ -749,8 +722,8 @@ class SupportsTranscription(Protocol):
             return language
         elif language in cls.get_other_languages():
             logger.warning(
-                "Language {} is not natively supported by {}; "
-                "results may be less accurate. Supported languages: {}",
+                "Language %r is not natively supported by {}; "
+                "results may be less accurate. Supported languages: %r",
                 language,
                 cls.__name__,
                 list(cls.supported_languages.keys()),
@@ -830,6 +803,7 @@ class SupportsEagle3(Protocol):
     """
     A flag that indicates this model supports EAGLE3 
     speculative decoding.
+
     Note:
         There is no need to redefine this flag if this class is in the
         MRO of your model class.

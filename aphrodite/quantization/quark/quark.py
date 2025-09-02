@@ -268,7 +268,7 @@ class QuarkConfig(QuantizationConfig):
                     for q_config in shard_configs):
                 raise ValueError(
                     f"Found a different quantization configuration for "
-                    f"{shard_proj_names} in {layer_name}. vLLM "
+                    f"{shard_proj_names} in {layer_name}. Aphrodite "
                     "requires all to use the same scheme.")
             return shard_configs[0]
         else:
@@ -331,10 +331,10 @@ class QuarkConfig(QuantizationConfig):
         """
         Check whether the param name matches the format for k/v cache scales
         in quark. If this is the case, return its equivalent param name 
-        expected by vLLM
+        expected by Aphrodite
 
         :param name: param name
-        :return: matching param name for KV cache scale in vLLM
+        :return: matching param name for KV cache scale in Aphrodite
         """
         if name.endswith(".output_scale") and ".k_proj" in name:
             return name.replace(".k_proj.output_scale", ".attn.k_scale")
@@ -406,7 +406,7 @@ class QuarkKVCacheMethod(BaseKVCacheMethod):
     def validate_kv_cache_config(kv_cache_config: Optional[dict[str, Any]]):
         """
         Validator for the kv cache configuration. Useful for controlling the
-        kv cache quantization schemes, that are being supported in vLLM
+        kv cache quantization schemes, that are being supported in Aphrodite
         :param kv_cache_config: the quark kv cache scheme
         """
         if kv_cache_config is None:

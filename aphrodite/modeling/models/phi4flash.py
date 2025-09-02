@@ -10,9 +10,9 @@ from transformers.activations import ACT2FN
 import aphrodite.common.envs as envs
 from aphrodite.attention import Attention, AttentionMetadata, AttentionType
 from aphrodite.attention.selector import _Backend
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.forward_context import ForwardContext, get_forward_context
@@ -649,8 +649,12 @@ class Phi4FlashForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsV0Only):
             num_mamba_layers = self.config.num_hidden_layers \
                 // 2 // self.config.mb_per_layer + 1
             self.mamba_cache = MambaCacheManager(
-                self.aphrodite_config, self.lm_head.weight.dtype, num_mamba_layers,
-                *self._get_mamba_cache_shape())
+                self.aphrodite_config,
+                num_mamba_layers,
+                *self._get_mamba_cache_shape(),
+                self.lm_head.weight.dtype,
+                self.lm_head.weight.dtype,
+            )
         mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)
 
         attn_metadata = get_forward_context().attn_metadata

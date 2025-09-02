@@ -15,9 +15,9 @@ from transformers import Zamba2Config
 
 from aphrodite.attention.layer import Attention
 from aphrodite.common import envs
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.forward_context import get_forward_context
 from aphrodite.modeling.layers.activation import GeluAndMul
@@ -32,7 +32,7 @@ from aphrodite.modeling.layers.mamba.mamba2_metadata import (
     Mamba2Metadata, prepare_mamba2_metadata)
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
 from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateShapeCalculator)
+    MambaStateDtypeCalculator, MambaStateShapeCalculator)
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
@@ -476,6 +476,8 @@ class Zamba2MambaDecoderLayer(nn.Module):
 
     def __init__(self,
                  config: Zamba2Config,
+                 model_config: Optional[ModelConfig] = None,
+                 cache_config: Optional[CacheConfig] = None,
                  quant_config: Optional[QuantizationConfig] = None,
                  prefix: str = "") -> None:
         """Initialize the Mamba decoder layer.
@@ -500,6 +502,8 @@ class Zamba2MambaDecoderLayer(nn.Module):
                                  config.n_mamba_heads,
                                  rms_norm_eps=config.rms_norm_eps,
                                  activation="silu",
+                                 model_config=model_config,
+                                 cache_config=cache_config,
                                  quant_config=quant_config,
                                  prefix=f"{prefix}.mixer")
 
@@ -576,6 +580,8 @@ class Zamba2HybridLayer(nn.Module):
         shared_transformer: Zamba2AttentionDecoderLayer,
         config: Zamba2Config,
         block_idx: int,
+        model_config: Optional[ModelConfig] = None,
+        cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
     ) -> None:
@@ -594,6 +600,8 @@ class Zamba2HybridLayer(nn.Module):
                                        bias=False,
                                        quant_config=quant_config)
         self.mamba_decoder = Zamba2MambaDecoderLayer(config,
+                                                     model_config=model_config,
+                                                     cache_config=cache_config,
                                                      quant_config=quant_config,
                                                      prefix=prefix)
 
@@ -667,6 +675,7 @@ class Zamba2Model(nn.Module):
         super().__init__()
 
         config = aphrodite_config.model_config.hf_config
+        model_config = aphrodite_config.model_config
         cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
         lora_config = aphrodite_config.lora_config
@@ -716,11 +725,15 @@ class Zamba2Model(nn.Module):
                     Zamba2HybridLayer(block,
                                       config,
                                       block_idx,
-                                      quant_config,
+                                      model_config=model_config,
+                                      cache_config=cache_config,
+                                      quant_config=quant_config,
                                       prefix=prefix))
             else:
                 layers.append(
                     Zamba2MambaDecoderLayer(config,
+                                            model_config=model_config,
+                                            cache_config=cache_config,
                                             quant_config=quant_config,
                                             prefix=prefix))
         self.layers = nn.ModuleList(layers)
@@ -847,6 +860,18 @@ class Zamba2ForCausalLM(nn.Module, HasInnerState, IsHybrid):
     })
 
     @classmethod
+    def get_mamba_state_dtype_from_config(
+        cls,
+        aphrodite_config: "AphroditeConfig",
+    ) -> tuple[torch.dtype, torch.dtype]:
+
+        return MambaStateDtypeCalculator.mamba2_state_dtype(
+            aphrodite_config.model_config.dtype,
+            aphrodite_config.cache_config.mamba_cache_dtype,
+            aphrodite_config.cache_config.mamba_ssm_cache_dtype,
+        )
+
+    @classmethod
     def get_mamba_state_shape_from_config(
         cls,
         aphrodite_config: "AphroditeConfig",
@@ -964,10 +989,13 @@ class Zamba2ForCausalLM(nn.Module, HasInnerState, IsHybrid):
                 mamba_state_shape = \
                     self.get_mamba_state_shape_from_config(
                         self.aphrodite_config, use_v1=False)
+                mamba_state_dtype = \
+                    self.get_mamba_state_dtype_from_config(
+                    self.aphrodite_config)
                 self.mamba_cache = MambaCacheManager(self.aphrodite_config,
-                                                     self.lm_head.weight.dtype,
                                                      num_mamba_layers,
-                                                     *mamba_state_shape)
+                                                     *mamba_state_shape,
+                                                     *mamba_state_dtype)
 
             # Get cache parameters for current run
             mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)

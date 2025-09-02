@@ -24,8 +24,8 @@ from torch import Tensor
 from torch.nn.functional import gumbel_softmax, pad, softmax
 from transformers import BatchFeature, PretrainedConfig
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.linear import ReplicatedLinear
 from aphrodite.modeling.models.aimv2 import AIMv2Model
 from aphrodite.modeling.models.siglip import SiglipVisionModel
@@ -36,7 +36,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import ImageSize, MultiModalDataItems
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
@@ -372,11 +372,12 @@ class OvisMultiModalProcessor(BaseMultiModalProcessor[OvisProcessingInfo]):
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> list[PromptReplacement]:
 
-        def get_replacement_ovis(item_idx):
-            grid = out_mm_kwargs["grids"][item_idx]
+        def get_replacement_ovis(item_idx: int):
+            out_item = out_mm_kwargs["image"][item_idx]
+            grid = out_item["grids"].data
 
             hf_processor = self.info.get_hf_processor()
             return hf_processor.construct_image_placeholders(grid)

@@ -1,6 +1,7 @@
 import ast
 from dataclasses import replace
-from typing import Optional
+from importlib.util import find_spec
+from typing import Optional, Protocol
 
 import numpy as np
 import torch
@@ -18,8 +19,6 @@ from aphrodite.modeling.models.llama_eagle3 import Eagle3LlamaForCausalLM
 from aphrodite.platforms import current_platform
 from aphrodite.utils import is_pin_memory_available
 from aphrodite.v1.attention.backends.flash_attn import FlashAttentionMetadata
-from aphrodite.v1.attention.backends.rocm_aiter_fa import (
-    AiterFlashAttentionMetadata)
 from aphrodite.v1.attention.backends.tree_attn import (
     TreeAttentionMetadata, TreeAttentionMetadataBuilder)
 from aphrodite.v1.attention.backends.triton_attn import TritonAttentionMetadata
@@ -28,6 +27,17 @@ from aphrodite.v1.kv_cache_interface import KVCacheConfig
 from aphrodite.v1.sample.metadata import SamplingMetadata
 
 PADDING_SLOT_ID = -1
+
+
+class EagleAttentionMetadata(Protocol):
+    # Required attributes
+    num_actual_tokens: int
+    max_query_len: int
+    query_start_loc: torch.Tensor
+    max_seq_len: int
+    seq_lens: torch.Tensor
+    block_table: torch.Tensor
+    slot_mapping: torch.Tensor
 
 
 class EagleProposer:
@@ -92,6 +102,21 @@ class EagleProposer:
             (self.max_num_tokens, self.hidden_size),
             dtype=self.dtype,
             device=device)
+
+
+        # Determine allowed attention backends once during initialization.
+        self.allowed_attn_types: tuple[type[EagleAttentionMetadata], ...]
+        if current_platform.is_rocm():
+            rocm_types = [TritonAttentionMetadata, FlashAttentionMetadata]
+            # aphrodite.v1.attention.backends.rocm_aiter_fa is an optional backend
+            if find_spec("aphrodite.v1.attention.backends.rocm_aiter_fa"):
+                from aphrodite.v1.attention.backends.rocm_aiter_fa import (
+                    AiterFlashAttentionMetadata)
+                rocm_types.append(AiterFlashAttentionMetadata)
+            self.allowed_attn_types = tuple(rocm_types)
+        else:
+            self.allowed_attn_types = (FlashAttentionMetadata,
+                                       TreeAttentionMetadata)
 
         # Parse the speculative token tree.
         spec_token_tree = self.speculative_config.speculative_token_tree
@@ -161,7 +186,7 @@ class EagleProposer:
         for layer_name in self.attn_layer_names:
             per_layer_attn_metadata[layer_name] = attn_metadata
         if self.use_cuda_graph and \
-            num_tokens <= self.cudagraph_batch_sizes[-1]:
+                num_tokens <= self.cudagraph_batch_sizes[-1]:
             num_input_tokens = self.aphrodite_config.pad_for_cudagraph(num_tokens)
         else:
             num_input_tokens = num_tokens
@@ -190,7 +215,7 @@ class EagleProposer:
                 hidden_states=self.hidden_states[:num_input_tokens],
                 inputs_embeds=inputs_embeds,
             )
-            if self.method == "deepseek_mtp":
+            if self.method in ("deepseek_mtp", "ernie_mtp"):
                 last_hidden_states = ret_hidden_states
             else:
                 last_hidden_states, hidden_states = ret_hidden_states
@@ -222,24 +247,13 @@ class EagleProposer:
         # one layer. Adapt this code to support multiple layers once
         # there's a multi-layer MTP module.
 
-        # On ROCm, both AiterFlashAttention and TritonAttention
-        # support multi-token eagle spec decode.
-        if current_platform.is_rocm():
-            assert isinstance(
-                attn_metadata,
-                (TritonAttentionMetadata, AiterFlashAttentionMetadata,
-                 FlashAttentionMetadata))
-        else:
-            # Currently, only FlashAttention supports multi-token eagle spec
-            # decode. This is because the code below makes assumptions about
-            # attn_metadata attributes available.
-            assert isinstance(attn_metadata, FlashAttentionMetadata)
+        assert isinstance(attn_metadata, self.allowed_attn_types)
 
         # Generate the remaining draft tokens.
         draft_token_ids_list = [draft_token_ids]
 
         if self.use_cuda_graph and \
-            batch_size <= self.cudagraph_batch_sizes[-1]:
+                batch_size <= self.cudagraph_batch_sizes[-1]:
             input_batch_size = self.aphrodite_config.pad_for_cudagraph(batch_size)
         else:
             input_batch_size = batch_size
@@ -457,7 +471,7 @@ class EagleProposer:
                 num_tokens, -1)
 
             if self.use_cuda_graph and \
-                num_tokens <= self.cudagraph_batch_sizes[-1]:
+                    num_tokens <= self.cudagraph_batch_sizes[-1]:
                 num_input_tokens = self.aphrodite_config.pad_for_cudagraph(
                     num_tokens)
             else:
@@ -590,6 +604,7 @@ class EagleProposer:
             num_reqs=common_attn_metadata.num_reqs,
             num_actual_tokens=total_num_tokens,
             max_query_len=new_query_len_per_req.max().item(),
+            max_seq_len=new_seq_lens_cpu.max().item(),
             block_table_tensor=common_attn_metadata.block_table_tensor,
             slot_mapping=common_attn_metadata.slot_mapping[token_indices],
             causal=True,
@@ -623,20 +638,18 @@ class EagleProposer:
             target_language_model = target_model
         # share embed_tokens with the target model if needed
         if get_pp_group().world_size == 1 \
-            and self.model.model.embed_tokens.weight.shape \
-                == target_language_model.model.embed_tokens.weight.shape:
+                and self.model.model.embed_tokens.weight.shape \
+            == target_language_model.model.embed_tokens.weight.shape:
             logger.info(
-                "Assuming the EAGLE head shares the same vocab embedding" \
-                " with the target model."
-            )
+                "Assuming the EAGLE head shares the same vocab embedding"
+                " with the target model.")
             del self.model.model.embed_tokens
             self.model.model.embed_tokens = (
                 target_language_model.model.embed_tokens)
         else:
             logger.info(
-                "The EAGLE head's vocab embedding will be loaded separately" \
-                " from the target model."
-            )
+                "The EAGLE head's vocab embedding will be loaded separately"
+                " from the target model.")
 
         # share lm_head with the target model if needed
         # some model definition do not define lm_head explicitly

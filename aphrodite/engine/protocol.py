@@ -1,6 +1,6 @@
 import asyncio
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Mapping, Optional
+from typing import Any, AsyncGenerator, Iterable, Mapping, Optional, Union
 
 from aphrodite.common.beam_search import (BeamSearchSequence,
                                           create_sort_beams_key_function)
@@ -221,16 +221,18 @@ class EngineClient(ABC):
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
         priority: int = 0,
+        tokenization_kwargs: Optional[dict[str, Any]] = None,
     ) -> AsyncGenerator[PoolingRequestOutput, None]:
         """Generate outputs for a request from a pooling model."""
         ...
 
     @abstractmethod
-    async def abort(self, request_id: str) -> None:
+    async def abort(self, request_id: Union[str, Iterable[str]]) -> None:
         """Abort a request.
 
         Args:
-            request_id: The unique id of the request.
+            request_id: The unique id of the request,
+                        or an iterable of such ids.
         """
         ...
 
@@ -316,7 +318,7 @@ class EngineClient(ABC):
         ...
 
     @abstractmethod
-    async def add_lora(self, lora_request: LoRARequest) -> None:
+    async def add_lora(self, lora_request: LoRARequest) -> bool:
         """Load a new LoRA adapter into the engine for future requests."""
         ...
 
@@ -324,4 +326,12 @@ class EngineClient(ABC):
                                new_data_parallel_size: int,
                                drain_timeout: int = 300) -> None:
         """Scale the engine"""
+        raise NotImplementedError
+
+    async def collective_rpc(self,
+                             method: str,
+                             timeout: Optional[float] = None,
+                             args: tuple = (),
+                             kwargs: Optional[dict] = None):
+        """Perform a collective RPC call to the given path."""
         raise NotImplementedError

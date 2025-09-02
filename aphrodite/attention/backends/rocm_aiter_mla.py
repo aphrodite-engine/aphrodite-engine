@@ -1,11 +1,9 @@
-
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Type, Union
 
 import torch
 
-import aphrodite._custom_ops as ops
 import aphrodite.common.envs as envs
 from aphrodite.attention.backends.mla.common import (MLACommonBackend,
                                                      MLACommonImpl,
@@ -66,7 +64,6 @@ class AiterMLAMetadata(MLACommonMetadata):
     # -- MTP support is not added yet.
     qo_indptr: Optional[torch.Tensor] = None
 
-
     @property
     def prefill_metadata(self):
         prefill_metadata = super().prefill_metadata
@@ -105,26 +102,6 @@ class AiterMLAMetadata(MLACommonMetadata):
                 **decode_metadata.__dict__)
 
         return self._cached_decode_metadata
-
-    def _ops_advance_step(self, num_seqs: int, num_queries: int,
-                          block_size: int, input_tokens: torch.Tensor,
-                          sampled_token_ids: torch.Tensor,
-                          input_positions: torch.Tensor) -> None:
-
-        ops.advance_step_flashinfer(
-            num_seqs=num_seqs,
-            num_queries=num_queries,
-            block_size=block_size,
-            input_tokens=input_tokens,
-            sampled_token_ids=sampled_token_ids,
-            input_positions=input_positions,
-            seq_lens=self.seq_lens_tensor,
-            slot_mapping=self.slot_mapping,
-            block_tables=self.block_tables,
-            paged_kv_indices=self.paged_kv_indices,
-            paged_kv_indptr=self.paged_kv_indptr,
-            paged_kv_last_page_lens=self.paged_kv_last_page_lens,
-            block_table_bound=self.block_table_bound)
 
 
 class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
@@ -168,12 +145,12 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
                 self.curr_seq_lens.append(curr_seq_len)
 
             # Compute block table.
-            # TODO: Combine chunked prefill and prefix caching by
+            # TODO(sang): Combine chunked prefill and prefix caching by
             # only allowing multiple of block_size chunk size.
             # NOTE: This only works for oooooooxxx style attention.
             block_table = []
             if prefix_cache_hit:
-                # NOTE: For flash-attn, the block table should
+                # NOTE(woosuk): For flash-attn, the block table should
                 # include the entries for the incoming prefill tokens.
                 block_table = block_tables[seq_id]
             elif ((chunked_prefill_enabled or not is_prompt)

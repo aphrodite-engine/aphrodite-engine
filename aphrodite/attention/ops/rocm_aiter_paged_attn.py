@@ -4,8 +4,8 @@ import aiter as rocm_aiter
 import torch
 
 from aphrodite.attention.ops.paged_attn import PagedAttention
-from aphrodite.utils import cdiv
 from aphrodite.platforms import current_platform
+from aphrodite.utils import cdiv
 
 FP8_DTYPE = current_platform.fp8_dtype()
 

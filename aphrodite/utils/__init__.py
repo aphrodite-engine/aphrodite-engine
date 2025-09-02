@@ -172,6 +172,7 @@ CYAN = '\033[1;36m'
 RESET = '\033[0;0m'
 
 STR_DTYPE_TO_TORCH_DTYPE = {
+    "float32": torch.float32,
     "half": torch.half,
     "bfloat16": torch.bfloat16,
     "float": torch.float,
@@ -940,6 +941,14 @@ def get_open_port() -> int:
     return _get_open_port()
 
 
+def get_open_ports_list(count: int = 5) -> list[int]:
+    """Get a list of open ports."""
+    ports = set()
+    while len(ports) < count:
+        ports.add(get_open_port())
+    return list(ports)
+
+
 def _get_open_port() -> int:
     port = envs.APHRODITE_PORT
     if port is not None:
@@ -1315,6 +1324,11 @@ def common_broadcastable_dtype(dtypes: Collection[torch.dtype]):
     )
 
 
+def as_list(maybe_list: Iterable[T]) -> list[T]:
+    """Convert iterable to list, unless it's already a list."""
+    return maybe_list if isinstance(maybe_list, list) else list(maybe_list)
+
+
 # `collections` helpers
 def is_list_of(
     value: object,
@@ -1427,6 +1441,12 @@ def _patched_set_stream(stream: torch.cuda.Stream) -> None:
 torch.cuda.set_stream = _patched_set_stream
 
 
+class _StreamPlaceholder:
+
+    def __init__(self):
+        self.synchronize = lambda: None
+
+
 def current_stream() -> torch.cuda.Stream:
     """
     replace `torch.cuda.current_stream()` with
@@ -1447,8 +1467,18 @@ def current_stream() -> torch.cuda.Stream:
         # On ROCm using the default 0 stream in combination with RCCL
         # is hurting performance. Therefore creating a dedicated stream
         # per process
-        _current_stream_tls.value = torch.cuda.Stream(
-        ) if current_platform.is_rocm() else torch.cuda.current_stream()
+        if current_platform.is_rocm():
+            _current_stream_tls.value = torch.cuda.Stream()
+        elif current_platform.is_cpu():
+            _current_stream_tls.value = _StreamPlaceholder()
+        else:
+            current_stream = current_platform.current_stream
+            if current_stream is not None:
+                _current_stream_tls.value = current_stream()
+            else:
+                raise ValueError(
+                    "Fail to set current stream, current platform "
+                    "may not support current_stream with torch API")
     return _current_stream_tls.value
 
 
@@ -1644,15 +1674,19 @@ def weak_bind(bound_method: Callable[..., Any], ) -> Callable[..., None]:
     return weak_bound
 
 
-# From: https://stackoverflow.com/a/4104188/2749989
 def run_once(f: Callable[P, None]) -> Callable[P, None]:
 
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> None:
-        if not wrapper.has_run:  # type: ignore[attr-defined]
-            wrapper.has_run = True  # type: ignore[attr-defined]
-            return f(*args, **kwargs)
+        if wrapper.has_run:  # type: ignore[attr-defined]
+            return
+
+        with wrapper.lock:  # type: ignore[attr-defined]
+            if not wrapper.has_run:  # type: ignore[attr-defined]
+                wrapper.has_run = True  # type: ignore[attr-defined]
+                return f(*args, **kwargs)
 
     wrapper.has_run = False  # type: ignore[attr-defined]
+    wrapper.lock = threading.Lock()  # type: ignore[attr-defined]
     return wrapper
 
 
@@ -1945,7 +1979,7 @@ class FlexibleArgumentParser(ArgumentParser):
 
         file_path = args[index + 1]
 
-        config_args = self._load_config_file(file_path)
+        config_args = self.load_config_file(file_path)
 
         # 0th index is for {run,chat,complete}
         # optionally followed by model_tag (only for run)
@@ -1953,7 +1987,10 @@ class FlexibleArgumentParser(ArgumentParser):
         # followed by rest of cli args.
         # maintaining this order will enforce the precedence
         # of cli > config > defaults
-        if args[0] == "run":
+        if args[0].startswith('-'):
+            # No sub command (e.g., api_server entry point)
+            args = config_args + args[0:index] + args[index + 2:]
+        elif args[0] == "run":
             model_in_cli = len(args) > 1 and not args[1].startswith('-')
             model_in_config = any(arg == '--model' for arg in config_args)
 
@@ -1976,7 +2013,7 @@ class FlexibleArgumentParser(ArgumentParser):
 
         return args
 
-    def _load_config_file(self, file_path: str) -> list[str]:
+    def load_config_file(self, file_path: str) -> list[str]:
         """Loads a yaml file and returns the key value pairs as a
         flattened list with argparse like pattern
         ```yaml
@@ -2017,6 +2054,11 @@ class FlexibleArgumentParser(ArgumentParser):
             if isinstance(value, bool) and key not in store_boolean_arguments:
                 if value:
                     processed_args.append('--' + key)
+            elif isinstance(value, list):
+                if value:
+                    processed_args.append('--' + key)
+                    for item in value:
+                        processed_args.append(str(item))
             else:
                 processed_args.append('--' + key)
                 processed_args.append(str(value))
@@ -3245,6 +3287,24 @@ def sha256_cbor_64bit(input) -> int:
                                byteorder="big")
 
     return full_hash & ((1 << 64) - 1)
+
+
+def get_hash_fn_by_name(hash_fn_name: str) -> Callable:
+    """Get a hash function by name, or raise an error if
+    the function is not found.
+    Args:
+        hash_fn_name: Name of the hash function.
+    Returns:
+        A hash function.
+    """
+    if hash_fn_name == "sha256":
+        return sha256
+    if hash_fn_name == "sha256_cbor_64bit":
+        return sha256_cbor_64bit
+    if hash_fn_name == "builtin":
+        return hash
+
+    raise ValueError(f"Unsupported hash function: {hash_fn_name}")
 
 
 def is_torch_equal_or_newer(target: str) -> bool:

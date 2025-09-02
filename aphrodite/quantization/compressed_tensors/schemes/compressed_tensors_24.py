@@ -69,7 +69,7 @@ class CompressedTensors24(CompressedTensorsScheme):
     ):
         if not sparse_cutlass_supported():
             raise ValueError(
-                "Sparse CUTLASS not supported. vLLM must be built with "
+                "Sparse CUTLASS not supported. Aphrodite must be built with "
                 "CUDA 12.2 or later to use this feature")
 
         layer.logical_widths = output_partition_sizes

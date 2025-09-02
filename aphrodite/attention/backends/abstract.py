@@ -7,6 +7,7 @@ from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional,
 import torch
 
 from aphrodite.multimodal import MultiModalPlaceholderMap
+from aphrodite.quantization.utils.quant_utils import QuantKey
 
 if TYPE_CHECKING:
     from aphrodite.worker.model_runner_base import (
@@ -93,11 +94,6 @@ class AttentionBackend(ABC):
         kv_caches: List[torch.Tensor],
         src_to_dists: torch.Tensor,
     ) -> None:
-        raise NotImplementedError
-
-    def advance_step(self, model_input: "ModelRunnerInputBase",
-                     sampled_token_ids: Optional[torch.Tensor],
-                     block_size: int, num_seqs: int, num_queries: int) -> None:
         raise NotImplementedError
 
     @classmethod
@@ -267,9 +263,9 @@ class AttentionImpl(ABC, Generic[T]):
         alibi_slopes: Optional[List[float]] = None,
         sliding_window: Optional[int] = None,
         kv_cache_dtype: str = "auto",
-        blocksparse_params: Optional[Dict[str, Any]] = None,
         logits_soft_cap: Optional[float] = None,
         attn_type: str = AttentionType.DECODER,
+        kv_sharing_target_layer_name: Optional[str] = None,
     ) -> None:
         raise NotImplementedError
 
@@ -283,8 +279,21 @@ class AttentionImpl(ABC, Generic[T]):
         kv_cache: torch.Tensor,
         attn_metadata: T,
         output: Optional[torch.Tensor] = None,
+        output_scale: Optional[torch.Tensor] = None,
+        output_block_scale: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
+
+    def fused_output_quant_supported(self, quant_key: QuantKey):
+        """
+        Does this attention implementation support fused output quantization.
+        This is used by the AttnFusionPass to only fuse output quantization
+        onto implementations that support it.
+
+        :param quant_key: QuantKey object that describes the quantization op
+        :return: is fusion supported for this type of quantization
+        """
+        return False
 
 
 class MLAAttentionImpl(AttentionImpl[T], Generic[T]):
@@ -299,6 +308,8 @@ class MLAAttentionImpl(AttentionImpl[T], Generic[T]):
         kv_cache: torch.Tensor,
         attn_metadata: T,
         output: Optional[torch.Tensor] = None,
+        output_scale: Optional[torch.Tensor] = None,
+        output_block_scale: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         raise NotImplementedError
 

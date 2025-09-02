@@ -14,8 +14,9 @@ from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.quant_utils import group_broadcast
 from aphrodite.quantization.utils.w8a8_utils import CUTLASS_BLOCK_FP8_SUPPORTED
 from aphrodite.triton_utils import tl, triton
-from aphrodite.utils import cdiv, direct_register_custom_op, has_deep_gemm
-from aphrodite.utils.deep_gemm import is_blackwell_deep_gemm_e8m0_used
+from aphrodite.utils import cdiv, direct_register_custom_op
+from aphrodite.utils.deep_gemm import (is_deep_gemm_e8m0_used,
+                                       should_use_deepgemm_for_fp8_linear)
 
 
 def is_fp8(x: Union[torch.dtype, torch.Tensor]) -> bool:
@@ -101,19 +102,6 @@ def dispatch_w8a8_blockscale_func(
     return w8a8_block_fp8_matmul
 
 
-def should_use_deepgemm(output_dtype: torch.dtype, weight: torch.Tensor):
-    """
-    Check if DeepGEMM should be used based on the output dtype and weight shape.
-    DeepGEMM is only supported for bfloat16 output dtype and weights with shape
-    divisible by 128.
-    """
-
-    return (current_platform.is_cuda()
-            and current_platform.is_device_capability(90) and has_deep_gemm()
-            and envs.APHRODITE_USE_DEEP_GEMM and output_dtype == torch.bfloat16
-            and weight.shape[0] % 128 == 0 and weight.shape[1] % 128 == 0)
-
-
 # TODO fix ROCm->Triton custom path:
 #  https://github.com/aphrodite-project/aphrodite/issues/14397
 def apply_w8a8_block_fp8_linear(
@@ -132,7 +120,7 @@ def apply_w8a8_block_fp8_linear(
     output_shape = [*input.shape[:-1], weight.shape[0]]
     output_dtype = input.dtype
 
-    if should_use_deepgemm(output_dtype, weight):
+    if should_use_deepgemm_for_fp8_linear(output_dtype, weight):
 
         input_2d = input.view(-1, input.shape[-1])
         output_shape = [*input.shape[:-1], weight.shape[0]]
@@ -143,7 +131,9 @@ def apply_w8a8_block_fp8_linear(
             column_major_scales=True,
         )
 
+        # ensure DeepGEMM-backed custom op is registered before use
         import aphrodite.quantization.deepgemm  # noqa: F401
+
         output = torch.ops.aphrodite.w8a8_block_fp8_matmul_deepgemm(
             q_input,
             weight,
@@ -387,10 +377,8 @@ def per_token_group_quant_fp8(
         tuple[torch.Tensor, torch.Tensor]: The quantized tensor and the
         scaling factor.
     """
-    # TODO(wentao): refactor this
-    # use_ue8m0 should be a global flag that could be set by user
     if use_ue8m0 is None:
-        use_ue8m0 = is_blackwell_deep_gemm_e8m0_used()
+        use_ue8m0 = is_deep_gemm_e8m0_used()
     dtype = current_platform.fp8_dtype() if dtype is None else dtype
     assert (x.shape[-1] % group_size == 0), (
         f"the last dimension of `x` {x.shape[-1]} must be divisible "

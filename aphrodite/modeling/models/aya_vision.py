@@ -17,7 +17,8 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalKwargs
+from aphrodite.multimodal.inputs import (MultiModalDataDict,
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
                                         MultiModalDataItems)
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
@@ -240,7 +241,7 @@ class AyaVisionMultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         image_token = hf_processor.image_token
@@ -248,8 +249,7 @@ class AyaVisionMultiModalProcessor(
         image_processor = hf_processor.image_processor
 
         def get_replacement(item_idx: int):
-            images: ImageProcessorItems = mm_items.get("image",
-                                                       ImageProcessorItems)
+            images = mm_items.get_items("image", ImageProcessorItems)
             image_size: ImageSize = images.get_image_size(item_idx)
             num_patches = self.info.get_num_patches(
                 image_width=image_size.width,

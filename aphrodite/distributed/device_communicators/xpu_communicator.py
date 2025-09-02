@@ -4,6 +4,9 @@ import torch
 import torch.distributed as dist
 from torch.distributed import ProcessGroup
 
+from aphrodite.common import envs
+from loguru import logger
+
 from .base_device_communicator import DeviceCommunicatorBase
 
 
@@ -15,6 +18,12 @@ class XpuCommunicator(DeviceCommunicatorBase):
                  device_group: Optional[ProcessGroup] = None,
                  unique_name: str = ""):
         super().__init__(cpu_group, device, device_group, unique_name)
+        if self.use_all2all:
+            all2all_backend = envs.APHRODITE_ALL2ALL_BACKEND
+            if all2all_backend == "naive":
+                from .all2all import NaiveAll2AllManager
+                self.all2all_manager = NaiveAll2AllManager(self.cpu_group)
+                logger.info("Using naive all2all manager.")
 
     def all_reduce(self, input_) -> torch.Tensor:
         dist.all_reduce(input_, group=self.device_group)

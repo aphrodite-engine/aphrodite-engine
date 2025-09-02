@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 import aphrodite.common.envs as envs
+from aphrodite.config.compilation import CUDAGraphMode
 from aphrodite.modeling.models import ModelRegistry
 from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE, cdiv
 from aphrodite.v1.kv_cache_interface import FullAttentionSpec, MambaSpec
@@ -272,6 +273,43 @@ class GptOssForCausalLMConfig(VerifyAndUpdateConfig):
                     "{} for performance.", 1024)
 
 
+class MambaModelConfig(VerifyAndUpdateConfig):
+
+    @classmethod
+    def verify_and_update_config(cls, aphrodite_config: "AphroditeConfig") -> None:
+        """
+        Enable FULL_AND_PIECEWISE cuda graph mode by default (required
+        to get good performance for mamba layers in V1).
+
+        Args:
+            aphrodite_config: vLLM Config
+        """
+
+        if not envs.APHRODITE_USE_V1:
+            return
+
+        model_config = aphrodite_config.model_config
+        cache_config = aphrodite_config.cache_config
+        compilation_config = aphrodite_config.compilation_config
+
+        # TODO(tdoublep): remove once prefix caching is enabled
+        cache_config.enable_prefix_caching = False
+        logger.info("Hybrid or mamba-based model detected: disabling prefix "
+                    "caching since it is not yet supported.")
+
+        # TODO(tdoublep): remove as full cuda graph support is added
+        FCG_NOT_SUPPORTED_MODELS = [
+            "Lfm2ForCausalLM", "MiniMaxText01ForCausalLM"
+        ]
+
+        if (model_config.architecture not in FCG_NOT_SUPPORTED_MODELS
+                and compilation_config.cudagraph_mode is None):
+            logger.info(
+                "Hybrid or mamba-based model detected: setting cudagraph mode "
+                "to FULL_AND_PIECEWISE in order to optimize performance.")
+            compilation_config.cudagraph_mode = CUDAGraphMode.FULL_AND_PIECEWISE
+
+
 class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
 
     @classmethod
@@ -289,6 +327,9 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
 
         if not envs.APHRODITE_USE_V1:
             return
+
+        # Enable FULL_AND_PIECEWISE by default
+        MambaModelConfig.verify_and_update_config(aphrodite_config)
 
         cache_config = aphrodite_config.cache_config
         model_config = aphrodite_config.model_config
@@ -315,7 +356,7 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
         # get mamba page size
         mamba_page_size = MambaSpec(
             shapes=model_cls.get_mamba_state_shape_from_config(aphrodite_config),
-            dtype=kv_cache_dtype,
+            dtypes=model_cls.get_mamba_state_dtype_from_config(aphrodite_config),
             block_size=model_config.max_model_len,
         ).page_size_bytes
 
@@ -362,6 +403,7 @@ class HybridAttentionMambaModelConfig(VerifyAndUpdateConfig):
 MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {
     "GteModel": SnowflakeGteNewModelConfig,
     "GteNewModel": GteNewModelConfig,
+    "GteNewForSequenceClassification": GteNewModelConfig,
     "NomicBertModel": NomicBertModelConfig,
     "Qwen2ForProcessRewardModel": Qwen2ForProcessRewardModelConfig,
     "Qwen2ForRewardModel": Qwen2ForRewardModelConfig,
@@ -371,4 +413,7 @@ MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {
     "JambaForSequenceClassification": JambaForSequenceClassificationConfig,
     "GraniteMoeHybridForCausalLM": GraniteMoeHybridModelConfig,
     "GptOssForCausalLM": GptOssForCausalLMConfig,
+    "MambaForCausalLM": MambaModelConfig,
+    "Mamba2ForCausalLM": MambaModelConfig,
+    "FalconMambaForCausalLM": MambaModelConfig,
 }

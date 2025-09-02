@@ -22,18 +22,20 @@
 # limitations under the License.
 """Inference-only Qwen2MoE model compatible with HuggingFace weights."""
 from collections.abc import Iterable
+from itertools import islice
 from typing import Any, Optional, Union
 
 import torch
 import torch.nn.functional as F
+from loguru import logger
 from torch import nn
 from transformers import Qwen2MoeConfig
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.logger import log_once
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import SiluAndMul
@@ -377,7 +379,7 @@ class Qwen2MoeModel(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(positions, hidden_states, residual)
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
@@ -475,7 +477,7 @@ class Qwen2MoeModel(nn.Module):
                         if remapped_kv_scale_name not in params_dict:
                             log_once(
                                 "WARNING",
-                                "Found kv_scale in the checkpoint (e.g. {}), but not found the expected name in the model (e.g. {}). kv_scale is not loaded.",  # noqa: E501
+                                "Found kv_scale in the checkpoint (e.g. {}), but not found the expected name in the model (e.g. {}). kv_scale is not loaded.",  #  noqa: E501
                                 name,
                                 remapped_kv_scale_name,
                             )

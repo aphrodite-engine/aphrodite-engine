@@ -11,8 +11,7 @@ from aphrodite.common.sequence import (IntermediateTensors,
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.modeling.models.interfaces import supports_transcription
-from aphrodite.modeling.models.interfaces_base import (
-    is_pooling_model, is_text_generation_model)
+from aphrodite.modeling.models.interfaces_base import is_text_generation_model
 from aphrodite.tasks import (GenerationTask, PoolingTask, SupportedTask,
                              UNetTask, VAETask)
 
@@ -238,13 +237,6 @@ class ModelRunnerBase(ABC, Generic[T]):
 
         return supported_tasks
 
-    def get_supported_pooling_tasks(self) -> list[PoolingTask]:
-        model = self.get_model()
-        if not is_pooling_model(model):
-            return []
-
-        return list(model.pooler.get_supported_tasks())
-
     def get_supported_vae_tasks(self) -> list[VAETask]:
         """Get supported VAE tasks."""
         # Import here to avoid circular imports
@@ -274,8 +266,6 @@ class ModelRunnerBase(ABC, Generic[T]):
 
         if self.model_config.runner_type == "generate":
             tasks.extend(self.get_supported_generation_tasks())
-        if self.model_config.runner_type == "pooling":
-            tasks.extend(self.get_supported_pooling_tasks())
         if self.model_config.runner_type == "vae":
             tasks.extend(self.get_supported_vae_tasks())
         if self.model_config.runner_type == "unet":

@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from functools import partial
+from itertools import islice
 from typing import Any, Optional, Union
 
 import torch
@@ -7,9 +8,9 @@ from torch import nn
 from transformers import PretrainedConfig
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size,
@@ -29,7 +30,8 @@ from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import SupportsLoRA, SupportsPP, default_pooling_type
+from .interfaces import SupportsLoRA, SupportsPP
+from .interfaces_base import default_pooling_type
 from .utils import (is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
@@ -294,7 +296,7 @@ class InternLM2Model(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(positions, hidden_states, residual)
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({

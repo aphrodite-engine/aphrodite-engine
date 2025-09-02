@@ -2,10 +2,11 @@ from array import array
 from typing import Any, Type
 
 from aphrodite.common.sequence import APHRODITE_TOKEN_ID_ARRAY_TYPE
+from aphrodite.multimodal.inputs import MultiModalKwargs
 
 
 def encode_hook(obj: Any) -> Any:
-    """Custom msgspec enc hook that supports array types.
+    """Custom msgspec enc hook that supports array types and MultiModalKwargs.
 
     See https://jcristharif.com/msgspec/api.html#msgspec.msgpack.Encoder
     """
@@ -14,10 +15,12 @@ def encode_hook(obj: Any) -> Any:
             f"Aphrodite array type should use '{APHRODITE_TOKEN_ID_ARRAY_TYPE}'"
             f" type. Given array has a type code of {obj.typecode}.")
         return obj.tobytes()
+    if isinstance(obj, MultiModalKwargs):
+        return dict(obj)
 
 
 def decode_hook(type: Type, obj: Any) -> Any:
-    """Custom msgspec dec hook that supports array types.
+    """Custom msgspec dec hook that supports array types and MultiModalKwargs.
 
     See https://jcristharif.com/msgspec/api.html#msgspec.msgpack.Encoder
     """
@@ -25,3 +28,5 @@ def decode_hook(type: Type, obj: Any) -> Any:
         deserialized = array(APHRODITE_TOKEN_ID_ARRAY_TYPE)
         deserialized.frombytes(obj)
         return deserialized
+    if type is MultiModalKwargs:
+        return MultiModalKwargs(obj)

@@ -116,12 +116,12 @@ class PagedAttention:
         num_seqs, num_heads, head_size = query.shape
         max_num_partitions = ((max_seq_len + _PARTITION_SIZE - 1) //
                               _PARTITION_SIZE)
-        # NOTE: We use a simple heuristic to decide whether to use
+        # NOTE(woosuk): We use a simple heuristic to decide whether to use
         # PagedAttention V1 or V2. If the number of partitions is 1, we use
         # V1 to avoid the overhead of reduction. Also, if the number of
         # sequences or heads is large, we use V1 since there is enough work
         # to parallelize.
-        # TODO: Tune this heuristic.
+        # TODO(woosuk): Tune this heuristic.
         # For context len > 8192, use V2 kernel to avoid shared memory shortage.
         use_v1 = (max_seq_len <= 8192
                   and (max_num_partitions == 1 or num_seqs * num_heads > 512))

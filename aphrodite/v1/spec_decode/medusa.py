@@ -31,7 +31,7 @@ class MedusaProposer:
         self,
         target_hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
-    ) -> torch.Tensor:
+    ) -> list[list[int]]:
         # Generate blocks and compute logits
         blocks = self.model(target_hidden_states)
         logits = self.model.compute_logits(blocks, None)

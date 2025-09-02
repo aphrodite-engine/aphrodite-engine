@@ -23,6 +23,7 @@
 
 from collections.abc import Iterable
 from functools import partial
+from itertools import islice
 from typing import Optional, Union
 
 import torch
@@ -30,8 +31,9 @@ from torch import nn
 from transformers import Olmo2Config
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.distributed.communication_op import (
@@ -48,7 +50,7 @@ from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import SupportsPP
+from aphrodite.modeling.models.interfaces import SupportsLoRA, SupportsPP
 from aphrodite.modeling.models.utils import (
     AutoWeightsLoader, is_pp_missing_parameter,
     make_empty_intermediate_tensors_factory, make_layers, maybe_prefix)
@@ -252,6 +254,7 @@ class Olmo2DecoderLayer(nn.Module):
         return hidden_states
 
 
+@support_torch_compile
 class Olmo2Model(nn.Module):
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
@@ -302,7 +305,7 @@ class Olmo2Model(nn.Module):
             assert isinstance(hidden_states, torch.Tensor)
 
         # Apply blocks one-by-one.
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             # shape: (batch_size, seq_len, d_model)
             hidden_states = layer(positions, hidden_states)
 
@@ -353,10 +356,21 @@ class Olmo2Model(nn.Module):
         return loaded_params
 
 
-class Olmo2ForCausalLM(nn.Module, SupportsPP):
+class Olmo2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
     """
     Extremely barebones HF model wrapper.
     """
+    packed_modules_mapping = {
+        "qkv_proj": [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+        ],
+        "gate_up_proj": [
+            "gate_proj",
+            "up_proj",
+        ],
+    }
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()

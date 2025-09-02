@@ -23,15 +23,16 @@
 # limitations under the License.
 """Inference-only MiMo model compatible with HuggingFace weights."""
 from collections.abc import Iterable
+from itertools import islice
 from typing import Optional, Union
 
 import torch
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
@@ -69,7 +70,7 @@ class MiMoModel(Qwen2Model):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(
                 positions,
                 hidden_states,

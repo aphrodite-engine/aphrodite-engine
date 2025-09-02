@@ -28,7 +28,8 @@ from aphrodite.utils import (GiB_bytes, MemorySnapshot,
 from aphrodite.v1.engine import (ReconfigureDistributedRequest,
                                  ReconfigureRankType)
 from aphrodite.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
-from aphrodite.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
+from aphrodite.v1.outputs import (EMPTY_MODEL_RUNNER_OUTPUT, DraftTokenIds,
+                                  ModelRunnerOutput)
 from aphrodite.v1.utils import report_usage_stats
 from aphrodite.v1.worker.gpu_model_runner import GPUModelRunner
 from aphrodite.v1.worker.worker_base import WorkerBase
@@ -166,7 +167,7 @@ class Worker(WorkerBase):
             self.device = torch.device(f"cuda:{self.local_rank}")
             current_platform.set_device(self.device)
 
-            _check_if_gpu_supports_dtype(self.model_config.dtype)
+            current_platform.check_if_supports_dtype(self.model_config.dtype)
             gc.collect()
             torch.cuda.empty_cache()
 
@@ -215,8 +216,7 @@ class Worker(WorkerBase):
         self.model_runner.update_config(overrides)
 
     def reload_weights(self) -> None:
-        with self._maybe_get_memory_pool_context(tag="weights"):
-            self.model_runner.reload_weights()
+        self.model_runner.reload_weights()
 
     @torch.inference_mode()
     def determine_available_memory(self) -> int:
@@ -322,7 +322,6 @@ class Worker(WorkerBase):
             allocator = CuMemAllocator.get_instance()
             context = allocator.use_memory_pool(tag="kv_cache")
         else:
-            from contextlib import nullcontext
             context = nullcontext()
         with context:
             self.model_runner.initialize_kv_cache(kv_cache_config)
@@ -341,6 +340,10 @@ class Worker(WorkerBase):
         for size in sorted(warmup_sizes, reverse=True):
             logger.info("Compile and warming up model for size {}", size)
             self.model_runner._dummy_run(size, skip_eplb=True)
+        # Warmup and tune the kernels used during model execution before
+        # cuda graph capture.
+        kernel_warmup(self)
+
         if not self.model_config.enforce_eager:
             self.model_runner.capture_model()
 
@@ -352,16 +355,11 @@ class Worker(WorkerBase):
         if get_pp_group().is_last_rank:
             max_num_reqs = min(self.scheduler_config.max_num_seqs,
                                self.scheduler_config.max_num_batched_tokens)
-            # activate building attn_metadata for this dummy run to avoid
-            # potential illegal memory access for full cudagraph relay.
-            attn_cudagraph = self.compilation_config.full_cuda_graph and\
-                not self.model_config.enforce_eager
 
             # We skip EPLB here since we don't want to record dummy metrics
             hidden_states, last_hidden_states = \
                 self.model_runner._dummy_run(
                     num_tokens=max_num_reqs,
-                    capture_attn_cudagraph=attn_cudagraph,
                     skip_eplb=True,
                 )
             if self.model_runner.is_pooling_model:
@@ -369,9 +367,6 @@ class Worker(WorkerBase):
             else:
                 self.model_runner._dummy_sampler_run(
                     hidden_states=last_hidden_states)
-
-        # Warmup kernels used during model execution
-        kernel_warmup(self)
 
         # Reset the seed to ensure that the random state is not affected by
         # the model initialization and profiling.
@@ -389,7 +384,8 @@ class Worker(WorkerBase):
         scheduler_output: "SchedulerOutput",
     ) -> Optional[ModelRunnerOutput]:
         intermediate_tensors = None
-        if not get_pp_group().is_first_rank:
+        forward_pass = scheduler_output.total_num_scheduled_tokens > 0
+        if forward_pass and not get_pp_group().is_first_rank:
             intermediate_tensors = IntermediateTensors(
                 get_pp_group().recv_tensor_dict(
                     all_gather_group=get_tp_group()))
@@ -397,29 +393,33 @@ class Worker(WorkerBase):
         output = self.model_runner.execute_model(scheduler_output,
                                                  intermediate_tensors)
 
-        parallel_config = self.aphrodite_config.parallel_config
-        if parallel_config.distributed_executor_backend != "external_launcher" \
-            and not get_pp_group().is_last_rank:
-            assert isinstance(output, IntermediateTensors)
-            get_pp_group().send_tensor_dict(output.tensors,
-                                            all_gather_group=get_tp_group())
-
-            kv_connector_output = output.kv_connector_output
-            if not kv_connector_output:
-                return None
-
-            # In case of PP with kv transfer, we need to pass through the
-            # kv_connector_output
-            if (not kv_connector_output.finished_sending
-                    and not kv_connector_output.finished_recving):
-                return EMPTY_MODEL_RUNNER_OUTPUT
-
-            output = copy.copy(EMPTY_MODEL_RUNNER_OUTPUT)
-            output.kv_connector_output = kv_connector_output
+        if isinstance(output, ModelRunnerOutput):
             return output
 
-        assert isinstance(output, ModelRunnerOutput)
+        assert isinstance(output, IntermediateTensors)
+        parallel_config = self.aphrodite_config.parallel_config
+        assert parallel_config.distributed_executor_backend != (
+            "external_launcher") and not get_pp_group().is_last_rank
+
+        get_pp_group().send_tensor_dict(output.tensors,
+                                        all_gather_group=get_tp_group())
+
+        kv_connector_output = output.kv_connector_output
+        if not kv_connector_output:
+            return None
+
+        # In case of PP with kv transfer, we need to pass through the
+        # kv_connector_output
+        if (not kv_connector_output.finished_sending
+                and not kv_connector_output.finished_recving):
+            return EMPTY_MODEL_RUNNER_OUTPUT
+
+        output = copy.copy(EMPTY_MODEL_RUNNER_OUTPUT)
+        output.kv_connector_output = kv_connector_output
         return output
+
+    def take_draft_token_ids(self) -> Optional[DraftTokenIds]:
+        return self.model_runner.take_draft_token_ids()
 
     def profile(self, is_start: bool = True):
         if self.profiler is None:
@@ -546,7 +546,7 @@ class Worker(WorkerBase):
             assert self.model_runner.eplb_state is not None
             new_physical_experts = \
                 self.model_runner.eplb_state.physical_to_logical_map.shape[1]
-            parallel_config.num_redundant_experts = (
+            parallel_config.eplb_config.num_redundant_experts = (
                 new_physical_experts -
                 self.model_runner.eplb_state.logical_replica_count.shape[1])
             global_expert_load = None
@@ -562,7 +562,7 @@ class Worker(WorkerBase):
             assert self.model_runner.eplb_state is not None
             global_expert_load = self.model_runner.eplb_state.rearrange(
                 self.model_runner.model, execute_shuffle=False)
-            parallel_config.num_redundant_experts = (
+            parallel_config.eplb_config.num_redundant_experts = (
                 new_physical_experts - global_expert_load.shape[1])
         prepare_communication_buffer_for_model(self.model_runner.model)
         self.model_runner.model.update_physical_experts_metadata(
@@ -646,23 +646,3 @@ def init_worker_distributed_environment(
                                       parallel_config.pipeline_parallel_size)
 
     ensure_kv_transfer_initialized(aphrodite_config)
-
-
-def _check_if_gpu_supports_dtype(torch_dtype: torch.dtype):
-    # Check if the GPU supports the dtype.
-    if torch_dtype == torch.bfloat16:  # noqa: SIM102
-        if not current_platform.has_device_capability(80):
-            capability = current_platform.get_device_capability()
-            gpu_name = current_platform.get_device_name()
-
-            if capability is None:
-                compute_str = "does not have a compute capability"
-            else:
-                version_str = capability.as_version_str()
-                compute_str = f"has compute capability {version_str}"
-
-            raise ValueError(
-                "Bfloat16 is only supported on GPUs with compute capability "
-                f"of at least 8.0. Your {gpu_name} GPU {compute_str}."
-                "You can use float16 instead by explicitly setting the "
-                "`dtype` flag in CLI, for example: --dtype=half.")
