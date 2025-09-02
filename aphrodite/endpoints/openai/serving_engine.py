@@ -67,7 +67,7 @@ from aphrodite.inputs.data import TokensPrompt as EngineTokensPrompt
 from aphrodite.inputs.parse import parse_and_batch_prompt
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import (  # noqa: F401 - Required to resolve Pydantic error in RequestProcessingMixin
-    MultiModalDataDict)
+    MultiModalDataDict, MultiModalUUIDDict)
 from aphrodite.tracing import (contains_trace_headers, extract_trace_headers,
                                log_tracing_disabled_warning)
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,

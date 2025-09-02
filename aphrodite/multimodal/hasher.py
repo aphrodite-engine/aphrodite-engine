@@ -1,6 +1,6 @@
 import pickle
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from typing import Union
 
 import numpy as np
@@ -10,11 +10,6 @@ from loguru import logger
 from PIL import Image
 
 from aphrodite.multimodal.image import convert_image_mode
-
-MultiModalHashDict = Mapping[str, list[str]]
-"""
-A dictionary containing hashes for items in each modality.
-"""
 
 
 class MultiModalHasher:
