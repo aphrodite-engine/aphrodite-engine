@@ -404,12 +404,14 @@ class EplbState:
             self.expert_rearrangement_step = 0
             self.rearrange(model)
 
-    def rearrange(self,
-                  model: MixtureOfExperts,
-                  is_profile: bool = False,
-                  execute_shuffle: bool = True,
-                  global_expert_load: Optional[torch.Tensor] = None,
-                  rank_mapping: Optional[dict[int, int]] = None) -> None:
+    def rearrange(
+        self,
+        model: MixtureOfExperts,
+        is_profile: bool = False,
+        execute_shuffle: bool = True,
+        global_expert_load: Optional[torch.Tensor] = None,
+        rank_mapping: Optional[dict[int,
+                                    int]] = None) -> Optional[torch.Tensor]:
         """
         Rearrange the experts according to the current load.
         """
@@ -544,6 +546,7 @@ class EplbState:
                 " (profile) " if is_profile else " ",
                 time_end - time_start,
             )
+        return None
 
     @staticmethod
     def recv_state() -> tuple[torch.Tensor, torch.Tensor]:
