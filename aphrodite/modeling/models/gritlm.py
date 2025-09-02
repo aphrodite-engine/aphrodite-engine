@@ -6,19 +6,19 @@ import torch
 import torch.nn as nn
 from loguru import logger
 
-from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.common.sequence import PoolerOutput
+from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.modeling.layers.pooler import (DispatchPooler, Pooler,
                                               PoolerHead, PoolerNormalize,
                                               PoolingParamsUpdate,
                                               build_output, get_prompt_lens,
                                               get_prompt_token_ids)
 from aphrodite.modeling.models.llama import LlamaForCausalLM
-from aphrodite.modeling.pooling_metadata import PoolingMetadata
 from aphrodite.tasks import PoolingTask
 from aphrodite.transformers_utils.tokenizer import cached_tokenizer_from_config
+from aphrodite.v1.pool.metadata import PoolingMetadata
 
-from .interfaces import SupportsV0Only
+from .interfaces_base import default_pooling_type
 
 
 class GritLMMeanPool(nn.Module):
@@ -211,7 +211,8 @@ class GritLMPooler(Pooler):
         return build_output(pooled_data)
 
 
-class GritLM(LlamaForCausalLM, SupportsV0Only):
+@default_pooling_type("MEAN")
+class GritLM(LlamaForCausalLM):
     """This class implements the embedding model for parasail-ai/GritLM-7B-aphrodite.
 
     The class inherits from LlamaForCausalLM and provides a custom pooling
@@ -237,7 +238,6 @@ class GritLM(LlamaForCausalLM, SupportsV0Only):
         prefix: str = "",
         **kwargs,
     ) -> None:
-        # Use full attention for pooling (this is why V1 is not supported yet)
         if aphrodite_config.model_config.runner_type == "pooling":
             hf_config = aphrodite_config.model_config.hf_config
             hf_config.is_causal = False

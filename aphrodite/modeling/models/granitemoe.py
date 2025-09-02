@@ -21,6 +21,7 @@
 # limitations under the License.
 """Inference-only GraniteMoe model."""
 from collections.abc import Iterable
+from itertools import islice
 from typing import Any, Optional
 
 import torch
@@ -28,9 +29,9 @@ from torch import nn
 from transformers.models.granitemoe import GraniteMoeConfig
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.fused_moe import FusedMoE
@@ -300,7 +301,7 @@ class GraniteMoeModel(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states = layer(positions, hidden_states)
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({

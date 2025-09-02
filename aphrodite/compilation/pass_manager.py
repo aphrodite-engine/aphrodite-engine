@@ -8,9 +8,9 @@ if current_platform.is_cuda_alike():
     from .fusion_attn import AttnFusionPass
 
 if current_platform.is_cuda():
+    from .activation_quant_fusion import ActivationQuantFusionPass
     from .collective_fusion import AllReduceFusionPass, AsyncTPPass
 
-from .activation_quant_fusion import ActivationQuantFusionPass
 from .aphrodite_inductor_pass import AphroditeInductorPass
 from .fix_functionalization import FixFunctionalizationPass
 from .inductor_pass import CustomGraphPass, InductorPass, get_pass_context

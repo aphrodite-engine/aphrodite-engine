@@ -128,6 +128,11 @@ def has_nvidia_artifactory() -> bool:
     This checks connectivity to the kernel inference library artifactory
     which is required for downloading certain cubin kernels like TRTLLM FHMA.
     """
+    # Since FLASHINFER_CUBIN_DIR defines the pre-downloaded cubins path, when
+    # it's true, we could assume the cubins are available.
+    if envs.APHRODITE_HAS_FLASHINFER_CUBIN:
+        return True
+
     try:
         # Use a short timeout to avoid blocking for too long
         response = requests.get(FLASHINFER_CUBINS_REPOSITORY, timeout=5)
@@ -150,23 +155,57 @@ def has_nvidia_artifactory() -> bool:
         return False
 
 
-def use_trtllm_attention(
-    num_tokens: int,
-    max_seq_len: int,
-    kv_cache_dtype: str,
-    num_qo_heads: Optional[int],
-    num_kv_heads: Optional[int],
-    attn_head_size: Optional[int],
-    has_sinks: bool = False,
-) -> bool:
+@functools.cache
+def supports_trtllm_attention() -> tuple[bool, Optional[str]]:
+    """Cache result which only depends on the environment"""
+    # This is a lambda, call it once
+    env_value = envs.APHRODITE_USE_TRTLLM_ATTENTION
+
     # Requires SM100 and NVIDIA artifactory to be accessible to download cubins
     if not (current_platform.is_device_capability(100)
             and has_nvidia_artifactory()):
+        return False, env_value
+
+    if env_value is not None:
+        log_once("INFO", "APHRODITE_USE_TRTLLM_ATTENTION is set to {}",
+                 env_value)
+        # Environment variable is set - respect it
+        # Making the conditional check for zero because
+        # the path is automatically enabled if the batch size condition
+        # is satisfied.
+        use_trtllm = (env_value == "1")
+        if use_trtllm:
+            log_once("INFO", "Using TRTLLM attention.")
+        return use_trtllm, env_value
+
+    return True, None
+
+
+def use_trtllm_attention(
+    num_qo_heads: int,
+    num_kv_heads: int,
+    num_tokens: int,
+    max_seq_len: int,
+    kv_cache_dtype: str,
+    q_dtype: torch.dtype,
+    is_prefill: bool,
+    has_sinks: bool = False,
+) -> bool:
+    use_trtllm, env_value = supports_trtllm_attention()
+    if not use_trtllm:
         return False
 
-    # Check if the dimensions are supported by TRTLLM decode attention
-    if (attn_head_size is None or num_qo_heads is None or num_kv_heads is None
-            or num_qo_heads % num_kv_heads != 0):
+    if num_qo_heads % num_kv_heads != 0:
+        return False
+
+    # Must use TRTLLM attention if query is FP8 quantized
+    if q_dtype == current_platform.fp8_dtype():
+        log_once("INFO", "Using TRTLLM attention (query is quantized).")
+        return True
+
+    # TRTLLM prefill attention does not support FP8 kv cache with
+    # non-quantized query
+    if is_prefill and kv_cache_dtype.startswith("fp8"):
         return False
 
     # If sinks are being used, we must use TRTLLM attention as it's
@@ -177,25 +216,7 @@ def use_trtllm_attention(
             "Using TRTLLM attention (required for attention sinks).")
         return True
 
-    env_value = envs.APHRODITE_USE_TRTLLM_ATTENTION
-    if env_value is not None:
-        log_once(
-            "INFO",
-            "APHRODITE_USE_TRTLLM_ATTENTION is set to {}",
-            env_value,
-        )
-        # Environment variable is set - respect it
-        # Making the conditional check for zero because
-        # the path is automatically enabled if the batch size condition
-        # is satisfied.
-        use_trtllm = (env_value == "1")
-        if use_trtllm:
-            log_once(
-                "INFO",
-                "Using TRTLLM attention.",
-            )
-        return use_trtllm
-    else:
+    if env_value is None:
         # Environment variable not set - use auto-detection
         use_trtllm = (num_tokens <= 256 and max_seq_len < 131072
                       and kv_cache_dtype == "auto")
@@ -205,6 +226,9 @@ def use_trtllm_attention(
                 "Using TRTLLM attention (auto-detected).",
             )
         return use_trtllm
+
+    # Environment variable is set to 1 - respect it
+    return True
 
 
 if has_flashinfer():
@@ -249,6 +273,38 @@ if has_flashinfer():
                            device=A.device)
 
 
+    @torch.library.custom_op(
+        "aphrodite::bmm_fp8",
+        mutates_args=[],
+        device_types="cuda",
+    )
+    def bmm_fp8(
+        A: torch.Tensor,
+        B: torch.Tensor,
+        A_scale: torch.Tensor,
+        B_scale: torch.Tensor,
+        dtype: torch.dtype,
+        backend: str,
+    ) -> torch.Tensor:
+        from flashinfer import bmm_fp8 as bmm_fp8_
+        return bmm_fp8_(A, B, A_scale, B_scale, dtype, None, backend)
+
+    @torch.library.register_fake("aphrodite::bmm_fp8", )
+    def bmm_fp8_fake(
+        A: torch.Tensor,
+        B: torch.Tensor,
+        A_scale: torch.Tensor,
+        B_scale: torch.Tensor,
+        dtype: torch.dtype,
+        backend: str,
+    ) -> torch.Tensor:
+        return torch.empty(A.shape[0],
+                           A.shape[1],
+                           B.shape[2],
+                           dtype=dtype,
+                           device=A.device)
+
+
 def flashinfer_scaled_fp4_mm(a: torch.Tensor, b: torch.Tensor,
                              block_scale_a: torch.Tensor,
                              block_scale_b: torch.Tensor, alpha: torch.Tensor,
@@ -276,6 +332,35 @@ def flashinfer_scaled_fp4_mm(a: torch.Tensor, b: torch.Tensor,
     )
 
 
+def flashinfer_scaled_fp8_mm(
+        a: torch.Tensor,
+        b: torch.Tensor,
+        scale_a: torch.Tensor,
+        scale_b: torch.Tensor,
+        out_dtype: torch.dtype,
+        bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+    assert a.ndim == 2 and b.ndim == 2
+    assert a.shape[1] == b.shape[0]
+    assert scale_a.numel() == 1 and scale_b.numel() == 1
+    assert a.dtype == torch.float8_e4m3fn and b.dtype == torch.float8_e4m3fn
+    assert a.device.type == "cuda" and b.device.type == "cuda"
+    assert scale_a.dtype == torch.float32 and scale_b.dtype == torch.float32
+    assert scale_a.device.type == "cuda" and scale_b.device.type == "cuda"
+
+    output = bmm_fp8(
+        a.unsqueeze(0),
+        b.unsqueeze(0),
+        scale_a,
+        scale_b,
+        out_dtype,
+        "auto",
+    ).view(a.shape[0], b.shape[1])
+
+    if bias is not None:
+        output = output + bias
+    return output
+
+
 __all__ = [
     "has_flashinfer",
     "flashinfer_trtllm_fp8_block_scale_moe",
@@ -287,6 +372,8 @@ __all__ = [
     "has_flashinfer_moe",
     "has_flashinfer_cutlass_fused_moe",
     "has_nvidia_artifactory",
+    "supports_trtllm_attention",
     "use_trtllm_attention",
     "flashinfer_scaled_fp4_mm",
+    "flashinfer_scaled_fp8_mm",
 ]

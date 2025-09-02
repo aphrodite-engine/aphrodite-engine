@@ -7,6 +7,7 @@
 import torch
 
 from aphrodite import _custom_ops as ops
+from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl, triton
 
 from .prefix_prefill import context_attention_fwd
@@ -102,6 +103,7 @@ def kernel_paged_attention_2d(
             mask=head_mask,
             other=float("-inf"),
         ).to(dtype=tl.float32)
+
     L = tl.full([num_queries_per_kv_padded], 1.0, dtype=tl.float32)
     acc = tl.zeros([num_queries_per_kv_padded, HEAD_SIZE_PADDED],
                    dtype=tl.float32)

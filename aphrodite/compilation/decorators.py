@@ -50,6 +50,14 @@ def _should_ignore_torch_compile(cls) -> bool:
 @overload
 def support_torch_compile(
     *,
+    enable_if: Optional[Callable[[AphroditeConfig], bool]] = None,
+) -> Callable[[_T], _T]:
+    ...
+
+
+@overload
+def support_torch_compile(
+    *,
     dynamic_arg_dims: Optional[dict[str, Union[int, list[int]]]],
 ) -> Callable[[_T], _T]:
     ...
@@ -64,6 +72,7 @@ def support_torch_compile(
     cls: Optional[_T] = None,
     *,
     dynamic_arg_dims: Optional[dict[str, Union[int, list[int]]]] = None,
+    enable_if: Optional[Callable[[AphroditeConfig], bool]] = None,
 ) -> Union[Callable[[_T], _T], _T]:
     """
     A decorator to add support for compiling the forward method of a class.
@@ -113,6 +122,11 @@ def support_torch_compile(
     NOTE: if an argument is `None`, it should always be passed as `None` during
     the lifetime of the model, otherwise, it cannot be captured as a single
     computation graph.
+
+    `enable_if` is a function that takes a `AphroditeConfig` object as input and
+    returns a boolean value indicating whether to compile the model or not.
+    This is useful if you want to compile the model only when certain
+    conditions are met.
     """
 
     def cls_decorator_helper(cls: _T) -> _T:
@@ -144,7 +158,8 @@ def support_torch_compile(
             if k not in sig.parameters:
                 raise ValueError(
                     f"Argument {k} not found in the forward method of {cls}")
-        return _support_torch_compile(cls, inferred_dynamic_arg_dims)
+        return _support_torch_compile(cls, inferred_dynamic_arg_dims,
+                                      enable_if)
 
     if cls is not None:
         # use `support_torch_compile` as a decorator without arguments
@@ -157,6 +172,7 @@ def support_torch_compile(
 def _support_torch_compile(
     cls: _T,
     dynamic_arg_dims: dict[str, Union[int, list[int]]],
+    enable_if: Optional[Callable[[AphroditeConfig], bool]] = None,
 ) -> _T:
     """
     A decorator to add support for compiling the forward method of a class.
@@ -179,13 +195,14 @@ def _support_torch_compile(
         old_init(self, aphrodite_config=aphrodite_config,
                  prefix=prefix, **kwargs)
         self.aphrodite_config = aphrodite_config
+        enable_compile = enable_if is None or enable_if(aphrodite_config)
         # for CompilationLevel.DYNAMO_AS_IS , the upper level model runner
         # will handle the compilation, so we don't need to do anything here.
         self.do_not_compile = \
             aphrodite_config.compilation_config.level in [
             CompilationLevel.NO_COMPILATION, CompilationLevel.DYNAMO_AS_IS
         ] or not supports_dynamo() or _should_ignore_torch_compile(
-            self.__class__)
+            self.__class__) or not enable_compile
         if self.do_not_compile:
             return
         compilation_counter.num_models_seen += 1
@@ -263,8 +280,24 @@ def _support_torch_compile(
                     code.co_filename)
                 return inline_call(parent, func, args, kwargs)
 
+            # Disable the C++ compilation of symbolic shape guards. C++-fication
+            # of symbolic shape guards can improve guard overhead. But, since
+            # aphrodite skip guards anyways, setting this flag to False can improve
+            # compile time.
+            dynamo_config_patches = {}
+            try:
+                _ = torch._dynamo.config.enable_cpp_symbolic_shape_guards
+                dynamo_config_patches[
+                    "enable_cpp_symbolic_shape_guards"] = False
+            except AttributeError:
+                # Note: this config is not available in torch 2.6, we can skip
+                # if the config doesn't exist
+                logger.debug(
+                    "enable_cpp_symbolic_shape_guards config not available")
+
             with patch.object(InliningInstructionTranslator, 'inline_call',
-                              patched_inline_call):
+                              patched_inline_call), torch._dynamo.config.patch(
+                                  **dynamo_config_patches):
                 output = self.compiled_callable(*args, **kwargs)
             return output
 

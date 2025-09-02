@@ -1,31 +1,22 @@
-"""Implementation of CLIPVisionModel and CLIPTextModel for use in
-vision language models and text embedding models."""
+"""Minimal implementation of CLIPVisionModel intended to be only used
+within a vision language model."""
 from collections.abc import Iterable
 from typing import Optional, Union
 
 import torch
 import torch.nn as nn
-from transformers import CLIPTextConfig, CLIPVisionConfig
+from transformers import CLIPVisionConfig
 
-from aphrodite.attention import Attention, AttentionType
 from aphrodite.attention.layer import MultiHeadAttention
-from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.compilation.decorators import support_torch_compile
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               QKVParallelLinear,
                                               RowParallelLinear)
-from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import (SupportsQuant,
-                                                  default_pooling_type)
+from aphrodite.modeling.models.interfaces import SupportsQuant
 from aphrodite.quantization import QuantizationConfig
 
-from .utils import maybe_prefix
 from .vision import VisionEncoderInfo, resolve_visual_encoder_outputs
 
 
@@ -94,36 +85,6 @@ class CLIPVisionEmbeddings(nn.Module):
         return embeddings
 
 
-class CLIPTextEmbeddings(nn.Module):
-
-    def __init__(self, config: CLIPTextConfig):
-        super().__init__()
-        self.embed_dim = config.hidden_size
-        self.vocab_size = config.vocab_size
-        self.max_position_embeddings = config.max_position_embeddings
-
-        self.token_embedding = VocabParallelEmbedding(
-            self.vocab_size, self.embed_dim)
-        self.position_embedding = VocabParallelEmbedding(
-            self.max_position_embeddings, self.embed_dim)
-
-        self.register_buffer(
-            "position_ids",
-            torch.arange(self.max_position_embeddings).expand((1, -1)),
-            persistent=False)
-
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
-    ) -> torch.Tensor:
-        inputs_embeds = self.token_embedding(input_ids)
-        position_embeds = self.position_embedding(position_ids)
-
-        embeddings = inputs_embeds + position_embeds
-        return embeddings
-
-
 class CLIPAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
@@ -180,82 +141,6 @@ class CLIPAttention(nn.Module):
         return attn_output, None
 
 
-class CLIPTextAttention(nn.Module):
-    """Multi-headed attention with causal masking for CLIP text model"""
-
-    def __init__(
-        self,
-        config: CLIPTextConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        prefix: str = "",
-    ):
-        super().__init__()
-        self.config = config
-        self.embed_dim = config.hidden_size
-        self.num_heads = config.num_attention_heads
-        self.head_dim = self.embed_dim // self.num_heads
-        if self.head_dim * self.num_heads != self.embed_dim:
-            raise ValueError(
-                "embed_dim must be divisible by num_heads "
-                f"(got `embed_dim`: {self.embed_dim} and `num_heads`:"
-                f" {self.num_heads}).")
-
-        self.scale = self.head_dim**-0.5
-        tp_size = get_tensor_model_parallel_world_size()
-
-        assert self.num_heads % tp_size == 0
-        self.num_heads_per_partition = self.num_heads // tp_size
-        self.total_num_kv_heads = self.num_heads
-        self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size)
-
-        self.qkv_proj = QKVParallelLinear(
-            hidden_size=self.embed_dim,
-            head_size=self.head_dim,
-            total_num_heads=self.num_heads,
-            total_num_kv_heads=self.total_num_kv_heads,
-            bias=True,
-            quant_config=quant_config,
-            prefix=f"{prefix}.qkv_proj",
-        )
-
-        self.out_proj = RowParallelLinear(
-            input_size=self.embed_dim,
-            output_size=self.embed_dim,
-            bias=True,
-            quant_config=quant_config,
-            prefix=f"{prefix}.out_proj",
-        )
-
-        # Use causal attention for text encoder
-        self.attn = Attention(
-            num_heads=self.num_heads_per_partition,
-            head_size=self.head_dim,
-            scale=self.scale,
-            num_kv_heads=self.num_kv_heads,
-            cache_config=cache_config,
-            quant_config=quant_config,
-            prefix=f"{prefix}.attn",
-            attn_type=AttentionType.DECODER,
-        )
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-    ) -> torch.Tensor:
-        """Input shape: Batch x Time x Channel"""
-        qkv, _ = self.qkv_proj(hidden_states)
-        q, k, v = qkv.split([
-            self.num_heads_per_partition * self.head_dim,
-            self.num_kv_heads * self.head_dim,
-            self.num_kv_heads * self.head_dim,
-        ], dim=-1)
-
-        attn_output = self.attn(q, k, v)
-        attn_output, _ = self.out_proj(attn_output)
-        return attn_output
-
-
 class CLIPMLP(nn.Module):
 
     def __init__(
@@ -283,38 +168,6 @@ class CLIPMLP(nn.Module):
         hidden_states = self.activation_fn(hidden_states)
         hidden_states, _ = self.fc2(hidden_states)
 
-        return hidden_states
-
-
-class CLIPTextMLP(nn.Module):
-    """MLP with QuickGELU activation function for CLIP text model"""
-
-    def __init__(
-        self,
-        config: CLIPTextConfig,
-        quant_config: Optional[QuantizationConfig] = None,
-        prefix: str = "",
-    ) -> None:
-        super().__init__()
-        self.config = config
-        self.fc1 = ColumnParallelLinear(
-            config.hidden_size,
-            config.intermediate_size,
-            bias=True,
-            quant_config=quant_config,
-            prefix=f"{prefix}.fc1")
-        self.fc2 = RowParallelLinear(
-            config.intermediate_size,
-            config.hidden_size,
-            bias=True,
-            quant_config=quant_config,
-            prefix=f"{prefix}.fc2")
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        hidden_states, _ = self.fc1(hidden_states)
-        # QuickGELU activation: x * sigmoid(1.702 * x)
-        hidden_states = hidden_states * torch.sigmoid(1.702 * hidden_states)
-        hidden_states, _ = self.fc2(hidden_states)
         return hidden_states
 
 
@@ -348,47 +201,6 @@ class CLIPEncoderLayer(nn.Module):
         hidden_states, _ = self.self_attn(hidden_states=hidden_states)
         hidden_states = residual + hidden_states
 
-        residual = hidden_states
-        hidden_states = self.layer_norm2(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
-
-        return hidden_states
-
-
-class CLIPTextEncoderLayer(nn.Module):
-    """CLIP text encoder layer with pre-norm architecture"""
-
-    def __init__(
-        self,
-        config: CLIPTextConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        prefix: str = "",
-    ) -> None:
-        super().__init__()
-        self.self_attn = CLIPTextAttention(
-            config,
-            cache_config=cache_config,
-            quant_config=quant_config,
-            prefix=f"{prefix}.self_attn",
-        )
-        self.layer_norm1 = nn.LayerNorm(config.hidden_size,
-                                        eps=config.layer_norm_eps)
-        self.mlp = CLIPTextMLP(config,
-                               quant_config=quant_config,
-                               prefix=f"{prefix}.mlp")
-        self.layer_norm2 = nn.LayerNorm(config.hidden_size,
-                                        eps=config.layer_norm_eps)
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        # Pre-norm architecture for self-attention
-        residual = hidden_states
-        hidden_states = self.layer_norm1(hidden_states)
-        hidden_states = self.self_attn(hidden_states)
-        hidden_states = residual + hidden_states
-
-        # Pre-norm architecture for MLP
         residual = hidden_states
         hidden_states = self.layer_norm2(hidden_states)
         hidden_states = self.mlp(hidden_states)
@@ -445,41 +257,6 @@ class CLIPEncoder(nn.Module):
         return hidden_states
 
 
-class CLIPTextEncoder(nn.Module):
-    """
-    Transformer encoder consisting of `config.num_hidden_layers` self
-    attention layers for CLIP text model. Each layer is a
-    [`CLIPTextEncoderLayer`].
-
-    Args:
-        config: CLIPTextConfig
-    """
-
-    def __init__(
-        self,
-        config: CLIPTextConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        prefix: str = "",
-    ) -> None:
-        super().__init__()
-        self.config = config
-        self.layers = nn.ModuleList([
-            CLIPTextEncoderLayer(
-                config=config,
-                cache_config=cache_config,
-                quant_config=quant_config,
-                prefix=f"{prefix}.layers.{layer_idx}")
-            for layer_idx in range(config.num_hidden_layers)
-        ])
-
-    def forward(self, inputs_embeds: torch.Tensor) -> torch.Tensor:
-        hidden_states = inputs_embeds
-        for encoder_layer in self.layers:
-            hidden_states = encoder_layer(hidden_states)
-        return hidden_states
-
-
 class CLIPVisionTransformer(nn.Module):
 
     def __init__(
@@ -500,8 +277,7 @@ class CLIPVisionTransformer(nn.Module):
 
         # NOTE: This typo of "layrnorm" is not fixed on purpose to match
         # the original transformers code and name of the model weights.
-        self.pre_layrnorm = nn.LayerNorm(embed_dim,
-                                         eps=config.layer_norm_eps)
+        self.pre_layrnorm = nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
 
         self.encoder = CLIPEncoder(
             config=config,
@@ -552,41 +328,6 @@ class CLIPVisionTransformer(nn.Module):
         return encoder_outputs
 
 
-class CLIPTextTransformer(nn.Module):
-    """CLIP Text Transformer model"""
-
-    def __init__(
-        self,
-        config: CLIPTextConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
-        prefix: str = "",
-    ) -> None:
-        super().__init__()
-        self.config = config
-        embed_dim = config.hidden_size
-
-        self.embeddings = CLIPTextEmbeddings(config)
-        self.encoder = CLIPTextEncoder(
-            config=config,
-            cache_config=cache_config,
-            quant_config=quant_config,
-            prefix=f"{prefix}.encoder",
-        )
-        self.final_layer_norm = nn.LayerNorm(embed_dim,
-                                             eps=config.layer_norm_eps)
-
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        position_ids: torch.Tensor,
-    ) -> torch.Tensor:
-        hidden_states = self.embeddings(input_ids, position_ids)
-        hidden_states = self.encoder(hidden_states)
-        hidden_states = self.final_layer_norm(hidden_states)
-        return hidden_states
-
-
 class CLIPVisionModel(nn.Module, SupportsQuant):
     config_class = CLIPVisionConfig
     main_input_name = "pixel_values"
@@ -621,7 +362,7 @@ class CLIPVisionModel(nn.Module, SupportsQuant):
         return next(self.parameters()).device
 
     # (TODO) Add prefix argument for filtering out weights to be loaded
-    #        ref: https://github.com/vllm-project/vllm/pull/7186
+    #        ref: https://github.com/aphrodite-project/aphrodite/pull/7186#discussion_r1734163986
     def load_weights(self, weights: Iterable[tuple[str,
                                                    torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
@@ -652,8 +393,7 @@ class CLIPVisionModel(nn.Module, SupportsQuant):
                 name = name.replace(weight_name, param_name)
 
                 param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
+                weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)
                 break
             else:
@@ -662,249 +402,4 @@ class CLIPVisionModel(nn.Module, SupportsQuant):
                                         default_weight_loader)
                 weight_loader(param, loaded_weight)
             loaded_params.add(name)
-        return loaded_params
-
-
-@support_torch_compile
-@default_pooling_type("ALL")
-class CLIPTextModel(nn.Module, SupportsQuant):
-    """CLIP Text Model for text embedding with pooling support"""
-
-    config_class = CLIPTextConfig
-    main_input_name = "input_ids"
-    is_pooling_model = True
-    packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"]}
-
-    def __init__(
-        self,
-        *,
-        aphrodite_config: AphroditeConfig,
-        prefix: str = "",
-    ) -> None:
-        super().__init__()
-
-        config = aphrodite_config.model_config.hf_config
-        cache_config = aphrodite_config.cache_config
-        quant_config = aphrodite_config.quant_config
-
-        self.text_model = CLIPTextTransformer(
-            config=config,
-            cache_config=cache_config,
-            quant_config=quant_config,
-            prefix=f"{prefix}.text_model")
-
-        pooler_config = aphrodite_config.model_config.pooler_config
-        assert pooler_config is not None
-
-        self.pooler = DispatchPooler({
-            "encode": Pooler.for_encode(pooler_config),
-            "embed": Pooler.for_embed(pooler_config),
-        })
-
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        if inputs_embeds is not None:
-            raise NotImplementedError("inputs_embeds is not supported")
-
-        return self.text_model(input_ids=input_ids, position_ids=positions)
-
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
-        stacked_params_mapping = [
-            # (param_name, shard_name, shard_id)
-            ("qkv_proj", "q_proj", "q"),
-            ("qkv_proj", "k_proj", "k"),
-            ("qkv_proj", "v_proj", "v"),
-        ]
-
-        params_dict = dict(self.named_parameters())
-        loaded_params: set[str] = set()
-
-        for name, loaded_weight in weights:
-            for (param_name, weight_name, shard_id) in stacked_params_mapping:
-                if weight_name not in name:
-                    continue
-                name = name.replace(weight_name, param_name)
-                if name not in params_dict:
-                    continue
-                param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
-                weight_loader(param, loaded_weight, shard_id)
-                loaded_params.add(name)
-                break
-            else:
-                if name in params_dict:
-                    param = params_dict[name]
-                    weight_loader = getattr(param, "weight_loader",
-                                            default_weight_loader)
-                    weight_loader(param, loaded_weight)
-                    loaded_params.add(name)
-
-        return loaded_params
-
-
-@default_pooling_type("LAST")
-class CLIPModel(nn.Module, SupportsQuant):
-    """CLIP Model for text embedding tasks.
-
-    This class wraps the CLIPTextModel to provide embedding functionality
-    for the main CLIPModel architecture.
-    """
-
-    is_pooling_model = True
-    packed_modules_mapping = {"qkv_proj": ["q_proj", "k_proj", "v_proj"]}
-
-    def __init__(
-        self,
-        *,
-        aphrodite_config: AphroditeConfig,
-        prefix: str = "",
-    ) -> None:
-        super().__init__()
-
-        # For text embedding tasks, we only use the text model part of CLIP
-        # Create a new config with just the text config
-        import copy
-        text_aphrodite_config = copy.deepcopy(aphrodite_config)
-        text_aphrodite_config.model_config.hf_config = \
-            aphrodite_config.model_config.hf_config.text_config
-
-        config = text_aphrodite_config.model_config.hf_config
-        cache_config = text_aphrodite_config.cache_config
-        quant_config = text_aphrodite_config.quant_config
-
-        # Use CLIPTextTransformer directly to avoid double nesting
-        self.text_model = CLIPTextTransformer(
-            config=config,
-            cache_config=cache_config,
-            quant_config=quant_config,
-            prefix=maybe_prefix(prefix, "text_model")
-        )
-
-        from aphrodite.modeling.layers.linear import ColumnParallelLinear
-        self.text_projection = ColumnParallelLinear(
-            config.hidden_size,
-            config.projection_dim,
-            bias=False,
-            quant_config=quant_config,
-            prefix=maybe_prefix(prefix, "text_projection"),
-        )
-
-        pooler_config = text_aphrodite_config.model_config.pooler_config
-        assert pooler_config is not None
-
-        from aphrodite.modeling.layers.pooler import (EmbeddingPoolerHead,
-                                                      PoolingMethod,
-                                                      PoolingType,
-                                                      SimplePooler)
-
-        # Use LAST token pooling (like EOS token in CLIP) and
-        # then apply projection
-        last_pooling = PoolingMethod.from_pooling_type(PoolingType.LAST)
-
-        # Create a custom head that applies text projection
-        class CLIPEmbeddingHead(EmbeddingPoolerHead):
-            def __init__(self, text_projection):
-                super().__init__()
-                self.text_projection = text_projection
-
-            def forward(self, pooled_data, pooling_metadata):
-                # Apply text projection first
-                if isinstance(pooled_data, list):
-                    projected_data = []
-                    for data in pooled_data:
-                        proj_out = self.text_projection(data)
-                        # Handle case where ColumnParallelLinear returns tuple
-                        if isinstance(proj_out, tuple):
-                            proj_out = proj_out[0]
-                        projected_data.append(proj_out)
-                    pooled_data = projected_data
-                else:
-                    proj_out = self.text_projection(pooled_data)
-                    # Handle case where ColumnParallelLinear returns tuple
-                    if isinstance(proj_out, tuple):
-                        proj_out = proj_out[0]
-                    pooled_data = proj_out
-                # Then apply normalization if needed
-                return super().forward(pooled_data, pooling_metadata)
-
-        clip_head = CLIPEmbeddingHead(self.text_projection)
-        clip_pooler = SimplePooler(last_pooling, clip_head)
-
-        self.pooler = DispatchPooler({
-            "encode": clip_pooler,
-            "embed": clip_pooler,
-        })
-
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        if inputs_embeds is not None:
-            raise NotImplementedError("inputs_embeds is not supported")
-
-        # Get the transformer outputs - just return the hidden states
-        # The pooling will be handled by the pooler
-        hidden_states = self.text_model(
-            input_ids=input_ids, position_ids=positions)
-
-        return hidden_states
-
-    def load_weights(
-        self,
-        weights: Iterable[tuple[str, torch.Tensor]],
-    ) -> set[str]:
-        # Handle weight loading for CLIPTextTransformer
-        # The checkpoint weights have "text_model." prefix,
-        # which matches our structure
-
-        from aphrodite.modeling.model_loader.weight_utils import (
-            default_weight_loader)
-
-        # Handle packed qkv weights
-        stacked_params_mapping = [
-            ("qkv_proj", "q_proj", "q"),
-            ("qkv_proj", "k_proj", "k"),
-            ("qkv_proj", "v_proj", "v"),
-        ]
-
-        params_dict = dict(self.named_parameters())
-        loaded_params: set[str] = set()
-
-        for name, loaded_weight in weights:
-            # Skip vision model weights and other non-text weights
-            if not name.startswith("text_model.") and \
-                    not name.startswith("text_projection."):
-                continue
-
-            # Handle stacked qkv parameters
-            for (param_name, weight_name, shard_id) in stacked_params_mapping:
-                if weight_name not in name:
-                    continue
-                name = name.replace(weight_name, param_name)
-                if name not in params_dict:
-                    continue
-                param = params_dict[name]
-                weight_loader = param.weight_loader
-                weight_loader(param, loaded_weight, shard_id)
-                loaded_params.add(name)
-                break
-            else:
-                # Handle regular parameters
-                if name in params_dict:
-                    param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader)
-                    weight_loader(param, loaded_weight)
-                    loaded_params.add(name)
-
         return loaded_params

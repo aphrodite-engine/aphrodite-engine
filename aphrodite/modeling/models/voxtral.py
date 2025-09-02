@@ -15,12 +15,11 @@ from mistral_common.protocol.instruct.messages import (AudioChunk, RawAudio,
 from mistral_common.protocol.instruct.request import ChatCompletionRequest
 from mistral_common.protocol.transcription.request import TranscriptionRequest
 from mistral_common.tokens.tokenizers.audio import Audio, AudioEncoder
-from transformers import TensorType, WhisperConfig
+from transformers import BatchFeature, TensorType, WhisperConfig
 from transformers.tokenization_utils_base import TextInput
 
-from aphrodite.config import (AphroditeConfig, ModelConfig,
-                                     SpeechToTextConfig)
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, ModelConfig, SpeechToTextConfig
 from aphrodite.inputs.data import PromptType
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models import SupportsPP
@@ -31,13 +30,13 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs, NestedTensors)
+                                         MultiModalKwargsItems, NestedTensors)
 from aphrodite.multimodal.parse import (AudioProcessorItems,
                                         MultiModalDataItems,
                                         MultiModalDataParser)
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
-                                             MultiModalHashes,
+                                             MultiModalProcessingInfo,
                                              PromptReplacement, PromptUpdate)
 from aphrodite.multimodal.profiling import (BaseDummyInputsBuilder,
                                             ProcessorInputs)
@@ -155,10 +154,12 @@ class VoxtralProcessorAdapter:
             audios_tokens.append(torch.tensor(audio_tokens))
             audios_processed.append(torch.tensor(audio))
 
-        return {
-            "input_ids": torch.cat(audios_tokens)[None].expand(len(text), -1),
-            "audio_arrays": audios_processed,
-        }
+        return BatchFeature({
+            "input_ids":
+            torch.cat(audios_tokens)[None].expand(len(text), -1),
+            "audio_arrays":
+            audios_processed,
+        })
 
 
 class VoxtralProcessingInfo(BaseProcessingInfo):
@@ -259,7 +260,7 @@ class VoxtralMultiModalProcessor(BaseMultiModalProcessor[VoxtralProcessingInfo]
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
 
@@ -287,20 +288,18 @@ class VoxtralMultiModalProcessor(BaseMultiModalProcessor[VoxtralProcessingInfo]
         mm_data_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
         tokenization_kwargs: Mapping[str, object],
-        *,
-        return_mm_hashes: bool,
-    ) -> tuple[list[int], MultiModalKwargs, Optional[MultiModalHashes], bool]:
-        prompt_ids, mm_kwargs, mm_hashes, _ = super(
-        )._cached_apply_hf_processor(
+        mm_hash_overrides: Optional[dict[str, list[str]]] = None,
+    ) -> tuple[list[int], MultiModalProcessingInfo, bool]:
+        prompt_ids, mm_info, _ = super()._cached_apply_hf_processor(
             prompt=prompt,
             mm_data_items=mm_data_items,
             hf_processor_mm_kwargs=hf_processor_mm_kwargs,
             tokenization_kwargs=tokenization_kwargs,
-            return_mm_hashes=return_mm_hashes,
+            mm_hash_overrides=mm_hash_overrides,
         )
 
         # NOTE: The tokens are already inserted by the chat template
-        return prompt_ids, mm_kwargs, mm_hashes, True
+        return prompt_ids, mm_info, True
 
     def _get_data_parser(self) -> MultiModalDataParser:
         sampling_rate = self.info.get_hf_processor().sampling_rate

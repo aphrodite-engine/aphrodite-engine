@@ -28,16 +28,13 @@ def detect_nvfp4_moe_support(class_name: str = "") -> NvFp4Support:
                         and is_flashinfer_fp4_cutlass_moe_available())
 
     if allow_flashinfer:
-        log_once(
-            "WARNING",
-            "Using FlashInfer kernels for {}.", class_name or "NVFP4 path")
+        log_once("INFO", "Using FlashInfer kernels for {}.", class_name
+                          or "NVFP4 path")
     else:
         if envs.APHRODITE_USE_FLASHINFER_MOE_FP4:
             log_once(
-                "WARNING",
-                "FlashInfer kernels unavailable for {} on current platform.",
-                class_name or "NVFP4 path",
-            )
+                "WARNING", "FlashInfer kernels unavailable for {} on current platform.",
+                class_name or "NVFP4 path")
 
     use_marlin = False
     if not cutlass_supported:

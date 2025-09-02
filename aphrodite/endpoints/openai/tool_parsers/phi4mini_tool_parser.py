@@ -6,7 +6,7 @@ import regex as re
 from loguru import logger
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.endpoints.chat_utils import random_tool_call_id
+from aphrodite.endpoints.chat_utils import make_tool_call_id
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  DeltaMessage,
                                                  ExtractedToolCallInformation,
@@ -69,7 +69,7 @@ class Phi4MiniJsonToolParser(ToolParser):
 
             tool_calls: list[ToolCall] = [
                 ToolCall(
-                    id=random_tool_call_id(),
+                    id=make_tool_call_id(),
                     type="function",
                     function=FunctionCall(
                         name=raw_function_call["name"],

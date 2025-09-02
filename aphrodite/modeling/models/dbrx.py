@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from itertools import islice
 from typing import Optional, Union
 
 import torch
@@ -6,8 +7,8 @@ import torch.nn as nn
 from transformers import DbrxConfig
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
@@ -357,7 +358,7 @@ class DbrxModel(nn.Module):
         else:
             assert intermediate_tensors
             hidden_states = intermediate_tensors["hidden_states"]
-        for block in self.blocks[self.start_layer:self.end_layer]:
+        for block in islice(self.blocks, self.start_layer, self.end_layer):
             hidden_states = block(position_ids, hidden_states)
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({"hidden_states": hidden_states})

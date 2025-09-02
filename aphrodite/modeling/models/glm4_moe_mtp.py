@@ -27,8 +27,8 @@ import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor

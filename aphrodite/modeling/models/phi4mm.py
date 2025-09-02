@@ -8,8 +8,8 @@ import torch.nn as nn
 from transformers import (BatchFeature, PretrainedConfig, ProcessorMixin,
                           SequenceFeatureExtractor, SiglipVisionConfig)
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
@@ -20,7 +20,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs, NestedTensors)
+                                         MultiModalKwargsItems, NestedTensors)
 from aphrodite.multimodal.parse import (AudioProcessorItems,
                                         ImageEmbeddingItems,
                                         ImageProcessorItems, ImageSize,
@@ -28,7 +28,8 @@ from aphrodite.multimodal.parse import (AudioProcessorItems,
                                         MultiModalDataParser)
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate)
+                                             PromptReplacement, PromptUpdate,
+                                             ResolvedPromptUpdate)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils import is_list_of
@@ -263,9 +264,9 @@ class Phi4MMImageEncoder(nn.Module):
             img_features.shape[1]))
         assert base_feat_height == base_feat_height_target \
             and base_feat_width == base_feat_height_target, \
-                f'base_feat_height: {base_feat_height},"\
-                f" base_feat_width: {base_feat_width}, "\
-                f"expect {base_feat_height_target} features for hd transform'
+                (f"base_feat_height: {base_feat_height}, "
+                 f"base_feat_width: {base_feat_width}, "
+                 f"expect {base_feat_height_target} features for hd transform")
 
         # bs x max_num_crops x (24x24) x C
         img_features = img_features.view(bs, -1,
@@ -803,7 +804,7 @@ class Phi4MMMultiModalProcessor(BaseMultiModalProcessor[Phi4MMProcessingInfo]):
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, Any],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         image_tokens: list[str] = self.info.image_tokens  # type: ignore
         audio_tokens: list[str] = self.info.audio_tokens  # type: ignore
@@ -825,9 +826,7 @@ class Phi4MMMultiModalProcessor(BaseMultiModalProcessor[Phi4MMProcessingInfo]):
                     processor=hf_processor,
                 )
 
-            image_tokens = [_IMAGE_PLACEHOLDER_TOKEN_ID] * num_image_tokens
-
-            return image_tokens
+            return [_IMAGE_PLACEHOLDER_TOKEN_ID] * num_image_tokens
 
         def get_audio_replacement_phi4mm(item_idx: int):
             audios = mm_items.get_items("audio", AudioProcessorItems)
@@ -838,28 +837,39 @@ class Phi4MMMultiModalProcessor(BaseMultiModalProcessor[Phi4MMProcessingInfo]):
             audio_embed_size = self.info._compute_audio_embed_size(
                 audio_frames)
 
-            audio_tokens = [_AUDIO_PLACEHOLDER_TOKEN_ID] * audio_embed_size
+            return [_AUDIO_PLACEHOLDER_TOKEN_ID] * audio_embed_size
 
-            return audio_tokens
-
-        num_images = mm_items.get_count("image", strict=False)
-        num_audios = mm_items.get_count("audio", strict=False)
-
-        image_repl = [
+        return [
             PromptReplacement(
                 modality="image",
-                target=image_token,
+                target=image_tokens.__getitem__,
                 replacement=get_image_replacement_phi4mm,
-            ) for image_token in image_tokens[:num_images]
-        ]
-        audio_repl = [
+            ),
             PromptReplacement(
                 modality="audio",
-                target=audio_token,
+                target=audio_tokens.__getitem__,
                 replacement=get_audio_replacement_phi4mm,
-            ) for audio_token in audio_tokens[:num_audios]
+            ),
         ]
-        return image_repl + audio_repl
+
+    def _recompute_cached_prompt_update(
+        self,
+        cached_update: ResolvedPromptUpdate,
+        new_item_idx: int,
+    ) -> ResolvedPromptUpdate:
+        new_update = super()._recompute_cached_prompt_update(
+            cached_update,
+            new_item_idx,
+        )
+
+        if cached_update.modality == "image":
+            image_tokens: list[str] = self.info.image_tokens  # type: ignore
+            new_update = new_update.with_target(image_tokens[new_item_idx])
+        elif cached_update.modality == "audio":
+            audio_tokens: list[str] = self.info.audio_tokens  # type: ignore
+            new_update = new_update.with_target(audio_tokens[new_item_idx])
+
+        return new_update
 
 
 @MULTIMODAL_REGISTRY.register_processor(

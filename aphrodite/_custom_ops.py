@@ -349,38 +349,6 @@ def apply_repetition_penalties(logits: torch.Tensor, prompt_mask: torch.Tensor,
                                          repetition_penalties)
 
 
-def advance_step_flashattn(num_seqs: int, num_queries: int, block_size: int,
-                           input_tokens: torch.Tensor,
-                           sampled_token_ids: torch.Tensor,
-                           input_positions: torch.Tensor,
-                           seq_lens: torch.Tensor, slot_mapping: torch.Tensor,
-                           block_tables: torch.Tensor) -> None:
-    """Advance a step on GPU for existing inputs for a multi-step runner"""
-    return torch.ops._C.advance_step_flashattn(num_seqs, num_queries,
-                                               block_size, input_tokens,
-                                               sampled_token_ids,
-                                               input_positions, seq_lens,
-                                               slot_mapping, block_tables)
-
-
-def advance_step_flashinfer(num_seqs: int, num_queries: int, block_size: int,
-                            input_tokens: torch.Tensor,
-                            sampled_token_ids: torch.Tensor,
-                            input_positions: torch.Tensor,
-                            seq_lens: torch.Tensor, slot_mapping: torch.Tensor,
-                            block_tables: torch.Tensor,
-                            paged_kv_indices: torch.Tensor,
-                            paged_kv_indptr: torch.Tensor,
-                            paged_kv_last_page_len: torch.Tensor,
-                            block_table_bound: torch.Tensor) -> None:
-
-    return torch.ops._C.advance_step_flashinfer(
-        num_seqs, num_queries, block_size, input_tokens, sampled_token_ids,
-        input_positions, seq_lens, slot_mapping, block_tables,
-        paged_kv_indices, paged_kv_indptr, paged_kv_last_page_len,
-        block_table_bound)
-
-
 # fused quant layer norm ops
 def rms_norm_dynamic_per_token_quant(
     input: torch.Tensor,
@@ -594,6 +562,30 @@ if hasattr(torch.ops._C, "gptq_marlin_24_gemm"):
             group_scales_type: Optional[torch.dtype]) -> torch.Tensor:
         return torch.empty_like(b_q_weight,
                                 memory_format=torch.contiguous_format)
+
+    @register_fake("_C::cutlass_w4a8_mm")
+    def cutlass_w4a8_mm_fake(
+            a: torch.Tensor,
+            # b_q Should be the tensor returned by cutlass_encode_and_reorder_int4b
+            b_q: torch.Tensor,
+            b_group_scales: torch.Tensor,
+            b_group_size: int,
+            b_channel_scales: torch.Tensor,
+            a_token_scales: torch.Tensor,
+            out_type: Optional[torch.dtype] = None,
+            maybe_schedule: Optional[str] = None) -> torch.Tensor:
+        m = a.size(0)
+        n = b_q.size(1)
+        out_dtype = out_type if out_type is not None else torch.bfloat16
+        return torch.empty((m, n), device=a.device, dtype=out_dtype)
+
+    @register_fake("_C::cutlass_pack_scale_fp8")
+    def cutlass_pack_scale_fp8_fake(scales: torch.Tensor) -> torch.Tensor:
+        return torch.empty_like(scales, memory_format=torch.contiguous_format)
+
+    @register_fake("_C::cutlass_encode_and_reorder_int4b")
+    def cutlass_encode_and_reorder_int4b_fake(b: torch.Tensor) -> torch.Tensor:
+        return torch.empty_like(b, memory_format=torch.contiguous_format)
 
 
 if hasattr(torch.ops._C, "allspark_w8a16_gemm"):
@@ -974,6 +966,27 @@ def get_cutlass_moe_mm_data(topk_ids: torch.Tensor,
                                                 blockscale_offsets)
 
 
+def get_cutlass_moe_mm_problem_sizes(
+        topk_ids: torch.Tensor,
+        problem_sizes1: torch.Tensor,
+        problem_sizes2: torch.Tensor,
+        num_experts: int,
+        n: int,
+        k: int,
+        blockscale_offsets: Optional[torch.Tensor] = None):
+    """
+    Compute only the per-expert problem sizes needed by the two grouped matrix
+    multiplications used in CUTLASS-based fused MoE.
+    The function takes in topk_ids (token→expert mapping) and computes:
+    - problem_sizes1, problem_sizes2: M×N×K sizes of each expert's
+                                    multiplication for the two grouped MMs
+                                    used in the fused MoE operation.
+    """
+    return torch.ops._C.get_cutlass_moe_mm_problem_sizes(
+        topk_ids, problem_sizes1, problem_sizes2, num_experts, n, k,
+        blockscale_offsets)
+
+
 def shuffle_rows(input_tensor: torch.Tensor, dst2src_map: torch.Tensor):
     """
     Shuffle and expand the input tensor according to the dst2src_map and store the result in output_tensor.
@@ -1206,6 +1219,30 @@ def machete_prepack_B(
         group_scales_type: Optional[torch.dtype]) -> torch.Tensor:
     return torch.ops._C.machete_prepack_B(b_q_weight, a_type, b_type.id,
                                           group_scales_type)
+
+
+# CUTLASS W4A8
+def cutlass_w4a8_mm(
+        a: torch.Tensor,
+        # b_q Should be the tensor returned by cutlass_encode_and_reorder_int4b
+        b_q: torch.Tensor,
+        b_group_scales: torch.Tensor,
+        b_group_size: int,
+        b_channel_scales: torch.Tensor,
+        a_token_scales: torch.Tensor,
+        out_type: Optional[torch.dtype] = None,
+        maybe_schedule: Optional[str] = None) -> torch.Tensor:
+    return torch.ops._C.cutlass_w4a8_mm(a, b_q, b_group_scales, b_group_size,
+                                        b_channel_scales, a_token_scales,
+                                        out_type, maybe_schedule)
+
+
+def cutlass_pack_scale_fp8(scales: torch.Tensor) -> torch.Tensor:
+    return torch.ops._C.cutlass_pack_scale_fp8(scales)
+
+
+def cutlass_encode_and_reorder_int4b(b: torch.Tensor) -> torch.Tensor:
+    return torch.ops._C.cutlass_encode_and_reorder_int4b(b)
 
 
 if hasattr(torch.ops._C, "permute_cols"):
@@ -1647,6 +1684,17 @@ def topk_softmax(topk_weights: torch.Tensor, topk_ids: torch.Tensor,
                                   gating_output)
 
 
+def grouped_topk(scores: torch.Tensor, scores_with_bias: torch.Tensor,
+                 num_expert_group: int, topk_group: int, topk: int,
+                 renormalize: bool, routed_scaling_factor: float):
+    if not current_platform.is_cuda():
+        raise NotImplementedError("The fused grouped_topk kernel is only "
+                                  "available on CUDA platforms")
+    return torch.ops._moe_C.grouped_topk(scores, scores_with_bias,
+                                         num_expert_group, topk_group, topk,
+                                         renormalize, routed_scaling_factor)
+
+
 def moe_wna16_marlin_gemm(input: torch.Tensor, output: Optional[torch.Tensor],
                           b_qweight: torch.Tensor,
                           b_bias: Optional[torch.Tensor],
@@ -1759,6 +1807,20 @@ def concat_and_cache_mla(
                                                 scale)
 
 
+def cp_fused_concat_and_cache_mla(
+    kv_c: torch.Tensor,
+    k_pe: torch.Tensor,
+    cp_local_token_select_indices: torch.Tensor,
+    kv_cache: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    kv_cache_dtype: str,
+    scale: torch.Tensor,
+) -> None:
+    torch.ops._C_cache_ops.cp_fused_concat_and_cache_mla(
+        kv_c, k_pe, cp_local_token_select_indices, kv_cache, slot_mapping,
+        kv_cache_dtype, scale)
+
+
 def copy_blocks(key_caches: list[torch.Tensor],
                 value_caches: list[torch.Tensor],
                 block_mapping: torch.Tensor) -> None:
@@ -1782,14 +1844,28 @@ def convert_fp8(output: torch.Tensor,
     torch.ops._C_cache_ops.convert_fp8(output, input, scale, kv_dtype)
 
 
-def gather_cache(src_cache: torch.Tensor,
-                 dst: torch.Tensor,
-                 block_table: torch.Tensor,
-                 cu_seq_lens: torch.Tensor,
-                 batch_size: int,
-                 seq_starts: Optional[torch.Tensor] = None) -> None:
-    torch.ops._C_cache_ops.gather_cache(src_cache, dst, block_table,
-                                        cu_seq_lens, batch_size, seq_starts)
+def gather_and_maybe_dequant_cache(
+        src_cache: torch.Tensor,
+        dst: torch.Tensor,
+        block_table: torch.Tensor,
+        cu_seq_lens: torch.Tensor,
+        batch_size: int,
+        kv_cache_dtype: str,
+        scale: torch.Tensor,
+        seq_starts: Optional[torch.Tensor] = None) -> None:
+    torch.ops._C_cache_ops.gather_and_maybe_dequant_cache(
+        src_cache, dst, block_table, cu_seq_lens, batch_size, kv_cache_dtype,
+        scale, seq_starts)
+
+
+def cp_gather_cache(src_cache: torch.Tensor,
+                    dst: torch.Tensor,
+                    block_table: torch.Tensor,
+                    cu_seq_lens: torch.Tensor,
+                    batch_size: int,
+                    seq_starts: Optional[torch.Tensor] = None) -> None:
+    torch.ops._C_cache_ops.cp_gather_cache(src_cache, dst, block_table,
+                                           cu_seq_lens, batch_size, seq_starts)
 
 
 def get_device_attribute(attribute: int, device: int) -> int:
@@ -2146,3 +2222,84 @@ def top_k_top_p_sampling_from_probs(
             *_to_tensor_scalar_tuple(top_p), deterministic)
     else:
         raise ValueError(f"Invalid filter_apply_order: {filter_apply_order}")
+
+
+class CPUDNNLGEMMHandler:
+
+    def __init__(self) -> None:
+        self.handler: Optional[int] = None
+        self.n = -1
+        self.k = -1
+
+    def __del__(self):
+        if self.handler is not None:
+            torch.ops._C.release_dnnl_matmul_handler(self.handler)
+
+
+def create_onednn_scaled_mm(
+    weight: torch.Tensor,  # [K, N]
+    weight_scales: torch.Tensor,
+    output_type: torch.dtype,
+    dynamic_quant: bool,
+    use_azp: bool,
+    primitive_cache_size: int = 128,
+) -> CPUDNNLGEMMHandler:
+    handler = CPUDNNLGEMMHandler()
+    handler.k, handler.n = weight.size()
+    handler.handler = torch.ops._C.create_onednn_scaled_mm_handler(
+        weight, weight_scales, output_type, dynamic_quant, use_azp,
+        primitive_cache_size)
+    return handler
+
+
+def onednn_scaled_int8_quant(input: torch.Tensor,
+                             scale: Optional[torch.Tensor] = None,
+                             azp: Optional[torch.Tensor] = None,
+                             symmetric: bool = True):
+    """
+    Quantize the input tensor to int8 and return the quantized tensor and scale, and maybe azp.
+    Args:
+        input: The input tensor to be quantized to int8.
+        scale: Optional scaling factor for the int8 quantization.
+            When not provided, we invoke dynamic-per-token quantization.
+        azp: Optional zero-point for the int8 quantization.
+            Must be provided for asymmetric quantization if `scale` is provided.
+        symmetric: Whether to use symmetric quantization (scale only, azp ignored).
+    Returns:
+      tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]] : Output int8 tensor, scales, and optionally azp.
+    """
+    output = torch.empty_like(input, dtype=torch.int8)
+    token_num = input.numel() // input.shape[-1]
+    input = input.view((token_num, input.shape[-1]))
+    if scale is not None:
+        # static-per-tensor quantization.
+        assert symmetric == (
+            azp
+            is None), "azp must only be provided for asymmetric quantization."
+        torch.ops._C.static_scaled_int8_quant(output, input, scale, azp)
+        return output, scale, azp
+
+    # dynamic-per-token quantization.
+    input_scales = torch.empty((token_num, 1),
+                               device=input.device,
+                               dtype=torch.float32)
+    input_azp = None if symmetric else torch.empty_like(input_scales,
+                                                        dtype=torch.int32)
+    torch.ops._C.dynamic_scaled_int8_quant(output, input, input_scales,
+                                           input_azp)
+    return output, input_scales, input_azp
+
+
+def onednn_scaled_mm(
+    dnnl_handler: CPUDNNLGEMMHandler,
+    x: torch.Tensor,
+    output: torch.Tensor,
+    input_scale: Optional[torch.Tensor],
+    input_zp: Optional[torch.Tensor],
+    input_zp_adj: Optional[torch.Tensor],
+    bias: Optional[torch.Tensor],
+) -> torch.Tensor:
+    torch.ops._C.onednn_scaled_mm(output, x, input_scale, input_zp,
+                                  input_zp_adj, bias, dnnl_handler.handler)
+
+    return output

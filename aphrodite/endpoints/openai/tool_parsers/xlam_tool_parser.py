@@ -6,8 +6,7 @@ from typing import Any, Optional, Union
 import regex as re
 from loguru import logger
 
-from aphrodite.utils import random_uuid
-from aphrodite.endpoints.chat_utils import random_tool_call_id
+from aphrodite.endpoints.chat_utils import make_tool_call_id
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  DeltaFunctionCall,
                                                  DeltaMessage, DeltaToolCall,
@@ -16,6 +15,7 @@ from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
 from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
     ToolParser, ToolParserManager)
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+from aphrodite.utils import random_uuid
 
 
 @ToolParserManager.register_module("xlam")
@@ -222,7 +222,7 @@ class xLAMToolParser(ToolParser):
                         function_name = name_match.group(1)
 
                         # The test expects us to send just the name first
-                        tool_id = random_tool_call_id()
+                        tool_id = make_tool_call_id()
                         delta = DeltaMessage(tool_calls=[
                             DeltaToolCall(
                                 index=0,

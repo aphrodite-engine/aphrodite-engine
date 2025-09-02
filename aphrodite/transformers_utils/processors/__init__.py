@@ -9,5 +9,6 @@ reasons:
 from aphrodite.transformers_utils.processors.deepseek_vl2 import (
     DeepseekVLV2Processor)
 from aphrodite.transformers_utils.processors.ovis import OvisProcessor
+from aphrodite.transformers_utils.processors.ovis2_5 import Ovis2_5Processor
 
-__all__ = ["DeepseekVLV2Processor", "OvisProcessor"]
+__all__ = ["DeepseekVLV2Processor", "OvisProcessor", "Ovis2_5Processor"]

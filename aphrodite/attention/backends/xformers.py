@@ -102,7 +102,7 @@ class XFormersMetadata(AttentionMetadata, PagedAttentionMetadata):
 
     # Whether or not if cuda graph is enabled.
     # Cuda-graph is currently enabled for decoding only.
-    # TODO: Move `use_cuda_graph` out since it's unrelated to attention.
+    # TODO(woosuk): Move `use_cuda_graph` out since it's unrelated to attention.
     use_cuda_graph: bool
 
     # (batch_size,). The sequence length per sequence. Sequence length means
@@ -398,9 +398,8 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
             log_once("WARNING", "XFormers does not support logits soft cap. "
                                 "Outputs may be slightly off.")
         if use_irope:
-            log_once("WARNING",
-                "Using irope in XFormers is not supported yet, it will fall"
-                " back to global attention for long context.")
+            log_once("WARNING", "Using irope in XFormers is not supported yet, it will fall"
+                     " back to global attention for long context.")
         self.num_heads = num_heads
         self.head_size = head_size
         self.scale = float(scale)
@@ -431,6 +430,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
         attn_metadata: "XFormersMetadata",
         output: Optional[torch.Tensor] = None,
         output_scale: Optional[torch.Tensor] = None,
+        output_block_scale: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass with xFormers and PagedAttention.
 
@@ -469,20 +469,22 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 max_encoder_seq_len)
     
         Args:
+            layer: Attention layer instance.
             query: shape = [num_tokens, num_heads * head_size]
             key: shape = [num_tokens, num_kv_heads * head_size]
             value: shape = [num_tokens, num_kv_heads * head_size]
-            kv_cache = [2, num_blocks, block_size * num_kv_heads * head_size]
+            kv_cache: KV cache tensor with shape 
+                [2, num_blocks, block_size * num_kv_heads * head_size].
                 NOTE: kv_cache will be an empty tensor with shape [0]
                 for profiling run.
             attn_metadata: Metadata for attention.
-            attn_type: Select attention type, between encoder attention,
-                       decoder self-attention, or encoder/decoder cross-
-                       attention. Defaults to decoder self-attention,
-                       which is the Aphrodite default generally
-        Returns:            shape = [num_tokens, num_heads * head_size]
+            output: Optional output tensor.
+            output_scale: Optional output scale tensor.
+            output_block_scale: Optional output block scale tensor.
+        Returns:
+            shape = [num_tokens, num_heads * head_size]
         """
-        if output_scale is not None:
+        if output_scale is not None or output_block_scale is not None:
             raise NotImplementedError(
                 "fused output quantization is not yet supported"
                 " for XFormersImpl")
@@ -641,7 +643,6 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
         for API spec.
 
         Args:
-            output: shape = [num_prefill_tokens, num_heads, head_size]
             query: shape = [num_prefill_tokens, num_heads, head_size]
             key: shape = [num_prefill_tokens, num_kv_heads, head_size]
             value: shape = [num_prefill_tokens, num_kv_heads, head_size]
@@ -669,7 +670,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
 
         # Set attention bias if not provided. This typically happens at
         # the very attention layer of every iteration.
-        # FIXME: This is a hack.
+        # FIXME(woosuk): This is a hack.
         attn_bias = _get_attn_bias(attn_metadata, attn_type)
         if attn_bias is None:
             if self.alibi_slopes is None:
@@ -730,7 +731,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
             _set_attn_bias(attn_metadata, attn_bias, attn_type)
 
         # No alibi slopes.
-        # TODO: Too many view operations. Let's try to reduce
+        # TODO(woosuk): Too many view operations. Let's try to reduce
         # them in the future for code readability.
         if self.alibi_slopes is None:
             # Add the batch dimension.
@@ -747,7 +748,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
             return out.view_as(original_query)
 
         # Attention with alibi slopes.
-        # FIXME: Because xformers does not support dynamic sequence
+        # FIXME(woosuk): Because xformers does not support dynamic sequence
         # lengths with custom attention bias, we process each prompt one by
         # one. This is inefficient, especially when we have many short prompts.
         assert attn_metadata.seq_lens is not None
@@ -762,7 +763,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 attn_bias=attn_bias[i],
                 p=0.0,
                 scale=self.scale)
-            # TODO: Unnecessary copy. Optimize.
+            # TODO(woosuk): Unnecessary copy. Optimize.
             output[start:end].copy_(out.view_as(original_query[start:end]))
             start += seq_len
         return output

@@ -14,8 +14,8 @@ from aphrodite.attention import (AttentionMetadata, AttentionMetadataBuilder,
                                  AttentionState)
 from aphrodite.attention.backends.abstract import AttentionType
 from aphrodite.config import ModelConfig
-from aphrodite.utils import async_tensor_h2d, make_tensor_with_pad
 from aphrodite.multimodal import MultiModalPlaceholderMap
+from aphrodite.utils import async_tensor_h2d, make_tensor_with_pad
 
 if TYPE_CHECKING:
     from aphrodite.worker.model_runner_base import ModelRunnerBase
@@ -557,7 +557,7 @@ def get_num_prefill_decode_query_kv_tokens(
 
     Raises:
         AssertionError: If the number of encoder tokens in `attn_metadata` 
-        is `None` when required for the calculations.
+            is `None` when required for the calculations.
     """
     num_prefill_query_tokens = 0
     num_decode_query_tokens = 0

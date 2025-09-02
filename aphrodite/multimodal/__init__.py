@@ -2,7 +2,8 @@ from .base import MultiModalPlaceholderMap
 from .hasher import MultiModalHashDict, MultiModalHasher
 from .inputs import (BatchedTensorInputs, ModalityData, MultiModalDataBuiltins,
                      MultiModalDataDict, MultiModalKwargs,
-                     MultiModalPlaceholderDict, NestedTensors)
+                     MultiModalKwargsItems, MultiModalPlaceholderDict,
+                     NestedTensors)
 from .registry import MultiModalRegistry
 
 MULTIMODAL_REGISTRY = MultiModalRegistry()
@@ -23,6 +24,7 @@ __all__ = [
     "MultiModalHashDict",
     "MultiModalHasher",
     "MultiModalKwargs",
+    "MultiModalKwargsItems",
     "MultiModalPlaceholderDict",
     "MultiModalPlaceholderMap",
     "NestedTensors",

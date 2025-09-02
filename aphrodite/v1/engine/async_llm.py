@@ -1,10 +1,13 @@
 import asyncio
+import os
+import socket
 import time
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Iterable, Mapping
 from copy import copy
 from typing import Any, Optional, Union
 
 import numpy as np
+import torch
 from loguru import logger
 
 import aphrodite.common.envs as envs
@@ -13,6 +16,7 @@ from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import AphroditeConfig, ModelConfig
+from aphrodite.endpoints.utils import _validate_truncation_size
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs import PromptType
@@ -26,7 +30,7 @@ from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.transformers_utils.tokenizer_group import (
     init_tokenizer_from_configs)
 from aphrodite.usage.usage_lib import UsageContext
-from aphrodite.utils import (Device, cancel_task_threadsafe, cdiv,
+from aphrodite.utils import (Device, as_list, cancel_task_threadsafe, cdiv,
                              deprecate_kwargs)
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.engine.core_client import EngineCoreClient
@@ -140,6 +144,26 @@ class AsyncLLM(EngineClient):
             self._run_output_handler()
         except RuntimeError:
             pass
+
+        if envs.APHRODITE_TORCH_PROFILER_DIR:
+            logger.info(
+                "Torch profiler enabled. AsyncLLM CPU traces will be collected under {}",  # noqa: E501
+                envs.APHRODITE_TORCH_PROFILER_DIR)
+            worker_name = f"{socket.gethostname()}_{os.getpid()}.async_llm"
+            self.profiler = torch.profiler.profile(
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                ],
+                with_stack=envs.APHRODITE_TORCH_PROFILER_WITH_STACK,
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    envs.APHRODITE_TORCH_PROFILER_DIR,
+                    worker_name=worker_name,
+                    use_gzip=True))
+        else:
+            logger.info(
+                "Torch profiler disabled. AsyncLLM CPU traces will not be collected."  # noqa: E501
+            )
+            self.profiler = None
 
     @classmethod
     @deprecate_kwargs(
@@ -309,11 +333,27 @@ class AsyncLLM(EngineClient):
         returning the RequestOutput back to the caller.
         """
 
+        if (self.aphrodite_config.cache_config.kv_sharing_fast_prefill
+                and sampling_params.prompt_logprobs):
+            raise ValueError(
+                "--kv-sharing-fast-prefill produces incorrect logprobs for "
+                "prompt tokens, please disable it when the requests need "
+                "prompt logprobs")
+
         try:
             # We start the output_handler on the first call to generate() so
             # we can call __init__ before the event loop, which enables us
             # to handle startup failure gracefully in the OpenAI server.
             self._run_output_handler()
+
+            tokenization_kwargs: dict[str, Any] = {}
+            truncate_prompt_tokens = sampling_params.truncate_prompt_tokens
+
+            _validate_truncation_size(
+                self.model_config.max_model_len,
+                truncate_prompt_tokens,
+                tokenization_kwargs,
+            )
 
             q = await self.add_request(
                 request_id,
@@ -322,6 +362,7 @@ class AsyncLLM(EngineClient):
                 lora_request=lora_request,
                 trace_headers=trace_headers,
                 priority=priority,
+                tokenization_kwargs=tokenization_kwargs,
                 data_parallel_rank=data_parallel_rank,
             )
 
@@ -432,14 +473,16 @@ class AsyncLLM(EngineClient):
 
         self.output_handler = asyncio.create_task(output_handler())
 
-    async def abort(self, request_id: str) -> None:
+    async def abort(self, request_id: Union[str, Iterable[str]]) -> None:
         """Abort RequestId in OutputProcessor and EngineCore."""
 
-        request_ids = self.output_processor.abort_requests((request_id, ))
-        await self.engine_core.abort_requests_async(request_ids)
+        request_ids = (request_id, ) if isinstance(
+            request_id, str) else as_list(request_id)
+        all_request_ids = self.output_processor.abort_requests(request_ids)
+        await self.engine_core.abort_requests_async(all_request_ids)
 
         if self.log_requests:
-            logger.info("Aborted request {}.", request_id)
+            logger.info("Aborted request(s) {}.", ",".join(request_ids))
 
     async def encode(
         self,
@@ -449,6 +492,7 @@ class AsyncLLM(EngineClient):
         lora_request: Optional[LoRARequest] = None,
         trace_headers: Optional[Mapping[str, str]] = None,
         priority: int = 0,
+        truncate_prompt_tokens: Optional[int] = None,
         tokenization_kwargs: Optional[dict[str, Any]] = None,
     ) -> AsyncGenerator[PoolingRequestOutput, None]:
         """
@@ -470,6 +514,14 @@ class AsyncLLM(EngineClient):
             # we can call __init__ before the event loop, which enables us
             # to handle startup failure gracefully in the OpenAI server.
             self._run_output_handler()
+
+            if tokenization_kwargs is None:
+                tokenization_kwargs = dict[str, Any]()
+            _validate_truncation_size(
+                self.model_config.max_model_len,
+                truncate_prompt_tokens,
+                tokenization_kwargs,
+            )
 
             q = await self.add_request(
                 request_id,
@@ -560,14 +612,19 @@ class AsyncLLM(EngineClient):
             raise self.dead_error
 
     async def start_profile(self) -> None:
-        await self.engine_core.profile_async(True)
+        coros = [self.engine_core.profile_async(True)]
+        if self.profiler is not None:
+            coros.append(asyncio.to_thread(self.profiler.start))
+        await asyncio.gather(*coros)
 
     async def stop_profile(self) -> None:
-        await self.engine_core.profile_async(False)
+        coros = [self.engine_core.profile_async(False)]
+        if self.profiler is not None:
+            coros.append(asyncio.to_thread(self.profiler.stop))
+        await asyncio.gather(*coros)
 
     async def reset_mm_cache(self) -> None:
-        self.processor.mm_registry.reset_processor_cache(self.model_config)
-        self.processor.mm_input_cache_client.reset()
+        self.processor.clear_cache()
         await self.engine_core.reset_mm_cache_async()
 
     async def reset_prefix_cache(self,

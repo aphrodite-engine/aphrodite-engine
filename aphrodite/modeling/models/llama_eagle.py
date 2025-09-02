@@ -6,8 +6,8 @@ import torch.nn as nn
 from loguru import logger
 from transformers import LlamaConfig
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (

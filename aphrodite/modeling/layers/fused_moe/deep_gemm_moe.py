@@ -1,5 +1,5 @@
 import functools
-from typing import Any, Optional
+from typing import Optional
 
 import torch
 from loguru import logger
@@ -42,10 +42,7 @@ def _valid_deep_gemm(hidden_states: torch.Tensor, w1: torch.Tensor,
     aligned by `dg.get_m_alignment_for_contiguous_layout()`.
     """
     if not has_deep_gemm():
-        log_once(
-            "DEBUG",
-            "DeepGemm disabled: deep_gemm not available.",
-        )
+        log_once("DEBUG", "DeepGemm disabled: deep_gemm not available.")
         return False
 
     M = hidden_states.size(0)
@@ -54,8 +51,7 @@ def _valid_deep_gemm(hidden_states: torch.Tensor, w1: torch.Tensor,
     align = deep_gemm_block_shape()[0]
 
     if not _valid_deep_gemm_shape(M, N, K):
-        log_once(
-            "DEBUG",
+        log_once("DEBUG",
             "DeepGemm disabled due to unaligned problem size. "
             "M: {}, N: {}, K: {}. M should >= align size "
             "and N and K must be multiples of {}."
@@ -67,8 +63,7 @@ def _valid_deep_gemm(hidden_states: torch.Tensor, w1: torch.Tensor,
         )
         return False
     elif N <= 512:
-        log_once(
-            "DEBUG",
+        log_once("DEBUG",
             "DeepGemm disabled for N <= 512. M: {}, N: {}, K: {}. "
             "This means we will fallback to triton "
             "for this specific shape for further speed up.",
@@ -79,8 +74,7 @@ def _valid_deep_gemm(hidden_states: torch.Tensor, w1: torch.Tensor,
         return False
 
     if (w1.dtype != torch.float8_e4m3fn or w2.dtype != torch.float8_e4m3fn):
-        log_once(
-            "DEBUG",
+        log_once("DEBUG",
             "DeepGemm disabled: invalid weight dtype(s). "
             "w1.dtype: {}, w2.dtype: {}",
             w1.dtype,
@@ -90,8 +84,7 @@ def _valid_deep_gemm(hidden_states: torch.Tensor, w1: torch.Tensor,
 
     if (not hidden_states.is_contiguous() or not w1.is_contiguous()
             or not w2.is_contiguous()):
-        log_once(
-            "DEBUG",
+        log_once("DEBUG",
             "DeepGemm disabled: weights or activations not contiguous. "
             "hidden_states.is_contiguous(): {}, w1.is_contiguous(): {}, "
             "w2.is_contiguous(): {}",
@@ -233,7 +226,6 @@ class DeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
         workspace2: torch.Tensor,
         expert_tokens_meta: Optional[mk.ExpertTokensMetadata],
         apply_router_weight_on_input: bool,
-        extra_expert_args: Optional[dict[str, Any]],
     ):
         assert self.block_shape is not None
         assert a1q_scale is not None

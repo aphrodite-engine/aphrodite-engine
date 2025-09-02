@@ -1,11 +1,12 @@
+from itertools import islice
 from typing import Optional, Union
 
 import torch
 from torch import nn
 from transformers import PretrainedConfig
 
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.models.internlm2 import (InternLM2Attention,
@@ -120,7 +121,7 @@ class InternLM2VEModel(InternLM2Model):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(
                 positions,
                 hidden_states,

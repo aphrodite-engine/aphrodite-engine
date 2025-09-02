@@ -42,8 +42,8 @@ from transformers.models.glm4v.video_processing_glm4v import (
     Glm4vVideoProcessor)
 from transformers.video_utils import VideoMetadata
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import parallel_state
 from aphrodite.distributed import utils as dist_utils
 from aphrodite.modeling import SamplingMetadata
@@ -57,7 +57,7 @@ from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs, VideoItem)
+                                         MultiModalKwargsItems, VideoItem)
 from aphrodite.multimodal.parse import (ImageSize, MultiModalDataItems,
                                         MultiModalDataParser)
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
@@ -73,7 +73,8 @@ from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 from ..layers.activation import SiluAndMul
 from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
                          SupportsMultiModal, SupportsPP)
-from .qwen2_vl import _qwen2vl_field_config, apply_rotary_pos_emb_vision
+from .qwen2_vl import (_create_qwen2vl_field_factory,
+                       apply_rotary_pos_emb_vision)
 from .utils import (AutoWeightsLoader, WeightsMapper,
                     init_aphrodite_registered_model, maybe_prefix,
                     merge_multimodal_embeddings)
@@ -123,7 +124,7 @@ class Glm4vVideoPixelInputs(TensorSchema):
         - ctpp: Number of channels * temporal_patch_size *
             patch_size * patch_size
         - f: Number of frames
-        - g: Grid dimensions (3 for grid_t which is usually 1 for processed 
+        - g: Grid dimensions (3 for grid_t which is usually 1 for processed
           video, grid_h, grid_w)
     """
     type: Literal["pixel_values_videos"] = "pixel_values_videos"
@@ -138,7 +139,7 @@ class Glm4vVideoEmbeddingInputs(TensorSchema):
         - p: Number of video patches across all frames
         - h: Hidden size (must match language model backbone)
         - f: Number of frames
-        - g: Grid dimensions (3 for grid_t which is usually 1 for processed 
+        - g: Grid dimensions (3 for grid_t which is usually 1 for processed
           video, grid_h, grid_w)
     """
     type: Literal["video_embeds"] = "video_embeds"
@@ -231,7 +232,8 @@ class Glm4vVisionAttention(nn.Module):
             total_num_kv_heads=num_heads,
             bias=False,
             quant_config=quant_config,
-            prefix=f"{prefix}.qkv",
+            # Change qkv prefix to align with GLM-4.5V-FP8 quantization config
+            prefix=f"{prefix}.qkv_proj" if quant_config else f"{prefix}.qkv",
         )
         self.proj = RowParallelLinear(
             input_size=projection_size,
@@ -1149,13 +1151,15 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
         hf_inputs: BatchFeature,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
-        return _qwen2vl_field_config(hf_inputs)
+        return _create_qwen2vl_field_factory(
+            self.info.get_hf_config().vision_config.spatial_merge_size)(
+                hf_inputs)
 
     def _get_prompt_updates(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, Any],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         image_processor = self.info.get_image_processor(
@@ -1172,14 +1176,16 @@ class Glm4vMultiModalProcessor(BaseMultiModalProcessor[Glm4vProcessingInfo]):
         merge_length = image_processor.merge_size**2
 
         def get_image_replacement_glm4v(item_idx: int):
-            grid_thw = out_mm_kwargs["image_grid_thw"][item_idx]
+            out_item = out_mm_kwargs["image"][item_idx]
+            grid_thw = out_item["image_grid_thw"].data
             assert isinstance(grid_thw, torch.Tensor)
 
             num_tokens = int(grid_thw.prod()) // merge_length
             return [hf_processor.image_token_id] * num_tokens
 
         def get_video_replacement_glm4v(item_idx: int):
-            grid_thw = out_mm_kwargs["video_grid_thw"][item_idx]
+            out_item = out_mm_kwargs["video"][item_idx]
+            grid_thw = out_item["video_grid_thw"].data
             assert isinstance(grid_thw, torch.Tensor)
 
             video, metadata = mm_items["video"][item_idx]

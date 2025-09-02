@@ -72,7 +72,7 @@ class SeedOssToolParser(ToolParser):
         self.tool_call_parameter_regex = re.compile(
             r"<parameter=(.*?)</parameter>|<parameter=(.*?)$", re.DOTALL)
 
-        logger.info("Aphrodite Seed-Oss XML tool parser loaded ({}).",
+        logger.info("vLLM Seed-Oss XML tool parser loaded ({}).",
                     self.__class__.__name__)
 
     def _generate_tool_call_id(self) -> str:
@@ -267,6 +267,9 @@ class SeedOssToolParser(ToolParser):
             # Extract content after think end token
             result_content = model_output[think_end_index:]
             thinking_content = model_output[:think_end_index]
+        else:
+            thinking_content = ""
+            result_content = model_output
 
         try:
             function_calls = self._get_function_calls(result_content)

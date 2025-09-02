@@ -14,12 +14,12 @@ def merge_attn_states(
     output_lse: Optional[torch.Tensor] = None,
 ) -> None:
 
-    # NOTE: Currently, custom merge_attn_states CUDA kernel
+    # NOTE(DefTruth): Currently, custom merge_attn_states CUDA kernel
     # is not support for FP8 dtype, fallback to use Triton kernel.
     def supported_dtypes(o: torch.Tensor) -> bool:
         return o.dtype in [torch.float32, torch.half, torch.bfloat16]
 
-    # NOTE: Currently, custom merge_attn_states CUDA
+    # NOTE(DefTruth): Currently, custom merge_attn_states CUDA
     # kernel load/store 128b(16 bytes) per memory issue within
     # thread. Namely, the headsize(headdim) must be multiple of
     # pack_size (float32 -> 4, half/bfloat16 -> 8).

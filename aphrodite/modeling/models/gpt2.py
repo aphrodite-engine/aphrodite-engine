@@ -17,6 +17,7 @@
 # limitations under the License.
 """Inference-only GPT-2 model compatible with HuggingFace weights."""
 from collections.abc import Iterable
+from itertools import islice
 from typing import Optional, Union
 
 import torch
@@ -24,9 +25,9 @@ from torch import nn
 from transformers import GPT2Config
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed.parallel_state import (
     get_pp_group, get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import get_act_fn
@@ -225,7 +226,7 @@ class GPT2Model(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
 
-        for layer in self.h[self.start_layer:self.end_layer]:
+        for layer in islice(self.h, self.start_layer, self.end_layer):
             hidden_states = layer(hidden_states)
 
         if not get_pp_group().is_last_rank:

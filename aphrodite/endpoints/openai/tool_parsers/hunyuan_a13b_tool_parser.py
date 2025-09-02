@@ -7,7 +7,6 @@ from typing import Any, Optional, Union
 import regex as re
 from loguru import logger
 
-from aphrodite.utils import random_uuid
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  DeltaFunctionCall,
                                                  DeltaMessage, DeltaToolCall,
@@ -17,6 +16,7 @@ from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
     ToolParser, ToolParserManager)
 from aphrodite.endpoints.openai.tool_parsers.utils import consume_space
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+from aphrodite.utils import random_uuid
 
 
 @ToolParserManager.register_module("hunyuan_a13b")

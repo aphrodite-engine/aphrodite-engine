@@ -28,9 +28,9 @@ import torch
 from torch import nn
 from transformers import PretrainedConfig
 
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (

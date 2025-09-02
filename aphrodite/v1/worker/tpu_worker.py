@@ -5,9 +5,6 @@ from typing import Any, Optional
 import torch
 import torch.distributed
 import torch.nn as nn
-import torch_xla.core.xla_model as xm
-import torch_xla.debug.profiler as xp
-import torch_xla.runtime as xr
 from loguru import logger
 
 import aphrodite.common.envs as envs
@@ -22,14 +19,23 @@ from aphrodite.modeling import set_random_seed
 from aphrodite.platforms import current_platform
 from aphrodite.tasks import SupportedTask
 from aphrodite.utils import STR_DTYPE_TO_TORCH_DTYPE, cdiv
-from aphrodite.v1.attention.backends.pallas import TPU_HEAD_SIZE_ALIGNMENT
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.kv_cache_interface import (AttentionSpec, KVCacheConfig,
                                              KVCacheSpec)
 from aphrodite.v1.outputs import ModelRunnerOutput
 from aphrodite.v1.utils import report_usage_stats
-from aphrodite.v1.worker.tpu_model_runner import TPUModelRunner
 from aphrodite.v1.worker.utils import bind_kv_cache
+from aphrodite.platforms.tpu import USE_TPU_COMMONS
+
+
+if not USE_TPU_COMMONS:
+    logger.info("tpu_commons not found, using vLLM's TPUWorker.")
+    import torch_xla.core.xla_model as xm
+    import torch_xla.debug.profiler as xp
+    import torch_xla.runtime as xr
+
+    from aphrodite.v1.attention.backends.pallas import TPU_HEAD_SIZE_ALIGNMENT
+    from aphrodite.v1.worker.tpu_model_runner import TPUModelRunner
 
 
 class TPUWorker:
@@ -322,9 +328,6 @@ class TPUWorker:
         ensure_kv_transfer_initialized(aphrodite_config)
 
 
-try:
+if USE_TPU_COMMONS:
     from tpu_commons.worker import TPUWorker as TPUCommonsWorker
     TPUWorker = TPUCommonsWorker  # type: ignore
-except ImportError:
-    logger.info("tpu_commons not found, using Aphrodite's TPUWorker.")
-    pass

@@ -5,7 +5,6 @@ from typing import Any, Optional, Union
 
 from fastapi import Request
 
-from aphrodite.common import envs
 from aphrodite.common.outputs import PoolingRequestOutput, ScoringRequestOutput
 from aphrodite.config import ModelConfig
 from aphrodite.endpoints.logger import RequestLogger
@@ -43,11 +42,13 @@ class ServingScores(OpenAIServing):
         models: OpenAIServingModels,
         *,
         request_logger: Optional[RequestLogger],
+        log_error_stack: bool = False,
     ) -> None:
         super().__init__(engine_client=engine_client,
                          model_config=model_config,
                          models=models,
-                         request_logger=request_logger)
+                         request_logger=request_logger,
+                         log_error_stack=log_error_stack)
 
     async def _embedding_score(
         self,
@@ -223,8 +224,7 @@ class ServingScores(OpenAIServing):
                              params=default_pooling_params,
                              lora_request=lora_request)
 
-            if envs.APHRODITE_USE_V1 and (token_type_ids := engine_prompt.pop(
-                    "token_type_ids", None)):
+            if (token_type_ids := engine_prompt.pop("token_type_ids", None)):
                 pooling_params = default_pooling_params.clone()
                 compressed = compress_token_type_ids(token_type_ids)
                 pooling_params.extra_kwargs = {

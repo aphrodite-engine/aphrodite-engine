@@ -17,6 +17,7 @@ class MPLinearLayerConfig:
     group_size: int
     zero_points: bool
     has_g_idx: bool
+    out_type: Optional[torch.dtype] = None
 
 
 class MPLinearKernel(ABC):

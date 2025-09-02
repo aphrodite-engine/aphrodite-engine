@@ -5,7 +5,8 @@ import torch
 from torch import nn
 from transformers import PretrainedConfig
 
-from aphrodite.attention import Attention, AttentionType
+from aphrodite.attention.layers.encoder_only_attention import (
+    EncoderOnlyAttention)
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
@@ -24,12 +25,16 @@ from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import (SupportsQuant,
-                                                  default_pooling_type)
-from aphrodite.modeling.models.utils import WeightsMapper
+from aphrodite.modeling.models.utils import (AutoWeightsLoader, WeightsMapper,
+                                             maybe_prefix)
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig
+
+from ..layers.pooler import ClassifierPooler, DispatchPooler, Pooler
+from .bert import BertPooler
+from .interfaces import SupportsCrossEncoding, SupportsQuant
+from .interfaces_base import default_pooling_type
 
 
 class BertWithRopeEmbedding(nn.Module):
@@ -116,14 +121,13 @@ class BertWithRopeAttention(nn.Module):
 
         self.rotary_emb = get_rope(**rotary_kwargs)
 
-        self.attn = Attention(num_heads=self.num_heads,
-                              head_size=self.head_dim,
-                              scale=self.scaling,
-                              num_kv_heads=self.num_kv_heads,
-                              cache_config=cache_config,
-                              quant_config=quant_config,
-                              prefix=f"{prefix}.attn",
-                              attn_type=AttentionType.ENCODER_ONLY)
+        self.attn = EncoderOnlyAttention(num_heads=self.num_heads,
+                                         head_size=self.head_dim,
+                                         scale=self.scaling,
+                                         num_kv_heads=self.num_kv_heads,
+                                         cache_config=cache_config,
+                                         quant_config=quant_config,
+                                         prefix=f"{prefix}.attn")
 
         self.out_proj = RowParallelLinear(input_size=hidden_size,
                                           output_size=hidden_size,
@@ -403,9 +407,14 @@ class BertWithRopeEncoder(nn.Module):
 class BertWithRope(nn.Module, SupportsQuant):
     hf_to_aphrodite_mapper = WeightsMapper(orig_to_new_prefix={"model.": ""})
 
-    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
+    def __init__(self,
+                 *,
+                 aphrodite_config: AphroditeConfig,
+                 prefix: str = "",
+                 add_pooling_layer: bool = False):
         super().__init__()
         self.aphrodite_config = aphrodite_config
+        self.add_pooling_layer = add_pooling_layer
         self.config = aphrodite_config.model_config.hf_config
         self.embeddings = BertWithRopeEmbedding(self.config)
         self.encoder = BertWithRopeEncoder(
@@ -413,6 +422,7 @@ class BertWithRope(nn.Module, SupportsQuant):
             bias=getattr(self.config, "bias", True),
             rotary_kwargs=self.config.rotary_kwargs,
             prefix=f"{prefix}.encoder")
+        self.pooler = BertPooler(self.config) if add_pooling_layer else None
 
     def forward(
         self,
@@ -445,7 +455,7 @@ class BertWithRope(nn.Module, SupportsQuant):
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
-            if "pooler" in name:
+            if not self.add_pooling_layer and "pooler" in name:
                 continue
             for (param_name, weight_name, shard_id) in stacked_params_mapping:
                 if weight_name not in name:
@@ -505,8 +515,8 @@ class GteNewModel(BertWithRope):
             "attention.o_proj": "attn.out_proj",
         })
 
-    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
-        super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", **kwargs):
+        super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, **kwargs)
 
         # GteNewModel only gate_up_proj does not have bias.
         # Hack method learned from aphrodite/modeling/models/glm.py
@@ -611,3 +621,65 @@ class JinaRobertaModel(BertWithRope):
                                                    torch.Tensor]]) -> set[str]:
         weights = self.jina_merge_lora_weights(weights)
         return super().load_weights(weights)
+
+
+@default_pooling_type("CLS")
+class GteNewForSequenceClassification(nn.Module, SupportsCrossEncoding):
+    is_pooling_model = True
+
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
+        super().__init__()
+        config = aphrodite_config.model_config.hf_config
+        quant_config = aphrodite_config.quant_config
+
+        self.new = GteNewModel(aphrodite_config=aphrodite_config,
+                               prefix=prefix,
+                               add_pooling_layer=True)
+        self.classifier = RowParallelLinear(config.hidden_size,
+                                            config.num_labels,
+                                            input_is_parallel=False,
+                                            bias=True,
+                                            quant_config=quant_config,
+                                            prefix=maybe_prefix(
+                                                prefix, "classifier"),
+                                            return_bias=False)
+
+        pooler_config = aphrodite_config.model_config.pooler_config
+        assert pooler_config is not None
+
+        self.pooler = DispatchPooler({
+            "encode":
+            Pooler.for_encode(pooler_config),
+            "classify":
+            ClassifierPooler(
+                pooling=self.new.pooler,
+                classifier=self.classifier,
+                act_fn=ClassifierPooler.act_fn_for_seq_cls(
+                    aphrodite_config.model_config),
+            ),
+            "score":
+            ClassifierPooler(
+                pooling=self.new.pooler,
+                classifier=self.classifier,
+                act_fn=ClassifierPooler.act_fn_for_cross_encoder(
+                    aphrodite_config.model_config),
+            ),
+        })
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        loader = AutoWeightsLoader(self)
+        loaded_params = loader.load_weights(weights)
+        return loaded_params
+
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor],
+        positions: torch.Tensor,
+        intermediate_tensors: Optional[IntermediateTensors] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+
+        return self.new(input_ids=input_ids,
+                        positions=positions,
+                        inputs_embeds=inputs_embeds,
+                        intermediate_tensors=intermediate_tensors)

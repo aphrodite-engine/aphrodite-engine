@@ -5,12 +5,11 @@ from functools import cache
 from typing import Generator, Optional, Union
 
 import torch
-from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.attention.backends.abstract import AttentionBackend
-from aphrodite.utils import STR_BACKEND_ENV_VAR, resolve_obj_by_qualname
 from aphrodite.platforms import _Backend, current_platform
+from aphrodite.utils import STR_BACKEND_ENV_VAR, resolve_obj_by_qualname
 
 
 def backend_name_to_enum(backend_name: str) -> Optional[_Backend]:
@@ -144,8 +143,8 @@ def get_attn_backend(
     """Selects which attention backend to use and lazily imports it."""
     # Accessing envs.* behind an @lru_cache decorator can cause the wrong
     # value to be returned from the cache if the value changes between calls.
-    # To avoid this, we read envs.APHRODITE_USE_V1 here and pass it explicitly
-    # to the private function.
+    # To avoid this, we read envs.APHRODITE_USE_V1 here and pass it explicitly to the
+    # private function.
     return _cached_get_attn_backend(
         head_size=head_size,
         dtype=dtype,
@@ -169,7 +168,6 @@ def _cached_get_attn_backend(
     use_mla: bool = False,
     has_sink: bool = False,
 ) -> type[AttentionBackend]:
-
     # If there are no attention layers (e.g. we are running Mamba),
     # use the placeholder NO_ATTENTION
     if is_attention_free:
@@ -211,7 +209,7 @@ def _cached_get_attn_backend(
 def global_force_attn_backend_context_manager(
         attn_backend: _Backend) -> Generator[None, None, None]:
     '''
-    Globally force a Aphrodite attention backend override within a
+    Globally force an Aphrodite attention backend override within a
     context manager, reverting the global attention backend
     override to its prior state upon exiting the context
     manager.

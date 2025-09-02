@@ -9,11 +9,10 @@ from fastapi import Request
 from loguru import logger
 from typing_extensions import assert_never
 
-from aphrodite.config import ModelConfig
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.common.sequence import Logprob
-from aphrodite.utils import merge_async_iterators
+from aphrodite.config import ModelConfig
 from aphrodite.endpoints.logger import RequestLogger
 # yapf conflicts with isort for this block
 # yapf: disable
@@ -35,6 +34,7 @@ from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import (EmbedsPrompt, TokensPrompt,
                                    is_embeds_prompt, is_tokens_prompt)
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+from aphrodite.utils import as_list, merge_async_iterators
 
 
 class OpenAIServingCompletion(OpenAIServing):
@@ -49,6 +49,7 @@ class OpenAIServingCompletion(OpenAIServing):
         return_tokens_as_token_ids: bool = False,
         enable_prompt_tokens_details: bool = False,
         enable_force_include_usage: bool = False,
+        log_error_stack: bool = False,
     ):
         super().__init__(
             engine_client=engine_client,
@@ -57,6 +58,7 @@ class OpenAIServingCompletion(OpenAIServing):
             request_logger=request_logger,
             return_tokens_as_token_ids=return_tokens_as_token_ids,
             enable_force_include_usage=enable_force_include_usage,
+            log_error_stack=log_error_stack,
         )
         self.enable_prompt_tokens_details = enable_prompt_tokens_details
         self.default_sampling_params = (
@@ -115,7 +117,11 @@ class OpenAIServingCompletion(OpenAIServing):
         try:
             lora_request = self._maybe_get_adapters(request)
 
-            tokenizer = await self.engine_client.get_tokenizer(lora_request)
+            if self.model_config.skip_tokenizer_init:
+                tokenizer = None
+            else:
+                tokenizer = await self.engine_client.get_tokenizer(lora_request
+                                                                   )
 
             request_prompts, engine_prompts = await self._preprocess_completion(  # noqa: E501
                 request,
@@ -357,6 +363,11 @@ class OpenAIServingCompletion(OpenAIServing):
                 for output in res.outputs:
                     i = output.index + prompt_idx * num_choices
 
+                    # Useful when request.return_token_ids is True
+                    # Returning prompt token IDs shares the same logic
+                    # with the echo implementation.
+                    prompt_token_ids_to_return: Optional[list[int]] = None
+
                     assert request.max_tokens is not None
                     if request.echo and not has_echoed[i]:
                         assert prompt_token_ids is not None
@@ -377,12 +388,19 @@ class OpenAIServingCompletion(OpenAIServing):
                                 *(prompt_logprobs or []),
                                 *(output.logprobs or []),
                             ]
+                        prompt_token_ids_to_return = prompt_token_ids
                         has_echoed[i] = True
                     else:
                         # return just the delta
                         delta_text = output.text
                         delta_token_ids = output.token_ids
                         out_logprobs = output.logprobs
+
+                        # has_echoed[i] is reused here to indicate whether
+                        # we have already returned the prompt token IDs.
+                        if not has_echoed[i]:
+                            prompt_token_ids_to_return = prompt_token_ids
+                            has_echoed[i] = True
 
                         if (not delta_text and not delta_token_ids
                                 and not previous_num_tokens[i]):
@@ -420,6 +438,9 @@ class OpenAIServingCompletion(OpenAIServing):
                                 logprobs=logprobs,
                                 finish_reason=finish_reason,
                                 stop_reason=stop_reason,
+                                prompt_token_ids=prompt_token_ids_to_return,
+                                token_ids=(as_list(output.token_ids) if
+                                           request.return_token_ids else None),
                             )
                         ],
                     )
@@ -540,6 +561,10 @@ class OpenAIServingCompletion(OpenAIServing):
                     finish_reason=output.finish_reason,
                     stop_reason=output.stop_reason,
                     prompt_logprobs=final_res.prompt_logprobs,
+                    prompt_token_ids=(prompt_token_ids
+                                      if request.return_token_ids else None),
+                    token_ids=(as_list(output.token_ids)
+                               if request.return_token_ids else None),
                 )
                 choices.append(choice_data)
 

@@ -23,6 +23,7 @@ from collections.abc import Iterable
 from typing import Any, Optional, Union
 
 import torch
+from loguru import logger
 from torch import nn
 from transformers import Qwen3Config
 
@@ -299,10 +300,10 @@ class Qwen3ForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsEagle3):
         self.make_empty_intermediate_tensors = (
             self.model.make_empty_intermediate_tensors)
 
-    def set_aux_hidden_state_layers(self, layers: tuple[int]) -> None:
+    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
         self.model.aux_hidden_state_layers = layers
 
-    def get_eagle3_aux_hidden_state_layers(self) -> tuple[int]:
+    def get_eagle3_aux_hidden_state_layers(self) -> tuple[int, ...]:
         num_layers = len(self.model.layers)
         return (2, num_layers // 2, num_layers - 3)
 

@@ -22,8 +22,8 @@ import torch.nn as nn
 from torch import Tensor
 from transformers import BatchFeature
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.aimv2 import Aimv2VisualTokenizer
 from aphrodite.modeling.models.utils import (AutoWeightsLoader, flatten_bn,
                                              init_aphrodite_registered_model,

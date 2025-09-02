@@ -15,10 +15,9 @@ from rich.progress import (BarColumn, Progress, TaskProgressColumn, TextColumn,
 from torch._dispatch.python import enable_python_dispatcher
 
 import aphrodite.common.envs as envs
-from aphrodite.config import AphroditeConfig, CompilationConfig
-from aphrodite.utils import (is_torch_equal_or_newer,
-                                    resolve_obj_by_qualname)
+from aphrodite.config import AphroditeConfig, CompilationConfig, CUDAGraphMode
 from aphrodite.platforms import current_platform
+from aphrodite.utils import is_torch_equal_or_newer, resolve_obj_by_qualname
 
 from .compiler_interface import (CompilerInterface, EagerAdaptor,
                                  InductorAdaptor, InductorStandaloneAdaptor)
@@ -289,9 +288,6 @@ def split_graph(graph: fx.GraphModule,
     return split_gm, outputs
 
 
-# we share the global graph pool among all the backends
-global_graph_pool = None
-
 compilation_start_time = 0.0
 
 
@@ -310,13 +306,12 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
     def __init__(self, module: torch.fx.GraphModule,
                  compile_submod_names: list[str],
                  aphrodite_config: AphroditeConfig,
-                 graph_pool, aphrodite_backend: "AphroditeBackend"):
+                 aphrodite_backend: "AphroditeBackend"):
         super().__init__(module)
         from torch._guards import detect_fake_mode
         self.fake_mode = detect_fake_mode()
         self.compile_submod_names = compile_submod_names
         self.compilation_config = aphrodite_config.compilation_config
-        self.graph_pool = graph_pool
         self.aphrodite_config = aphrodite_config
         self.aphrodite_backend = aphrodite_backend
         # When True, it annoyingly dumps the torch.fx.Graph on errors.
@@ -364,7 +359,7 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
                     self.progress_task = self.progress.add_task(
                         "Compiling piecewise graphs",
                         total=self.total_to_compile)
-            
+
             # Update progress description
             if self.progress_task is not None:
                 with suppress_logs_during_progress():
@@ -372,7 +367,7 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
                         self.progress_task,
                         description=f"torch.compile ({self.compiled_count + 1}/"
                         f"{self.total_to_compile})")
-            
+
             global compilation_start_time
             with suppress_logs_during_progress():
                 compiled_graph_for_dynamic_shape = self.aphrodite_backend.\
@@ -385,12 +380,35 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
                     num_graphs=len(self.compile_submod_names),
                     runtime_shape=None)
 
-            piecewise_backend = resolve_obj_by_qualname(
-                current_platform.get_piecewise_backend_cls())
-            self.module.__dict__[target] = piecewise_backend(
-                submod, self.aphrodite_config, self.graph_pool, index,
+            # Lazy import here to avoid circular import
+            from .cuda_graph import CUDAGraphOptions
+            from .cuda_piecewise_backend import PiecewiseBackend
+
+            piecewise_backend = PiecewiseBackend(
+                submod, self.aphrodite_config, index,
                 len(self.compile_submod_names), sym_shape_indices,
                 compiled_graph_for_dynamic_shape, self.aphrodite_backend)
+
+            if self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE:
+                # resolve the static graph wrapper class (e.g. CUDAGraphWrapper
+                # class) as platform dependent.
+                static_graph_wrapper_class = resolve_obj_by_qualname(
+                    current_platform.get_static_graph_wrapper_cls())
+
+                # Always assign PIECEWISE runtime mode to the
+                # CUDAGraphWrapper for piecewise_backend, to distinguish
+                # it from the FULL cudagraph runtime mode, no matter it
+                # is wrapped on a full or piecewise fx graph.
+                self.module.__dict__[target] = static_graph_wrapper_class(
+                    runnable=piecewise_backend,
+                    aphrodite_config=self.aphrodite_config,
+                    runtime_mode=CUDAGraphMode.PIECEWISE,
+                    cudagraph_options=CUDAGraphOptions(
+                        debug_log_enable=piecewise_backend.is_first_graph,
+                        gc_disable=not piecewise_backend.is_first_graph,
+                        weak_ref_output=piecewise_backend.is_last_graph))
+            else:
+                self.module.__dict__[target] = piecewise_backend
 
             compilation_counter.num_piecewise_capturable_graphs_seen += 1
 
@@ -444,7 +462,6 @@ class AphroditeBackend:
 
     aphrodite_config: AphroditeConfig
     compilation_config: CompilationConfig
-    graph_pool: Any
     _called: bool = False
     # the graph we compiled
     graph: fx.GraphModule
@@ -466,20 +483,11 @@ class AphroditeBackend:
 
         # if the model is initialized with a non-empty prefix,
         # then usually it's enough to use that prefix,
-        # e.g. launguage_model, vision_model, etc.
+        # e.g. language_model, vision_model, etc.
         # when multiple parts are initialized as independent
         # models, we need to use the model_tag to distinguish
         # them, e.g. backbone (default), eagle_head, etc.
         self.prefix = prefix or model_tag
-
-        global global_graph_pool
-        if global_graph_pool is None:
-            global_graph_pool = current_platform.graph_pool_handle()
-
-        # TODO: in the future, if we want to use multiple
-        # streams, it might not be safe to share a global pool.
-        # only investigate this when we use multiple streams
-        self.graph_pool = global_graph_pool
 
         # Passes to run on the graph post-grad.
         self.post_grad_pass_manager = PostGradPassManager()
@@ -629,7 +637,7 @@ class AphroditeBackend:
         # propagate the split graph to the piecewise backend,
         # compile submodules with symbolic shapes
         PiecewiseCompileInterpreter(self.split_gm, submod_names_to_compile,
-                                    self.aphrodite_config, self.graph_pool,
+                                    self.aphrodite_config,
                                     self).run(*example_inputs)
 
         graph_path = os.path.join(local_cache_dir, "computation_graph.py")
@@ -646,7 +654,7 @@ class AphroditeBackend:
 
         self._called = True
 
-        if not self.compilation_config.use_cudagraph or \
+        if self.compilation_config.cudagraph_mode == CUDAGraphMode.NONE or \
             not self.compilation_config.cudagraph_copy_inputs:
             return self.split_gm
 

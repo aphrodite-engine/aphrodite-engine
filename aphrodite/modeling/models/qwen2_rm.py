@@ -15,7 +15,8 @@ from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 
-from .interfaces import SupportsLoRA, SupportsPP, default_pooling_type
+from .interfaces import SupportsLoRA, SupportsPP
+from .interfaces_base import default_pooling_type
 from .qwen2 import Qwen2Model
 from .utils import AutoWeightsLoader, maybe_prefix
 

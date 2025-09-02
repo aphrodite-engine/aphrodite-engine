@@ -75,8 +75,10 @@ def prepare_fp8_layer_for_marlin(layer: torch.nn.Module,
                                  size_k_first: bool = True) -> None:
     log_once(
         "WARNING",
-        "Using Marlin for emulating FP8 quantization, as your GPU does not "
-        "natively support it.")
+        "Your GPU does not have native support for FP8 computation but "
+        "FP8 quantization is being used. Weight-only FP8 compression will "
+        "be used leveraging the Marlin kernel. This may degrade "
+        "performance for compute-heavy workloads.")
 
     part_size_n = layer.output_size_per_partition
     part_size_k = layer.input_size_per_partition
@@ -163,8 +165,10 @@ def prepare_moe_fp8_layer_for_marlin(layer: torch.nn.Module,
                                      size_k_first: bool = True) -> None:
     log_once(
         "WARNING",
-        "Using Marlin for emulating FP8 quantization, as your GPU does not "
-        "natively support it.")
+        "Your GPU does not have native support for FP8 computation but "
+        "FP8 quantization is being used. Weight-only FP8 compression will "
+        "be used leveraging the Marlin kernel. This may degrade "
+        "performance for compute-heavy workloads.")
 
     e = layer.num_experts
     k = layer.hidden_size

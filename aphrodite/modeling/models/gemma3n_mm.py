@@ -24,20 +24,16 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs)
+                                         MultiModalKwargsItems)
 from aphrodite.multimodal.parse import (ImageProcessorItems,
                                         MultiModalDataItems,
                                         MultiModalDataParser)
 # yapf: disable
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             BoundPromptUpdate,
-                                             PlaceholderFeaturesInfo,
-                                             PromptReplacement,
-                                             PromptTargetMatch, PromptUpdate,
-                                             PromptUpdateDetails,
-                                             find_mm_placeholders,
-                                             replace_token_matches)
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor, BaseProcessingInfo, MultiModalPromptUpdates,
+    MultiModalPromptUpdatesApplyResult, PlaceholderFeaturesInfo,
+    PromptReplacement, PromptUpdate, PromptUpdateDetails,
+    replace_token_matches)
 # yapf: enable
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 
@@ -92,7 +88,7 @@ class Gemma3nProcessingInfo(BaseProcessingInfo):
     ) -> str:
         """
         Get the replacement text for image tokens.
-
+        
         For Gemma3n, this should return the full_image_sequence which includes
         BOI token, repeated image tokens, and EOI token.
         """
@@ -109,7 +105,7 @@ class Gemma3nProcessingInfo(BaseProcessingInfo):
     ) -> str:
         """
         Get the replacement text for audio tokens.
-
+        
         For Gemma3n, this should return the full_audio_sequence which includes
         BOA token, repeated audio tokens, and EOA token.
         """
@@ -209,7 +205,7 @@ class Gemma3nMultiModalProcessor(BaseMultiModalProcessor[Gemma3nProcessingInfo]
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, Any],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
 
@@ -254,14 +250,10 @@ class Gemma3nMultiModalProcessor(BaseMultiModalProcessor[Gemma3nProcessingInfo]
     def _apply_token_matches(
         self,
         prompt: list[int],
-        mm_matches: Mapping[str, Sequence[PromptTargetMatch]],
-        mm_item_counts: Mapping[str, int],
-    ) -> list[int]:
-        token_ids = super()._apply_token_matches(
-            prompt,
-            mm_matches,
-            mm_item_counts,
-        )
+        mm_prompt_updates: MultiModalPromptUpdates,
+    ) -> tuple[list[int], MultiModalPromptUpdatesApplyResult]:
+        token_ids, res = super()._apply_token_matches(prompt,
+                                                      mm_prompt_updates)
 
         # "\n\n\n" and "\n\n\n\n" are single tokens
         # Since our replacement can insert "\n\n" next to "\n"
@@ -290,13 +282,12 @@ class Gemma3nMultiModalProcessor(BaseMultiModalProcessor[Gemma3nProcessingInfo]
             [newline_4],
         )
 
-        return token_ids
+        return token_ids, res
 
     def _find_mm_placeholders(
         self,
-        mm_prompt_updates: Mapping[str, Sequence[BoundPromptUpdate]],
         new_token_ids: list[int],
-        mm_item_counts: Mapping[str, int],
+        mm_prompt_updates: MultiModalPromptUpdates,
     ) -> Mapping[str, list[PlaceholderFeaturesInfo]]:
         # We need to detect "\n\n" inside "\n\n\n" and "\n\n\n\n"
         tokenizer = self.info.get_tokenizer()
@@ -321,8 +312,8 @@ class Gemma3nMultiModalProcessor(BaseMultiModalProcessor[Gemma3nProcessingInfo]
             repl_token_ids.extend(repl_toks)
             repl_orig_idxs.extend(orig_idx for _ in range(len(repl_toks)))
 
-        repls = find_mm_placeholders(mm_prompt_updates, repl_token_ids,
-                                     mm_item_counts)
+        repls = super()._find_mm_placeholders(repl_token_ids,
+                                              mm_prompt_updates)
 
         return {
             modality: [

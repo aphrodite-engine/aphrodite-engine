@@ -14,6 +14,7 @@ from aphrodite.distributed.parallel_state import (
 from aphrodite.platforms import current_platform
 
 from .aphrodite_inductor_pass import AphroditeInductorPass
+from .inductor_pass import enable_fake_mode
 
 
 class _RMSNormAndQuantOpHelper:
@@ -433,6 +434,7 @@ class SequenceParallelismPass(AphroditeInductorPass):
     performance.
     """
 
+    @enable_fake_mode
     def __init__(self, config: AphroditeConfig):
         super().__init__(config)
 

@@ -20,7 +20,7 @@ def merge_attn_states(
     head_size = output.shape[2]
     padded_head_size = triton.next_power_of_2(head_size)
 
-    # TODO: Use CUDA kernel instead of Triton to minimize CPU overhead.
+    # TODO(woosuk): Use CUDA kernel instead of Triton to minimize CPU overhead.
     merge_attn_states_kernel[(num_tokens, num_query_heads)](
         output,
         output_lse,
@@ -83,7 +83,7 @@ def merge_attn_states_kernel(
                     head_idx * HEAD_SIZE + head_arange,
                     mask=head_mask)
 
-    # NOTE: Be careful with the numerical stability.
+    # NOTE(woosuk): Be careful with the numerical stability.
     # We should compute the scale first, and then multiply it with the output.
     # Do not multiply the output with tl.exp(p_lse) or tl.exp(s_lse) directly.
     p_scale = p_se / out_se

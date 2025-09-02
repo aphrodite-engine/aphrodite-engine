@@ -22,9 +22,9 @@ from torch import nn
 
 from aphrodite.attention.layer import Attention
 from aphrodite.common import envs
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.forward_context import get_forward_context
@@ -38,7 +38,7 @@ from aphrodite.modeling.layers.mamba.mamba2_metadata import (
     Mamba2Metadata, prepare_mamba2_metadata)
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
 from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateShapeCalculator)
+    MambaStateDtypeCalculator, MambaStateShapeCalculator)
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
@@ -107,6 +107,7 @@ class NemotronHMLPDecoderLayer(nn.Module):
         self,
         config: NemotronHConfig,
         layer_idx: int,
+        model_config: Optional[ModelConfig] = None,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -146,6 +147,7 @@ class NemotronHMambaDecoderLayer(nn.Module):
         self,
         config: NemotronHConfig,
         layer_idx: int,
+        model_config: Optional[ModelConfig] = None,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -164,6 +166,8 @@ class NemotronHMambaDecoderLayer(nn.Module):
             head_dim=config.mamba_head_dim,
             rms_norm_eps=config.rms_norm_eps,
             activation=config.mamba_hidden_act,
+            model_config=model_config,
+            cache_config=cache_config,
             quant_config=quant_config,
             prefix=f"{prefix}.mixer",
         )
@@ -195,6 +199,7 @@ class NemotronHAttention(nn.Module):
         self,
         config: NemotronHConfig,
         layer_idx: int,
+        model_config: Optional[ModelConfig] = None,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -267,6 +272,7 @@ class NemotronHAttentionDecoderLayer(nn.Module):
         self,
         config: NemotronHConfig,
         layer_idx: int,
+        model_config: Optional[ModelConfig] = None,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
@@ -276,6 +282,7 @@ class NemotronHAttentionDecoderLayer(nn.Module):
         self.mixer = NemotronHAttention(
             config,
             layer_idx,
+            model_config,
             cache_config,
             quant_config,
             prefix=f"{prefix}.mixer",
@@ -314,6 +321,7 @@ class NemotronHModel(nn.Module):
         super().__init__()
 
         config: NemotronHConfig = aphrodite_config.model_config.hf_config
+        model_config = aphrodite_config.model_config
         cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
         lora_config = aphrodite_config.lora_config
@@ -337,6 +345,7 @@ class NemotronHModel(nn.Module):
             return layer_class(
                 config,
                 layer_idx,
+                model_config,
                 cache_config,
                 quant_config=quant_config,
                 prefix=prefix,
@@ -387,8 +396,7 @@ class NemotronHModel(nn.Module):
 
         residual = None
         num_non_mamba_layers = 0
-        for i in range(len(self.layers)):
-            layer = self.layers[i]
+        for i, layer in enumerate(self.layers):
             layer_mamba_cache_params = None
             if isinstance(layer,
                           NemotronHMambaDecoderLayer) and mamba_cache_params:
@@ -474,6 +482,18 @@ class NemotronHForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
         "lm_head": "output_embeddings",
     }
     embedding_padding_modules = ["lm_head"]
+
+    @classmethod
+    def get_mamba_state_dtype_from_config(
+        cls,
+        aphrodite_config: "AphroditeConfig",
+    ) -> tuple[torch.dtype, torch.dtype]:
+
+        return MambaStateDtypeCalculator.mamba2_state_dtype(
+            aphrodite_config.model_config.dtype,
+            aphrodite_config.cache_config.mamba_cache_dtype,
+            aphrodite_config.cache_config.mamba_ssm_cache_dtype,
+        )
 
     @classmethod
     def get_mamba_state_shape_from_config(
@@ -566,10 +586,13 @@ class NemotronHForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
                 mamba_state_shape = \
                     self.get_mamba_state_shape_from_config(
                         self.aphrodite_config, use_v1=False)
+                mamba_state_dtype = \
+                    self.get_mamba_state_dtype_from_config(
+                    self.aphrodite_config)
                 self.mamba_cache = MambaCacheManager(self.aphrodite_config,
-                                                     self.lm_head.weight.dtype,
                                                      num_mamba_layers,
-                                                     *mamba_state_shape)
+                                                     *mamba_state_shape,
+                                                     *mamba_state_dtype)
 
             mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)
 

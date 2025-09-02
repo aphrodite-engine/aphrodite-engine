@@ -140,6 +140,17 @@ class AphroditeModelForPooling(AphroditeModel[T_co], Protocol[T_co]):
         MRO of your model class.
     """
 
+    default_pooling_type: ClassVar[str] = "LAST"
+    """
+    Indicates the
+    [aphrodite.modeling.layers.pooler.PoolerConfig.pooling_type][]
+    to use by default.
+
+    You can use the
+    [aphrodite.modeling.models.interfaces_base.default_pooling_type][]
+    decorator to conveniently set this field.
+    """
+
     pooler: Pooler
     """The pooler is only called on TP rank 0."""
 
@@ -161,3 +172,20 @@ def is_pooling_model(
         return False
 
     return getattr(model, "is_pooling_model", False)
+
+
+_T = TypeVar("_T", bound=type[nn.Module])
+
+
+def default_pooling_type(pooling_type: str):
+    """Decorator to set `AphroditeModelForPooling.default_pooling_type`."""
+
+    def func(model: _T) -> _T:
+        model.default_pooling_type = pooling_type  # type: ignore
+        return model
+
+    return func
+
+
+def get_default_pooling_type(model: Union[type[object], object]) -> str:
+    return getattr(model, "default_pooling_type", "LAST")

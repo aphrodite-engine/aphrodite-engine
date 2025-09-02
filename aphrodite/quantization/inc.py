@@ -12,7 +12,7 @@
 # to collect measurements for a given model.
 # The quantization configuration is used during inference.
 # For more information, please refer to:
-# https://docs.habana.ai/en/v1.21.1/PyTorch/vLLM_Inference/vLLM_FP8_Inference.html
+# https://docs.habana.ai/en/v1.21.1/PyTorch/Aphrodite_Inference/Aphrodite_FP8_Inference.html
 
 from typing import Any, Optional
 

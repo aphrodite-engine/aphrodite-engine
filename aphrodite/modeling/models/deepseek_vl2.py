@@ -10,8 +10,8 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 from transformers import BatchFeature
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling import SamplingMetadata
 from aphrodite.modeling.model_loader.utils import set_default_torch_dtype
@@ -19,13 +19,13 @@ from aphrodite.modeling.models.transformers import replace_linear_class
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs, NestedTensors)
+                                         MultiModalKwargsItems, NestedTensors)
 from aphrodite.multimodal.parse import (ImageEmbeddingItems,
                                         ImageProcessorItems, ImageSize,
                                         MultiModalDataItems)
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
-                                             MultiModalHashes,
+                                             MultiModalProcessingInfo,
                                              PromptReplacement, PromptUpdate)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
@@ -251,7 +251,7 @@ class DeepseekVL2MultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
 
@@ -288,9 +288,8 @@ class DeepseekVL2MultiModalProcessor(
         mm_data_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, object],
         tokenization_kwargs: Mapping[str, object],
-        *,
-        return_mm_hashes: bool,
-    ) -> tuple[list[int], MultiModalKwargs, Optional[MultiModalHashes], bool]:
+        mm_hash_overrides: Optional[dict[str, list[str]]] = None,
+    ) -> tuple[list[int], MultiModalProcessingInfo, bool]:
         # The processor logic is different for len(images) <= 2 vs > 2
         # Since the processing cache assumes that the processor output is
         # invariant of how many images are passed per prompt, we only
@@ -301,7 +300,7 @@ class DeepseekVL2MultiModalProcessor(
                 mm_data_items=mm_data_items,
                 hf_processor_mm_kwargs=hf_processor_mm_kwargs,
                 tokenization_kwargs=tokenization_kwargs,
-                return_mm_hashes=return_mm_hashes,
+                mm_hash_overrides=mm_hash_overrides,
             )
 
         return super()._cached_apply_hf_processor(
@@ -309,7 +308,7 @@ class DeepseekVL2MultiModalProcessor(
             mm_data_items=mm_data_items,
             hf_processor_mm_kwargs=hf_processor_mm_kwargs,
             tokenization_kwargs=tokenization_kwargs,
-            return_mm_hashes=return_mm_hashes,
+            mm_hash_overrides=mm_hash_overrides,
         )
 
 
@@ -407,13 +406,17 @@ class DeepseekVLV2ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP):
             if isinstance(module, nn.Linear):
                 parent, attr_name = self._get_parent_and_attr(vit, name)
                 if isinstance(parent, timm.layers.Mlp) and attr_name == "fc1":
-                    new_linear = replace_linear_class(module, "colwise",
-                                                      quant_config)
+                    new_linear = replace_linear_class(module,
+                                                      "colwise",
+                                                      quant_config,
+                                                      prefix=name)
                     setattr(parent, attr_name, new_linear)
                 elif isinstance(parent,
                                 timm.layers.Mlp) and attr_name == "fc2":
-                    new_linear = replace_linear_class(module, "rowwise",
-                                                      quant_config)
+                    new_linear = replace_linear_class(module,
+                                                      "rowwise",
+                                                      quant_config,
+                                                      prefix=name)
                     setattr(parent, attr_name, new_linear)
 
         return vit

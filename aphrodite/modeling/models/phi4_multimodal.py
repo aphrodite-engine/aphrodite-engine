@@ -14,8 +14,8 @@ from transformers.models.phi4_multimodal.modeling_phi4_multimodal import (
     Phi4MultimodalAudioConvModule, Phi4MultimodalAudioNemoConvSubsampling,
     Phi4MultimodalAudioRelativeAttentionBias, adaptive_enc_mask, unfold_tensor)
 
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
 from aphrodite.modeling.layers.activation import MulAndSilu, get_act_fn
@@ -29,7 +29,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs, NestedTensors)
+                                         MultiModalKwargsItems, NestedTensors)
 from aphrodite.multimodal.parse import (AudioProcessorItems,
                                         ImageEmbeddingItems,
                                         ImageProcessorItems, ImageSize,
@@ -1030,11 +1030,11 @@ class Phi4MMMultiModalProcessor(BaseMultiModalProcessor[Phi4MMProcessingInfo]):
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, Any],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         tokenizer = self.info.get_tokenizer()
-        image_token_id = tokenizer.vocab[tokenizer.image_token]
-        audio_token_id = tokenizer.vocab[tokenizer.audio_token]
+        image_token_id: int = tokenizer.vocab[tokenizer.image_token]
+        audio_token_id: int = tokenizer.vocab[tokenizer.audio_token]
 
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
         audio_processor = self.info.get_feature_extractor(
@@ -1054,9 +1054,7 @@ class Phi4MMMultiModalProcessor(BaseMultiModalProcessor[Phi4MMProcessingInfo]):
                     processor=hf_processor,
                 )
 
-            image_tokens = [image_token_id] * num_image_tokens
-
-            return image_tokens
+            return [image_token_id] * num_image_tokens
 
         def get_audio_replacement_phi4mm(item_idx: int):
             audios = mm_items.get_items("audio", AudioProcessorItems)
@@ -1067,9 +1065,7 @@ class Phi4MMMultiModalProcessor(BaseMultiModalProcessor[Phi4MMProcessingInfo]):
             audio_embed_size = self.info._compute_audio_embed_size(
                 audio_frames)
 
-            audio_tokens = [audio_token_id] * audio_embed_size
-
-            return audio_tokens
+            return [audio_token_id] * audio_embed_size
 
         return [
             PromptReplacement(

@@ -10,13 +10,21 @@ from torch._ops import OpOverload
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import GroupShape
+from aphrodite.quantization.utils.quant_utils import (GroupShape, QuantKey,
+                                                      ScaleDesc,
+                                                      kFp8DynamicTensorSym,
+                                                      kFp8DynamicTokenSym,
+                                                      kFp8StaticTensorSym,
+                                                      kNvfp4Quant,
+                                                      kStaticTensorScale)
 
 from .aphrodite_inductor_pass import AphroditeInductorPass
+from .inductor_pass import enable_fake_mode
 from .fx_utils import find_getitem_maybe
 from .multi_output_match import MultiOutputMatch
 
 FP8_DTYPE = current_platform.fp8_dtype()
+FP4_DTYPE = torch.uint8
 
 
 def empty_bf16(*args, **kwargs):
@@ -27,37 +35,12 @@ def empty_fp32(*args, **kwargs):
     return torch.empty(*args, **kwargs, dtype=torch.float32, device="cuda")
 
 
+def empty_i32(*args, **kwargs):
+    return torch.empty(*args, **kwargs, dtype=torch.int32, device="cuda")
+
+
 RMS_OP = torch.ops._C.rms_norm.default
 RMS_ADD_OP = torch.ops._C.fused_add_rms_norm.default
-
-
-class QuantKey(NamedTuple):
-    """
-    Named tuple for identifying the type of quantization.
-    dtype: quantized data type
-    static: static quantization if True, dynamic if False
-    group_shape: quantization group shape
-    symmetric: symmetric if True, asymmetric if False
-    """
-    dtype: torch.dtype
-    static: bool
-    group_shape: GroupShape
-    symmetric: bool = True
-
-    def __str__(self):
-        group_shape = ('per_tensor'
-                       if self.group_shape == GroupShape.PER_TENSOR else
-                       ('per_token' if self.group_shape == GroupShape.PER_TOKEN
-                        else str(self.group_shape)))
-
-        return (f"QuantKey({'static' if self.static else 'dynamic'},"
-                f"{fx.graph.dtype_abbrs[self.dtype]},{group_shape},"
-                f"{'a' if not self.symmetric else ''}symmetric)")
-
-
-kFp8StaticTensorSym = QuantKey(FP8_DTYPE, True, GroupShape.PER_TENSOR, True)
-kFp8DynamicTensorSym = QuantKey(FP8_DTYPE, False, GroupShape.PER_TENSOR, True)
-kFp8DynamicTokenSym = QuantKey(FP8_DTYPE, False, GroupShape.PER_TOKEN, True)
 
 QUANT_OPS: dict[QuantKey, OpOverload] = {
     kFp8StaticTensorSym:
@@ -67,6 +50,9 @@ QUANT_OPS: dict[QuantKey, OpOverload] = {
     kFp8DynamicTokenSym:
     torch.ops._C.dynamic_per_token_scaled_fp8_quant.default,  # noqa: E501
 }
+if current_platform.is_cuda() and hasattr(torch.ops._C, "scaled_fp4_quant"):
+    QUANT_OPS[
+        kNvfp4Quant] = torch.ops._C.scaled_fp4_quant.default  # noqa: E501
 
 
 class FusedRMSQuantKey(NamedTuple):
@@ -179,11 +165,9 @@ class RMSNormStaticQuantPattern(RMSNormQuantPattern):
                  quant_dtype: torch.dtype,
                  symmetric=True):
         fused_key = FusedRMSQuantKey(fused_add=False,
-                                     quant=QuantKey(
-                                         dtype=quant_dtype,
-                                         static=True,
-                                         group_shape=GroupShape.PER_TENSOR,
-                                         symmetric=symmetric))
+                                     quant=QuantKey(dtype=quant_dtype,
+                                                    scale=kStaticTensorScale,
+                                                    symmetric=symmetric))
         super().__init__(epsilon, fused_key)
 
     def register(self, pm_pass: PatternMatcherPass):
@@ -236,11 +220,9 @@ class FusedAddRMSNormStaticQuantPattern(RMSNormQuantPattern):
                  quant_dtype: torch.dtype,
                  symmetric=True):
         key = FusedRMSQuantKey(fused_add=True,
-                               quant=QuantKey(
-                                   dtype=quant_dtype,
-                                   static=True,
-                                   group_shape=GroupShape.PER_TENSOR,
-                                   symmetric=symmetric))
+                               quant=QuantKey(dtype=quant_dtype,
+                                              scale=kStaticTensorScale,
+                                              symmetric=symmetric))
         super().__init__(epsilon, key)
 
     def register(self, pm_pass: PatternMatcherPass,
@@ -329,10 +311,10 @@ class RMSNormDynamicQuantPattern(RMSNormQuantPattern):
                  quant_dtype: torch.dtype,
                  group_shape: GroupShape = GroupShape.PER_TOKEN,
                  symmetric=True):
+        scale = ScaleDesc(torch.float32, False, group_shape)
         key = FusedRMSQuantKey(fused_add=False,
                                quant=QuantKey(dtype=quant_dtype,
-                                              static=False,
-                                              group_shape=group_shape,
+                                              scale=scale,
                                               symmetric=symmetric))
         super().__init__(epsilon, key)
 
@@ -427,10 +409,10 @@ class FusedAddRMSNormDynamicQuantPattern(RMSNormQuantPattern):
                  quant_dtype: torch.dtype,
                  group_shape: GroupShape = GroupShape.PER_TOKEN,
                  symmetric=True):
+        scale = ScaleDesc(torch.float32, False, group_shape)
         key = FusedRMSQuantKey(fused_add=True,
                                quant=QuantKey(dtype=quant_dtype,
-                                              static=False,
-                                              group_shape=group_shape,
+                                              scale=scale,
                                               symmetric=symmetric))
         super().__init__(epsilon, key)
 
@@ -548,6 +530,7 @@ class FusionPass(AphroditeInductorPass):
             cls._instance.pass_config = config.compilation_config.pass_config
         return cls._instance
 
+    @enable_fake_mode
     def __init__(self, config: AphroditeConfig):
         assert self.__class__._instance is None, \
             "FusionPass singleton instance already exists"

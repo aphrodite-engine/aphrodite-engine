@@ -19,6 +19,7 @@
 """Inference-only BaiChuan model compatible with HuggingFace weights."""
 import math
 from collections.abc import Iterable
+from itertools import islice
 from typing import Optional, Union
 
 import torch
@@ -26,9 +27,9 @@ from torch import nn
 from transformers import PretrainedConfig
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_rank,
                                    get_tensor_model_parallel_world_size)
@@ -307,7 +308,7 @@ class BaiChuanModel(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
@@ -434,7 +435,7 @@ class BaiChuanBaseForCausalLM(nn.Module, SupportsLoRA, SupportsPP,
         # https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat/blob/84603cde5ebffb6084e476cfaeceaf0b8b91fe54/modeling_baichuan.py#L508
         # Distinguish between Baichuan and Baichuan2 by checking the
         # vocab size. This is suggested by
-        # https://github.com/vllm-project/vllm/pull/1022#discussion_r1325652704
+        # https://github.com/aphrodite-project/aphrodite/pull/1022#discussion_r1325652704
         is_baichuan2 = self.config.vocab_size == 125696
         if is_baichuan2:
             loaded_weight = torch.nn.functional.normalize(loaded_weight)

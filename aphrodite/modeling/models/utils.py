@@ -10,8 +10,8 @@ from torch.func import functional_call
 from transformers import PretrainedConfig
 
 import aphrodite.common.envs as envs
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.multimodal import MultiModalPlaceholderMap, NestedTensors
 from aphrodite.utils import (get_cuda_view_from_cpu_tensor,
@@ -502,8 +502,10 @@ def merge_multimodal_embeddings(
         This updates ``inputs_embeds`` in place.
     """
     if isinstance(placeholder_token_id, list):
-        placeholder_token_id = torch.tensor(placeholder_token_id,
-                                            device=input_ids.device)
+        placeholder_token_id = torch.tensor(
+            placeholder_token_id,
+            pin_memory=is_pin_memory_available()).to(device=input_ids.device,
+                                                     non_blocking=True)
         return _merge_multimodal_embeddings(
             inputs_embeds,
             torch.isin(input_ids, placeholder_token_id),
@@ -735,15 +737,15 @@ def fast_topk(values: torch.Tensor, topk: int,
               dim: int) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Optimized topk implementation that uses torch.max for k=1 case.
-
+    
     This function provides better performance for the common case of k=1
     by using torch.max instead of the more general torch.topk.
-
+    
     Args:
         values: Input tensor to find top-k values from
         topk: Number of top values to return (k). Must be > 0.
         dim: Dimension along which to compute topk
-
+        
     Returns:
         Tuple of (values, indices) where values are the top-k values
         and indices are their corresponding indices in the input tensor

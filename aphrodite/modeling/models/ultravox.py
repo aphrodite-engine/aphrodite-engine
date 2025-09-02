@@ -11,8 +11,8 @@ from transformers.models.whisper import WhisperFeatureExtractor
 from transformers.models.whisper.modeling_whisper import WhisperEncoder
 
 from aphrodite.common import envs
-from aphrodite.config import AphroditeConfig
 from aphrodite.common.sequence import IntermediateTensors
+from aphrodite.config import AphroditeConfig
 from aphrodite.forward_context import get_forward_context
 from aphrodite.modeling.layers.activation import MulAndSilu, get_act_fn
 from aphrodite.modeling.layers.layernorm import RMSNorm
@@ -22,7 +22,7 @@ from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import (MultiModalDataDict,
                                          MultiModalFieldConfig,
-                                         MultiModalKwargs, NestedTensors)
+                                         MultiModalKwargsItems, NestedTensors)
 from aphrodite.multimodal.parse import (MultiModalDataItems,
                                         MultiModalDataParser)
 from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
@@ -193,7 +193,7 @@ class UltravoxMultiModalProcessor(
         self,
         mm_items: MultiModalDataItems,
         hf_processor_mm_kwargs: Mapping[str, Any],
-        out_mm_kwargs: MultiModalKwargs,
+        out_mm_kwargs: MultiModalKwargsItems,
     ) -> Sequence[PromptUpdate]:
         hf_processor = self.info.get_hf_processor(**hf_processor_mm_kwargs)
 
@@ -202,7 +202,8 @@ class UltravoxMultiModalProcessor(
         # Each audio can be split into multiple chunks.
         # chunks_start_idx[i] indicates the start index of the chunks
         # belonging to the i-th audio.
-        num_chunks = out_mm_kwargs.get("audio_num_chunks", torch.zeros(0))
+        out_mm_data = out_mm_kwargs.get_data()
+        num_chunks = out_mm_data.get("audio_num_chunks", torch.zeros(0))
         chunks_start_idx: torch.Tensor = torch.cumsum(num_chunks,
                                                       dim=0,
                                                       dtype=torch.int32)
@@ -212,7 +213,7 @@ class UltravoxMultiModalProcessor(
         def get_replacement_ultravox(item_idx: int):
             start = chunks_start_idx[item_idx]
             end = chunks_start_idx[item_idx + 1]
-            audio_token_len = out_mm_kwargs["audio_token_len"][start:end].sum()
+            audio_token_len = out_mm_data["audio_token_len"][start:end].sum()
             return [replacement_id] * int(audio_token_len)  # type: ignore
 
         return [

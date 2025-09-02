@@ -22,6 +22,7 @@
 # limitations under the License.
 """Inference-only dots1 model."""
 from collections.abc import Iterable
+from itertools import islice
 from typing import Any, Optional, Union
 
 import torch
@@ -29,9 +30,9 @@ from torch import nn
 from transformers import Dots1Config
 
 from aphrodite.attention import Attention
-from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import (get_pp_group,
                                    get_tensor_model_parallel_world_size,
                                    tensor_model_parallel_all_reduce)
@@ -133,6 +134,7 @@ class Dots1MoE(nn.Module):
             topk_group=config.topk_group,
             prefix=f"{prefix}.experts",
             scoring_func=config.scoring_func,
+            routed_scaling_factor=self.routed_scaling_factor,
             e_score_correction_bias=self.gate.e_score_correction_bias)
 
         if config.n_shared_experts is not None:
@@ -388,7 +390,7 @@ class Dots1Model(nn.Module):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in islice(self.layers, self.start_layer, self.end_layer):
             hidden_states, residual = layer(
                 positions,
                 hidden_states,

@@ -4,6 +4,8 @@ from typing import Optional
 from aphrodite.platforms import PlatformEnum, current_platform
 from aphrodite.quantization.kernels.scaled_mm.aiter import (
     AiterScaledMMLinearKernel)
+from aphrodite.quantization.kernels.scaled_mm.cpu import (
+    CPUScaledMMLinearKernel)
 from aphrodite.quantization.kernels.scaled_mm.cutlass import (
     CutlassScaledMMLinearKernel)
 from aphrodite.quantization.kernels.scaled_mm.ScaledMMLinearKernel import (  # noqa: E501
@@ -15,7 +17,7 @@ from aphrodite.quantization.kernels.scaled_mm.xla import (
 
 # in priority/performance order (when available)
 _POSSIBLE_KERNELS: dict[PlatformEnum, list[type[ScaledMMLinearKernel]]] = {
-    PlatformEnum.CPU: [CutlassScaledMMLinearKernel],
+    PlatformEnum.CPU: [CPUScaledMMLinearKernel],
     PlatformEnum.CUDA: [CutlassScaledMMLinearKernel],
     PlatformEnum.ROCM: [AiterScaledMMLinearKernel, TritonScaledMMLinearKernel],
     PlatformEnum.TPU: [XLAScaledMMLinearKernel],

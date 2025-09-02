@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -35,10 +36,10 @@ if TYPE_CHECKING:
     APHRODITE_LOGGING_PREFIX: str = ""
     APHRODITE_LOGGING_CONFIG_PATH: Optional[str] = None
     APHRODITE_LOGITS_PROCESSOR_THREADS: Optional[int] = None
+    APHRODITE_LOG_STATS_INTERVAL: float = 10.0
     APHRODITE_TRACE_FUNCTION: int = 0
     APHRODITE_ATTENTION_BACKEND: Optional[str] = None
     APHRODITE_USE_FLASHINFER_SAMPLER: Optional[bool] = None
-    APHRODITE_FLASHINFER_FORCE_TENSOR_CORES: bool = False
     APHRODITE_PP_LAYER_PARTITION: Optional[str] = None
     APHRODITE_CPU_KVCACHE_SPACE: Optional[int] = 0
     APHRODITE_CPU_OMP_THREADS_BIND: str = ""
@@ -94,6 +95,7 @@ if TYPE_CHECKING:
     APHRODITE_ROCM_USE_AITER_RMSNORM: bool = True
     APHRODITE_ROCM_USE_AITER_MLA: bool = True
     APHRODITE_ROCM_USE_AITER_MHA: bool = True
+    APHRODITE_ROCM_USE_AITER_FP8BMM: bool = True
     APHRODITE_ROCM_USE_SKINNY_GEMM: bool = True
     APHRODITE_ROCM_FP8_PADDING: bool = True
     APHRODITE_ROCM_MOE_PADDING: bool = True
@@ -126,7 +128,9 @@ if TYPE_CHECKING:
     APHRODITE_TPU_USING_PATHWAYS: bool = False
     APHRODITE_USE_DEEP_GEMM: bool = False
     APHRODITE_USE_DEEP_GEMM_E8M0: bool = True
+    APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER: bool = False
     APHRODITE_SKIP_DEEP_GEMM_WARMUP: bool = False
+    APHRODITE_USE_FUSED_MOE_GROUPED_TOPK: bool = True
     APHRODITE_USE_FLASHINFER_MOE_FP8: bool = False
     APHRODITE_USE_FLASHINFER_MOE_FP4: bool = False
     APHRODITE_FLASHINFER_MOE_BACKEND: str = "throughput"
@@ -156,6 +160,7 @@ if TYPE_CHECKING:
     APHRODITE_USE_TRTLLM_CONTEXT_ATTENTION: bool = False
     APHRODITE_USE_TRTLLM_DECODE_ATTENTION: bool = False
     APHRODITE_USE_TRTLLM_ATTENTION: bool = False
+    APHRODITE_HAS_FLASHINFER_CUBIN: bool = False
     APHRODITE_KOBOLD_API: bool = False
     APHRODITE_REQUEST_LEVEL_METRICS: bool = False
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
@@ -164,7 +169,9 @@ if TYPE_CHECKING:
     APHRODITE_DYNAMIC_ROPE_SCALING: bool = False
     APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8: bool = False
     APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16: bool = False
+    APHRODITE_ALLREDUCE_USE_SYMM_MEM: bool = False
     APHRODITE_TUNED_CONFIG_FOLDER: Optional[str] = None
+    APHRODITE_DISABLE_PAD_FOR_CUDAGRAPH: bool = False
 
 
 def get_default_cache_root():
@@ -432,6 +439,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     lambda: int(os.getenv("APHRODITE_LOGITS_PROCESSOR_THREADS", "0"))
     if "APHRODITE_LOGITS_PROCESSOR_THREADS" in os.environ else None,
 
+    # If set, aphrodite will log stats at this interval in seconds
+    # If not set, aphrodite will log stats every 10 seconds.
+    "APHRODITE_LOG_STATS_INTERVAL":
+    lambda: val if (val := float(os.getenv("APHRODITE_LOG_STATS_INTERVAL", "10.")))
+        > 0. else 10.,
+
     # Trace function calls
     # If set to 1, aphrodite will trace function calls
     # Useful for debugging
@@ -453,11 +466,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_USE_FLASHINFER_SAMPLER":
     lambda: bool(int(os.environ["APHRODITE_USE_FLASHINFER_SAMPLER"]))
     if "APHRODITE_USE_FLASHINFER_SAMPLER" in os.environ else None,
-
-    # If set, aphrodite will force flashinfer to use tensor cores;
-    # otherwise will use heuristic based on model architecture.
-    "APHRODITE_FLASHINFER_FORCE_TENSOR_CORES":
-    lambda: bool(int(os.getenv("APHRODITE_FLASHINFER_FORCE_TENSOR_CORES", "0"))),
 
     # Pipeline stage partition strategy
     "APHRODITE_PP_LAYER_PARTITION":
@@ -656,11 +664,14 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_LORA_RESOLVER_CACHE_DIR":
     lambda: os.getenv("APHRODITE_LORA_RESOLVER_CACHE_DIR", None),
 
-    # Enables torch profiler if set. Path to the directory where torch profiler
-    # traces are saved. Note that it must be an absolute path.
+    # Enables torch profiler if set.
+    # Both AsyncLLM's CPU traces as well as workers'
+    # traces (CPU & GPU) will be saved under this directory.
+    # Note that it must be an absolute path.
     "APHRODITE_TORCH_PROFILER_DIR":
     lambda: (None if os.getenv("APHRODITE_TORCH_PROFILER_DIR", None) is None else os
-             .path.expanduser(os.getenv("APHRODITE_TORCH_PROFILER_DIR", "."))),
+             .path.abspath(os.path.expanduser(os.getenv(
+        "APHRODITE_TORCH_PROFILER_DIR", ".")))),
 
     # Enable torch profiler to record shapes if set
     # APHRODITE_TORCH_PROFILER_RECORD_SHAPES=1. If not set, torch profiler will
@@ -758,6 +769,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # By default is enabled.
     "APHRODITE_ROCM_USE_AITER_MHA":
     lambda: (os.getenv("APHRODITE_ROCM_USE_AITER_MHA", "True").lower() in
+             ("true", "1")),
+
+    # Whether to use aiter triton fp8 bmm kernel
+    # By default is enabled.
+    "APHRODITE_ROCM_USE_AITER_FP8BMM":
+    lambda: (os.getenv("APHRODITE_ROCM_USE_AITER_FP8BMM", "True").lower() in
              ("true", "1")),
 
     # use rocm skinny gemms
@@ -943,9 +960,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     lambda: bool(int(os.getenv("APHRODITE_USE_DEEP_GEMM", "0"))),
 
     # Whether to use E8M0 scaling when DeepGEMM is used on Blackwell GPUs.
-    # E8M0 is faster on B200 but may reduce accuracy.
     "APHRODITE_USE_DEEP_GEMM_E8M0":
     lambda: bool(int(os.getenv("APHRODITE_USE_DEEP_GEMM_E8M0", "1"))),
+    # TODO: unify the two E8M0 flags after verifying the correctness.
+    # Whether to use E8M0 scaling when DeepGEMM is used on Hopper GPUs.
+    "APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER":
+    lambda: bool(int(os.getenv("APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER", "0"))),
 
     # DeepGemm JITs the kernels on-demand. The warmup attempts to make DeepGemm
     # JIT all the required kernels before model execution so there is no
@@ -954,6 +974,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Set `APHRODITE_SKIP_DEEP_GEMM_WARMUP` to disable the warmup.
     "APHRODITE_SKIP_DEEP_GEMM_WARMUP":
     lambda: bool(int(os.getenv("APHRODITE_SKIP_DEEP_GEMM_WARMUP", "0"))),
+
+    # Whether to use fused grouped_topk used for MoE expert selection.
+    "APHRODITE_USE_FUSED_MOE_GROUPED_TOPK":
+    lambda: bool(int(os.getenv("APHRODITE_USE_FUSED_MOE_GROUPED_TOPK", "1"))),
 
     # Allow use of FlashInfer MoE kernels for fused moe ops.
     "APHRODITE_USE_FLASHINFER_MOE_FP8":
@@ -1022,6 +1046,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # This is used to prevent the kernel from running out of memory.
     "APHRODITE_MAX_TOKENS_PER_EXPERT_FP4_MOE":
     lambda: int(os.getenv("APHRODITE_MAX_TOKENS_PER_EXPERT_FP4_MOE", "163840")),
+
+    # Specifies the thresholds of the communicated tensor sizes under which
+    # aphrodite should use flashinfer fused allreduce. The variable should be a
+    # JSON with the following format:
+    #     { <world size>: <max size in mb> }
+    # Unspecified world sizes will fallback to
+    #     { 2: 64, 4: 1, <everything else>: 0.5 }
+    "APHRODITE_FLASHINFER_ALLREDUCE_FUSION_THRESHOLDS_MB":
+    lambda: json.loads(os.getenv(
+        "APHRODITE_FLASHINFER_ALLREDUCE_FUSION_THRESHOLDS_MB", "{}")),
 
     # MoE routing strategy selector.
     # See `RoutingSimulator.get_available_strategies()` # for available
@@ -1098,6 +1132,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_USE_TRTLLM_ATTENTION":
     lambda: bool(int(os.getenv("APHRODITE_USE_TRTLLM_ATTENTION", "0"))),
 
+    # If set, it means we pre-downloaded cubin files and flashinfer will
+    # read the cubin files directly.
+    "APHRODITE_HAS_FLASHINFER_CUBIN":
+    lambda: os.getenv("APHRODITE_HAS_FLASHINFER_CUBIN", False),
+
     # If set to 1, force the use of TRTLLM FP4 GEMM backend in flashinfer.
     # Otherwise, uses the first available of: flashinfer cutlass GEMM,
     # aphrodite cutlass GEMM, marlin GEMM.
@@ -1109,6 +1148,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set to 1, allows GC to run during capture.
     "APHRODITE_ENABLE_CUDAGRAPH_GC":
     lambda: bool(int(os.getenv("APHRODITE_ENABLE_CUDAGRAPH_GC", "0"))),
+
+    # Disable padding to CUDA graph capture batch sizes.
+    "APHRODITE_DISABLE_PAD_FOR_CUDAGRAPH":
+    lambda: bool(int(os.getenv("APHRODITE_DISABLE_PAD_FOR_CUDAGRAPH", "0"))),
 
     # Used to force set up loopback IP
     "APHRODITE_LOOPBACK_IP":
@@ -1178,6 +1221,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16":
     lambda: bool(int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16", "0"))),
 
+    # Whether to use pytorch symmetric memory for allreduce
+    "APHRODITE_ALLREDUCE_USE_SYMM_MEM":
+    lambda: bool(int(os.getenv("APHRODITE_ALLREDUCE_USE_SYMM_MEM", "0"))),
+
     # Allows aphrodite to find tuned config under customized folder
     "APHRODITE_TUNED_CONFIG_FOLDER":
     lambda: os.getenv("APHRODITE_TUNED_CONFIG_FOLDER", None),
@@ -1223,14 +1270,6 @@ def compute_hash() -> str:
     affect the choice of different kernels or attention backends should
     also be included in the factors list.
     """
-    factors: list[Any] = []
-
-    # summarize environment variables
-    def factorize(name: str):
-        if __getattr__(name):
-            factors.append(__getattr__(name))
-        else:
-            factors.append("None")
 
     # The values of envs may affects the computation graph.
     # TODO: hash all environment variables?
@@ -1246,10 +1285,47 @@ def compute_hash() -> str:
         "APHRODITE_USE_STANDALONE_COMPILE",
         "APHRODITE_FUSED_MOE_CHUNK_SIZE",
         "APHRODITE_FLASHINFER_MOE_BACKEND",
+        "APHRODITE_V1_USE_PREFILL_DECODE_ATTENTION",
+        "APHRODITE_USE_AITER_UNIFIED_ATTENTION",
+        "APHRODITE_ATTENTION_BACKEND",
+        "APHRODITE_USE_FLASHINFER_SAMPLER",
+        "APHRODITE_DISABLED_KERNELS",
+        "APHRODITE_USE_DEEP_GEMM",
+        "APHRODITE_USE_DEEP_GEMM_E8M0",
+        "APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER",
+        "APHRODITE_FLASHINFER_MOE_BACKEND",
+        "APHRODITE_USE_FUSED_MOE_GROUPED_TOPK",
+        "APHRODITE_USE_FLASHINFER_MOE_FP8",
+        "APHRODITE_USE_FLASHINFER_MOE_FP4",
+        "APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8",
+        "APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16",
+        "APHRODITE_USE_CUDNN_PREFILL",
+        "APHRODITE_USE_TRTLLM_ATTENTION",
+        "APHRODITE_ROCM_USE_AITER",
+        "APHRODITE_ROCM_USE_AITER_PAGED_ATTN",
+        "APHRODITE_ROCM_USE_AITER_LINEAR",
+        "APHRODITE_ROCM_USE_AITER_MOE",
+        "APHRODITE_ROCM_USE_AITER_RMSNORM",
+        "APHRODITE_ROCM_USE_AITER_MLA",
+        "APHRODITE_ROCM_USE_AITER_MHA",
+        "APHRODITE_ROCM_USE_AITER_FP8BMM",
+        "APHRODITE_ROCM_USE_SKINNY_GEMM",
+        "APHRODITE_ROCM_FP8_PADDING",
+        "APHRODITE_ROCM_MOE_PADDING",
+        "APHRODITE_ROCM_CUSTOM_PAGED_ATTN",
+        "APHRODITE_ROCM_QUICK_REDUCE_QUANTIZATION",
+        "APHRODITE_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16",
+        "APHRODITE_ROCM_QUICK_REDUCE_MAX_SIZE_BYTES_MB",
     ]
     for key in environment_variables_to_hash:
-        if key in environment_variables:
-            factorize(key)
+        # if this goes out of sync with environment_variables,
+        # it's not a user error, it's a bug
+        assert key in environment_variables, \
+            "Please update environment_variables_to_hash in envs.py"
+
+    factors = [
+        environment_variables[key]() for key in environment_variables_to_hash
+    ]
 
     hash_str = hashlib.md5(str(factors).encode(),
                            usedforsecurity=False).hexdigest()

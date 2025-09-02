@@ -7,7 +7,6 @@ from transformers import RobertaConfig
 
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
-from aphrodite.forward_context import get_forward_context
 from aphrodite.modeling.layers.pooler import (ClassifierPooler, CLSPool,
                                               DispatchPooler, Pooler)
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
@@ -20,7 +19,8 @@ from aphrodite.modeling.models.utils import (AutoWeightsLoader, WeightsMapper,
                                              maybe_prefix)
 
 from .bert_with_rope import BertWithRope, JinaRobertaModel
-from .interfaces import SupportsCrossEncoding, default_pooling_type
+from .interfaces import SupportsCrossEncoding
+from .interfaces_base import default_pooling_type
 
 
 class RobertaEmbedding(nn.Module):
@@ -97,7 +97,7 @@ class RobertaEmbeddingModel(BertEmbeddingModel):
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)
-        self.padding_idx = aphrodite_config.model_config.hf_config.pad_token_id
+        self.padding_idx: int = aphrodite_config.model_config.hf_config.pad_token_id
 
     def forward(
         self,
@@ -175,7 +175,7 @@ class RobertaForSequenceClassification(nn.Module, SupportsCrossEncoding):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
-        self.padding_idx = aphrodite_config.model_config.hf_config.pad_token_id
+        self.padding_idx: int = aphrodite_config.model_config.hf_config.pad_token_id
 
         self.num_labels = config.num_labels
         self.roberta = BertModel(aphrodite_config=aphrodite_config,
@@ -230,58 +230,14 @@ class RobertaForSequenceClassification(nn.Module, SupportsCrossEncoding):
                             intermediate_tensors=intermediate_tensors)
 
 
-# Adapted from transformers
-def create_position_ids_from_input_ids(input_ids,
-                                       padding_idx,
-                                       past_key_values_length=0):
-    """
-    Replace non-padding symbols with their position numbers.
-    Position numbers begin at padding_idx+1. Padding symbols
-    are ignored. This is modified from fairseq's `utils.make_positions`.
-
-    Args:
-        x: torch.Tensor x:
-
-    Returns: torch.Tensor
-    """
-    # The series of casts and type-conversions here are carefully
-    # balanced to both work with ONNX export and XLA.
-    mask = input_ids.ne(padding_idx).int()
-
-    incremental_indices = (torch.cumsum(mask, dim=0).type_as(mask) +
-                           past_key_values_length) * mask
-
-    return incremental_indices.long() + padding_idx
-
-
 def replace_roberta_positions(input_ids: torch.Tensor,
                               position_ids: torch.Tensor,
                               padding_idx: int) -> None:
-
-    seq_lens: Optional[torch.Tensor] = None
-    attn_metadata = get_forward_context().attn_metadata
-    if attn_metadata is not None:  # can be None during warmup
-        if isinstance(attn_metadata, dict):
-            attn_metadata = next(iter(attn_metadata.values()))
-        # TODO: remove "seq_lens_tensor" after V0 is removed
-        seq_lens = getattr(attn_metadata, "seq_lens_tensor",
-                           getattr(attn_metadata, "seq_lens", None))
-
-    if seq_lens is not None:
-        assert isinstance(seq_lens, torch.Tensor)
-
-        # Replace position ids because in RoBERTa models
-        # they have to start at padding_idx + 1 and ignore
-        # existing padding tokens
-        # References:
-        # - https://github.com/huggingface/transformers/blob/a3d69a8994d673899608a7c17fbf4f953f50474e/src/transformers/models/roberta/modeling_roberta.py#L133
-        # - https://github.com/huggingface/transformers/blob/a3d69a8994d673899608a7c17fbf4f953f50474e/src/transformers/models/roberta/modeling_roberta.py#L1669
-        token_list = torch.split(input_ids[:torch.sum(seq_lens)],
-                                 seq_lens.tolist())
-
-        offset = 0
-        for tokens in token_list:
-            length = tokens.shape[0]
-            position_ids[offset:offset+length] = \
-                create_position_ids_from_input_ids(tokens, padding_idx)
-            offset = offset + length
+    # Replace position ids because in RoBERTa models
+    # they have to start at padding_idx + 1 and ignore
+    # existing padding tokens
+    # References:
+    # - https://github.com/huggingface/transformers/blob/a3d69a8994d673899608a7c17fbf4f953f50474e/src/transformers/models/roberta/modeling_roberta.py#L133
+    # - https://github.com/huggingface/transformers/blob/a3d69a8994d673899608a7c17fbf4f953f50474e/src/transformers/models/roberta/modeling_roberta.py#L1669
+    # aphrodite does not use padding tokens, let's make things simpler
+    position_ids += padding_idx + 1

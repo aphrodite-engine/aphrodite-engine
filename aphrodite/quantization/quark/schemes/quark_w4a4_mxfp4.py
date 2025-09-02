@@ -45,7 +45,7 @@ class QuarkW4A4MXFP4(QuarkScheme):
             log_once(
                 "WARNING",
                 "The current platform supports native MXFP4 "
-                "computation, but kernels are not yet integrated in vLLM. "
+                "computation, but kernels are not yet integrated in Aphrodite. "
                 "Simulated weight dequantization and activation "
                 "QDQ (quantize and dequantize) will be used, with the linear "
                 "layers computed in high precision.")
