@@ -25,7 +25,7 @@ from aphrodite.benchmarks.lib.utils import (
     convert_to_pytorch_benchmark_format, write_to_json)
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams
-from aphrodite.engine.arg_utils import AsyncEngineArgs, EngineArgs
+from aphrodite.engine.args_tools import AsyncEngineArgs, EngineArgs
 from aphrodite.inputs import TextPrompt, TokensPrompt
 from aphrodite.lora.request import LoRARequest
 from aphrodite.utils import merge_async_iterators

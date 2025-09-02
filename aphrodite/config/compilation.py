@@ -5,8 +5,8 @@ from dataclasses import asdict, field
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, Union
 
 from loguru import logger
-from pydantic import TypeAdapter
-from pydantic.dataclasses import dataclass, field_validator
+from pydantic import TypeAdapter, field_validator
+from pydantic.dataclasses import dataclass
 
 import aphrodite.common.envs as envs
 from aphrodite.common.logger import log_once

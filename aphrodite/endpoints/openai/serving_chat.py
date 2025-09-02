@@ -435,7 +435,7 @@ class OpenAIServingChat(OpenAIServing):
                         func_name=current_tool_call["name"],
                         idx=tool_call_idx)
                     delta_message = DeltaMessage(tool_calls=[
-                        DeltaToolCall(id=tool_call_id,,
+                        DeltaToolCall(id=tool_call_id,
                                       function=DeltaFunctionCall(
                                           name=current_tool_call["name"],
                                           arguments=arguments),
