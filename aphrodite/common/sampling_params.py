@@ -375,7 +375,8 @@ class SamplingParams(
     previously generated tokens, and optionally prompt tokens as
     a first argument.
     """
-    truncate_prompt_tokens: Optional[Annotated[int, msgspec.Meta(ge=1)]] = None
+    truncate_prompt_tokens: Optional[Annotated[int,
+                                               msgspec.Meta(ge=-1)]] = None
     """
     If set to an integer k, will use only the last
     k tokens from the prompt (i.e. left-truncation). Defaults to None
@@ -934,9 +935,11 @@ class SamplingParams(
             raise ValueError("prompt_logprobs must be non-negative, got "
                              f"{self.prompt_logprobs}.")
         if (self.truncate_prompt_tokens is not None
-                and self.truncate_prompt_tokens < 1):
-            raise ValueError(f"truncate_prompt_tokens must be >= 1, "
-                             f"got {self.truncate_prompt_tokens}")
+                and (self.truncate_prompt_tokens == 0
+                     or self.truncate_prompt_tokens < -1)):
+            raise ValueError(
+                f"truncate_prompt_tokens must be an integer >= 1 or -1, "
+                f"got {self.truncate_prompt_tokens}")
         assert isinstance(self.stop, list)
         if any(not stop_str for stop_str in self.stop):
             raise ValueError("stop cannot contain an empty string.")
