@@ -15,14 +15,14 @@ import aphrodite._custom_ops as ops
 import aphrodite.common.envs as envs
 from aphrodite.common.sampling_params import SamplingType
 from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID,
-                                       CompletionSequenceGroupOutput, Logprob,
-                                       PromptLogprobs, SampleLogprobs,
+                                       CompletionSequenceGroupOutput,
                                        SequenceOutput)
-from aphrodite.platforms import current_platform
+from aphrodite.logprobs import Logprob, PromptLogprobs, SampleLogprobs
 from aphrodite.modeling.layers.utils import apply_penalties
 from aphrodite.modeling.sampling_metadata import (SamplingMetadata,
                                                   SamplingTensors,
                                                   SequenceGroupToSample)
+from aphrodite.platforms import current_platform
 
 
 def get_sampler() -> torch.nn.Module:

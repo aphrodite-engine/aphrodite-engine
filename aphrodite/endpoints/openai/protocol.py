@@ -27,6 +27,7 @@ try:  # For older openai versions (< 1.100.0)
 except ImportError:  # For newer openai versions (>= 1.100.0)
     from openai.types.responses import (ResponseFormatTextConfig as
                                         ResponseTextConfig)
+
 from openai.types.responses.response import ToolChoice
 from openai.types.responses.tool import Tool
 from openai.types.shared import Metadata, Reasoning
@@ -40,11 +41,11 @@ from aphrodite.common.sampling_params import (BeamSearchParams,
                                               GuidedDecodingParams,
                                               RequestOutputKind,
                                               SamplingParams)
-from aphrodite.common.sequence import Logprob
 from aphrodite.endpoints.chat_utils import (ChatCompletionMessageParam,
                                             make_tool_call_id)
 from aphrodite.endpoints.score_utils import (ScoreContentPartParam,
                                              ScoreMultiModalParam)
+from aphrodite.logprobs import Logprob
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils import (generate_phrase_variants, random_uuid,
                              resolve_obj_by_qualname)

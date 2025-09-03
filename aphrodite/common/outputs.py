@@ -10,9 +10,9 @@ from typing_extensions import TypeVar
 
 from aphrodite.common.logger import log_once
 from aphrodite.common.sampling_params import RequestOutputKind
-from aphrodite.common.sequence import (PromptLogprobs, RequestMetrics,
-                                       SampleLogprobs, SequenceGroup,
+from aphrodite.common.sequence import (RequestMetrics, SequenceGroup,
                                        SequenceGroupBase, SequenceStatus)
+from aphrodite.logprobs import PromptLogprobs, SampleLogprobs
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal.inputs import MultiModalPlaceholderDict
 

@@ -26,7 +26,6 @@ import aphrodite.common.envs as envs
 from aphrodite.common.outputs import PoolingRequestOutput, RequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
-from aphrodite.common.sequence import Logprob, PromptLogprobs
 from aphrodite.config import ModelConfig
 # yapf conflicts with isort for this block
 # yapf: disable
@@ -66,6 +65,7 @@ from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import EmbedsPrompt as EngineEmbedsPrompt
 from aphrodite.inputs.data import TokensPrompt as EngineTokensPrompt
 from aphrodite.inputs.parse import parse_and_batch_prompt
+from aphrodite.logprobs import Logprob, PromptLogprobs
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import (  # noqa: F401 - Required to resolve Pydantic error in RequestProcessingMixin
     MultiModalDataDict, MultiModalUUIDDict)

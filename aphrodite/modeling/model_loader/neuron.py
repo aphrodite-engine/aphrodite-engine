@@ -10,10 +10,11 @@ import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
-from aphrodite.config import (ModelConfig, ParallelConfig,
-                                     SchedulerConfig, SpeculativeConfig)
-from aphrodite.common.sequence import (CompletionSequenceGroupOutput, Logprob,
+from aphrodite.common.sequence import (CompletionSequenceGroupOutput,
                                        SequenceOutput)
+from aphrodite.config import (ModelConfig, ParallelConfig, SchedulerConfig,
+                              SpeculativeConfig)
+from aphrodite.logprobs import Logprob
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.sampler import Sampler, SamplerOutput
 from aphrodite.modeling.sampling_metadata import SamplingMetadata

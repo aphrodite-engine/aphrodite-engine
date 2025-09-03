@@ -15,7 +15,6 @@ from pydantic import TypeAdapter
 
 from aphrodite.common.outputs import CompletionOutput, RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
-from aphrodite.common.sequence import Logprob
 from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import (ChatTemplateContentFormatOption,
                                             ConversationMessage,
@@ -44,6 +43,7 @@ from aphrodite.endpoints.openai.tool_parsers.mistral_tool_parser import (
 from aphrodite.endpoints.utils import get_max_tokens
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import TokensPrompt as EngineTokensPrompt
+from aphrodite.logprobs import Logprob
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
 from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
                                                     MistralTokenizer)
