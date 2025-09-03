@@ -718,8 +718,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
                 # If quantized, we need to adjust the offset and size to account
                 # for the packing.
                 if packed_dim == output_dim:
-                    shard_size = shard_size // param.pack_factor
-                    shard_offset = shard_offset // param.pack_factor
+                    shard_size = shard_size // param.packed_factor
+                    shard_offset = shard_offset // param.packed_factor
                     # Special case for Marlin.
                     shard_size, shard_offset = adjust_marlin_shard(
                         param, shard_size, shard_offset)
@@ -752,8 +752,8 @@ class MergedColumnParallelLinear(ColumnParallelLinear):
             # for the packing.
             packed_dim = getattr(param, "packed_dim", None)
             if packed_dim == output_dim:
-                shard_size = shard_size // param.pack_factor
-                shard_offset = shard_offset // param.pack_factor
+                shard_size = shard_size // param.packed_factor
+                shard_offset = shard_offset // param.packed_factor
                 # Special case for Marlin.
                 shard_size, shard_offset = adjust_marlin_shard(
                     param, shard_size, shard_offset)
@@ -1112,8 +1112,8 @@ class QKVParallelLinear(ColumnParallelLinear):
                 # If quantized, we need to adjust the offset and size to account
                 # for the packing.
                 if packed_dim == output_dim:
-                    shard_size = shard_size // param.pack_factor
-                    shard_offset = shard_offset // param.pack_factor
+                    shard_size = shard_size // param.packed_factor
+                    shard_offset = shard_offset // param.packed_factor
 
                     # Special case for Marlin.
                     shard_size, shard_offset = adjust_marlin_shard(
@@ -1160,8 +1160,8 @@ class QKVParallelLinear(ColumnParallelLinear):
             # for the packing.
             packed_dim = getattr(param, "packed_dim", None)
             if packed_dim == output_dim:
-                shard_size = shard_size // param.pack_factor
-                shard_offset = shard_offset // param.pack_factor
+                shard_size = shard_size // param.packed_factor
+                shard_offset = shard_offset // param.packed_factor
 
                 # Special case for Marlin.
                 shard_size, shard_offset = adjust_marlin_shard(
