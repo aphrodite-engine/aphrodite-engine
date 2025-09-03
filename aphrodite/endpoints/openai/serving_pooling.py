@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from typing import Final, Literal, Optional, Union, cast
 
 import jinja2
@@ -12,19 +12,24 @@ from loguru import logger
 from typing_extensions import assert_never
 
 from aphrodite.common.outputs import PoolingOutput, PoolingRequestOutput
-from aphrodite.config import ModelConfig
+from aphrodite.config import AphroditeConfig
 from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (ErrorResponse,
+                                                 IOProcessorRequest,
+                                                 IOProcessorResponse,
                                                  PoolingChatRequest,
+                                                 PoolingCompletionRequest,
                                                  PoolingRequest,
                                                  PoolingResponse,
                                                  PoolingResponseData,
                                                  UsageInfo)
-from aphrodite.endpoints.openai.serving_engine import OpenAIServing
+from aphrodite.endpoints.openai.serving_engine import (OpenAIServing,
+                                                       RequestPrompt)
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.endpoints.utils import _validate_truncation_size
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.plugins.io_processors import get_io_processor
 from aphrodite.utils import merge_async_iterators
 
 
@@ -49,7 +54,7 @@ class OpenAIServingPooling(OpenAIServing):
     def __init__(
         self,
         engine_client: EngineClient,
-        model_config: ModelConfig,
+        aphrodite_config: AphroditeConfig,
         models: OpenAIServingModels,
         *,
         request_logger: Optional[RequestLogger],
@@ -58,19 +63,21 @@ class OpenAIServingPooling(OpenAIServing):
         log_error_stack: bool = False,
     ) -> None:
         super().__init__(engine_client=engine_client,
-                         model_config=model_config,
+                         model_config=aphrodite_config.model_config,
                          models=models,
                          request_logger=request_logger,
                          log_error_stack=log_error_stack)
 
         self.chat_template = chat_template
         self.chat_template_content_format: Final = chat_template_content_format
+        io_processor_plugin = self.model_config.io_processor_plugin
+        self.io_processor = get_io_processor(aphrodite_config, io_processor_plugin)
 
     async def create_pooling(
         self,
         request: PoolingRequest,
         raw_request: Optional[Request] = None,
-    ) -> Union[PoolingResponse, ErrorResponse]:
+    ) -> Union[PoolingResponse, IOProcessorResponse, ErrorResponse]:
         """
         See https://platform.openai.com/docs/api-reference/embeddings/create
         for the API specification. This API mimics the OpenAI Embedding API.
@@ -79,20 +86,13 @@ class OpenAIServingPooling(OpenAIServing):
         if error_check_ret is not None:
             return error_check_ret
 
-        encoding_format = request.encoding_format
-        if request.dimensions is not None:
-            return self.create_error_response(
-                "dimensions is currently not supported")
-
         model_name = self._get_model_name(request.model)
         request_id = f"pool-{self._base_request_id(raw_request)}"
         created_time = int(time.time())
 
-        truncate_prompt_tokens = request.truncate_prompt_tokens
+        is_io_processor_request = isinstance(request, IOProcessorRequest)
 
         try:
-            truncate_prompt_tokens = _validate_truncation_size(
-                self.max_model_len, truncate_prompt_tokens)
             lora_request = self._maybe_get_adapters(request)
 
             if self.model_config.skip_tokenizer_init:
@@ -101,7 +101,32 @@ class OpenAIServingPooling(OpenAIServing):
                 tokenizer = await self.engine_client.get_tokenizer(lora_request
                                                                    )
 
-            if isinstance(request, PoolingChatRequest):
+            if getattr(request, "dimensions", None) is not None:
+                return self.create_error_response(
+                    "dimensions is currently not supported")
+
+            truncate_prompt_tokens = getattr(request, "truncate_prompt_tokens",
+                                             None)
+            truncate_prompt_tokens = _validate_truncation_size(
+                self.max_model_len, truncate_prompt_tokens)
+
+            if is_io_processor_request:
+                if self.io_processor is None:
+                    raise ValueError(
+                        "No IOProcessor plugin installed. Please refer "
+                        "to the documentation and to the "
+                        "'prithvi_geospatial_mae_io_processor' "
+                        "offline inference example for more details.")
+
+                validated_prompt = self.io_processor.parse_request(request)
+
+                engine_prompts = await self.io_processor.pre_process_async(
+                    prompt=validated_prompt, request_id=request_id)
+                request_prompts: Sequence[RequestPrompt] = [
+                    ""
+                ] * len(engine_prompts)
+
+            elif isinstance(request, PoolingChatRequest):
                 (
                     _,
                     request_prompts,
@@ -119,7 +144,7 @@ class OpenAIServingPooling(OpenAIServing):
                     continue_final_message=False,
                     add_special_tokens=request.add_special_tokens,
                 )
-            else:
+            elif isinstance(request, PoolingCompletionRequest):
                 (request_prompts,
                  engine_prompts) = await self._preprocess_completion(
                      request,
@@ -127,6 +152,9 @@ class OpenAIServingPooling(OpenAIServing):
                      request.input,
                      add_special_tokens=request.add_special_tokens,
                  )
+            else:
+                raise ValueError(
+                    f"Unsupported request of type {type(request)}")
         except (ValueError, TypeError, jinja2.TemplateError) as e:
             logger.exception("Error in preprocessing prompt inputs")
             return self.create_error_response(str(e))
@@ -168,6 +196,17 @@ class OpenAIServingPooling(OpenAIServing):
 
         result_generator = merge_async_iterators(*generators)
 
+        if is_io_processor_request:
+            assert self.io_processor is not None
+            output = await self.io_processor.post_process_async(
+                model_output=result_generator,
+                request_id=request_id,
+            )
+            return self.io_processor.output_to_response(output)
+
+        assert isinstance(request,
+                          (PoolingCompletionRequest, PoolingChatRequest))
+
         num_prompts = len(engine_prompts)
 
         # Non-streaming response
@@ -187,7 +226,7 @@ class OpenAIServingPooling(OpenAIServing):
                 request_id,
                 created_time,
                 model_name,
-                encoding_format,
+                request.encoding_format,
             )
         except asyncio.CancelledError:
             return self.create_error_response("Client disconnected")

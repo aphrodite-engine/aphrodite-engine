@@ -4,21 +4,20 @@ from typing import Any, AsyncGenerator, Iterable, Mapping, Optional, Union
 
 from aphrodite.common.beam_search import (BeamSearchSequence,
                                           create_sort_beams_key_function)
-from aphrodite.config import (AphroditeConfig, DecodingConfig,
-                                     ModelConfig)
 from aphrodite.common.outputs import (CompletionOutput, PoolingRequestOutput,
                                       RequestOutput)
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
-from aphrodite.utils import (Device, collect_from_async_generator,
-                                    random_uuid)
+from aphrodite.config import AphroditeConfig, DecodingConfig, ModelConfig
 from aphrodite.inputs.data import PromptType, TokensPrompt
 from aphrodite.inputs.parse import is_explicit_encoder_decoder_prompt
 from aphrodite.inputs.preprocess import InputPreprocessor
 from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling.layers.sampler import SamplerOutput
+from aphrodite.plugins.io_processors.interface import IOProcessor
 from aphrodite.processing.scheduler import SchedulerOutputs
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+from aphrodite.utils import Device, collect_from_async_generator, random_uuid
 
 
 class EngineClient(ABC):
@@ -263,6 +262,9 @@ class EngineClient(ABC):
     ) -> AnyTokenizer:
         """Get the appropriate tokenizer for the request"""
         ...
+
+    async def get_io_processor(self) -> IOProcessor:
+        raise NotImplementedError
 
     @abstractmethod
     async def is_tracing_enabled(self) -> bool:

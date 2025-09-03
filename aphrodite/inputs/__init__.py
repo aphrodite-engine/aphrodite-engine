@@ -1,4 +1,4 @@
-from .data import (DecoderOnlyInputs, EmbedsInputs, EmbedsPrompt,
+from .data import (DataPrompt, DecoderOnlyInputs, EmbedsInputs, EmbedsPrompt,
                    EncoderDecoderInputs, ExplicitEncoderDecoderPrompt,
                    ProcessorInputs, PromptType, SingletonInputs,
                    SingletonPrompt, TextPrompt, TokenInputs, TokensPrompt,
@@ -11,6 +11,7 @@ INPUT_REGISTRY = InputRegistry()
 
 
 __all__ = [
+    "DataPrompt",
     "TextPrompt",
     "TokensPrompt",
     "PromptType",
