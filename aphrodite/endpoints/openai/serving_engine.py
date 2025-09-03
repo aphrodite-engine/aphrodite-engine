@@ -48,6 +48,7 @@ from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  EmbeddingRequest,
                                                  EmbeddingResponse, ErrorInfo,
                                                  ErrorResponse,
+                                                 IOProcessorRequest,
                                                  PoolingResponse,
                                                  RerankRequest,
                                                  ResponsesRequest,
@@ -84,7 +85,7 @@ ChatLikeRequest = Union[ChatCompletionRequest, EmbeddingChatRequest,
                         TokenizeChatRequest]
 SpeechToTextRequest = Union[TranscriptionRequest, TranslationRequest]
 AnyRequest = Union[CompletionLikeRequest, ChatLikeRequest, SpeechToTextRequest,
-                   ResponsesRequest]
+                   ResponsesRequest, IOProcessorRequest]
 
 AnyResponse = Union[
     CompletionResponse,

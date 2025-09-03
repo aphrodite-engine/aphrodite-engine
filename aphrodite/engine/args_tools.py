@@ -362,6 +362,7 @@ class EngineArgs:
     disable_mm_preprocessor_cache: bool = False  # DEPRECATED
     mm_processor_cache_gb: float = MultiModalConfig.mm_processor_cache_gb
     mm_encoder_tp_mode: MMEncoderTPMode = MultiModalConfig.mm_encoder_tp_mode
+    io_processor_plugin: Optional[str] = None
     skip_mm_profiling: bool = MultiModalConfig.skip_mm_profiling
     # LoRA fields
     enable_lora: bool = False
@@ -590,6 +591,8 @@ class EngineArgs:
                                  **model_kwargs["override_attention_dtype"])
         model_group.add_argument("--logits-processors",
                                  **model_kwargs["logits_processors"])
+        model_group.add_argument("--io-processor-plugin",
+                                 **model_kwargs["io_processor_plugin"])
 
         # Model loading arguments
         load_kwargs = get_kwargs(LoadConfig)
@@ -1046,6 +1049,7 @@ class EngineArgs:
             model_impl=self.model_impl,
             override_attention_dtype=self.override_attention_dtype,
             logits_processors=self.logits_processors,
+            io_processor_plugin=self.io_processor_plugin,
             quant_llm_fp_bits=self.quant_llm_fp_bits,
             quant_llm_exp_bits=self.quant_llm_exp_bits,
             deepspeed_fp_bits=self.deepspeed_fp_bits,
