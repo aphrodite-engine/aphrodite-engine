@@ -55,6 +55,7 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.fused_moe import FusedMoE
+from aphrodite.modeling.layers.linear import ReplicatedLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead)
@@ -76,6 +77,7 @@ from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
                                              BaseProcessingInfo,
                                              PromptReplacement, PromptUpdate)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
+from aphrodite.multimodal.utils import run_dp_sharded_mrope_vision_model
 from aphrodite.transformers_utils.configs import KimiVLConfig, MoonViTConfig
 from aphrodite.transformers_utils.configs.deepseek_vl2 import DeepseekV2Config
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
@@ -92,8 +94,10 @@ class MaxImageTokenMeta:
 
 class KimiVLMultiModalProjector(nn.Module):
 
-    def __init__(self, config: KimiVLConfig):
+    def __init__(self, config: KimiVLConfig,
+                 use_data_parallel: bool = False, prefix: str = ""):
         super().__init__()
+        self.use_data_parallel = use_data_parallel
 
         self.hidden_size = (config.vision_config.hidden_size *
                             config.vision_config.merge_kernel_size[0] *
@@ -101,20 +105,24 @@ class KimiVLMultiModalProjector(nn.Module):
 
         self.pre_norm = torch.nn.LayerNorm(config.vision_config.hidden_size,
                                            eps=1e-5)
-        self.linear_1 = nn.Linear(self.hidden_size,
-                                  self.hidden_size,
-                                  bias=True)
+        self.linear_1 = ReplicatedLinear(self.hidden_size,
+                                         self.hidden_size,
+                                         bias=True,
+                                         prefix=maybe_prefix(
+                                             prefix, "linear_1"))
+        self.linear_2 = ReplicatedLinear(self.hidden_size,
+                                         config.text_config.hidden_size,
+                                         bias=True,
+                                         prefix=maybe_prefix(
+                                             prefix, "linear_2"))
         self.act = GELUActivation()
-        self.linear_2 = nn.Linear(self.hidden_size,
-                                  config.text_config.hidden_size,
-                                  bias=True)
 
     def forward(self, image_features: torch.Tensor) -> torch.Tensor:
         hidden_states = self.pre_norm(image_features).view(
             -1, self.hidden_size)
-        hidden_states = self.linear_1(hidden_states)
+        hidden_states, _ = self.linear_1(hidden_states)
         hidden_states = self.act(hidden_states)
-        hidden_states = self.linear_2(hidden_states)
+        hidden_states, _ = self.linear_2(hidden_states)
         return hidden_states
 
 
@@ -272,6 +280,8 @@ class KimiVLMultiModalProcessor(BaseMultiModalProcessor[KimiVLProcessingInfo]):
 class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal,
                                      SupportsPP):
 
+    supports_encoder_tp_data = True
+
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> Optional[str]:
         if modality.startswith("image"):
@@ -292,9 +302,17 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal,
 
         assert isinstance(config.vision_config, MoonViTConfig)
 
-        self.vision_tower = MoonVitPretrainedModel(config.vision_config)
+        self.use_data_parallel = model_config.multimodal_config.mm_encoder_tp_mode == "data"
+        self.hidden_size = config.text_config.hidden_size
+        self.vision_tower = MoonVitPretrainedModel(config.vision_config,
+                                                   self.use_data_parallel,
+                                                   prefix=maybe_prefix(
+                                                       prefix, "vision_tower"))
 
-        self.multi_modal_projector = KimiVLMultiModalProjector(config=config)
+        self.multi_modal_projector = KimiVLMultiModalProjector(
+            config=config,
+            use_data_parallel=self.use_data_parallel,
+            prefix=maybe_prefix(prefix, "multi_modal_projector"))
 
         self.quant_config = quant_config
         sub_aphrodite_config = copy.deepcopy(aphrodite_config)
@@ -375,13 +393,19 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal,
 
         pixel_values = inputs["pixel_values"]
         image_grid_hws = inputs["image_grid_hws"]
-        return self.vision_tower(pixel_values, image_grid_hws)
+        if self.use_data_parallel:
+            return run_dp_sharded_mrope_vision_model(self.vision_tower,
+                                                     pixel_values,
+                                                     image_grid_hws.tolist(),
+                                                     rope_type="rope_2d")
+        else:
+            return self.vision_tower(pixel_values, image_grid_hws)
 
     def _process_image_input(self,
                              image_input: KimiVLImageInputs) -> torch.Tensor:
         assert image_input["type"] == "pixel_values"
         image_features = self._process_image_pixels(image_input)
-        assert isinstance(image_features, list)
+        assert isinstance(image_features, (list, tuple))
         lengths = [x.shape[0] for x in image_features]
         return self.multi_modal_projector(
             torch.cat(image_features)).split(lengths)
