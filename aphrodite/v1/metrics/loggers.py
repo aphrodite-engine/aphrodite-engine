@@ -458,7 +458,9 @@ class PrometheusStatLogger(StatLoggerBase):
 
         histogram_time_per_output_token = self._histogram_cls(
             name="aphrodite:time_per_output_token_seconds",
-            documentation="Histogram of time per output token in seconds.",
+            documentation=(
+                "Histogram of time per output token in seconds."
+                "DEPRECATED: Use aphrodite:inter_token_latency_seconds instead."),
             buckets=[
                 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75,
                 1.0, 2.5, 5.0, 7.5, 10.0, 20.0, 40.0, 80.0
@@ -466,6 +468,17 @@ class PrometheusStatLogger(StatLoggerBase):
             labelnames=labelnames)
         self.histogram_time_per_output_token = make_per_engine(
             histogram_time_per_output_token, engine_indexes, model_name)
+
+        histogram_inter_token_latency = self._histogram_cls(
+            name="aphrodite:inter_token_latency_seconds",
+            documentation="Histogram of inter-token latency in seconds.",
+            buckets=[
+                0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75,
+                1.0, 2.5, 5.0, 7.5, 10.0, 20.0, 40.0, 80.0
+            ],
+            labelnames=labelnames)
+        self.histogram_inter_token_latency = make_per_engine(
+            histogram_inter_token_latency, engine_indexes, model_name)
 
         request_latency_buckets = [
             0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0,
@@ -625,8 +638,9 @@ class PrometheusStatLogger(StatLoggerBase):
                 self.histogram_n_request[engine_idx].observe(n_param)
             for ttft in iteration_stats.time_to_first_tokens_iter:
                 self.histogram_time_to_first_token[engine_idx].observe(ttft)
-            for tpot in iteration_stats.time_per_output_tokens_iter:
-                self.histogram_time_per_output_token[engine_idx].observe(tpot)
+            for itl in iteration_stats.inter_token_latencies_iter:
+                self.histogram_inter_token_latency[engine_idx].observe(itl)
+                self.histogram_time_per_output_token[engine_idx].observe(itl)
 
         # Always log finished requests (both modes)
         for finished_request in iteration_stats.finished_requests:
