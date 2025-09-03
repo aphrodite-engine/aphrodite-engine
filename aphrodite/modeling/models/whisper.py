@@ -1,7 +1,7 @@
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import nullcontext
-from typing import Optional, TypedDict, Union, cast
+from typing import Literal, Optional, TypedDict, Union, cast
 
 import numpy as np
 import torch
@@ -779,8 +779,9 @@ class WhisperForConditionalGeneration(nn.Module, SupportsTranscription,
             model_config: ModelConfig,  # not needed here
             stt_config: SpeechToTextConfig,
             language: Optional[str],
-            task_type: str,
-            request_prompt: str) -> PromptType:
+            task_type: Literal["transcribe", "translate"],
+            request_prompt: str,
+            to_language: Optional[str]) -> PromptType:
         if language is None:
             raise ValueError(
                 "Language must be specified when creating the Whisper prompt")
