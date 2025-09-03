@@ -34,8 +34,6 @@ from aphrodite.common import envs
 from aphrodite.common.logger import log_once
 from aphrodite.common.outputs import CompletionOutput
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.common.sequence import Logprob as SampleLogprob
-from aphrodite.common.sequence import SampleLogprobs
 from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import (ChatCompletionMessageParam,
                                             ChatTemplateContentFormatOption)
@@ -62,6 +60,8 @@ from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.endpoints.tool_server import MCPToolServer, ToolServer
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import TokensPrompt as EngineTokensPrompt
+from aphrodite.logprobs import Logprob as SampleLogprob
+from aphrodite.logprobs import SampleLogprobs
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils import random_uuid

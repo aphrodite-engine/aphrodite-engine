@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Optional
 
-from aphrodite.common.sequence import Logprob, PromptLogprobs, SampleLogprobs
+from aphrodite.logprobs import Logprob, PromptLogprobs, SampleLogprobs
 from aphrodite.transformers_utils.detokenizer_utils import (
     AnyTokenizer, convert_ids_list_to_tokens)
 from aphrodite.v1.engine import EngineCoreOutput, EngineCoreRequest

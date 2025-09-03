@@ -11,7 +11,6 @@ from typing_extensions import assert_never
 
 from aphrodite.common.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
-from aphrodite.common.sequence import Logprob
 from aphrodite.config import ModelConfig
 from aphrodite.endpoints.logger import RequestLogger
 # yapf conflicts with isort for this block
@@ -33,6 +32,7 @@ from aphrodite.endpoints.utils import get_max_tokens
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import (EmbedsPrompt, TokensPrompt,
                                    is_embeds_prompt, is_tokens_prompt)
+from aphrodite.logprobs import Logprob
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils import as_list, merge_async_iterators
 

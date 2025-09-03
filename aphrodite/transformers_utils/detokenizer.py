@@ -1,7 +1,8 @@
 from typing import Optional
 
-from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID, Logprob,
+from aphrodite.common.sequence import (APHRODITE_INVALID_TOKEN_ID,
                                        SamplingParams, Sequence, SequenceGroup)
+from aphrodite.logprobs import Logprob
 
 from .detokenizer_utils import (convert_prompt_ids_to_tokens,
                                 detokenize_incrementally)

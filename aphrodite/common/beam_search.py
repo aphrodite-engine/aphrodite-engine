@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional, Union
 
-from aphrodite.common.sequence import Logprob
+from aphrodite.logprobs import Logprob
 from aphrodite.lora.request import LoRARequest
 
 if TYPE_CHECKING:
