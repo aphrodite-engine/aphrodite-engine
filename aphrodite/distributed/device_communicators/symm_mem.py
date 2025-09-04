@@ -19,6 +19,7 @@ except ImportError:
 
 class SymmMemCommunicator:
     _WORLD_SIZES_MULTIMEM = {
+        "8.0": [2, 4, 6, 8],
         "9.0": [4, 6, 8],
         "10.0": [6, 8],
     }

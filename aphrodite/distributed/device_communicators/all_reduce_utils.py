@@ -39,6 +39,12 @@ CUSTOM_ALL_REDUCE_MAX_SIZES = {
 }
 
 SYMM_MEM_ALL_REDUCE_MAX_SIZES = {
+    "8.0": {
+        2: 1 * MiB,    # 1 MB
+        4: MiB // 2,   # 512 KB
+        6: 1 * MiB,    # 1 MB
+        8: 1 * MiB,    # 1 MB
+    },
     "9.0": {
         2: 64 * MiB,  # 64 MB
         4: 32 * MiB,  # 32 MB
