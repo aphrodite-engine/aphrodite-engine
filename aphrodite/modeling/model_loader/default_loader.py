@@ -17,13 +17,18 @@ from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.weight_utils import (
     download_safetensors_index_file_from_hf, download_weights_from_hf,
     fastsafetensors_weights_iterator, filter_duplicate_safetensors_files,
-    filter_files_not_needed_for_inference, get_lock, np_cache_weights_iterator,
+    filter_files_not_needed_for_inference, get_lock,
+    multi_thread_pt_weights_iterator,
+    multi_thread_safetensors_weights_iterator, np_cache_weights_iterator,
     pt_weights_iterator, safetensors_weights_iterator)
 from aphrodite.platforms import current_platform
 
 
 class DefaultModelLoader(BaseModelLoader):
     """Model loader that can load different file types from disk."""
+
+    # default number of thread when enable multithread weight loading
+    DEFAULT_NUM_THREADS = 8
 
     @dataclasses.dataclass
     class Source:
@@ -49,9 +54,17 @@ class DefaultModelLoader(BaseModelLoader):
 
     def __init__(self, load_config: LoadConfig):
         super().__init__(load_config)
-        if load_config.model_loader_extra_config:
-            raise ValueError(f"Model loader extra config is not supported for "
-                             f"load format {load_config.load_format}")
+
+        extra_config = load_config.model_loader_extra_config
+        allowed_keys = {"enable_multithread_load", "num_threads"}
+        unexpected_keys = set(extra_config.keys()) - allowed_keys
+
+        if unexpected_keys:
+            raise ValueError(
+                f"Unexpected extra config keys for load format "
+                f"{load_config.load_format}: "
+                f"{unexpected_keys}"
+            )
 
     def _maybe_download_from_modelscope(
             self, model: str, revision: Optional[str]) -> Optional[str]:
@@ -176,6 +189,8 @@ class DefaultModelLoader(BaseModelLoader):
                 source.model_or_path, source.revision, source.fall_back_to_pt,
                 source.allow_patterns_overrides))
 
+        extra_config = self.load_config.model_loader_extra_config
+
         # Calculate total size by iterating through files
         total_bytes = 0
         for file_path in hf_weights_files:
@@ -199,16 +214,37 @@ class DefaultModelLoader(BaseModelLoader):
                     self.load_config.use_tqdm_on_load,
                 )
             else:
-                weights_iterator = safetensors_weights_iterator(
+                if extra_config.get("enable_multithread_load"):
+                    weights_iterator = (
+                        multi_thread_safetensors_weights_iterator(
+                            hf_weights_files,
+                            self.load_config.use_tqdm_on_load,
+                            max_workers=extra_config.get(
+                                "num_threads", self.DEFAULT_NUM_THREADS
+                            ),
+                        )
+                    )
+                else:
+                    weights_iterator = safetensors_weights_iterator(
+                        hf_weights_files,
+                        self.load_config.use_tqdm_on_load,
+                    )
+        else:
+            if extra_config.get("enable_multithread_load"):
+                weights_iterator = multi_thread_pt_weights_iterator(
                     hf_weights_files,
                     self.load_config.use_tqdm_on_load,
+                    self.load_config.pt_load_map_location,
+                    max_workers=extra_config.get(
+                        "num_threads", self.DEFAULT_NUM_THREADS
+                    ),
                 )
-        else:
-            weights_iterator = pt_weights_iterator(
-                hf_weights_files,
-                self.load_config.use_tqdm_on_load,
-                self.load_config.pt_load_map_location,
-            )
+            else:
+                weights_iterator = pt_weights_iterator(
+                    hf_weights_files,
+                    self.load_config.use_tqdm_on_load,
+                    self.load_config.pt_load_map_location,
+                )
 
         if current_platform.is_tpu():
             from aphrodite.platforms.tpu import USE_TPU_COMMONS
