@@ -1226,7 +1226,8 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 and num_logits <= self.cudagraph_batch_sizes[-1]):
             # Use piecewise CUDA graphs.
             # Add padding to the batch size.
-            num_logits_padded = self.vllm_config.pad_for_cudagraph(num_logits)
+            num_logits_padded = self.aphrodite_config.pad_for_cudagraph(
+                num_logits)
         else:
             num_logits_padded = num_logits
         logits_indices_padded = (
