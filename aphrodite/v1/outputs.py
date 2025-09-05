@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import NamedTuple, Optional
 
@@ -109,6 +110,20 @@ class ModelRunnerOutput:
 
     # req_id -> num_nans_in_logits
     num_nans_in_logits: Optional[dict[str, int]] = None
+
+
+# ModelRunnerOutput wrapper for async scheduling.
+class AsyncModelRunnerOutput(ABC):
+
+    @abstractmethod
+    def get_output(self) -> ModelRunnerOutput:
+        """Get the ModelRunnerOutput for this async output.
+
+        This is a blocking call that waits until the results are ready, which
+        might involve copying device tensors to the host.
+        This method should only be called once per AsyncModelRunnerOutput.
+        """
+        pass
 
 
 @dataclass

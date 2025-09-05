@@ -3,7 +3,7 @@ import copy
 import gc
 import os
 from contextlib import AbstractContextManager, nullcontext
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 import torch.distributed
@@ -28,7 +28,8 @@ from aphrodite.utils import (GiB_bytes, MemorySnapshot,
 from aphrodite.v1.engine import (ReconfigureDistributedRequest,
                                  ReconfigureRankType)
 from aphrodite.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
-from aphrodite.v1.outputs import (EMPTY_MODEL_RUNNER_OUTPUT, DraftTokenIds,
+from aphrodite.v1.outputs import (EMPTY_MODEL_RUNNER_OUTPUT,
+                                  AsyncModelRunnerOutput, DraftTokenIds,
                                   ModelRunnerOutput)
 from aphrodite.v1.utils import report_usage_stats
 from aphrodite.v1.worker.gpu_model_runner import GPUModelRunner
@@ -385,7 +386,7 @@ class Worker(WorkerBase):
     def execute_model(
         self,
         scheduler_output: "SchedulerOutput",
-    ) -> Optional[ModelRunnerOutput]:
+    ) -> Optional[Union[ModelRunnerOutput, AsyncModelRunnerOutput]]:
         intermediate_tensors = None
         forward_pass = scheduler_output.total_num_scheduled_tokens > 0
         if forward_pass and not get_pp_group().is_first_rank:
@@ -396,7 +397,7 @@ class Worker(WorkerBase):
         output = self.model_runner.execute_model(scheduler_output,
                                                  intermediate_tensors)
 
-        if isinstance(output, ModelRunnerOutput):
+        if isinstance(output, (ModelRunnerOutput, AsyncModelRunnerOutput)):
             return output
 
         assert isinstance(output, IntermediateTensors)
