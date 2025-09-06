@@ -545,7 +545,8 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                 log_once("INFO", "Using DeepGemm kernels for Fp8MoEMethod.")
                 self.allow_deep_gemm = True
             else:
-                log_once("WARNING", "DeepGemm not supported on the current platform.")
+                log_once("WARNING", "DeepGemm not supported on the current "
+                                    "platform.")
 
         # Check for CutlassBlockScaledGroupedGemm support.
         self.allow_cutlass_block_scaled_grouped_gemm = False
@@ -554,12 +555,14 @@ class Fp8MoEMethod(FusedMoEMethodBase):
                               "CutlassBlockScaledGroupedGemm kernels")
         elif (current_platform.is_cuda()
               and current_platform.is_device_capability(100)):
-            log_once("INFO", "Using CutlassBlockScaledGroupedGemm kernels for Fp8MoEMethod.")
+            log_once(
+                "INFO",
+                "Using CutlassBlockScaledGroupedGemm kernels for Fp8MoEMethod."
+                )
             self.allow_cutlass_block_scaled_grouped_gemm = True
         else:
-            log_once("WARNING", "CutlassBlockScaledGroupedGemm not supported on the current "
-                "CutlassBlockScaledGroupedGemm not supported on the current "
-                "platform.")
+            log_once("WARNING", "CutlassBlockScaledGroupedGemm not supported "
+                     "on the current platform.")
 
     def maybe_make_prepare_finalize(
         self,
