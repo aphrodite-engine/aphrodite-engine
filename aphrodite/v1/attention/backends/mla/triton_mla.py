@@ -103,19 +103,38 @@ class TritonMLAImpl(MLACommonImpl[MLACommonMetadata]):
                                          return_softmax_lse=False,
                                          softmax_scale=None,
                                          **kwargs):
-        if current_platform.is_rocm() \
-            and self.use_triton_flash_attn \
-            and not return_softmax_lse:
+        if (current_platform.is_rocm() and self.use_triton_flash_attn
+                and not return_softmax_lse):
             return self._flash_attn_varlen_diff_headdims_rocm(
                 q, k, v, softmax_scale=softmax_scale, **kwargs)
+        elif current_platform.is_rocm() and return_softmax_lse:
+            # On ROCm, when return_softmax_lse=True is needed (e.g., for
+            # prefix caching), fall back to upstream flash_attn instead
+            # of aphrodite flash attention to avoid CUDA-specific operations
+            try:
+                from flash_attn import (flash_attn_varlen_func
+                                        as upstream_flash_attn)
+                return upstream_flash_attn(
+                    q=q,
+                    k=k,
+                    v=v,
+                    max_seqlen_q=kwargs.get("max_seqlen_q"),
+                    cu_seqlens_q=kwargs.get("cu_seqlens_q"),
+                    max_seqlen_k=kwargs.get("max_seqlen_k"),
+                    cu_seqlens_k=kwargs.get("cu_seqlens_k"),
+                    softmax_scale=softmax_scale,
+                    causal=kwargs.get("causal", False),
+                    return_attn_probs=return_softmax_lse,
+                )
+            except ImportError:
+                # If upstream flash_attn is not available, fall back to parent
+                return super()._flash_attn_varlen_diff_headdims(
+                    q, k, v, return_softmax_lse=return_softmax_lse,
+                    softmax_scale=softmax_scale, **kwargs)
         else:
             return super()._flash_attn_varlen_diff_headdims(
-                q,
-                k,
-                v,
-                return_softmax_lse=return_softmax_lse,
-                softmax_scale=softmax_scale,
-                **kwargs)
+                q, k, v, return_softmax_lse=return_softmax_lse,
+                softmax_scale=softmax_scale, **kwargs)
 
     def _forward_decode(
         self,
