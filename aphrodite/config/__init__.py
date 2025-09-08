@@ -22,19 +22,16 @@ from pydantic import (ConfigDict, SkipValidation, field_validator,
                       model_validator)
 from pydantic.dataclasses import dataclass
 from safetensors.torch import _TYPES as _SAFETENSORS_TO_TORCH_DTYPE
-from torch.distributed import ProcessGroup, ReduceOp
 from typing_extensions import Self, assert_never, runtime_checkable
 
 import aphrodite.common.envs as envs
 from aphrodite import version
 from aphrodite.common.logger import log_once
-from aphrodite.config.cache import (BlockSize, CacheConfig, CacheDType,
-                                    MambaDType, PrefixCachingHashAlgo)
+from aphrodite.config.cache import CacheConfig
 from aphrodite.config.compilation import (CompilationConfig, CompilationLevel,
-                                          CUDAGraphMode, PassConfig)
-from aphrodite.config.parallel import (DistributedExecutorBackend, EPLBConfig,
-                                       ParallelConfig)
-from aphrodite.config.scheduler import SchedulerConfig, SchedulerPolicy
+                                          CUDAGraphMode)
+from aphrodite.config.parallel import ParallelConfig
+from aphrodite.config.scheduler import SchedulerConfig
 from aphrodite.config.utils import ConfigType, config
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
@@ -47,7 +44,7 @@ from aphrodite.transformers_utils.config import (
     try_get_tokenizer_config, uses_mrope)
 from aphrodite.transformers_utils.s3_utils import S3Model
 from aphrodite.transformers_utils.utils import is_s3, maybe_model_redirect
-from aphrodite.utils import (DEFAULT_MAX_NUM_BATCHED_TOKENS, LayerBlockType,
+from aphrodite.utils import (STR_DUAL_CHUNK_FLASH_ATTN_VAL, LayerBlockType,
                              LazyLoader, common_broadcastable_dtype,
                              random_uuid)
 
@@ -59,7 +56,6 @@ if TYPE_CHECKING:
     import aphrodite.quantization as me_quant
     from aphrodite.modeling.model_loader import LoadFormats
     from aphrodite.modeling.model_loader.tensorizer import TensorizerConfig
-    from aphrodite.quantization import QuantizationMethods
     from aphrodite.quantization.base_config import QuantizationConfig
     from aphrodite.v1.sample.logits_processor import LogitsProcessor
 
@@ -1434,6 +1430,12 @@ class ModelConfig:
                         self.hf_config.dual_chunk_attention_config:
                     self.hf_config.dual_chunk_attention_config[
                         "sparse_attention_enabled"] = True
+
+            if envs.APHRODITE_ATTENTION_BACKEND != (
+                STR_DUAL_CHUNK_FLASH_ATTN_VAL
+            ):
+                raise ValueError("please set APHRODITE_ATTENTION_BACKEND to "
+                                 f"{STR_DUAL_CHUNK_FLASH_ATTN_VAL}")
 
     def verify_async_output_proc(self, parallel_config, speculative_config,
                                  device_config) -> None:
