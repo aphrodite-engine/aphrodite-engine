@@ -25,7 +25,6 @@ from itertools import islice
 from typing import Any, Optional, Union
 
 import torch
-from loguru import logger
 from torch import nn
 from transformers.models.glm4_moe import Glm4MoeConfig
 
@@ -155,7 +154,8 @@ class Glm4MoE(nn.Module):
             topk_group=config.topk_group,
             prefix=f"{prefix}.experts",
             scoring_func="sigmoid",
-            routed_scaling_factor=self.routed_scaling_factor,
+            # we do scaling outside, set factor to 1.0 to avoid double mul
+            routed_scaling_factor=1.0,
             e_score_correction_bias=self.gate.e_score_correction_bias,
             enable_eplb=self.enable_eplb,
             num_redundant_experts=self.n_redundant_experts)
