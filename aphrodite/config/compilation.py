@@ -336,6 +336,7 @@ class CompilationConfig:
         "aphrodite.mamba_mixer",
         "aphrodite.short_conv",
         "aphrodite.linear_attention",
+        "aphrodite.plamo2_mamba_mixer",
     ]
 
     def compute_hash(self) -> str:
