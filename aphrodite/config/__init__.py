@@ -27,11 +27,13 @@ from typing_extensions import Self, assert_never, runtime_checkable
 import aphrodite.common.envs as envs
 from aphrodite import version
 from aphrodite.common.logger import log_once
-from aphrodite.config.cache import CacheConfig
+from aphrodite.config.cache import (BlockSize, CacheConfig, CacheDType,
+                                    MambaDType, PrefixCachingHashAlgo)
 from aphrodite.config.compilation import (CompilationConfig, CompilationLevel,
-                                          CUDAGraphMode)
-from aphrodite.config.parallel import ParallelConfig
-from aphrodite.config.scheduler import SchedulerConfig
+                                          CUDAGraphMode, PassConfig)
+from aphrodite.config.parallel import (DistributedExecutorBackend, EPLBConfig,
+                                       ParallelConfig)
+from aphrodite.config.scheduler import SchedulerConfig, SchedulerPolicy
 from aphrodite.config.utils import ConfigType, config
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
