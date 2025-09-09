@@ -1,18 +1,13 @@
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 import torch.distributed as dist
 from loguru import logger
 
-from aphrodite.utils import has_deep_ep, has_pplx
 from aphrodite.forward_context import get_forward_context
+from aphrodite.utils import has_deep_ep, has_pplx
 
 from .base_device_communicator import All2AllManagerBase, Cache
-
-if TYPE_CHECKING:
-    from aphrodite.modeling.layers.fused_moe.layer import FusedMoE
-else:
-    FusedMoE = None
 
 
 class NaiveAll2AllManager(All2AllManagerBase):
