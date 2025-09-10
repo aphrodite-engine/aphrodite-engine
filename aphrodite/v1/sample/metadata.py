@@ -90,6 +90,8 @@ class SamplingMetadata:
     # req_index -> bad_words_token_ids
     bad_words_token_ids: dict[int, list[list[int]]]
 
+    logit_bias: dict[int, dict[int, float]]
+
     # Loaded logits processors
     logitsprocs: LogitsProcessors
 
