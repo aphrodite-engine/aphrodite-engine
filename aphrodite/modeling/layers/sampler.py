@@ -1555,10 +1555,10 @@ def get_logprobs(
 
         # (num_selected_query_tokens, num_logprobs). Note that query_indices can
         # contain duplicates if beam search is enabled.
-        selected_logprobs = logprobs[[
+        selected_logprobs = logprobs[(
             query_indices_gpu,
             next_token_ids_gpu,
-        ]]
+        )]
         ranks = _get_ranks(
             logprobs[query_indices_gpu],
             next_token_ids_gpu,
