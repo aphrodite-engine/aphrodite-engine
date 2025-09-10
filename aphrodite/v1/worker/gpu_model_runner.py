@@ -2690,6 +2690,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             output_token_ids=[[] for _ in range(num_reqs)],
             allowed_token_ids_mask=None,
             bad_words_token_ids={},
+            logit_bias={},
             mirostat_mode=None,
             mirostat_tau=None,
             mirostat_eta=None,
