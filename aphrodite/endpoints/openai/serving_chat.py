@@ -651,7 +651,7 @@ class OpenAIServingChat(OpenAIServing):
                             tokenizer=tokenizer,
                             num_output_top_logprobs=request.top_logprobs,
                             return_as_token_id=request.
-                            return_tokens_as_token_ids,
+                            return_token_ids,
                         )
                     else:
                         logprobs = None
@@ -1122,7 +1122,7 @@ class OpenAIServingChat(OpenAIServing):
                     top_logprobs=out_logprobs,
                     num_output_top_logprobs=request.top_logprobs,
                     tokenizer=tokenizer,
-                    return_as_token_id=request.return_tokens_as_token_ids,
+                    return_as_token_id=self.return_tokens_as_token_ids,
                 )
             else:
                 logprobs = None
