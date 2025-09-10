@@ -15,6 +15,7 @@ from .minimax_tool_parser import MinimaxToolParser
 from .mistral_tool_parser import MistralToolParser
 from .phi4mini_tool_parser import Phi4MiniJsonToolParser
 from .pythonic_tool_parser import PythonicToolParser
+from .qwen3_next_tool_parser import Qwen3NextToolParser
 from .qwen3coder_tool_parser import Qwen3CoderToolParser
 from .seed_oss_tool_parser import SeedOssToolParser
 from .step3_tool_parser import Step3ToolParser
@@ -40,6 +41,7 @@ __all__ = [
     "KimiK2ToolParser",
     "HunyuanA13BToolParser",
     "Glm4MoeModelToolParser",
+    "Qwen3NextToolParser",
     "Qwen3CoderToolParser",
     "SeedOssToolParser",
     "Step3ToolParser",
