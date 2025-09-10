@@ -24,6 +24,7 @@ from aphrodite.transformers_utils.configs.nemotron_h import NemotronHConfig
 from aphrodite.transformers_utils.configs.nemotron_vl import (
     Nemotron_Nano_VL_Config)
 from aphrodite.transformers_utils.configs.ovis import OvisConfig
+from aphrodite.transformers_utils.configs.qwen3_next import Qwen3NextConfig
 from aphrodite.transformers_utils.configs.speculators.base import (
     SpeculatorsConfig)
 from aphrodite.transformers_utils.configs.step3_vl import (
@@ -49,4 +50,5 @@ __all__ = [
     "Step3VLConfig",
     "Step3VisionEncoderConfig",
     "Step3TextConfig",
+    "Qwen3NextConfig",
 ]

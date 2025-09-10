@@ -92,6 +92,7 @@ class InputBatch:
         logitsprocs: Optional[LogitsProcessors] = None,
         is_spec_decode: bool = False,
         is_pooling_model: bool = False,
+        num_speculative_tokens: int = 0,
     ):
         self.is_pooling_model = is_pooling_model
         self.is_spec_decode = is_spec_decode
@@ -136,6 +137,7 @@ class InputBatch:
             pin_memory=pin_memory,
             device=device,
             block_sizes=block_sizes,
+            num_speculative_tokens=num_speculative_tokens,
         )
 
         # Sampling-related.
@@ -458,6 +460,14 @@ class InputBatch:
             self.repetition_penalties_cpu_tensor.numpy()
         self.repetition_penalties_reqs: set[str] = set()
 
+        # Speculative decoding
+        self.num_accepted_tokens_cpu_tensor = torch.ones((max_num_reqs, ),
+                                                         dtype=torch.int64,
+                                                         device="cpu",
+                                                         pin_memory=pin_memory)
+        self.num_accepted_tokens_cpu = \
+            self.num_accepted_tokens_cpu_tensor.numpy()
+
         # lora related
         self.request_lora_mapping = np.zeros((self.max_num_reqs, ),
                                              dtype=np.int32)
@@ -726,6 +736,9 @@ class InputBatch:
                 self.bad_words_token_ids[
                     req_index] = sampling_params.bad_words_token_ids
 
+        # Speculative decoding: by default 1 token is generated.
+        self.num_accepted_tokens_cpu[req_index] = 1
+
         # Add request lora ID
         if request.lora_request:
             lora_id = request.lora_request.lora_int_id
@@ -919,6 +932,8 @@ class InputBatch:
                 self.dry_early_exit_match_len_cpu[i1]
         self.no_repeat_ngram_size_cpu[i1], self.no_repeat_ngram_size_cpu[i2] =\
             self.no_repeat_ngram_size_cpu[i2], self.no_repeat_ngram_size_cpu[i1]
+        self.num_accepted_tokens_cpu[i1], self.num_accepted_tokens_cpu[i2] =\
+            self.num_accepted_tokens_cpu[i2], self.num_accepted_tokens_cpu[i1]
 
         swap_dict_values(self.generators, i1, i2)
         swap_dict_values(self.bad_words_token_ids, i1, i2)
@@ -1070,6 +1085,8 @@ class InputBatch:
                 self.dry_early_exit_match_len_cpu[last_req_index]
             self.no_repeat_ngram_size_cpu[empty_index] = \
                 self.no_repeat_ngram_size_cpu[last_req_index]
+            self.num_accepted_tokens_cpu[
+                empty_index] = self.num_accepted_tokens_cpu[last_req_index]
             generator = self.generators.pop(last_req_index, None)
             if generator is not None:
                 self.generators[empty_index] = generator
