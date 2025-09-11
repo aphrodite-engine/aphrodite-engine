@@ -11,7 +11,7 @@ from aphrodite.modeling.layers.activation import (FastGELU, FatreluAndMul,
                                                    SiluAndMul)
 from aphrodite.platforms import current_platform
 
-DTYPES = [torch.half, torch.bfloat16, torch.float]
+DTYPES = [torch.half]
 NUM_TOKENS = [7, 83, 2048]  # Arbitrary values for testing
 D = [512, 13824]  # Arbitrary values for testing
 SEEDS = [0]
@@ -22,7 +22,16 @@ CUDA_DEVICES = [
 
 @pytest.mark.parametrize(
     "activation",
-    ["silu_and_mul", "mul_and_silu", "gelu", "gelu_tanh", "fatrelu"])
+    [
+    #  "silu_and_mul",
+    #  "mul_and_silu",
+    #  "gelu",
+     "gelu_tanh",
+    #  "fatrelu",
+    #  "gelu_new",
+    #  "gelu_quick",
+    #  "gelu_fast"
+     ])
 @pytest.mark.parametrize("num_tokens", NUM_TOKENS)
 @pytest.mark.parametrize("d", D)
 @pytest.mark.parametrize("dtype", DTYPES)

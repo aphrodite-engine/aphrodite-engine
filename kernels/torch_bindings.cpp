@@ -6,6 +6,10 @@
 #include <torch/library.h>
 #include <torch/version.h>
 
+#ifdef APHRODITE_ENABLE_VULKAN
+#include "vulkan/ops_vk.h"
+#endif
+
 // Note on op signatures:
 // The X_meta signatures are for the meta functions corresponding to op X.
 // They must be kept in sync with the signature for X. Generally, only
@@ -108,7 +112,11 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   // Activation ops
   // Activation function used in SwiGLU.
   ops.def("silu_and_mul(Tensor! result, Tensor input) -> ()");
-  ops.impl("silu_and_mul", torch::kCUDA, &silu_and_mul);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("silu_and_mul", torch::kCUDA, &aphrodite::vk::silu_and_mul);
+  #else
+    ops.impl("silu_and_mul", torch::kCUDA, &silu_and_mul);
+  #endif
 
   ops.def(
       "silu_and_mul_quant(Tensor! result, Tensor input, Tensor scale) -> ()");
@@ -123,19 +131,35 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
 #endif
 
   ops.def("mul_and_silu(Tensor! out, Tensor input) -> ()");
-  ops.impl("mul_and_silu", torch::kCUDA, &mul_and_silu);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("mul_and_silu", torch::kCUDA, &aphrodite::vk::mul_and_silu);
+  #else
+    ops.impl("mul_and_silu", torch::kCUDA, &mul_and_silu);
+  #endif
 
   // Activation function used in GeGLU with `none` approximation.
   ops.def("gelu_and_mul(Tensor! out, Tensor input) -> ()");
-  ops.impl("gelu_and_mul", torch::kCUDA, &gelu_and_mul);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("gelu_and_mul", torch::kCUDA, &aphrodite::vk::gelu_and_mul);
+  #else
+    ops.impl("gelu_and_mul", torch::kCUDA, &gelu_and_mul);
+  #endif
 
   // Activation function used in GeGLU with `tanh` approximation.
   ops.def("gelu_tanh_and_mul(Tensor! out, Tensor input) -> ()");
-  ops.impl("gelu_tanh_and_mul", torch::kCUDA, &gelu_tanh_and_mul);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("gelu_tanh_and_mul", torch::kCUDA, &aphrodite::vk::gelu_tanh_and_mul);
+  #else
+    ops.impl("gelu_tanh_and_mul", torch::kCUDA, &gelu_tanh_and_mul);
+  #endif
 
   // FATReLU implementation.
   ops.def("fatrelu_and_mul(Tensor! out, Tensor input, float threshold) -> ()");
-  ops.impl("fatrelu_and_mul", torch::kCUDA, &fatrelu_and_mul);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("fatrelu_and_mul", torch::kCUDA, &aphrodite::vk::fatrelu_and_mul);
+  #else
+    ops.impl("fatrelu_and_mul", torch::kCUDA, &fatrelu_and_mul);
+  #endif
 
   ops.def(
       "swigluoai_and_mul(Tensor! out, Tensor input, float alpha=1.702, float "
@@ -145,28 +169,48 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
 
   // GELU implementation used in GPT-2.
   ops.def("gelu_new(Tensor! out, Tensor input) -> ()");
-  ops.impl("gelu_new", torch::kCUDA, &gelu_new);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("gelu_new", torch::kCUDA, &aphrodite::vk::gelu_new);
+  #else
+    ops.impl("gelu_new", torch::kCUDA, &gelu_new);
+  #endif
 
   // Approximate GELU implementation.
   ops.def("gelu_fast(Tensor! out, Tensor input) -> ()");
-  ops.impl("gelu_fast", torch::kCUDA, &gelu_fast);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("gelu_fast", torch::kCUDA, &aphrodite::vk::gelu_fast);
+  #else
+    ops.impl("gelu_fast", torch::kCUDA, &gelu_fast);
+  #endif
 
   // Quick GELU implementation.
   ops.def("gelu_quick(Tensor! out, Tensor input) -> ()");
-  ops.impl("gelu_quick", torch::kCUDA, &gelu_quick);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("gelu_quick", torch::kCUDA, &aphrodite::vk::gelu_quick);
+  #else
+    ops.impl("gelu_quick", torch::kCUDA, &gelu_quick);
+  #endif
 
   // Layernorm
   // Apply Root Mean Square (RMS) Normalization to the input tensor.
   ops.def(
       "rms_norm(Tensor! result, Tensor input, Tensor weight, float epsilon) -> "
       "()");
-  ops.impl("rms_norm", torch::kCUDA, &rms_norm);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("rms_norm", torch::kCUDA, &aphrodite::vk::rms_norm);
+  #else
+    ops.impl("rms_norm", torch::kCUDA, &rms_norm);
+  #endif
 
   // In-place fused Add and RMS Normalization.
   ops.def(
       "fused_add_rms_norm(Tensor! input, Tensor! residual, Tensor weight, "
       "float epsilon) -> ()");
-  ops.impl("fused_add_rms_norm", torch::kCUDA, &fused_add_rms_norm);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("fused_add_rms_norm", torch::kCUDA, &aphrodite::vk::fused_add_rms_norm);
+  #else
+    ops.impl("fused_add_rms_norm", torch::kCUDA, &fused_add_rms_norm);
+  #endif
 
   // Polynomial Normalization.
   ops.def(
@@ -212,7 +256,11 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "rotary_embedding(Tensor positions, Tensor! query,"
       "                 Tensor!? key, int head_size,"
       "                 Tensor cos_sin_cache, bool is_neox) -> ()");
-  ops.impl("rotary_embedding", torch::kCUDA, &rotary_embedding);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("rotary_embedding", torch::kCUDA, &aphrodite::vk::rotary_embedding);
+  #else
+    ops.impl("rotary_embedding", torch::kCUDA, &rotary_embedding);
+  #endif
 
   // Apply GPT-NeoX or GPT-J style rotary embedding to query and key
   // (supports multiple loras).
@@ -222,7 +270,11 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "                         Tensor cos_sin_cache, bool is_neox,"
       "                         int rot_dim,"
       "                         Tensor cos_sin_cache_offsets) -> ()");
-  ops.impl("batched_rotary_embedding", torch::kCUDA, &batched_rotary_embedding);
+  #ifdef APHRODITE_ENABLE_VULKAN
+    ops.impl("batched_rotary_embedding", torch::kCUDA, &aphrodite::vk::batched_rotary_embedding);
+  #else
+    ops.impl("batched_rotary_embedding", torch::kCUDA, &batched_rotary_embedding);
+  #endif
 
   // Quantization ops
 #ifndef USE_ROCM
