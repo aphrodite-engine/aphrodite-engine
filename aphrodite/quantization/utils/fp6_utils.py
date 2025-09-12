@@ -412,6 +412,7 @@ def _bit_interleave(x: Tensor, n_bits: int, undo: bool = False) -> Tensor:
                 0, 4, 8, 12, 16, 20, 24, 28, 2, 6, 10, 14, 18, 22, 26, 30],
             2: [1, 5, 9, 13, 3, 7, 11, 15, 0, 4, 8, 12, 2, 6, 10, 14],
             4: [1, 5, 3, 7, 0, 4, 2, 6],
+            8: [1, 3, 0, 2],
         }[n_bits]
 
     else:
@@ -422,6 +423,7 @@ def _bit_interleave(x: Tensor, n_bits: int, undo: bool = False) -> Tensor:
                 20, 4, 28, 12, 21, 5, 29, 13, 22, 6, 30, 14, 23, 7, 31, 15],
             2: [8, 0, 12, 4, 9, 1, 13, 5, 10, 2, 14, 6, 11, 3, 15, 7],
             4: [4, 0, 6, 2, 5, 1, 7, 3],
+            8: [2, 0, 3, 1],
         }[n_bits]
 
     x = x[:, bit_order]
@@ -449,7 +451,7 @@ def _pack_tc_fpx(tensor: Tensor, nbits: int) -> Tensor:
     used_bits = 0
     fragments = []
 
-    for y in [1, 2, 4]:
+    for y in [1, 2, 4, 8]:
         if nbits & y:
             mask = (1 << y) - 1
             tensor_ybit = (tensor >> (nbits - used_bits - y)) & mask
@@ -518,7 +520,7 @@ def _unpack_tc_fpx(tensor: Tensor, nbits: int) -> Tensor:
 
     tensor_fpx = None
 
-    for y in [1, 2, 4]:
+    for y in [1, 2, 4, 8]:
         if nbits & y:
             size_ybit = size // nbits * y
             tensor_ybit = tensor[offset : offset + size_ybit]

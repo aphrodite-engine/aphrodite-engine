@@ -1608,6 +1608,17 @@ def fp_eXmY_linear_forward_cuda(exponent_bits: int, mantissa_bits: int,
                                                     x, weights, scales, splitK)
 
 
+if hasattr(torch.ops._C, "fp_eXmY_linear_forward_cuda"):
+
+    @register_fake("_C::fp_eXmY_linear_forward_cuda")
+    def fp_eXmY_linear_forward_cuda_fake(exponent_bits: int, mantissa_bits: int,
+                                         x: torch.Tensor, weights: torch.Tensor,
+                                         scales: torch.Tensor, splitK: int) -> torch.Tensor:
+        return torch.empty((x.shape[0], weights.shape[1]),
+                           dtype=x.dtype,
+                           device=x.device)
+
+
 # mamba
 def selective_scan_fwd(u: torch.Tensor, delta: torch.Tensor, A: torch.Tensor,
                        B: torch.Tensor, C: torch.Tensor,
