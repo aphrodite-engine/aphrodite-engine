@@ -433,3 +433,232 @@ void qr_all_reduce(fptr_t _fa, torch::Tensor& inp, torch::Tensor& out,
                    int64_t quant_level, bool cast_bf2half = false);
 int64_t qr_max_size();
 #endif
+
+// Sage Attention
+#ifndef USE_ROCM
+
+void quant_per_block_int8_cuda(
+    torch::Tensor input,
+    torch::Tensor output,
+    torch::Tensor scale,
+    double sm_scale,
+    int64_t block_size,
+    int64_t tensor_layout);
+
+void quant_per_block_int8_cuda(
+    torch::Tensor input,
+    torch::Tensor output,
+    torch::Tensor scale,
+    int64_t block_size,
+    int64_t tensor_layout);
+
+void quant_per_block_int8_fuse_sub_mean_cuda(
+    torch::Tensor input,
+    torch::Tensor mean,
+    torch::Tensor output,
+    torch::Tensor scale,
+    int64_t block_size,
+    int64_t tensor_layout);
+
+void quant_per_warp_int8_cuda(
+    torch::Tensor input,
+    torch::Tensor output,
+    torch::Tensor scale,
+    int64_t block_size,
+    int64_t warp_block_size,
+    int64_t tensor_layout);
+
+void sub_mean_cuda(
+    torch::Tensor input,
+    torch::Tensor mean,
+    torch::Tensor output,
+    int64_t tensor_layout);
+
+void transpose_pad_permute_cuda(
+    torch::Tensor input,
+    torch::Tensor output,
+    int64_t tensor_layout);
+
+void scale_fuse_quant_cuda(
+    torch::Tensor input,
+    torch::Tensor output,
+    torch::Tensor scale,
+    int64_t num_tokens,
+    double scale_max,
+    int64_t tensor_layout);
+
+void mean_scale_fuse_quant_cuda(
+    torch::Tensor input,
+    torch::Tensor output,
+    torch::Tensor mean,
+    torch::Tensor scale,
+    int64_t num_tokens,
+    double scale_max,
+    int64_t tensor_layout);
+
+torch::Tensor qk_int8_sv_f16_accum_f32_attn(torch::Tensor query,
+    torch::Tensor key,
+    torch::Tensor value,
+    torch::Tensor output,
+    torch::Tensor query_scale,
+    torch::Tensor key_scale,
+    int64_t tensor_layout,
+    int64_t is_causal,
+    int64_t qk_quant_gran,
+    double sm_scale,
+    int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f16_accum_f16_attn(torch::Tensor query,
+        torch::Tensor key,
+        torch::Tensor value,
+        torch::Tensor output,
+        torch::Tensor query_scale,
+        torch::Tensor key_scale,
+        int64_t tensor_layout,
+        int64_t is_causal,
+        int64_t qk_quant_gran,
+        double sm_scale,
+        int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f16_accum_f16_attn_inst_buf(torch::Tensor query,
+        torch::Tensor key,
+        torch::Tensor value,
+        torch::Tensor output,
+        torch::Tensor query_scale,
+        torch::Tensor key_scale,
+        int64_t tensor_layout,
+        int64_t is_causal,
+        int64_t qk_quant_gran,
+        double sm_scale,
+        int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f16_accum_f16_fuse_v_mean_attn(torch::Tensor query,
+        torch::Tensor key,
+        torch::Tensor value,
+        torch::Tensor output,
+        torch::Tensor query_scale,
+        torch::Tensor key_scale,
+        torch::Tensor value_mean,
+        int64_t tensor_layout,
+        int64_t is_causal,
+        int64_t qk_quant_gran,
+        double sm_scale,
+        int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f32_attn(torch::Tensor query,
+    torch::Tensor key,
+    torch::Tensor value,
+    torch::Tensor output,
+    torch::Tensor query_scale,
+    torch::Tensor key_scale,
+    int64_t tensor_layout,
+    int64_t is_causal,
+    int64_t qk_quant_gran,
+    double sm_scale,
+    int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f32_fuse_v_scale_attn(torch::Tensor query,
+            torch::Tensor key,
+            torch::Tensor value,
+            torch::Tensor output,
+            torch::Tensor query_scale,
+            torch::Tensor key_scale,
+            torch::Tensor value_scale,
+            int64_t tensor_layout,
+            int64_t is_causal,
+            int64_t qk_quant_gran,
+            double sm_scale,
+            int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn(torch::Tensor query,
+            torch::Tensor key,
+            torch::Tensor value,
+            torch::Tensor output,
+            torch::Tensor query_scale,
+            torch::Tensor key_scale,
+            torch::Tensor value_scale,
+            torch::Tensor value_mean,
+            int64_t tensor_layout,
+            int64_t is_causal,
+            int64_t qk_quant_gran,
+            double sm_scale,
+            int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f32_attn_inst_buf(torch::Tensor query,
+            torch::Tensor key,
+            torch::Tensor value,
+            torch::Tensor output,
+            torch::Tensor query_scale,
+            torch::Tensor key_scale,
+            int64_t tensor_layout,
+            int64_t is_causal,
+            int64_t qk_quant_gran,
+            double sm_scale,
+            int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f16_attn_inst_buf(torch::Tensor query,
+            torch::Tensor key,
+            torch::Tensor value,
+            torch::Tensor output,
+            torch::Tensor query_scale,
+            torch::Tensor key_scale,
+            int64_t tensor_layout,
+            int64_t is_causal,
+            int64_t qk_quant_gran,
+            double sm_scale,
+            int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf(torch::Tensor query,
+            torch::Tensor key,
+            torch::Tensor value,
+            torch::Tensor output,
+            torch::Tensor query_scale,
+            torch::Tensor key_scale,
+            torch::Tensor value_scale,
+            int64_t tensor_layout,
+            int64_t is_causal,
+            int64_t qk_quant_gran,
+            double sm_scale,
+            int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf(torch::Tensor query,
+            torch::Tensor key,
+            torch::Tensor value,
+            torch::Tensor output,
+            torch::Tensor query_scale,
+            torch::Tensor key_scale,
+            torch::Tensor value_scale,
+            int64_t tensor_layout,
+            int64_t is_causal,
+            int64_t qk_quant_gran,
+            double sm_scale,
+            int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f32_attn_inst_buf(
+                    torch::Tensor query,
+                    torch::Tensor key,
+                    torch::Tensor value,
+                    torch::Tensor output,
+                    torch::Tensor query_scale,
+                    torch::Tensor key_scale,
+                    int64_t tensor_layout,
+                    int64_t is_causal,
+                    int64_t qk_quant_gran,
+                    double sm_scale,
+                    int64_t return_lse);
+
+torch::Tensor qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf(
+                    torch::Tensor query,
+                    torch::Tensor key,
+                    torch::Tensor value,
+                    torch::Tensor output,
+                    torch::Tensor query_scale,
+                    torch::Tensor key_scale,
+                    torch::Tensor value_scale,
+                    int64_t tensor_layout,
+                    int64_t is_causal,
+                    int64_t qk_quant_gran,
+                    double sm_scale,
+                    int64_t return_lse);
+
+#endif
