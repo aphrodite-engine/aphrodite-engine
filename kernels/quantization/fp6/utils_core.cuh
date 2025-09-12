@@ -43,27 +43,32 @@ __device__ __forceinline__ void initialize_mma_slice(
     uint32_t (*a)[4], uint32_t (*b)[4], uint32_t* __restrict__ A_1BIT_SPTR_read,
     uint32_t* __restrict__ A_2BIT_SPTR_read,
     uint32_t* __restrict__ A_4BIT_SPTR_read,
+    uint32_t* __restrict__ A_8BIT_SPTR_read,
     half (*__restrict__ B_SPTR_read)[WARP_K + PADDING_SHARED_MEM_FOR_B_8],
     uint32_t* RPTR_Scales) {
-  // 1+2+4 weight split
+  // 1+2+4+8 weight split (extended for FP8 support)
   constexpr int BIT_WIDTH = 1 + EXPONENT + MANTISSA;
   constexpr int USE_SEG_1BIT = BIT_WIDTH & 1;
   constexpr int USE_SEG_2BIT = BIT_WIDTH & 2;
   constexpr int USE_SEG_4BIT = BIT_WIDTH & 4;
+  constexpr int USE_SEG_8BIT = BIT_WIDTH & 8;
   // Writing registers
   // Registers to store FP6 fragments for a slice (64*16) of A matrix => 32 FP6
   // per thread => 6 register per thread;
   uint32_t a_1bit[1];  // NO double buffer
   uint32_t a_2bit[2];  // NO double buffer
   uint32_t a_4bit[4];  // NO double buffer
+  uint32_t a_8bit[8];  // NO double buffer (new for FP8 support)
   if (USE_SEG_1BIT)
     CopyFromSharedToRegister_AFrag<1>(a_1bit, A_1BIT_SPTR_read, 0);
   if (USE_SEG_2BIT)
     CopyFromSharedToRegister_AFrag<2>(a_2bit, A_2BIT_SPTR_read, 0);
   if (USE_SEG_4BIT)
     CopyFromSharedToRegister_AFrag<4>(a_4bit, A_4BIT_SPTR_read, 0);
+  if (USE_SEG_8BIT)
+    CopyFromSharedToRegister_AFrag<8>(a_8bit, A_8BIT_SPTR_read, 0);
   Dequant_32FP6_4Way<EXPONENT, MANTISSA>(
-      a, a_1bit, a_2bit, a_4bit,
+      a, a_1bit, a_2bit, a_4bit, a_8bit,
       RPTR_Scales);  // SIMT Dequant: dequantizing FPx to FP16 at register
                      // level, dequantizing a slice each time
   B_FromSharedToReg<TilingConfig>(b, B_SPTR_read,
@@ -78,16 +83,18 @@ __device__ __forceinline__ void core_mma_slice(
     uint32_t (*b)[4], uint32_t* __restrict__ A_1bit_SPTR_read,
     uint32_t* __restrict__ A_2bit_SPTR_read,
     uint32_t* __restrict__ A_4bit_SPTR_read,
+    uint32_t* __restrict__ A_8bit_SPTR_read,
     half (*__restrict__ B_SPTR_read)[WARP_K + PADDING_SHARED_MEM_FOR_B_8],
     uint32_t* RPTR_Scales,
     int slice_id)  // writing slice[slice_id] to registers, k=0 -> slice_id=1
                    // for prefetching
 {
-  // 1+2+4 weight split
+  // 1+2+4+8 weight split (extended for FP8 support)
   constexpr int BIT_WIDTH = 1 + EXPONENT + MANTISSA;
   constexpr int USE_SEG_1BIT = BIT_WIDTH & 1;
   constexpr int USE_SEG_2BIT = BIT_WIDTH & 2;
   constexpr int USE_SEG_4BIT = BIT_WIDTH & 4;
+  constexpr int USE_SEG_8BIT = BIT_WIDTH & 8;
 
 #ifdef DEBUG_MODE
   assert((TilingConfig::WARP_COL_MMA_TENSORS == 1) ||
@@ -142,14 +149,17 @@ __device__ __forceinline__ void core_mma_slice(
   uint32_t a_1bit[1];  // NO double buffer
   uint32_t a_2bit[2];  // NO double buffer
   uint32_t a_4bit[4];  // NO double buffer
+  uint32_t a_8bit[8];  // NO double buffer (new for FP8 support)
   if (USE_SEG_1BIT)
     CopyFromSharedToRegister_AFrag<1>(a_1bit, A_1bit_SPTR_read, slice_id);
   if (USE_SEG_2BIT)
     CopyFromSharedToRegister_AFrag<2>(a_2bit, A_2bit_SPTR_read, slice_id);
   if (USE_SEG_4BIT)
     CopyFromSharedToRegister_AFrag<4>(a_4bit, A_4bit_SPTR_read, slice_id);
+  if (USE_SEG_8BIT)
+    CopyFromSharedToRegister_AFrag<8>(a_8bit, A_8bit_SPTR_read, slice_id);
   Dequant_32FP6_4Way<EXPONENT, MANTISSA>(
-      a_write, a_1bit, a_2bit, a_4bit,
+      a_write, a_1bit, a_2bit, a_4bit, a_8bit,
       RPTR_Scales);  // SIMT Dequant: dequantizing FP6 to FP16 at register
                      // level, dequantizing a slice each time
   B_FromSharedToReg<TilingConfig>(

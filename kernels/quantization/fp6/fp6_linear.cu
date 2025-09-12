@@ -326,6 +326,40 @@ torch::Tensor fp_eXmY_linear_forward_cuda(int64_t EXPONENT, int64_t MANTISSA,
     aphrodite::fpx_linear_kernel<5, 1>(stream, weight, scales, in_feats,
                                        out_feats, M, N, K, Reduction_Workspace,
                                        splitK);
+  else if (EXPONENT == 6 && MANTISSA == 0)
+    aphrodite::fpx_linear_kernel<6, 0>(stream, weight, scales, in_feats,
+                                       out_feats, M, N, K, Reduction_Workspace,
+                                       splitK);
+
+  // FP8
+  else if (EXPONENT == 1 && MANTISSA == 6)
+    aphrodite::fpx_linear_kernel<1, 6>(stream, weight, scales, in_feats,
+                                       out_feats, M, N, K, Reduction_Workspace,
+                                       splitK);
+  else if (EXPONENT == 2 && MANTISSA == 5)
+    aphrodite::fpx_linear_kernel<2, 5>(stream, weight, scales, in_feats,
+                                       out_feats, M, N, K, Reduction_Workspace,
+                                       splitK);
+  else if (EXPONENT == 3 && MANTISSA == 4)
+    aphrodite::fpx_linear_kernel<3, 4>(stream, weight, scales, in_feats,
+                                       out_feats, M, N, K, Reduction_Workspace,
+                                       splitK);
+  else if (EXPONENT == 4 && MANTISSA == 3)
+    aphrodite::fpx_linear_kernel<4, 3>(stream, weight, scales, in_feats,
+                                       out_feats, M, N, K, Reduction_Workspace,
+                                       splitK);
+  else if (EXPONENT == 5 && MANTISSA == 2)
+    aphrodite::fpx_linear_kernel<5, 2>(stream, weight, scales, in_feats,
+                                       out_feats, M, N, K, Reduction_Workspace,
+                                       splitK);
+  else if (EXPONENT == 6 && MANTISSA == 1)
+    aphrodite::fpx_linear_kernel<6, 1>(stream, weight, scales, in_feats,
+                                       out_feats, M, N, K, Reduction_Workspace,
+                                       splitK);
+  else if (EXPONENT == 7 && MANTISSA == 0)
+    aphrodite::fpx_linear_kernel<7, 0>(stream, weight, scales, in_feats,
+                                       out_feats, M, N, K, Reduction_Workspace,
+                                       splitK);
 
   else
     TORCH_CHECK(false, "FP", NBITS, " E", EXPONENT, "M", MANTISSA,

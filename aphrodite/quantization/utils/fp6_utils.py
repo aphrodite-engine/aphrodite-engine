@@ -179,7 +179,7 @@ def _f32_to_fpx_unpacked(x: Tensor, ebits: int, mbits: int) -> Tensor:
     Background 2: Computer Organization and Design, RISC-V edition, Chapter 3.5
     """
     assert x.dtype == torch.float
-    assert 1 + ebits + mbits <= 8
+    assert 1 + ebits + mbits <= 8  # Now supports FP8 (8 bits total)
 
     # calculate constants
     exp_bias = _n_ones(ebits - 1)
@@ -287,7 +287,7 @@ def _fpx_unpacked_to_f32(x: Tensor, ebits: int, mbits: int) -> Tensor:
     Output: torch.Tensor of dtype fp32 with the dequantized value
     """
     assert x.dtype == torch.uint8
-    assert 1 + ebits + mbits <= 8
+    assert 1 + ebits + mbits <= 8  # Now supports FP8 (8 bits total)
 
     sign_mask = 1 << (ebits + mbits)
     exp_bias = _n_ones(ebits - 1)
@@ -483,11 +483,11 @@ def _pack_tc_fp6(tensor: Tensor) -> Tensor:
     return torch.cat([tensor_2bit, tensor_4bit], dim=0).view(M, -1)
 
 
-# currently only optimize for TC-FP6 packing
+# currently only optimize for TC-FP6 packing, FP8 uses generic packing
 def pack_tc_fpx(tensor: Tensor, nbits: int) -> Tensor:
     if nbits == 6:
         return _pack_tc_fp6(tensor)
-    return _pack_tc_fpx(tensor, nbits)
+    return _pack_tc_fpx(tensor, nbits)  # Handles FP8 and other bit widths
 
 
 def to_scaled_tc_fpx(tensor: Tensor, ebits: int, mbits: int) -> Tuple[Tensor, Tensor]:

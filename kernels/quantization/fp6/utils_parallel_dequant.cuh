@@ -32,7 +32,8 @@ template <int EXPONENT, int MANTISSA>
 __device__ __forceinline__ void FPx_FP16_Cast_4Way(uint32_t* In, uint32_t* Out1,
                                                    uint32_t* Out2) {
   //
-  constexpr int RIGHT_SHIFT = 5 - EXPONENT;
+  // Fix for FP8 support: ensure RIGHT_SHIFT is never negative
+  constexpr int RIGHT_SHIFT = (EXPONENT <= 5) ? (5 - EXPONENT) : 0;
   constexpr int MASK1 = 0x80000000;
   constexpr int MASK2 = MASK1 >> EXPONENT + MANTISSA;
   constexpr int MASK3 = MASK2 & 0x7fffffff;
@@ -49,8 +50,11 @@ __device__ __forceinline__ void FPx_FP16_Cast_4Way(uint32_t* In, uint32_t* Out1,
 template <int EXPONENT, int MANTISSA>
 __device__ __forceinline__ uint32_t MultScale(uint32_t PackedFP16Pair,
                                               half Scale) {
-  constexpr int BIAS_OFFSET = (int(1) << (5 - 1)) - (int(1) << (EXPONENT - 1));
-  constexpr int BIAS = int(1) << BIAS_OFFSET;
+  // Fix for FP8 support: handle cases where EXPONENT > 5
+  constexpr int BIAS_OFFSET = (EXPONENT <= 5) ? 
+    ((int(1) << (5 - 1)) - (int(1) << (EXPONENT - 1))) : 
+    ((int(1) << (EXPONENT - 1)) - (int(1) << (5 - 1)));
+  constexpr int BIAS = (EXPONENT <= 5) ? (int(1) << BIAS_OFFSET) : (int(1) << 0);
   //
   half* FP16_1 = reinterpret_cast<half*>(&PackedFP16Pair);
   half* FP16_2 = FP16_1 + 1;
@@ -71,17 +75,20 @@ template <int EXPONENT, int MANTISSA>
 __device__ __forceinline__ void Dequant_32FP6_4Way(
     uint32_t (*__restrict__ Reg)[4], uint32_t* __restrict__ read_RPTR_1bit,
     uint32_t* __restrict__ read_RPTR_2bit,
-    uint32_t* __restrict__ read_RPTR_4bit, uint32_t* Scales) {
-  // 1+2+4 weight split
+    uint32_t* __restrict__ read_RPTR_4bit, 
+    uint32_t* __restrict__ read_RPTR_8bit, uint32_t* Scales) {
+  // 1+2+4+8 weight split (extended for FP8 support)
   constexpr int BIT_WIDTH = 1 + EXPONENT + MANTISSA;
   constexpr int USE_SEG_1BIT = BIT_WIDTH & 1;
   constexpr int USE_SEG_2BIT = BIT_WIDTH & 2;
   constexpr int USE_SEG_4BIT = BIT_WIDTH & 4;
+  constexpr int USE_SEG_8BIT = BIT_WIDTH & 8;
   //
   uint32_t* OutputRegs = reinterpret_cast<uint32_t*>(Reg);
   uint32_t* Frag_PTR_1bit = read_RPTR_1bit;
   uint32_t* Frag_PTR_2bit = read_RPTR_2bit;
   uint32_t* Frag_PTR_4bit = read_RPTR_4bit;
+  uint32_t* Frag_PTR_8bit = read_RPTR_8bit;
   half* Scale_RPTR = reinterpret_cast<half*>(Scales);
 // Dequantizing 32 FP6, each Loop dequantizing 4 FP6
 #pragma unroll(8)
@@ -114,6 +121,13 @@ __device__ __forceinline__ void Dequant_32FP6_4Way(
         Frag_PTR_4bit++;
       else
         (*Frag_PTR_4bit) = (*Frag_PTR_4bit) << 4;
+    }
+    // 8bit Frag (new for FP8 support)
+    if (USE_SEG_8BIT) {
+      tmp = (*Frag_PTR_8bit) & 0xff00ff00;
+      Packed_FP6 |= tmp >> (BIT_WIDTH & 7);
+      if (i % 1 == 0)  // Every iteration since we get full 8 bits at once
+        Frag_PTR_8bit++;
     }
     //
     uint32_t out1, out2;

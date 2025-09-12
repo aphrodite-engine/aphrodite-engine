@@ -24,6 +24,7 @@
 #define BIT_WIDTH_1 1
 #define BIT_WIDTH_2 2
 #define BIT_WIDTH_4 4
+#define BIT_WIDTH_8 8
 /*************************** 64*64 Weghts of Weight Matrix
  * *********************/
 #define WEIGHT_PER_WARP (WARP_M * WARP_K)  // 64*64 = 4096
@@ -36,6 +37,9 @@
 #define SMEM_SIZE_PER_WARP_4BIT    \
   (WEIGHT_PER_WARP * BIT_WIDTH_4 / \
    8)  // 2048 Bytes, doubleBuffer not taken into consideration
+#define SMEM_SIZE_PER_WARP_8BIT    \
+  (WEIGHT_PER_WARP * BIT_WIDTH_8 / \
+   8)  // 4096 Bytes, doubleBuffer not taken into consideration
 #define SMEM_SIZE_PER_TB_1BIT                            \
   (SMEM_SIZE_PER_WARP_1BIT * TilingConfig::BLOCK_WARPS * \
    PIPELINE_LEVEL_GMEM)  // #WARP=4; Trible-Buffer for 3-level pipeline for A
@@ -51,14 +55,20 @@
    PIPELINE_LEVEL_GMEM)  // #WARP=4; Trible-Buffer for 3-level pipeline for A
                          // = 24 KB; double buffer for 2-level pipeline A= 16
                          // KB.
+#define SMEM_SIZE_PER_TB_8BIT                            \
+  (SMEM_SIZE_PER_WARP_8BIT * TilingConfig::BLOCK_WARPS * \
+   PIPELINE_LEVEL_GMEM)  // #WARP=4; Trible-Buffer for 3-level pipeline for A
+                         // = 48 KB; double buffer for 2-level pipeline A= 32
+                         // KB.
 #define SMEM_SIZE_PER_TB_A_TILE                    \
   (SMEM_SIZE_PER_TB_1BIT + SMEM_SIZE_PER_TB_2BIT + \
-   SMEM_SIZE_PER_TB_4BIT)  // used in fp6_linear.cu, Kernel_Ex().
+   SMEM_SIZE_PER_TB_4BIT + SMEM_SIZE_PER_TB_8BIT)  // used in fp6_linear.cu, Kernel_Ex().
 /******************** Global Memory Layout For QUANTIZED DATA
  * *******************/
 #define NUM_INT4_PER_WARP_1BIT (WEIGHT_PER_WARP * BIT_WIDTH_1 / 128)  // 32
 #define NUM_INT4_PER_WARP_2BIT (WEIGHT_PER_WARP * BIT_WIDTH_2 / 128)  // 64
 #define NUM_INT4_PER_WARP_4BIT (WEIGHT_PER_WARP * BIT_WIDTH_4 / 128)  // 128
+#define NUM_INT4_PER_WARP_8BIT (WEIGHT_PER_WARP * BIT_WIDTH_8 / 128)  // 256
 
 /*
  * C = A*B
@@ -77,11 +87,12 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
   assert(M_Global % TilingConfig::TILE_M == 0);
   assert(gridDim.y == Split_K * (M_Global / TilingConfig::TILE_M));
 #endif
-  // 1+2+4 weight split
+  // 1+2+4+8 weight split (extended for FP8 support)
   constexpr int BIT_WIDTH = 1 + EXPONENT + MANTISSA;
   constexpr int USE_SEG_1BIT = BIT_WIDTH & 1;
   constexpr int USE_SEG_2BIT = BIT_WIDTH & 2;
   constexpr int USE_SEG_4BIT = BIT_WIDTH & 4;
+  constexpr int USE_SEG_8BIT = BIT_WIDTH & 8;
   const uint4* Weight_1bit = Weight;
   const uint4* Weight_2bit =
       Weight_1bit +
@@ -89,6 +100,9 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
   const uint4* Weight_4bit =
       Weight_2bit +
       (USE_SEG_2BIT ? M_Global * K_Global * BIT_WIDTH_2 / 128 : 0);
+  const uint4* Weight_8bit =
+      Weight_4bit +
+      (USE_SEG_4BIT ? M_Global * K_Global * BIT_WIDTH_4 / 128 : 0);
   // Dynamic shared memory for FP16 A tiles， 128 Bytes aligned
   extern __shared__ __align__(128) half smem[];
   half(*smem_array)[WARP_K + PADDING_SHARED_MEM_FOR_B_8] =
@@ -141,6 +155,9 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
   const uint4* TB_StartGPTR_A_4BIT =
       Weight_4bit +
       (y * TilingConfig::BLOCK_ROW_WARPS) * NumBlock_K * NUM_INT4_PER_WARP_4BIT;
+  const uint4* TB_StartGPTR_A_8BIT =
+      Weight_8bit +
+      (y * TilingConfig::BLOCK_ROW_WARPS) * NumBlock_K * NUM_INT4_PER_WARP_8BIT;
   // StartPTR for each WARP.
   const uint4* WARP_StartGPTR_A_1BIT =
       TB_StartGPTR_A_1BIT + WARP_i * NumBlock_K * NUM_INT4_PER_WARP_1BIT;
@@ -148,11 +165,14 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
       TB_StartGPTR_A_2BIT + WARP_i * NumBlock_K * NUM_INT4_PER_WARP_2BIT;
   const uint4* WARP_StartGPTR_A_4BIT =
       TB_StartGPTR_A_4BIT + WARP_i * NumBlock_K * NUM_INT4_PER_WARP_4BIT;
+  const uint4* WARP_StartGPTR_A_8BIT =
+      TB_StartGPTR_A_8BIT + WARP_i * NumBlock_K * NUM_INT4_PER_WARP_8BIT;
   // StartPTR for each WARP, considering SplitK
   const size_t WARP_Start_UnitID_K = StartBlockID_K;
   WARP_StartGPTR_A_1BIT += WARP_Start_UnitID_K * NUM_INT4_PER_WARP_1BIT;
   WARP_StartGPTR_A_2BIT += WARP_Start_UnitID_K * NUM_INT4_PER_WARP_2BIT;
   WARP_StartGPTR_A_4BIT += WARP_Start_UnitID_K * NUM_INT4_PER_WARP_4BIT;
+  WARP_StartGPTR_A_8BIT += WARP_Start_UnitID_K * NUM_INT4_PER_WARP_8BIT;
   // Copying A tile from Global to Shared, using double-buffer
   // ////////////////////////////////////////////////////////// StartSPTR for
   // each ThreadBlock
@@ -162,10 +182,15 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
       AFrag_2BIT_SPTR +
       SMEM_SIZE_PER_TB_2BIT /
           4;  // 8 buffers including double buffers, 12 for trible buffers
+  uint32_t* AFrag_8BIT_SPTR =
+      AFrag_4BIT_SPTR +
+      SMEM_SIZE_PER_TB_4BIT /
+          4;  // Extended for FP8 support
   // StartSPTR for each WARP
   AFrag_1BIT_SPTR += warpId * SMEM_SIZE_PER_WARP_1BIT / 4;
   AFrag_2BIT_SPTR += warpId * SMEM_SIZE_PER_WARP_2BIT / 4;
   AFrag_4BIT_SPTR += warpId * SMEM_SIZE_PER_WARP_4BIT / 4;
+  AFrag_8BIT_SPTR += warpId * SMEM_SIZE_PER_WARP_8BIT / 4;
   // Pre-fetch of A tile
   for (int i = 0; i < PIPELINE_LEVEL_GMEM - 1; i++) {
     if (USE_SEG_1BIT)
@@ -180,9 +205,14 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
       CopyFromGlobalToShared_A<SMEM_SIZE_PER_WARP_4BIT>(
           AFrag_4BIT_SPTR + i * SMEM_SIZE_PER_WARP_4BIT / 4 * 4,
           WARP_StartGPTR_A_4BIT);
+    if (USE_SEG_8BIT)
+      CopyFromGlobalToShared_A<SMEM_SIZE_PER_WARP_8BIT>(
+          AFrag_8BIT_SPTR + i * SMEM_SIZE_PER_WARP_8BIT / 4 * 4,
+          WARP_StartGPTR_A_8BIT);
     WARP_StartGPTR_A_1BIT += SMEM_SIZE_PER_WARP_1BIT / 16;
     WARP_StartGPTR_A_2BIT += SMEM_SIZE_PER_WARP_2BIT / 16;
     WARP_StartGPTR_A_4BIT += SMEM_SIZE_PER_WARP_4BIT / 16;
+    WARP_StartGPTR_A_8BIT += SMEM_SIZE_PER_WARP_8BIT / 16;
   }
   // Global Memory Address for Matrix A (QuantScale)
   // /////////////////////////////////////////////////////////////////////
@@ -230,7 +260,7 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
   // Initializing the Software Pipeline: writing registers.
   // ////////////////////////////////////////////////////////////////////////////////////////////////
   initialize_mma_slice<TilingConfig, EXPONENT, MANTISSA>(
-      a, b, AFrag_1BIT_SPTR, AFrag_2BIT_SPTR, AFrag_4BIT_SPTR, smem_array,
+      a, b, AFrag_1BIT_SPTR, AFrag_2BIT_SPTR, AFrag_4BIT_SPTR, AFrag_8BIT_SPTR, smem_array,
       Scales_RPTR);
 // The outer loop.
 // /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -249,6 +279,10 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
         AFrag_4BIT_SPTR +
         ((tile_id_k + 0) % PIPELINE_LEVEL_GMEM) * SMEM_SIZE_PER_WARP_4BIT / 4 *
             4;  // 2048 (1)*4: 4 WARPs; (2)/4: int*+1 = char*+16
+    uint32_t* __restrict__ read_SPTR_Frag_8bit =
+        AFrag_8BIT_SPTR +
+        ((tile_id_k + 0) % PIPELINE_LEVEL_GMEM) * SMEM_SIZE_PER_WARP_8BIT / 4 *
+            4;  // 4096 (1)*4: 4 WARPs; (2)/4: int*+1 = char*+16
     uint32_t* __restrict__ read2_SPTR_Frag_1bit =
         AFrag_1BIT_SPTR + ((tile_id_k + 1) % PIPELINE_LEVEL_GMEM) *
                               SMEM_SIZE_PER_WARP_1BIT / 4 * 4;
@@ -258,6 +292,9 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
     uint32_t* __restrict__ read2_SPTR_Frag_4bit =
         AFrag_4BIT_SPTR + ((tile_id_k + 1) % PIPELINE_LEVEL_GMEM) *
                               SMEM_SIZE_PER_WARP_4BIT / 4 * 4;
+    uint32_t* __restrict__ read2_SPTR_Frag_8bit =
+        AFrag_8BIT_SPTR + ((tile_id_k + 1) % PIPELINE_LEVEL_GMEM) *
+                              SMEM_SIZE_PER_WARP_8BIT / 4 * 4;
     uint32_t* __restrict__ write_SPTR_Frag_1bit =
         AFrag_1BIT_SPTR +
         ((tile_id_k + (PIPELINE_LEVEL_GMEM - 1)) % PIPELINE_LEVEL_GMEM) *
@@ -273,6 +310,11 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
         ((tile_id_k + (PIPELINE_LEVEL_GMEM - 1)) % PIPELINE_LEVEL_GMEM) *
             SMEM_SIZE_PER_WARP_4BIT / 4 *
             4;  // 2048 (1)*4: 4 WARPs; (2)/4: int*+1 = char*+16
+    uint32_t* __restrict__ write_SPTR_Frag_8bit =
+        AFrag_8BIT_SPTR +
+        ((tile_id_k + (PIPELINE_LEVEL_GMEM - 1)) % PIPELINE_LEVEL_GMEM) *
+            SMEM_SIZE_PER_WARP_8BIT / 4 *
+            4;  // 4096 (1)*4: 4 WARPs; (2)/4: int*+1 = char*+16
     // Trible-Buffer for B Tile
     // MODIFICATION NOTE: to support MSVC, half __restrict__ (*read_SPTR ) is
     // changed to below. similarly for read2_SPTR and write_SPTR.
@@ -298,27 +340,30 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
     if (USE_SEG_4BIT)
       CopyFromGlobalToShared_A<SMEM_SIZE_PER_WARP_4BIT>(
           write_SPTR_Frag_4bit, WARP_StartGPTR_A_4BIT, GlobalCopy);
+    if (USE_SEG_8BIT)
+      CopyFromGlobalToShared_A<SMEM_SIZE_PER_WARP_8BIT>(
+          write_SPTR_Frag_8bit, WARP_StartGPTR_A_8BIT, GlobalCopy);
     // copying B tile from GlobalMemory to SharedMemory
     CopyFromGlobalToShared<TilingConfig::TILE_N, TilingConfig::BLOCK_WARPS>(
         write_SPTR, BTile_GPTR, K_Global, NumColumnToCopy, GlobalCopy);
     cp_async_group_commit();
     core_mma_slice<TilingConfig, EXPONENT, MANTISSA>(
-        c, a, b, read_SPTR_Frag_1bit, read_SPTR_Frag_2bit, read_SPTR_Frag_4bit,
+        c, a, b, read_SPTR_Frag_1bit, read_SPTR_Frag_2bit, read_SPTR_Frag_4bit, read_SPTR_Frag_8bit,
         read_SPTR, Scales_RPTR,
         1);  // read_SPTR_Frag_2bit, read_SPTR_Frag_4bit are different for each
              // WARP; read_SPTR is shared among WARPs
     core_mma_slice<TilingConfig, EXPONENT, MANTISSA>(
-        c, a, b, read_SPTR_Frag_1bit, read_SPTR_Frag_2bit, read_SPTR_Frag_4bit,
+        c, a, b, read_SPTR_Frag_1bit, read_SPTR_Frag_2bit, read_SPTR_Frag_4bit, read_SPTR_Frag_8bit,
         read_SPTR, Scales_RPTR, 2);
     core_mma_slice<TilingConfig, EXPONENT, MANTISSA>(
-        c, a, b, read_SPTR_Frag_1bit, read_SPTR_Frag_2bit, read_SPTR_Frag_4bit,
+        c, a, b, read_SPTR_Frag_1bit, read_SPTR_Frag_2bit, read_SPTR_Frag_4bit, read_SPTR_Frag_8bit,
         read_SPTR, Scales_RPTR, 3);
     // Barriers and Synchronizations
     cp_async_wait_group<PIPELINE_LEVEL_GMEM - 2>();
     __syncthreads();
     core_mma_slice<TilingConfig, EXPONENT, MANTISSA>(
         c, a, b, read2_SPTR_Frag_1bit, read2_SPTR_Frag_2bit,
-        read2_SPTR_Frag_4bit, read2_SPTR, Scales_RPTR, 0);
+        read2_SPTR_Frag_4bit, read2_SPTR_Frag_8bit, read2_SPTR, Scales_RPTR, 0);
     // Updating global PTRs
     WARP_StartGPTR_A_1BIT +=
         SMEM_SIZE_PER_WARP_1BIT / 16;  // 2KB/16=128 (1)/16: int4*+1 = char*+16
@@ -326,6 +371,8 @@ __global__ void QUANT_GEMM_Kernel(const uint4* Weight, const half* Scales,
         SMEM_SIZE_PER_WARP_2BIT / 16;  // 4KB/16=256 (1)/16: int4*+1 = char*+16
     WARP_StartGPTR_A_4BIT +=
         SMEM_SIZE_PER_WARP_4BIT / 16;  // 8KB/16=512 (1)/16: int4*+1 = char*+16
+    WARP_StartGPTR_A_8BIT +=
+        SMEM_SIZE_PER_WARP_8BIT / 16;  // 16KB/16=1024 (1)/16: int4*+1 = char*+16
     BTile_GPTR += TilingConfig::TILE_K;
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
