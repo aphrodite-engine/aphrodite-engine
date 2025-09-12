@@ -521,6 +521,10 @@ class ModelConfig:
     """Initialize non-default pooling config or override default pooling config
     for the pooling model. e.g. `{"pooling_type": "mean", "normalize": false}`.
     """
+    quant_llm_config: Optional[Union[dict, "QuantLLMConfig"]] = None
+    """Configuration for QuantLLM floating point quantization. Can be a dict
+    with keys 'weight_bits' and 'exponent_bits', or a QuantLLMConfig object.
+    e.g. `{"weight_bits": 8, "exponent_bits": 5}` for FP8 E5M2 quantization."""
     logits_processor_pattern: Optional[str] = None
     """Optional regex pattern specifying valid logits processor qualified names
     that can be passed with the `logits_processors` extra completion argument.
@@ -979,6 +983,14 @@ class ModelConfig:
 
         return None
 
+    def _init_quant_llm_config(self) -> Optional["QuantLLMConfig"]:
+        """Initialize QuantLLM configuration if provided."""
+        if self.quant_llm_config is not None:
+            if isinstance(self.quant_llm_config, dict):
+                self.quant_llm_config = QuantLLMConfig(**self.quant_llm_config)
+            return self.quant_llm_config
+        return None
+
     def _verify_tokenizer_mode(self) -> None:
         tokenizer_mode = cast(TokenizerMode, self.tokenizer_mode.lower())
         if tokenizer_mode not in get_args(TokenizerMode):
@@ -1275,62 +1287,28 @@ class ModelConfig:
                 "quant_method": "deepspeedfp"
             }
 
-        VALID_QUANT_LLM_FP_BITS = [2, 3, 4, 5, 6, 7]
-        VALID_QUANT_LLM_EXPONENTS = [1, 2, 3, 4, 5]
-        # The formula is mantissa_bits = fp_bits - exp_bits - 1
-        # The default exp_bits for each fp_bits are as follows:
-        DEFAULT_EXP_BITS = {
-            2: 1,
-            3: 2,
-            4: 2,
-            5: 2,
-            6: 2,
-            7: 3,
-        }
+        # Quant-LLM handling
+        self._init_quant_llm_config()
 
-        if self.quantization == "quant_llm":
-            if self.quant_llm_fp_bits is None:
-                raise ValueError(
-                    "quant_llm_fp_bits must be specified when using "
-                    "quant_llm quantization.")
-            if self.quant_llm_fp_bits not in VALID_QUANT_LLM_FP_BITS:
-                raise ValueError(
-                    f"Invalid quant_llm_fp_bits: {self.quant_llm_fp_bits}. "
-                    f"Must be one of {VALID_QUANT_LLM_FP_BITS}.")
-            if self.quant_llm_exp_bits is None:
-                self.quant_llm_exp_bits = DEFAULT_EXP_BITS[
-                    self.quant_llm_fp_bits]
-            else:
-                if self.quant_llm_exp_bits not in VALID_QUANT_LLM_EXPONENTS:
-                    raise ValueError(
-                        f"Invalid exponent bits: {self.quant_llm_exp_bits}. "
-                        f"Must be one of {VALID_QUANT_LLM_EXPONENTS}.")
+        if self.quant_llm_config is not None:
+            self.quantization = "quant_llm"
+            fp_bits = self.quant_llm_config.weight_bits
+            exp_bits = self.quant_llm_config.exponent_bits
 
-            self.hf_config.quantization_config = {
-                "bits": self.quant_llm_fp_bits,
-                "exp_bits": self.quant_llm_exp_bits,
-                "quant_method": "quant_llm"
-            }
-
-        online_quant_methods = ["fp2", "fp3", "fp4", "fp5", "fp6", "fp7"]
-        if self.quantization is not None and self.quantization in \
-            online_quant_methods:
-            fp_bits = int(self.quantization[2])
-            if fp_bits not in VALID_QUANT_LLM_FP_BITS:
-                raise ValueError(f"Invalid quant_llm_fp_bits: {fp_bits}. "
-                                 f"Must be one of {VALID_QUANT_LLM_FP_BITS}.")
             if fp_bits in [2, 3]:
                 logger.warning("FP2 and FP3 quantization methods lead to "
                                "significant accuracy loss. Use them with "
                                "caution. Model may be incoherent.")
-            exp_bits = DEFAULT_EXP_BITS[fp_bits]
+
             self.hf_config.quantization_config = {
                 "bits": fp_bits,
                 "exp_bits": exp_bits,
-                "quant_method": self.quantization
+                "quant_method": "quant_llm"
             }
-            self.dtype = torch.float16
-            self.enforce_eager = True
+            if self.dtype == torch.bfloat16:
+                logger.warning("Quant-LLM quantization does not support "
+                               "bfloat16. Downcasting to float16.")
+                self.dtype = torch.float16
 
         if self.quantization is not None:
             if self.quantization not in supported_quantization:
@@ -2812,6 +2790,55 @@ class MultiModalConfig:
 
 @config
 @dataclass
+class QuantLLMConfig:
+    """Configuration for QuantLLM floating point quantization."""
+
+    weight_bits: int = 6
+    """Total number of bits for quantized weights
+    (including sign, exponent, and mantissa)."""
+
+    exponent_bits: int = 2
+    """Number of bits allocated for the exponent."""
+
+    def __post_init__(self):
+        if self.weight_bits < 2 or self.weight_bits > 8:
+            raise ValueError(
+                f"weight_bits must be between 2 and 8, got {self.weight_bits}")
+
+        mantissa_bits = self.weight_bits - self.exponent_bits - 1
+        if mantissa_bits < 0:
+            raise ValueError(
+                f"exponent_bits ({self.exponent_bits}) too large for "
+                f"weight_bits ({self.weight_bits}). Maximum exponent_bits for"
+                f"{self.weight_bits}-bit weights is {self.weight_bits - 1}")
+
+        if self.exponent_bits < 0:
+            raise ValueError(
+                "exponent_bits must be non-negative, got "
+                f"{self.exponent_bits}")
+
+        default_exponent_bits = {
+            2: 1,
+            3: 2,
+            4: 2,
+            5: 2,
+            6: 2,
+            7: 3,
+            8: 5,
+        }
+
+        if self.weight_bits is not None and self.exponent_bits is None:
+            self.exponent_bits = default_exponent_bits[self.weight_bits]
+
+
+    @property
+    def mantissa_bits(self) -> int:
+        """Number of bits allocated for the mantissa."""
+        return self.weight_bits - self.exponent_bits - 1
+
+
+@config
+@dataclass
 class PoolerConfig:
     """Controls the behavior of output pooling in pooling models."""
 
@@ -3554,6 +3581,8 @@ class AphroditeConfig:
     """Observability configuration."""
     quant_config: Optional[QuantizationConfig] = None
     """Quantization configuration."""
+    quant_llm_config: Optional[QuantLLMConfig] = None
+    """QuantLLM floating point quantization configuration."""
     compilation_config: CompilationConfig = field(
         default_factory=CompilationConfig)
     """`torch.compile` and cudagraph capture configuration for the model.
@@ -3647,6 +3676,12 @@ class AphroditeConfig:
             aphrodite_factors.append("None")
         if self.quant_config:
             pass  # should be captured by model_config.quantization
+        if self.quant_llm_config:
+            aphrodite_factors.append(
+                str(hash((self.quant_llm_config.weight_bits,
+                         self.quant_llm_config.exponent_bits))))
+        else:
+            aphrodite_factors.append("None")
         if self.compilation_config:
             aphrodite_factors.append(self.compilation_config.compute_hash())
         else:

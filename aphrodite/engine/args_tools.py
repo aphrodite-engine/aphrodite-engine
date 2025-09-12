@@ -31,8 +31,8 @@ from aphrodite.config import (AphroditeConfig, BlockSize, CacheConfig,
                               MMEncoderTPMode, ModelConfig, ModelDType,
                               ModelImpl, MultiModalConfig, ObservabilityConfig,
                               ParallelConfig, PoolerConfig,
-                              PrefixCachingHashAlgo, RunnerOption,
-                              SchedulerConfig, SchedulerPolicy,
+                              PrefixCachingHashAlgo, QuantLLMConfig,
+                              RunnerOption, SchedulerConfig, SchedulerPolicy,
                               SpeculativeConfig, TaskOption, TokenizerMode,
                               get_attr_docs, get_field)
 from aphrodite.platforms import CpuArchEnum, current_platform
@@ -467,6 +467,7 @@ class EngineArgs:
     deepspeed_fp_bits: Optional[int] = None
     quant_llm_fp_bits: Optional[int] = None
     quant_llm_exp_bits: Optional[int] = None
+    quant_llm_config: Optional[QuantLLMConfig] = None
 
     # Device arguments
     device: Optional[Union[Device, torch.device]] = DeviceConfig.device
@@ -480,6 +481,8 @@ class EngineArgs:
                 **self.compilation_config)
         if isinstance(self.eplb_config, dict):
             self.eplb_config = EPLBConfig(**self.eplb_config)
+        if isinstance(self.quant_llm_config, dict):
+            self.quant_llm_config = QuantLLMConfig(**self.quant_llm_config)
 
         # Setup plugins
         from aphrodite.plugins import load_general_plugins
@@ -490,7 +493,8 @@ class EngineArgs:
             self.model = get_model_path(self.model, self.revision)
             logger.info(
                 "HF_HUB_OFFLINE is True, replace model_id [{}] "
-                "to model_path [{}]",model_id, self.model)
+                "to model_path [{}]", model_id, self.model)
+
 
     @staticmethod
     def add_cli_args(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
@@ -950,10 +954,21 @@ class EngineArgs:
                             help='Set the FP bits for DeepSpeed.')
         parser.add_argument('--quant-llm-fp-bits',
                             type=int,
-                            help='Set the FP bits for the LLM.')
+                            help='[DEPRECATED] --quant-llm-fp-bits will be '
+                            'removed in the future. Use --quant-llm-config '
+                            'instead.',
+                            deprecated=True)
         parser.add_argument('--quant-llm-exp-bits',
                             type=int,
-                            help='Set the exponent bits for the LLM.')
+                            help='[DEPRECATED] --quant-llm-exp-bits will be '
+                            'removed in the future. Use --quant-llm-config '
+                            'instead.',
+                            deprecated=True)
+        aphrodite_kwargs["quant_llm_config"]["type"] = optional_type(
+            json.loads)
+        aphrodite_group.add_argument(
+            "--quant-llm-config",
+            **aphrodite_kwargs["quant_llm_config"])
 
         return parser
 
@@ -1050,8 +1065,7 @@ class EngineArgs:
             override_attention_dtype=self.override_attention_dtype,
             logits_processors=self.logits_processors,
             io_processor_plugin=self.io_processor_plugin,
-            quant_llm_fp_bits=self.quant_llm_fp_bits,
-            quant_llm_exp_bits=self.quant_llm_exp_bits,
+            quant_llm_config=self.quant_llm_config,
             deepspeed_fp_bits=self.deepspeed_fp_bits,
         )
 

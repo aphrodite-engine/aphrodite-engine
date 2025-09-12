@@ -17,13 +17,13 @@ from aphrodite.quantization.utils.fp6_utils import (_SPLIT_K_MAP,
 
 class QuantLLMFPConfig(QuantizationConfig):
     """Config for QuantLLM FP quantizer. It supports fp2, fp3, fp4,
-    fp5, fp6, fp7.
+    fp5, fp6, fp7, fp8.
 
     Reference: https://arxiv.org/abs/2401.14112
 
     Args:
         weight_bits: the target quantization bits, should be one of
-            2, 3, 4, 5, 6, 7.
+            2, 3, 4, 5, 6, 7, 8.
     """
 
     def __init__(
@@ -39,11 +39,11 @@ class QuantLLMFPConfig(QuantizationConfig):
 
         self.valid_types = [torch.float16]
 
-        if self.weight_bits not in [2, 3, 4, 5, 6, 7]:
+        if self.weight_bits not in [2, 3, 4, 5, 6, 7, 8]:
             raise ValueError(
-                "Currently, only 4-bit, 5-bit, 6-bit, and 7-bit "
+                "Currently, only 2-bit, 3-bit, 4-bit, 5-bit, 6-bit, 7-bit, and 8-bit "
                 "quantization are "
-                f"supported for QuantLLM FP quantizaiton, but got "
+                f"supported for QuantLLM FP quantization, but got "
                 f"{self.weight_bits} bits.")
 
         # Defer logging until model parallel groups are initialized
