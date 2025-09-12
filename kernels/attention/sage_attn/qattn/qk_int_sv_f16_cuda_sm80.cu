@@ -668,7 +668,6 @@ __global__ void qk_int_sv_f16_attn_kernel(int8_t *__restrict__ Q, int8_t *__rest
   }
 
   // }
-#endif
 }
 
 // tensor_layout 0 for [B, N, H, D], 1 for [B, H, N, D]

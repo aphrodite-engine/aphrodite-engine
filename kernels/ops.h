@@ -545,6 +545,10 @@ torch::Tensor qk_int8_sv_f16_accum_f16_fuse_v_mean_attn(torch::Tensor query,
         double sm_scale,
         int64_t return_lse);
 
+// SageAttention SM89+ specific functions (FP8 kernels)
+// Only declare these if SM89 kernels are compiled
+#if defined(SAGE_ATTN_HAS_SM89) && SAGE_ATTN_HAS_SM89
+
 torch::Tensor qk_int8_sv_f8_accum_f32_attn(torch::Tensor query,
     torch::Tensor key,
     torch::Tensor value,
@@ -661,4 +665,5 @@ torch::Tensor qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf(
                     double sm_scale,
                     int64_t return_lse);
 
+#endif
 #endif

@@ -918,6 +918,9 @@ ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
       "    int return_lse) -> Tensor");
   ops.impl("qk_int8_sv_f16_accum_f16_fuse_v_mean_attn", torch::kCUDA, &qk_int8_sv_f16_accum_f16_fuse_v_mean_attn);
 
+  // SageAttention SM89+ specific functions (FP8 kernels)
+  // Only register these if SM89 kernels are compiled
+#if defined(SAGE_ATTN_HAS_SM89) && SAGE_ATTN_HAS_SM89
   ops.def(
       "qk_int8_sv_f8_accum_f32_attn("
       "    Tensor query,"
@@ -1059,6 +1062,7 @@ ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
       "    int return_lse) -> Tensor");
   ops.impl("qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf", torch::kCUDA, &qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf);
 
+#endif
 #endif
 }
 
