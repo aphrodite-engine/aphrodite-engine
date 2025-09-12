@@ -173,6 +173,323 @@ def merge_attn_states(output: torch.Tensor,
                                    prefix_lse, suffix_output, suffix_lse)
 
 
+# sage attention ops
+def quant_per_block_int8(
+    input: torch.Tensor,
+    output: torch.Tensor,
+    scale: torch.Tensor,
+    sm_scale: Optional[float] = None,
+    block_size: int = 16,
+    tensor_layout: int = 0,
+) -> None:
+    """Quantize per block to int8.
+
+    Args:
+        input: Input tensor to quantize
+        output: Output quantized tensor
+        scale: Output scale tensor
+        sm_scale: Optional softmax scale
+        block_size: Block size for quantization
+        tensor_layout: Tensor layout format
+    """
+    if sm_scale is not None:
+        torch.ops._C.quant_per_block_int8_cuda(
+            input, output, scale, sm_scale, block_size, tensor_layout)
+    else:
+        torch.ops._C.quant_per_block_int8_cuda(
+            input, output, scale, block_size, tensor_layout)
+
+
+def quant_per_block_int8_fuse_sub_mean(
+    input: torch.Tensor,
+    mean: torch.Tensor,
+    output: torch.Tensor,
+    scale: torch.Tensor,
+    block_size: int = 16,
+    tensor_layout: int = 0,
+) -> None:
+    """Quantize per block to int8 with fused mean subtraction."""
+    torch.ops._C.quant_per_block_int8_fuse_sub_mean_cuda(
+        input, mean, output, scale, block_size, tensor_layout)
+
+
+def quant_per_warp_int8(
+    input: torch.Tensor,
+    output: torch.Tensor,
+    scale: torch.Tensor,
+    block_size: int = 16,
+    warp_block_size: int = 32,
+    tensor_layout: int = 0,
+) -> None:
+    """Quantize per warp to int8."""
+    torch.ops._C.quant_per_warp_int8_cuda(
+        input, output, scale, block_size, warp_block_size, tensor_layout)
+
+
+def sub_mean(
+    input: torch.Tensor,
+    mean: torch.Tensor,
+    output: torch.Tensor,
+    tensor_layout: int = 0,
+) -> None:
+    """Subtract mean from input."""
+    torch.ops._C.sub_mean_cuda(input, mean, output, tensor_layout)
+
+
+def transpose_pad_permute(
+    input: torch.Tensor,
+    output: torch.Tensor,
+    tensor_layout: int = 0,
+) -> None:
+    """Transpose, pad and permute tensor."""
+    torch.ops._C.transpose_pad_permute_cuda(input, output, tensor_layout)
+
+
+def scale_fuse_quant(
+    input: torch.Tensor,
+    output: torch.Tensor,
+    scale: torch.Tensor,
+    num_tokens: int,
+    scale_max: float,
+    tensor_layout: int = 0,
+) -> None:
+    """Scale and fuse quantization."""
+    torch.ops._C.scale_fuse_quant_cuda(
+        input, output, scale, num_tokens, scale_max, tensor_layout)
+
+
+def mean_scale_fuse_quant(
+    input: torch.Tensor,
+    output: torch.Tensor,
+    mean: torch.Tensor,
+    scale: torch.Tensor,
+    num_tokens: int,
+    scale_max: float,
+    tensor_layout: int = 0,
+) -> None:
+    """Mean, scale and fuse quantization."""
+    torch.ops._C.mean_scale_fuse_quant_cuda(
+        input, output, mean, scale, num_tokens, scale_max, tensor_layout)
+
+
+def qk_int8_sv_f16_accum_f32_attn(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f16 accumulation in f32."""
+    return torch.ops._C.qk_int8_sv_f16_accum_f32_attn(
+        query, key, value, output, query_scale, key_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f16_accum_f16_attn(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f16 accumulation in f16."""
+    return torch.ops._C.qk_int8_sv_f16_accum_f16_attn(
+        query, key, value, output, query_scale, key_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f16_accum_f16_attn_inst_buf(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f16 accumulation in f16 with instant buffer."""
+    return torch.ops._C.qk_int8_sv_f16_accum_f16_attn_inst_buf(
+        query, key, value, output, query_scale, key_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f16_accum_f16_fuse_v_mean_attn(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    value_mean: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f16 accumulation and fused value mean."""
+    return torch.ops._C.qk_int8_sv_f16_accum_f16_fuse_v_mean_attn(
+        query, key, value, output, query_scale, key_scale, value_mean,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f8_accum_f32_attn(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f8 accumulation in f32."""
+    return torch.ops._C.qk_int8_sv_f8_accum_f32_attn(
+        query, key, value, output, query_scale, key_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f8_accum_f32_fuse_v_scale_attn(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    value_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f8 accumulation and fused value scale."""
+    return torch.ops._C.qk_int8_sv_f8_accum_f32_fuse_v_scale_attn(
+        query, key, value, output, query_scale, key_scale, value_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    value_scale: torch.Tensor,
+    value_mean: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f8 accumulation and fused value scale/mean."""
+    return torch.ops._C.qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn(
+        query, key, value, output, query_scale, key_scale, value_scale,
+        value_mean, tensor_layout, is_causal, qk_quant_gran, sm_scale,
+        return_lse)
+
+
+def qk_int8_sv_f8_accum_f32_attn_inst_buf(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f8 accumulation in f32 with instant buffer."""
+    return torch.ops._C.qk_int8_sv_f8_accum_f32_attn_inst_buf(
+        query, key, value, output, query_scale, key_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f8_accum_f16_attn_inst_buf(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f8 accumulation in f16 with instant buffer."""
+    return torch.ops._C.qk_int8_sv_f8_accum_f16_attn_inst_buf(
+        query, key, value, output, query_scale, key_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    value_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f8 accumulation with fused scale and instant
+    buffer."""
+    return torch.ops._C.qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf(
+        query, key, value, output, query_scale, key_scale, value_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
+def qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    query_scale: torch.Tensor,
+    key_scale: torch.Tensor,
+    value_scale: torch.Tensor,
+    tensor_layout: int = 0,
+    is_causal: int = 0,
+    qk_quant_gran: int = 16,
+    sm_scale: float = 1.0,
+    return_lse: int = 0,
+) -> torch.Tensor:
+    """QK int8 attention with SV f8 accumulation with fused scale and instant
+    buffer."""
+    return torch.ops._C.qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf(
+        query, key, value, output, query_scale, key_scale, value_scale,
+        tensor_layout, is_causal, qk_quant_gran, sm_scale, return_lse)
+
+
 def convert_vertical_slash_indexes(
     q_seqlens: torch.Tensor,  # [BATCH, ]
     kv_seqlens: torch.Tensor,  # [BATCH, ]

@@ -265,6 +265,7 @@ class CudaPlatformBase(Platform):
             FLASH_ATTN_V1 = "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"  # noqa: E501
             TREE_ATTN_V1 = "aphrodite.v1.attention.backends.tree_attn.TreeAttentionBackend"  # noqa: E501
             XFORMERS_APHRODITE_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
+            SAGE_ATTN_V1 = "aphrodite.v1.attention.backends.sage_attn.SageAttentionBackend"  # noqa: E501
 
             if selected_backend == _Backend.FLEX_ATTENTION:
                 log_once("INFO", "Using FlexAttention backend on V1 engine.")
@@ -281,6 +282,9 @@ class CudaPlatformBase(Platform):
             elif selected_backend == _Backend.XFORMERS:
                 log_once("INFO", "Using XFormers backend on V1 engine.")
                 return XFORMERS_APHRODITE_V1
+            elif selected_backend == _Backend.SAGE_ATTN:
+                log_once("INFO", "Using SageAttention backend on V1 engine.")
+                return SAGE_ATTN_V1
 
             from aphrodite.attention.selector import is_attn_backend_supported
 
