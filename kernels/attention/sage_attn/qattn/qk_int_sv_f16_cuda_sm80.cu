@@ -668,6 +668,7 @@ __global__ void qk_int_sv_f16_attn_kernel(int8_t *__restrict__ Q, int8_t *__rest
   }
 
   // }
+#endif
 }
 
 // tensor_layout 0 for [B, N, H, D], 1 for [B, H, N, D]
@@ -683,6 +684,7 @@ torch::Tensor qk_int8_sv_f16_accum_f32_attn(torch::Tensor query,
                     double sm_scale,
                     int64_t return_lse)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(query);
   CHECK_CUDA(key);
   CHECK_CUDA(value);
@@ -843,6 +845,7 @@ torch::Tensor qk_int8_sv_f16_accum_f32_attn(torch::Tensor query,
   });
 
   return lse;
+#endif
 }
 
 torch::Tensor qk_int8_sv_f16_accum_f16_attn(torch::Tensor query,
@@ -857,6 +860,7 @@ torch::Tensor qk_int8_sv_f16_accum_f16_attn(torch::Tensor query,
                     double sm_scale,
                     int64_t return_lse)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(query);
   CHECK_CUDA(key);
   CHECK_CUDA(value);
@@ -1018,6 +1022,7 @@ torch::Tensor qk_int8_sv_f16_accum_f16_attn(torch::Tensor query,
   });
   
   return lse;
+#endif
 }
 
 torch::Tensor qk_int8_sv_f16_accum_f16_attn_inst_buf(torch::Tensor query,
@@ -1032,6 +1037,7 @@ torch::Tensor qk_int8_sv_f16_accum_f16_attn_inst_buf(torch::Tensor query,
                     double sm_scale,
                     int64_t return_lse)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(query);
   CHECK_CUDA(key);
   CHECK_CUDA(value);
@@ -1193,6 +1199,7 @@ torch::Tensor qk_int8_sv_f16_accum_f16_attn_inst_buf(torch::Tensor query,
   });
   
   return lse;
+#endif
 }
 
 torch::Tensor qk_int8_sv_f16_accum_f16_fuse_v_mean_attn(torch::Tensor query,

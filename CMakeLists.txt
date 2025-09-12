@@ -307,7 +307,17 @@ set(APHRODITE_EXT_SRC
     "kernels/sparse/cutlass/sparse_scaled_mm_entry.cu"
     "kernels/cutlass_extensions/common.cpp"
     "kernels/attention/mla/cutlass_mla_entry.cu"
-    "kernels/quantization/fp8/per_token_group_quant.cu")
+    "kernels/quantization/fp8/per_token_group_quant.cu"
+    "kernels/attention/sage_attn/fused/fused.cu"
+    "kernels/attention/sage_attn/qattn/qk_int_sv_f8_cuda_sm90.cu"
+    "kernels/attention/sage_attn/qattn/qk_int_sv_f16_cuda_sm80.cu"
+    "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f16_attn_inst_buf.cu"
+    "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf.cu"
+    "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_attn_inst_buf.cu"
+    "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_attn.cu"
+    "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf.cu"
+    "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_fuse_v_scale_attn.cu"
+    "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn.cu")
 
   set_gencode_flags_for_srcs(
     SRCS "${APHRODITE_EXT_SRC}"
@@ -788,77 +798,6 @@ set(APHRODITE_EXT_SRC
       message(STATUS "Not building W4A8 kernels as no compatible archs "
                      "found in CUDA target architectures")
     endif()
-  endif()
-
-  #
-  # SageAttention kernels
-  #
-
-  # Only build SageAttention kernels if we are building for at least SM 8.0 compatible archs
-  cuda_archs_loose_intersection(SAGE_ATTN_ARCHS "8.0;8.6;8.7;8.9;9.0+PTX" "${CUDA_ARCHS}")
-  if (SAGE_ATTN_ARCHS)
-
-    # Base SageAttention sources (always included)
-    set(SAGE_ATTN_BASE_SRCS
-      "kernels/attention/sage_attn/fused/fused.cu")
-
-    # SM 8.0 specific kernels
-    cuda_archs_loose_intersection(SAGE_ATTN_SM80_ARCHS "8.0;8.6;8.7" "${CUDA_ARCHS}")
-    set(SAGE_ATTN_SM80_SRCS)
-    if (SAGE_ATTN_SM80_ARCHS)
-      list(APPEND SAGE_ATTN_SM80_SRCS
-        "kernels/attention/sage_attn/qattn/qk_int_sv_f16_cuda_sm80.cu")
-      set_gencode_flags_for_srcs(
-        SRCS "${SAGE_ATTN_SM80_SRCS}"
-        CUDA_ARCHS "${SAGE_ATTN_SM80_ARCHS}")
-      message(STATUS "Building SageAttention SM80 kernels for archs: ${SAGE_ATTN_SM80_ARCHS}")
-    endif()
-
-    # SM 8.9 specific kernels
-    cuda_archs_loose_intersection(SAGE_ATTN_SM89_ARCHS "8.9" "${CUDA_ARCHS}")
-    set(SAGE_ATTN_SM89_SRCS)
-    if (SAGE_ATTN_SM89_ARCHS)
-      list(APPEND SAGE_ATTN_SM89_SRCS
-        "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f16_attn_inst_buf.cu"
-        "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf.cu"
-        "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_attn_inst_buf.cu"
-        "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_attn.cu"
-        "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf.cu"
-        "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_fuse_v_scale_attn.cu"
-        "kernels/attention/sage_attn/qattn/sm89_qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn.cu")
-      set_gencode_flags_for_srcs(
-        SRCS "${SAGE_ATTN_SM89_SRCS}"
-        CUDA_ARCHS "${SAGE_ATTN_SM89_ARCHS}")
-      message(STATUS "Building SageAttention SM89 kernels for archs: ${SAGE_ATTN_SM89_ARCHS}")
-    endif()
-
-    # SM 9.0 specific kernels
-    cuda_archs_loose_intersection(SAGE_ATTN_SM90_ARCHS "9.0+PTX" "${CUDA_ARCHS}")
-    set(SAGE_ATTN_SM90_SRCS)
-    if (SAGE_ATTN_SM90_ARCHS)
-      list(APPEND SAGE_ATTN_SM90_SRCS
-        "kernels/attention/sage_attn/qattn/qk_int_sv_f8_cuda_sm90.cu")
-      set_gencode_flags_for_srcs(
-        SRCS "${SAGE_ATTN_SM90_SRCS}"
-        CUDA_ARCHS "${SAGE_ATTN_SM90_ARCHS}")
-      message(STATUS "Building SageAttention SM90 kernels for archs: ${SAGE_ATTN_SM90_ARCHS}")
-    endif()
-
-    set(SAGE_ATTN_SRCS ${SAGE_ATTN_BASE_SRCS})
-    list(APPEND SAGE_ATTN_SRCS ${SAGE_ATTN_SM80_SRCS})
-    list(APPEND SAGE_ATTN_SRCS ${SAGE_ATTN_SM89_SRCS})
-    list(APPEND SAGE_ATTN_SRCS ${SAGE_ATTN_SM90_SRCS})
-
-    set_gencode_flags_for_srcs(
-      SRCS "${SAGE_ATTN_BASE_SRCS}"
-      CUDA_ARCHS "${SAGE_ATTN_ARCHS}")
-
-    list(APPEND APHRODITE_EXT_SRC "${SAGE_ATTN_SRCS}")
-
-    message(STATUS "Building SageAttention kernels for archs: ${SAGE_ATTN_ARCHS}")
-  else()
-    message(STATUS "Not building SageAttention kernels as no compatible archs found"
-                   " in CUDA target architectures (requires SM 8.0 or above)")
   endif()
 
 # if CUDA endif

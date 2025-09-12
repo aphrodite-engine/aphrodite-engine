@@ -3,11 +3,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 import torch
-from sageattention import sageattn
 
 from aphrodite.attention.backends.abstract import (AttentionBackend,
                                                    AttentionImpl,
                                                    AttentionType)
+from aphrodite.attention.ops.sage_attention import sageattn
 from aphrodite.config import AphroditeConfig
 from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
                                                    CommonAttentionMetadata)

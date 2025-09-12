@@ -14,6 +14,7 @@ torch::Tensor qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn(torch::Tenso
                     double sm_scale,
                     int64_t return_lse)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 890
   CHECK_CUDA(query);
   CHECK_CUDA(key);
   CHECK_CUDA(value);
@@ -189,4 +190,5 @@ torch::Tensor qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn(torch::Tenso
   });
 
   return lse;
+#endif
 }

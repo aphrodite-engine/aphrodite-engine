@@ -434,6 +434,7 @@ void quant_per_block_int8_cuda(
                 int64_t block_size,
                 int64_t tensor_layout)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(input);
   CHECK_CUDA(output);
   CHECK_CUDA(scale);
@@ -507,6 +508,7 @@ void quant_per_block_int8_cuda(
       });
     });
   });
+#endif
 }
 
 void quant_per_block_int8_cuda(
@@ -516,6 +518,7 @@ void quant_per_block_int8_cuda(
                 int64_t block_size,
                 int64_t tensor_layout)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(input);
   CHECK_CUDA(output);
   CHECK_CUDA(scale);
@@ -589,6 +592,7 @@ void quant_per_block_int8_cuda(
       });
     });
   });
+#endif
 }
 
 void quant_per_block_int8_fuse_sub_mean_cuda(
@@ -599,6 +603,7 @@ void quant_per_block_int8_fuse_sub_mean_cuda(
                 int64_t block_size,
                 int64_t tensor_layout)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(input);
   CHECK_CUDA(mean);
   CHECK_CUDA(output);
@@ -679,6 +684,7 @@ void quant_per_block_int8_fuse_sub_mean_cuda(
       });
     });
   });
+#endif
 }
 
 // use block size 128 and warp_block size 32
@@ -690,6 +696,7 @@ void quant_per_warp_int8_cuda(
                 int64_t warp_block_size,
                 int64_t tensor_layout)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(input);
   CHECK_CUDA(output);
   CHECK_CUDA(scale);
@@ -765,6 +772,7 @@ void quant_per_warp_int8_cuda(
       });
     });
   });
+#endif
 }
 
 void sub_mean_cuda(
@@ -773,6 +781,7 @@ void sub_mean_cuda(
                 torch::Tensor output,
                 int64_t tensor_layout)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(input);
   CHECK_CUDA(mean);
   CHECK_CUDA(output);
@@ -845,6 +854,7 @@ void sub_mean_cuda(
         );
     });
   });
+#endif
 }
 
 void transpose_pad_permute_cuda(
@@ -852,6 +862,7 @@ void transpose_pad_permute_cuda(
                 torch::Tensor output,
                 int64_t tensor_layout)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(input);
   CHECK_CUDA(output);
 
@@ -920,6 +931,7 @@ void transpose_pad_permute_cuda(
       );
     });
   });
+#endif
 }
 
 void scale_fuse_quant_cuda(
@@ -930,6 +942,7 @@ void scale_fuse_quant_cuda(
                 double scale_max,
                 int64_t tensor_layout)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(input);
   CHECK_CUDA(output);
   CHECK_CUDA(scale);
@@ -997,6 +1010,7 @@ void scale_fuse_quant_cuda(
       scale.stride(0), scale.stride(1)
     );
   });
+#endif
 }
 
 void mean_scale_fuse_quant_cuda(
@@ -1008,6 +1022,7 @@ void mean_scale_fuse_quant_cuda(
                 double scale_max,
                 int64_t tensor_layout)
 {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   CHECK_CUDA(input);
   CHECK_CUDA(output);
   CHECK_CUDA(mean);
@@ -1080,4 +1095,5 @@ void mean_scale_fuse_quant_cuda(
       scale.stride(0), scale.stride(1)
     );
   });
+#endif
 }
