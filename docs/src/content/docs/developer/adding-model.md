@@ -141,7 +141,7 @@ Then, add your model class to `_APHRODITE_MODELS` in <https://github.com/aphrodi
 
 ### Out-of-tree models
 
-You can load an external model [using a plugin](../../design/plugin_system.md) without modifying the Aphrodite codebase.
+You can load an external model using a plugin without modifying the Aphrodite codebase.
 
 To register the model, use the following code:
 
@@ -174,7 +174,7 @@ This section walks you through the steps to extend a basic model so that it acce
 
 ### 1. Update the base Aphrodite model
 
-It is assumed that you have already implemented the model in Aphrodite according to [these steps](basic.md).
+It is assumed that you have already implemented the model in Aphrodite according to the previously outlined steps.
 Further update the model as follows:
 
 - Implement [get_placeholder_str][aphrodite.modeling.models.interfaces.SupportsMultiModal.get_placeholder_str] to define the placeholder string which is used to represent the multi-modal item in the text prompt. This should be consistent with the chat template of the model.
@@ -983,7 +983,7 @@ Examples:
 
 ### Handling prompt updates unrelated to multi-modal data
 
-[_get_prompt_updates][aphrodite.multimodal.processing.BaseMultiModalProcessor._get_prompt_updates] assumes that each application of prompt update corresponds to one multi-modal item. If the HF processor performs additional processing regardless of how many multi-modal items there are, you should override [_apply_hf_processor_tokens_only][aphrodite.multimodal.processing.BaseMultiModalProcessor._apply_hf_processor_tokens_only] so that the processed token inputs are consistent with the result of applying the HF processor on text inputs. This is because token inputs bypass the HF processor according to [our design](../../design/mm_processing.md).
+[_get_prompt_updates][aphrodite.multimodal.processing.BaseMultiModalProcessor._get_prompt_updates] assumes that each application of prompt update corresponds to one multi-modal item. If the HF processor performs additional processing regardless of how many multi-modal items there are, you should override [_apply_hf_processor_tokens_only][aphrodite.multimodal.processing.BaseMultiModalProcessor._apply_hf_processor_tokens_only] so that the processed token inputs are consistent with the result of applying the HF processor on text inputs. This is because token inputs bypass the HF processor according to our design.
 
 Examples:
 
@@ -1102,7 +1102,7 @@ class YourASRModel(nn.Module, SupportsTranscription):
         }
 ```
 
-For further clarification on multi modal inputs, please refer to [Multi-Modal Inputs](../../features/multimodal_inputs.md).
+For further clarification on multi modal inputs, please refer to Multi-Modal Inputs.
 
 #### Encoder–decoder audio-only (e.g., Whisper)
 
