@@ -213,7 +213,7 @@ Supported models:
 
     Recommended flags: `--tool-call-parser granite-20b-fc --chat-template examples/tool_chat_template_granite_20b_fc.jinja`
 
-    <gh-file:examples/tool_chat_template_granite_20b_fc.jinja>: this is a modified chat template from the original on Hugging Face, which is not Aphrodite-compatible. It blends function description elements from the Hermes template and follows the same system prompt as "Response Generation" mode from [the paper](https://arxiv.org/abs/2407.00121). Parallel function calls are supported.
+    <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/examples/tool_chat_template_granite_20b_fc.jinja>: this is a modified chat template from the original on Hugging Face, which is not Aphrodite-compatible. It blends function description elements from the Hermes template and follows the same system prompt as "Response Generation" mode from [the paper](https://arxiv.org/abs/2407.00121). Parallel function calls are supported.
 
 ### InternLM Models (`internlm`)
 
@@ -271,8 +271,8 @@ Flags: `--tool-call-parser hermes`
 
 Supported models:
 
-* `MiniMaxAi/MiniMax-M1-40k` (use with <gh-file:examples/tool_chat_template_minimax_m1.jinja>)
-* `MiniMaxAi/MiniMax-M1-80k` (use with <gh-file:examples/tool_chat_template_minimax_m1.jinja>)
+* `MiniMaxAi/MiniMax-M1-40k` (use with <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/examples/tool_chat_template_minimax_m1.jinja>)
+* `MiniMaxAi/MiniMax-M1-80k` (use with <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/examples/tool_chat_template_minimax_m1.jinja>)
 
 Flags: `--tool-call-parser minimax --chat-template examples/tool_chat_template_minimax_m1.jinja`
 
@@ -280,8 +280,8 @@ Flags: `--tool-call-parser minimax --chat-template examples/tool_chat_template_m
 
 Supported models:
 
-* `deepseek-ai/DeepSeek-V3-0324` (use with <gh-file:examples/tool_chat_template_deepseekv3.jinja>)
-* `deepseek-ai/DeepSeek-R1-0528` (use with <gh-file:examples/tool_chat_template_deepseekr1.jinja>)
+* `deepseek-ai/DeepSeek-V3-0324` (use with <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/examples/tool_chat_template_deepseekv3.jinja>)
+* `deepseek-ai/DeepSeek-R1-0528` (use with <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/examples/tool_chat_template_deepseekr1.jinja>)
 
 Flags: `--tool-call-parser deepseek_v3 --chat-template {see_above}`
 
@@ -289,7 +289,7 @@ Flags: `--tool-call-parser deepseek_v3 --chat-template {see_above}`
 
 Supported models:
 
-* `deepseek-ai/DeepSeek-V3.1` (use with <gh-file:examples/tool_chat_template_deepseekv31.jinja>)
+* `deepseek-ai/DeepSeek-V3.1` (use with <https://github.com/aphrodite-engine/aphrodite-engine/blob/main/examples/tool_chat_template_deepseekv31.jinja>)
 
 Flags: `--tool-call-parser deepseek_v31 --chat-template {see_above}`
 
