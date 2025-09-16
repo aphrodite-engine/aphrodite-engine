@@ -10,9 +10,6 @@ from loguru import logger
 
 import aphrodite.common.envs as envs
 from aphrodite.common.sequence import ExecuteModelRequest
-from aphrodite.utils import (_run_task_with_lock,
-                                    get_distributed_init_method, get_ip,
-                                    get_open_port, make_async)
 from aphrodite.executor.executor_base import (
     DistributedExecutorBase)  # yapf: disable
 from aphrodite.executor.msgspec_utils import encode_hook
@@ -20,6 +17,9 @@ from aphrodite.executor.ray_utils import (RayWorkerWrapper,
                                           initialize_ray_cluster, ray)
 from aphrodite.modeling.layers.sampler import SamplerOutput
 from aphrodite.platforms import current_platform
+from aphrodite.ray.ray_env import get_env_vars_to_copy
+from aphrodite.utils import (_run_task_with_lock, get_distributed_init_method,
+                             get_ip, get_open_port, make_async)
 
 if ray is not None:
     from ray.actor import ActorHandle
