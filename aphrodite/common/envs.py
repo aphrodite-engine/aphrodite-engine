@@ -84,6 +84,7 @@ if TYPE_CHECKING:
     APHRODITE_TORCH_PROFILER_WITH_STACK: bool = True
     APHRODITE_TORCH_PROFILER_WITH_FLOPS: bool = False
     APHRODITE_USE_TRITON_AWQ: bool = False
+    APHRODITE_USE_GLUON_AWQ: bool = False
     APHRODITE_ALLOW_RUNTIME_LORA_UPDATING: bool = False
     APHRODITE_SKIP_P2P_CHECK: bool = False
     APHRODITE_DISABLED_KERNELS: list[str] = []
@@ -701,6 +702,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, Aphrodite will use Triton implementations of AWQ.
     "APHRODITE_USE_TRITON_AWQ":
     lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_AWQ", "0"))),
+
+    # If set, Aphrodite will use Gluon implementations of AWQ.
+    "APHRODITE_USE_GLUON_AWQ":
+    lambda: bool(int(os.getenv("APHRODITE_USE_GLUON_AWQ", "0"))),
 
     # If set, allow loading or unloading lora adapters in runtime,
     "APHRODITE_ALLOW_RUNTIME_LORA_UPDATING":
