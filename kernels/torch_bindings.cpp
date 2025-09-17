@@ -788,6 +788,281 @@ ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
       &top_k_mask_logits);
   ops.impl("top_k_mask_logits", torch::kCUDA, &top_k_mask_logits);
 
+  // Sage Attention
+  ops.def(
+      "quant_per_block_int8_cuda("
+      "    Tensor input,"
+      "    Tensor output,"
+      "    Tensor scale,"
+      "    float sm_scale,"
+      "    int block_size,"
+      "    int tensor_layout) -> ()");
+  ops.impl("quant_per_block_int8_cuda", torch::kCUDA, 
+           static_cast<void(*)(torch::Tensor, torch::Tensor, torch::Tensor, double, int64_t, int64_t)>(&quant_per_block_int8_cuda));
+
+  ops.def(
+      "quant_per_block_int8_cuda("
+      "    Tensor input,"
+      "    Tensor output,"
+      "    Tensor scale,"
+      "    int block_size,"
+      "    int tensor_layout) -> ()");
+  ops.impl("quant_per_block_int8_cuda", torch::kCUDA, 
+           static_cast<void(*)(torch::Tensor, torch::Tensor, torch::Tensor, int64_t, int64_t)>(&quant_per_block_int8_cuda));
+
+  ops.def(
+      "quant_per_block_int8_fuse_sub_mean_cuda("
+      "    Tensor input,"
+      "    Tensor mean,"
+      "    Tensor output,"
+      "    Tensor scale,"
+      "    int block_size,"
+      "    int tensor_layout) -> ()");
+  ops.impl("quant_per_block_int8_fuse_sub_mean_cuda", torch::kCUDA, &quant_per_block_int8_fuse_sub_mean_cuda);
+
+  ops.def(
+      "quant_per_warp_int8_cuda("
+      "    Tensor input,"
+      "    Tensor output,"
+      "    Tensor scale,"
+      "    int block_size,"
+      "    int warp_block_size,"
+      "    int tensor_layout) -> ()");
+  ops.impl("quant_per_warp_int8_cuda", torch::kCUDA, &quant_per_warp_int8_cuda);
+
+  ops.def("sub_mean_cuda(Tensor input, Tensor mean, Tensor output, int tensor_layout) -> ()");
+  ops.impl("sub_mean_cuda", torch::kCUDA, &sub_mean_cuda);
+
+  ops.def("transpose_pad_permute_cuda(Tensor input, Tensor output, int tensor_layout) -> ()");
+  ops.impl("transpose_pad_permute_cuda", torch::kCUDA, &transpose_pad_permute_cuda);
+
+  ops.def(
+      "scale_fuse_quant_cuda("
+      "    Tensor input,"
+      "    Tensor output,"
+      "    Tensor scale,"
+      "    int num_tokens,"
+      "    float scale_max,"
+      "    int tensor_layout) -> ()");
+  ops.impl("scale_fuse_quant_cuda", torch::kCUDA, &scale_fuse_quant_cuda);
+
+  ops.def(
+      "mean_scale_fuse_quant_cuda("
+      "    Tensor input,"
+      "    Tensor output,"
+      "    Tensor mean,"
+      "    Tensor scale,"
+      "    int num_tokens,"
+      "    float scale_max,"
+      "    int tensor_layout) -> ()");
+  ops.impl("mean_scale_fuse_quant_cuda", torch::kCUDA, &mean_scale_fuse_quant_cuda);
+
+  ops.def(
+      "qk_int8_sv_f16_accum_f32_attn("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f16_accum_f32_attn", torch::kCUDA, &qk_int8_sv_f16_accum_f32_attn);
+
+  ops.def(
+      "qk_int8_sv_f16_accum_f16_attn("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f16_accum_f16_attn", torch::kCUDA, &qk_int8_sv_f16_accum_f16_attn);
+
+  ops.def(
+      "qk_int8_sv_f16_accum_f16_attn_inst_buf("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f16_accum_f16_attn_inst_buf", torch::kCUDA, &qk_int8_sv_f16_accum_f16_attn_inst_buf);
+
+  ops.def(
+      "qk_int8_sv_f16_accum_f16_fuse_v_mean_attn("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    Tensor value_mean,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f16_accum_f16_fuse_v_mean_attn", torch::kCUDA, &qk_int8_sv_f16_accum_f16_fuse_v_mean_attn);
+
+  // SageAttention SM89+ specific functions (FP8 kernels)
+  // Only register these if SM89 kernels are compiled
+#if defined(SAGE_ATTN_HAS_SM89) && SAGE_ATTN_HAS_SM89
+  ops.def(
+      "qk_int8_sv_f8_accum_f32_attn("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f32_attn", torch::kCUDA, &qk_int8_sv_f8_accum_f32_attn);
+
+  ops.def(
+      "qk_int8_sv_f8_accum_f32_fuse_v_scale_attn("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    Tensor value_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f32_fuse_v_scale_attn", torch::kCUDA, &qk_int8_sv_f8_accum_f32_fuse_v_scale_attn);
+
+  ops.def(
+      "qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    Tensor value_scale,"
+      "    Tensor value_mean,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn", torch::kCUDA, &qk_int8_sv_f8_accum_f32_fuse_v_scale_fuse_v_mean_attn);
+
+  ops.def(
+      "qk_int8_sv_f8_accum_f32_attn_inst_buf("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f32_attn_inst_buf", torch::kCUDA, &qk_int8_sv_f8_accum_f32_attn_inst_buf);
+
+  ops.def(
+      "qk_int8_sv_f8_accum_f16_attn_inst_buf("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f16_attn_inst_buf", torch::kCUDA, &qk_int8_sv_f8_accum_f16_attn_inst_buf);
+
+  ops.def(
+      "qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    Tensor value_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf", torch::kCUDA, &qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf);
+
+  ops.def(
+      "qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    Tensor value_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf", torch::kCUDA, &qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf);
+
+  ops.def(
+      "qk_int8_sv_f8_accum_f32_attn_inst_buf("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f32_attn_inst_buf", torch::kCUDA, &qk_int8_sv_f8_accum_f32_attn_inst_buf);
+
+  ops.def(
+      "qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf("
+      "    Tensor query,"
+      "    Tensor key,"
+      "    Tensor value,"
+      "    Tensor output,"
+      "    Tensor query_scale,"
+      "    Tensor key_scale,"
+      "    Tensor value_scale,"
+      "    int tensor_layout,"
+      "    int is_causal,"
+      "    int qk_quant_gran,"
+      "    float sm_scale,"
+      "    int return_lse) -> Tensor");
+  ops.impl("qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf", torch::kCUDA, &qk_int8_sv_f8_accum_f32_fuse_v_scale_attn_inst_buf);
+
+#endif
 #endif
 }
 
