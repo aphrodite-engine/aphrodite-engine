@@ -367,6 +367,21 @@ void per_token_group_quant_int8(const torch::Tensor& input,
               torch::Tensor& output_q,
               torch::Tensor& output_s, int64_t group_size,
               double eps, double int8_min, double int8_max);
+
+int64_t make_q_matrix(
+    torch::Tensor q_weight,
+    torch::Tensor q_perm,
+    torch::Tensor q_invperm,
+    torch::Tensor q_scale,
+    torch::Tensor q_scale_max,
+    torch::Tensor q_groups,
+    torch::Tensor q_group_map
+);
+
+torch::Tensor exl2_gemm(
+    torch::Tensor a,
+    int64_t b
+);
 #endif
 
 void static_scaled_int8_quant(torch::Tensor& out, torch::Tensor const& input,

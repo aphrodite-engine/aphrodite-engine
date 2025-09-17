@@ -417,6 +417,33 @@ def gptq_shuffle(q_weight: torch.Tensor, q_perm: torch.Tensor,
     torch.ops._C.gptq_shuffle(q_weight, q_perm, bit)
 
 
+# exl2
+def make_q_matrix(q_weight: torch.Tensor, q_perm: torch.Tensor,
+                  q_invperm: torch.Tensor, q_scale: torch.Tensor,
+                  q_scale_max: torch.Tensor, q_groups: torch.Tensor,
+                  q_group_map: torch.Tensor) -> int:
+    return torch.ops._C.make_q_matrix(q_weight, q_perm, q_invperm, q_scale,
+                                      q_scale_max, q_groups, q_group_map)
+
+def exl2_gemm(a: torch.Tensor, b: int) -> torch.Tensor:
+    return torch.ops._C.exl2_gemm(a, b)
+
+
+if hasattr(torch.ops._C, "make_q_matrix"):
+    @register_fake("_C::make_q_matrix")
+    def _make_q_matrix_fake(q_weight: torch.Tensor, q_perm: torch.Tensor,
+                            q_invperm: torch.Tensor, q_scale: torch.Tensor,
+                            q_scale_max: torch.Tensor, q_groups: torch.Tensor,
+                            q_group_map: torch.Tensor) -> int:
+        return 0
+
+
+if hasattr(torch.ops._C, "exl2_gemm"):
+    @register_fake("_C::exl2_gemm")
+    def _exl2_gemm_fake(a: torch.Tensor, b: int) -> torch.Tensor:
+        return torch.empty((a.size(0), b), device=a.device, dtype=a.dtype)
+
+
 # squeezellm
 def squeezellm_gemm(vec: torch.Tensor, mat: torch.Tensor, mul: torch.Tensor,
                     lookup_table: torch.Tensor) -> None:

@@ -712,6 +712,16 @@ ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
   ops.impl("per_token_group_quant_int8", torch::kCUDA,
            &per_token_group_quant_int8);
 
+  // exllamav2
+  ops.def(
+      "make_q_matrix(Tensor q_weight, Tensor q_perm, Tensor q_invperm, Tensor "
+      "q_scale, Tensor q_scale_max, Tensor q_groups, Tensor q_group_map) -> "
+      "int");
+  ops.impl("make_q_matrix", torch::kCUDA, &make_q_matrix);
+  ops.def(
+      "exl2_gemm(Tensor a, int b) -> Tensor");
+  ops.impl("exl2_gemm", torch::kCUDA, &exl2_gemm);
+
   // reorder weight for AllSpark Ampere W8A16 Fused Gemm kernel
   ops.def(
       "rearrange_kn_weight_as_n32k16_order(Tensor b_qweight, Tensor b_scales, "

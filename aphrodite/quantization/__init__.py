@@ -41,6 +41,7 @@ QuantizationMethods = Literal[
     "fp7",
     "mxfp4",
     "petit_nvfp4",
+    "exl2",
 ]
 QUANTIZATION_METHODS: list[str] = list(get_args(QuantizationMethods))
 
@@ -100,6 +101,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
     from .compressed_tensors.compressed_tensors import (  # noqa: E501
         CompressedTensorsConfig)
     from .deepspeedfp import DeepSpeedFPConfig
+    from .exl2 import Exl2Config
     from .experts_int8 import ExpertsInt8Config
     from .fbgemm_fp8 import FBGEMMFp8Config
     from .fp6 import QuantLLMFPConfig
@@ -163,6 +165,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
         "fp7": QuantLLMFPConfig,
         "mxfp4": Mxfp4Config,
         "petit_nvfp4": PetitNvFp4Config,
+        "exl2": Exl2Config,
     }
     # Update the `method_to_config` with customized quantization methods.
     method_to_config.update(_CUSTOMIZED_METHOD_TO_QUANT_CONFIG)

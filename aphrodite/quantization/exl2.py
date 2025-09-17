@@ -1,9 +1,14 @@
 from typing import Any, Dict, List, Optional
 
 import torch
+from torch.nn.parameter import Parameter, UninitializedParameter
 
 from aphrodite import _custom_ops as ops
+from aphrodite.distributed import (get_tensor_model_parallel_rank,
+                                   get_tensor_model_parallel_world_size,
+                                   tensor_model_parallel_all_gather)
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
+from aphrodite.modeling.parameter import ModelWeightParameter
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization.base_config import QuantizationConfig
 
@@ -89,45 +94,124 @@ class Exl2LinearMethod(LinearMethodBase):
                        input_size_per_partition: int,
                        output_partition_sizes: List[int], input_size: int,
                        output_size: int, params_dtype: torch.dtype,
-                       **extra_weight_attr):
+                       **extra_weight_attrs):
         # The shape of weight is unknown until load state dict
         # q_groups, q_invperm, q_scale, q_scale_max, q_weight, q_groups
+        weight_loader = extra_weight_attrs.get("weight_loader")
         layer.exllama_state = 0
-        qweight = torch.nn.parameter.UninitializedParameter(
-            requires_grad=False)
-        set_weight_attrs(qweight, {"output_dim": 1, "ignore_warning": True})
+        
+        # Use empty tensors with proper parameter classes for deferred loading
+        output_size_per_partition = sum(output_partition_sizes)
+        
+        # Create uninitialized parameters that will be materialized during weight loading
+        
+        # q_weight has output dimension that needs sharding
+        qweight = UninitializedParameter(requires_grad=False)
+        set_weight_attrs(qweight, {
+            "output_dim": 1,
+            "ignore_warning": True
+        })
         layer.register_parameter("q_weight", qweight)
-        qscale = torch.nn.parameter.UninitializedParameter(requires_grad=False)
-        set_weight_attrs(
-            qscale, {
-                "output_dim": 1,
-                "packed_dim": 1,
-                "pack_factor": 8,
+        
+        # q_scale has output dimension that needs sharding  
+        qscale = UninitializedParameter(requires_grad=False)
+        set_weight_attrs(qscale, {
+            "output_dim": 1,
+            "ignore_warning": True
+        })
+        layer.register_parameter("q_scale", qscale)
+        
+        # q_groups and q_invperm don't need special sharding, but q_scale_max might
+        for name in ["q_groups", "q_invperm", "q_scale_max"]:
+            param = UninitializedParameter(requires_grad=False)
+            set_weight_attrs(param, {
                 "ignore_warning": True
             })
-        layer.register_parameter("q_scale", qscale)
-        for name in ["q_groups", "q_invperm", "q_scale_max"]:
-            fake_weight = torch.nn.parameter.UninitializedParameter(
-                requires_grad=False)
-            set_weight_attrs(fake_weight, {"ignore_warning": True})
-            layer.register_parameter(name, fake_weight)
+            layer.register_parameter(name, param)
+        
+        # Set weight loaders after registration (following FP6/DeepSpeedFP pattern)
+        custom_weight_loader = weight_loader if weight_loader else self._default_weight_loader
+        
+        # Set weight loader for all parameters
+        for param_name in ["q_weight", "q_scale", "q_groups", "q_invperm", "q_scale_max"]:
+            param = getattr(layer, param_name)
+            set_weight_attrs(param, {"weight_loader": custom_weight_loader})
 
-    def apply(self,
-              layer: torch.nn.Module,
-              x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
-        out_shape = x.shape[:-1] + (layer.q_weight.shape[-1], )
-        reshaped_x = x.reshape(-1, x.shape[-1])
+    def _default_weight_loader(self, param: torch.nn.Parameter, loaded_weight: torch.Tensor):
+        """Default weight loader that handles UninitializedParameter materialization and copying."""
+        
+        # Handle UninitializedParameter materialization first
+        if isinstance(param, UninitializedParameter):
+            # Get output_dim for potential sharding
+            output_dim = getattr(param, "output_dim", None)
+            
+            # Calculate the final shape after potential sharding
+            final_shape = list(loaded_weight.shape)
+            if output_dim is not None:
+                # This parameter needs output dimension sharding
+                from aphrodite.distributed import get_tensor_model_parallel_world_size
+                tp_size = get_tensor_model_parallel_world_size()
+                if tp_size > 1:
+                    assert final_shape[output_dim] % tp_size == 0, (
+                        f"Cannot shard dimension {output_dim} of size {final_shape[output_dim]} "
+                        f"across {tp_size} GPUs"
+                    )
+                    final_shape[output_dim] = final_shape[output_dim] // tp_size
+            
+            # Materialize with the calculated shape
+            param.materialize(final_shape, dtype=loaded_weight.dtype)
+        
+        # Handle sharding for materialized parameters
+        output_dim = getattr(param, "output_dim", None)
+        if output_dim is not None:
+            from aphrodite.distributed import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
+            tp_rank = get_tensor_model_parallel_rank()
+            tp_size = get_tensor_model_parallel_world_size()
+            
+            if tp_size > 1:
+                # Narrow the loaded weight to the appropriate shard
+                shard_size = param.data.shape[output_dim]
+                start_idx = tp_rank * shard_size
+                loaded_weight = loaded_weight.narrow(output_dim, start_idx, shard_size)
+        
+        # Copy the (potentially sharded) weight data
+        assert param.data.shape == loaded_weight.shape, (
+            f"Shape mismatch: param {param.data.shape} vs loaded {loaded_weight.shape}"
+        )
+        param.data.copy_(loaded_weight)
 
+    def _split_exl2_weights_for_tp(self, layer: torch.nn.Module) -> None:
+        """Split EXL2 weights at group boundaries for tensor parallel (only if needed)."""
+        tp_size = get_tensor_model_parallel_world_size()
+        if tp_size == 1:
+            return  # No splitting needed for single GPU
+            
+        # For now, let the regular weight loader handle the sharding
+        # The custom group-boundary splitting can be added later if needed
+        # This method is kept for future enhancement
+        pass
+
+    def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        # Ensure all parameters are regular Parameters (they should already be)
+        layer.q_weight = Parameter(layer.q_weight.data, requires_grad=False)
+        layer.q_scale = Parameter(layer.q_scale.data, requires_grad=False)
+        layer.q_groups = Parameter(layer.q_groups.data, requires_grad=False)
+        layer.q_invperm = Parameter(layer.q_invperm.data, requires_grad=False)
+        layer.q_scale_max = Parameter(layer.q_scale_max.data, requires_grad=False)
+        
+        # Split weights for tensor parallel if needed
+        self._split_exl2_weights_for_tp(layer)
+        
+        # Perform EXL2-specific weight processing
         if layer.exllama_state == 0:
-            layer.q_scale_max /= 256
-            layer.q_invperm = layer.q_invperm.short()
+            layer.q_scale_max.data /= 256
+            layer.q_invperm.data = layer.q_invperm.data.short()
             if not hasattr(layer, 'q_perm'):
                 layer.q_perm = torch.argsort(layer.q_invperm).to(torch.short)
             if not hasattr(layer, 'q_group_map'):
                 layer.q_group_map = make_group_map(layer.q_groups,
                                                    layer.q_weight.shape[0])
-            layer.q_matrix = ops.exl2_make_q_matrix(
+            layer.q_matrix = ops.make_q_matrix(
                 layer.q_weight,
                 layer.q_perm,
                 layer.q_invperm,
@@ -138,6 +222,23 @@ class Exl2LinearMethod(LinearMethodBase):
             )
             layer.exllama_state = 1
 
+    def apply(self,
+              layer: torch.nn.Module,
+              x: torch.Tensor,
+              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+        
+        # Handle tensor parallel input gathering for EXL2
+        # For row parallel layers with EXL2, we need to gather the input
+        if (hasattr(layer, 'input_is_parallel') and layer.input_is_parallel and
+            get_tensor_model_parallel_world_size() > 1):
+            # This is a row parallel layer - gather input for EXL2
+            x = tensor_model_parallel_all_gather(x)
+        
+        out_shape = x.shape[:-1] + (layer.q_weight.shape[-1], )
+        reshaped_x = x.reshape(-1, x.shape[-1])
+
+        # Weight processing is now handled in process_weights_after_loading
+        # so we can directly use the pre-processed q_matrix
         output = ops.exl2_gemm(reshaped_x, layer.q_matrix)
 
         if bias is not None:

@@ -298,6 +298,8 @@ set(APHRODITE_EXT_SRC
     "kernels/quantization/vptq/gemm_kernels.cu"
     "kernels/quantization/awq/gemm_kernels.cu"
     "kernels/quantization/quip/origin_order.cu"
+    "kernels/quantization/exl2/q_gemm_exl2.cu"
+    "kernels/quantization/exl2/q_matrix.cu"
     "kernels/permute_cols.cu"
     "kernels/sampling/sampling.cu"
     "kernels/quantization/cutlass_w8a8/scaled_mm_entry.cu"
