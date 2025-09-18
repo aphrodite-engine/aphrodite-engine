@@ -188,6 +188,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.is_multimodal_raw_input_only_model = (
             model_config.is_multimodal_raw_input_only_model)
         self.max_model_len = model_config.max_model_len
+        self.dcp_world_size = self.parallel_config.decode_context_parallel_size
         self.max_num_tokens = scheduler_config.max_num_batched_tokens
         self.max_num_reqs = scheduler_config.max_num_seqs
 
@@ -433,6 +434,12 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             return
 
         if self.reorder_batch_threshold is not None:
+            # NOTE(lucas): currently no backend supports the custom masking
+            #  required for DCP with q_len > 1, so we assert here. Remove this
+            #  assert once the custom mask is support is added to FA3.
+            if self.dcp_world_size > 1:
+                assert self.reorder_batch_threshold == 1, \
+                    "DCP not support reorder_batch_threshold > 1 now."
             reorder_batch_to_split_decodes_and_prefills(
                 self.input_batch,
                 scheduler_output,
@@ -3444,6 +3451,19 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
         if has_kv_transfer_group():
             get_kv_transfer_group().register_kv_caches(kv_caches)
+
+        if self.dcp_world_size > 1:
+            layer_names = self.attn_groups[0][0].layer_names
+            layers = get_layers_from_aphrodite_config(
+                self.aphrodite_config,
+                AttentionLayerBase,
+                layer_names)
+            for layer in layers.values():
+                assert layer.impl.need_to_return_lse_for_decode, (
+                    "DCP requires attention impls to return"
+                    " the softmax lse for decode, but the impl "
+                    f"{layer.impl.__class__.__name__} "
+                    "does not return the softmax lse for decode.")
 
     def may_add_encoder_only_layers_to_kv_cache_config(self) -> None:
         """

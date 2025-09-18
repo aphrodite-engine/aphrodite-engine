@@ -594,10 +594,10 @@ ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
 
   // SM100 CUTLASS MLA decode
   ops.def(
-    "sm100_cutlass_mla_decode(Tensor! out, Tensor q_nope, Tensor q_pe,"
-    "                         Tensor kv_c_and_k_pe_cache, Tensor seq_lens,"
-    "                         Tensor page_table, Tensor workspace, float "
-    "scale,"
+    "sm100_cutlass_mla_decode(Tensor! out, Tensor! lse, Tensor q_nope,"
+    "                         Tensor q_pe, Tensor kv_c_and_k_pe_cache,"
+    "                         Tensor seq_lens, Tensor page_table,"
+    "                         Tensor workspace, float scale,"
     "                         int num_kv_splits) -> ()");
 // conditionally compiled so impl in source file
 
@@ -836,16 +836,6 @@ TORCH_LIBRARY_EXPAND(CONCAT(TORCH_EXTENSION_NAME, _cache_ops), cache_ops) {
       "                     str kv_cache_dtype,"
       "                     Tensor scale) -> ()");
   cache_ops.impl("concat_and_cache_mla", torch::kCUDA, &concat_and_cache_mla);
-
-  cache_ops.def(
-      "cp_fused_concat_and_cache_mla(Tensor kv_c, Tensor k_pe,"
-      "                              Tensor cp_local_token_select_indices,"
-      "                              Tensor! kv_cache,"
-      "                              Tensor slot_mapping,"
-      "                              str kv_cache_dtype,"
-      "                              Tensor scale) -> ()");
-  cache_ops.impl("cp_fused_concat_and_cache_mla", torch::kCUDA,
-                 &cp_fused_concat_and_cache_mla);
 
   // Convert the key and value cache to fp8 data type.
   cache_ops.def(
