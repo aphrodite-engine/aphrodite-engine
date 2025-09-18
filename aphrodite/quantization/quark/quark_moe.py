@@ -1,7 +1,6 @@
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import torch
-from loguru import logger
 
 from aphrodite import _custom_ops as ops
 from aphrodite.common.logger import log_once
@@ -222,7 +221,7 @@ class QuarkW8A8Fp8MoEMethod(QuarkMoEMethod):
         expert_load_view: Optional[torch.Tensor] = None,
         logical_to_physical_map: Optional[torch.Tensor] = None,
         logical_replica_count: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         assert self.fused_experts is None
 
         if enable_eplb:
@@ -388,7 +387,7 @@ class QuarkW4A4MXFp4MoEMethod(QuarkMoEMethod):
         expert_load_view: Optional[torch.Tensor] = None,
         logical_to_physical_map: Optional[torch.Tensor] = None,
         logical_replica_count: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         assert self.fused_experts is None
 
         if enable_eplb:
