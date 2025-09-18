@@ -1270,7 +1270,6 @@ class FusedMoE(CustomOp):
                              tp_rank=self.tp_rank)
             return True if return_success else None
 
-        # TODO @dsikka: ModelOpt should follow the proper MoE loading pattern
         if "ModelOpt" in quant_method_name:
             # Determine per-tensor weight scale patterns based on variant
             # Use the dedicated method instead of brittle string matching
@@ -1314,12 +1313,24 @@ class FusedMoE(CustomOp):
             # For other weights, call _load_model_weight_or_group_weight_scale()
             # to load it.
             if "weight" in weight_name:
-                self._load_model_weight_or_group_weight_scale(
-                    shard_id=shard_id,
-                    shard_dim=shard_dim,
-                    loaded_weight=loaded_weight,
-                    expert_data=expert_data,
-                    tp_rank=self.tp_rank)
+                if "w13" in weight_name:
+                    self._load_w13(shard_id=shard_id,
+                                   shard_dim=shard_dim,
+                                   loaded_weight=loaded_weight,
+                                   expert_data=expert_data,
+                                   tp_rank=self.tp_rank)
+                elif "w2" in weight_name:
+                    self._load_w2(shard_dim=shard_dim,
+                                  loaded_weight=loaded_weight,
+                                  expert_data=expert_data,
+                                  tp_rank=self.tp_rank)
+                else:
+                    self._load_model_weight_or_group_weight_scale(
+                        shard_id=shard_id,
+                        shard_dim=shard_dim,
+                        loaded_weight=loaded_weight,
+                        expert_data=expert_data,
+                        tp_rank=self.tp_rank)
             return True if return_success else None
 
         # Case weight scales, zero_points and offset, weight/input global scales
