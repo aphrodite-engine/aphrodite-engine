@@ -729,6 +729,8 @@ class DeepseekV2ForCausalLM(nn.Module, SupportsPP, MixtureOfExperts,
                             SupportsLoRA):
     packed_modules_mapping = {
         "gate_up_proj": ["gate_proj", "up_proj"],
+        "w13_weight": ["gate_proj", "up_proj"],
+        "w2_weight": ["down_proj"],
     }
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
