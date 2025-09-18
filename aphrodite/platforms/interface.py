@@ -48,9 +48,10 @@ class _Backend(enum.Enum):
     FLASHINFER_APHRODITE_V1 = enum.auto()
     TRITON_MLA = enum.auto()  # Supported by V1
     TRITON_MLA_APHRODITE_V1 = enum.auto()
-    FLASHMLA_APHRODITE_V1 = enum.auto()
-    FLASHMLA = enum.auto()  # Supported by V1
     CUTLASS_MLA = enum.auto()
+    FLASHMLA = enum.auto()  # Supported by V1
+    FLASHMLA_APHRODITE_V1 = enum.auto()
+    FLASH_ATTN_MLA = enum.auto()  # Supported by V1
     PALLAS = enum.auto()
     PALLAS_APHRODITE_V1 = enum.auto()
     IPEX = enum.auto()
