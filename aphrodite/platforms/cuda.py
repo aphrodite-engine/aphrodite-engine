@@ -236,10 +236,10 @@ class CudaPlatformBase(Platform):
 
             def _get_version(name, import_suffix) -> str:
                 if use_v1:
-                    logger.info_once(f"Using {name} backend on V1 engine.")
+                    log_once("INFO", f"Using {name} backend on V1 engine.")
                     return f"aphrodite.v1.attention.backends.mla.{import_suffix}"
                 else:
-                    logger.info_once(f"Using {name} backend.")
+                    log_once("INFO", f"Using {name} backend.")
                     return f"aphrodite.attention.backends.{import_suffix}"
 
             if use_cutlassmla:
@@ -260,7 +260,7 @@ class CudaPlatformBase(Platform):
                     return _get_version("FlashMLA", "flashmla.FlashMLABackend")
             if use_flashattn:
                 if use_v1:
-                    logger.info_once(
+                    log_once("INFO",
                         "Using FlashAttention MLA backend on V1 engine.")
                     return ("aphrodite.v1.attention.backends.mla."
                             "flashattn_mla.FlashAttnMLABackend")
