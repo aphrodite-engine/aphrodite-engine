@@ -955,9 +955,10 @@ class OpenAIServingChat(OpenAIServing):
                         if self._should_check_for_unstreamed_tool_arg_tokens(
                                 delta_message, output) and tool_parser:
                             latest_delta_len = 0
-                            if ((isinstance(
+                            if (delta_message.tool_calls and delta_message.tool_calls[0]
+                                and isinstance(
                                     delta_message.tool_calls[0].function,
-                                    DeltaFunctionCall)) and isinstance(
+                                    DeltaFunctionCall) and isinstance(
                                         delta_message.tool_calls[0].function.
                                         arguments, str)):
                                 latest_delta_len = len(
@@ -966,28 +967,31 @@ class OpenAIServingChat(OpenAIServing):
 
                             # get the expected call based on partial JSON
                             # parsing which "autocompletes" the JSON
-                            expected_call = json.dumps(
-                                tool_parser.prev_tool_call_arr[index].get(
-                                    "arguments", {}),
-                                ensure_ascii=False)
+                            if (index < len(tool_parser.prev_tool_call_arr) and
+                                index < len(tool_parser.streamed_args_for_tool)):
+                                expected_call = json.dumps(
+                                    tool_parser.prev_tool_call_arr[index].get(
+                                        "arguments", {}),
+                                    ensure_ascii=False)
 
-                            # get what we've streamed so far for arguments
-                            # for the current tool
-                            actual_call = tool_parser.streamed_args_for_tool[
-                                index]
-                            if (latest_delta_len > 0):
-                                actual_call = actual_call[:-latest_delta_len]
+                                # get what we've streamed so far for arguments
+                                # for the current tool
+                                actual_call = tool_parser.streamed_args_for_tool[
+                                    index]
 
-                            # check to see if there's anything left to stream
-                            remaining_call = expected_call.replace(
-                                actual_call, "", 1)
-                            # set that as a delta message
-                            delta_message = DeltaMessage(tool_calls=[
-                                DeltaToolCall(index=index,
-                                              function=DeltaFunctionCall(
-                                                  arguments=remaining_call).
-                                              model_dump(exclude_none=True))
-                            ])
+                                if (latest_delta_len > 0):
+                                    actual_call = actual_call[:-latest_delta_len]
+
+                                # check to see if there's anything left to stream
+                                remaining_call = expected_call.replace(
+                                    actual_call, "", 1)
+                                # set that as a delta message
+                                delta_message = DeltaMessage(tool_calls=[
+                                    DeltaToolCall(index=index,
+                                                  function=DeltaFunctionCall(
+                                                      arguments=remaining_call).
+                                                  model_dump(exclude_none=True))
+                                ])
 
                         # Send the finish response for each request.n only once
                         choice_data = ChatCompletionResponseStreamChoice(
