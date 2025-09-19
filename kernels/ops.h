@@ -185,6 +185,14 @@ std::tuple<int64_t, torch::Tensor> allocate_shared_buffer_and_handle(
 int64_t open_mem_handle(torch::Tensor& mem_handle);
 void free_shared_buffer(int64_t buffer);
 
+fptr_t init_custom_ag(const std::vector<int64_t>& group_ranks);
+void all_gather(fptr_t _ag_op, torch::Tensor& input, torch::Tensor& output,
+                const std::optional<std::vector<int64_t>>& sizes);
+std::vector<torch::Tensor> all_gather_list(
+    fptr_t _ag_op, const std::vector<torch::Tensor>& input_list,
+    const std::optional<std::vector<int64_t>>& sizes);
+void dispose_custom_ag(fptr_t _ag_op);
+
 void selective_scan_fwd(const torch::Tensor& u, const torch::Tensor& delta,
                         const torch::Tensor& A, const torch::Tensor& B,
                         const torch::Tensor& C,

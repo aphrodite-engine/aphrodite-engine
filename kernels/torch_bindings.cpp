@@ -927,4 +927,21 @@ TORCH_LIBRARY_EXPAND(CONCAT(TORCH_EXTENSION_NAME, _custom_ar), custom_ar) {
 #endif
 }
 
+TORCH_LIBRARY_EXPAND(CONCAT(TORCH_EXTENSION_NAME, _custom_ag), custom_ag) {
+  // Custom all-gather kernels
+  custom_ag.def(
+      "init_custom_ag(int[] group_ranks) -> int");
+  custom_ag.impl("init_custom_ag", torch::kCUDA, &init_custom_ag);
+
+  custom_ag.def(
+      "all_gather(int ag_op, Tensor input, Tensor! output, int[]? sizes) -> ()");
+  custom_ag.impl("all_gather", torch::kCUDA, &all_gather);
+
+  custom_ag.def(
+      "all_gather_list(int ag_op, Tensor[] input_list, int[]? sizes) -> Tensor[]");
+  custom_ag.impl("all_gather_list", torch::kCUDA, &all_gather_list);
+
+  custom_ag.def("dispose_custom_ag", &dispose_custom_ag);
+}
+
 REGISTER_EXTENSION(TORCH_EXTENSION_NAME)
