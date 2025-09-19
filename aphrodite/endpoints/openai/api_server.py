@@ -724,6 +724,7 @@ async def cancel_responses(response_id: str, raw_request: Request):
 @load_aware_call
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):
+    print(f"DEBUG: Chat completion request body: {request.model_dump()}")
     handler = chat(raw_request)
     if handler is None:
         return base(raw_request).create_error_response(
