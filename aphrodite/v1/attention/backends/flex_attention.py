@@ -260,11 +260,9 @@ def prefixlm_mask_mod(b: torch.Tensor, h: torch.Tensor, q_idx: torch.Tensor,
     - Tokens prefix_len+ onwards (suffix) follow causal masking
     - Prefix tokens can attend to suffix tokens, but suffix tokens cannot attend to prefix tokens
     """
-    prefix_mask = (q_idx < prefix_len) & (kv_idx < prefix_len)
-    suffix_mask = (q_idx >= prefix_len) & (kv_idx >= prefix_len) & (q_idx >= kv_idx)
-    prefix_to_suffix_mask = (q_idx < prefix_len) & (kv_idx >= prefix_len)
-
-    return prefix_mask | suffix_mask | prefix_to_suffix_mask
+    return ((q_idx < prefix_len)
+            | ((q_idx >= prefix_len) & (kv_idx >= prefix_len)
+               & (q_idx >= kv_idx)))
 
 
 @dataclass
