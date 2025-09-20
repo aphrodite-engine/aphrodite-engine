@@ -3,6 +3,7 @@ import glob
 import os
 import time
 from collections.abc import Generator, Iterable
+from contextlib import suppress
 from typing import Optional, cast
 
 import huggingface_hub
@@ -337,12 +338,14 @@ class DefaultModelLoader(BaseModelLoader):
             self.counter_after_loading_weights -
             self.counter_before_loading_weights)
 
-        # Log the total number of parameters in the model
-        total_params = sum(p.numel() for p in model.parameters())
-        logger.info(f"Model loaded with {total_params:,} parameters")
+        with suppress(Exception):
+            # Log the total number of parameters in the model
+            total_params = sum(p.numel() for p in model.parameters())
+            logger.info(f"Model loaded with {total_params:,} parameters")
 
-        # Check if this is an MoE model and log activated parameters
-        self._log_moe_parameters(model, model_config, total_params)
+        with suppress(Exception):
+            # Check if this is an MoE model and log activated parameters
+            self._log_moe_parameters(model, model_config, total_params)
 
         # We only enable strict check for non-quantized models
         # that have loaded weights tracking currently.
