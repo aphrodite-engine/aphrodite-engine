@@ -336,6 +336,11 @@ class DefaultModelLoader(BaseModelLoader):
             "Loading weights took {:.2f} seconds",
             self.counter_after_loading_weights -
             self.counter_before_loading_weights)
+
+        # Log the total number of parameters in the model
+        total_params = sum(p.numel() for p in model.parameters())
+        logger.info(f"Model loaded with {total_params:,} parameters")
+
         # We only enable strict check for non-quantized models
         # that have loaded weights tracking currently.
         if model_config.quantization is None and loaded_weights is not None:
