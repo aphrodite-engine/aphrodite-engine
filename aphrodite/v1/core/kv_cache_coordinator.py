@@ -22,6 +22,7 @@ class KVCacheCoordinator(ABC):
         use_eagle: bool,
         enable_caching: bool,
         enable_kv_cache_events: bool,
+        dcp_world_size: int,
     ):
         self.kv_cache_config = kv_cache_config
         self.max_model_len = max_model_len
@@ -37,6 +38,7 @@ class KVCacheCoordinator(ABC):
                 kv_cache_spec=kv_cache_group.kv_cache_spec,
                 block_pool=self.block_pool,
                 kv_cache_group_id=i,
+                dcp_world_size=dcp_world_size,
             ) for i, kv_cache_group in enumerate(
                 self.kv_cache_config.kv_cache_groups))
 
@@ -193,9 +195,14 @@ class KVCacheCoordinatorNoPrefixCache(KVCacheCoordinator):
     """
 
     def __init__(self, kv_cache_config: KVCacheConfig, max_model_len: int,
-                 use_eagle: bool, enable_kv_cache_events: bool):
-        super().__init__(kv_cache_config, max_model_len, use_eagle, False,
-                         enable_kv_cache_events)
+                 use_eagle: bool, enable_kv_cache_events: bool,
+                 dcp_world_size: int):
+        super().__init__(kv_cache_config,
+                         max_model_len,
+                         use_eagle,
+                         False,
+                         enable_kv_cache_events,
+                         dcp_world_size=dcp_world_size)
         self.num_single_type_manager = len(self.single_type_managers)
 
     def get_num_common_prefix_blocks(self, request_id: str,
@@ -221,12 +228,19 @@ class UnitaryKVCacheCoordinator(KVCacheCoordinator):
 
     def __init__(self, kv_cache_config: KVCacheConfig, max_model_len: int,
                  use_eagle: bool, enable_caching: bool,
-                 enable_kv_cache_events: bool):
-        super().__init__(kv_cache_config, max_model_len, use_eagle,
-                         enable_caching, enable_kv_cache_events)
+                 enable_kv_cache_events: bool, dcp_world_size: int):
+        super().__init__(kv_cache_config,
+                         max_model_len,
+                         use_eagle,
+                         enable_caching,
+                         enable_kv_cache_events,
+                         dcp_world_size=dcp_world_size)
         self.kv_cache_spec = self.kv_cache_config.kv_cache_groups[
             0].kv_cache_spec
         self.block_size = self.kv_cache_spec.block_size
+        self.dcp_world_size = dcp_world_size
+        if dcp_world_size > 1:
+            self.block_size *= dcp_world_size
         assert len(self.kv_cache_config.kv_cache_groups) == 1, (
             "UnitaryKVCacheCoordinator assumes only one kv cache group")
 
@@ -242,6 +256,7 @@ class UnitaryKVCacheCoordinator(KVCacheCoordinator):
             block_pool=self.block_pool,
             kv_cache_spec=self.kv_cache_spec,
             use_eagle=self.use_eagle,
+            dcp_world_size=self.dcp_world_size,
         )
         return hit_blocks, len(hit_blocks[0]) * self.block_size
 
@@ -257,9 +272,14 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
 
     def __init__(self, kv_cache_config: KVCacheConfig, max_model_len: int,
                  use_eagle: bool, enable_caching: bool,
-                 enable_kv_cache_events: bool):
-        super().__init__(kv_cache_config, max_model_len, use_eagle,
-                         enable_caching, enable_kv_cache_events)
+                 enable_kv_cache_events: bool, dcp_world_size: int):
+        super().__init__(kv_cache_config,
+                         max_model_len,
+                         use_eagle,
+                         enable_caching,
+                         enable_kv_cache_events,
+                         dcp_world_size=dcp_world_size)
+        assert dcp_world_size == 1, "DCP not support hybrid attn now."
         self.verify_and_split_kv_cache_groups()
 
     def verify_and_split_kv_cache_groups(self) -> None:
@@ -390,17 +410,27 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
         return hit_blocks, hit_length
 
 
-def get_kv_cache_coordinator(
-        kv_cache_config: KVCacheConfig, max_model_len: int, use_eagle: bool,
-        enable_caching: bool,
-        enable_kv_cache_events: bool) -> KVCacheCoordinator:
+def get_kv_cache_coordinator(kv_cache_config: KVCacheConfig,
+                             max_model_len: int, use_eagle: bool,
+                             enable_caching: bool,
+                             enable_kv_cache_events: bool,
+                             dcp_world_size: int) -> KVCacheCoordinator:
     if not enable_caching:
-        return KVCacheCoordinatorNoPrefixCache(kv_cache_config, max_model_len,
+        return KVCacheCoordinatorNoPrefixCache(kv_cache_config,
+                                               max_model_len,
                                                use_eagle,
-                                               enable_kv_cache_events)
+                                               enable_kv_cache_events,
+                                               dcp_world_size=dcp_world_size)
     if len(kv_cache_config.kv_cache_groups) == 1:
-        return UnitaryKVCacheCoordinator(kv_cache_config, max_model_len,
-                                         use_eagle, enable_caching,
-                                         enable_kv_cache_events)
-    return HybridKVCacheCoordinator(kv_cache_config, max_model_len, use_eagle,
-                                    enable_caching, enable_kv_cache_events)
+        return UnitaryKVCacheCoordinator(kv_cache_config,
+                                         max_model_len,
+                                         use_eagle,
+                                         enable_caching,
+                                         enable_kv_cache_events,
+                                         dcp_world_size=dcp_world_size)
+    return HybridKVCacheCoordinator(kv_cache_config,
+                                    max_model_len,
+                                    use_eagle,
+                                    enable_caching,
+                                    enable_kv_cache_events,
+                                    dcp_world_size=dcp_world_size)

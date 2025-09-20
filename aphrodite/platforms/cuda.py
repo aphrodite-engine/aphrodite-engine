@@ -219,9 +219,30 @@ class CudaPlatformBase(Platform):
         if use_mla:
             # TODO(lucas): refactor to be more concise
             #  we should probably consider factoring out V1 here
-            if selected_backend == _Backend.CUTLASS_MLA or (
-                    cls.is_device_capability(100) and selected_backend is None
-                    and block_size == 128):
+            from aphrodite.attention.ops.flashmla import is_flashmla_supported
+            from aphrodite.attention.utils.fa_utils import (
+                flash_attn_supports_mla)
+
+            use_cutlassmla = selected_backend == _Backend.CUTLASS_MLA or (
+                selected_backend is None and cls.is_device_capability(100)
+                and block_size == 128)
+            use_flashmla = selected_backend in [
+                _Backend.FLASHMLA, _Backend.FLASHMLA_APHRODITE_V1
+            ] or (selected_backend is None and is_flashmla_supported()[0])
+            use_flashattn = selected_backend == _Backend.FLASH_ATTN_MLA or (
+                selected_backend is None and flash_attn_supports_mla())
+            use_triton = selected_backend == _Backend.TRITON_MLA or (
+                selected_backend is None)
+
+            def _get_version(name, import_suffix) -> str:
+                if use_v1:
+                    log_once("INFO", f"Using {name} backend on V1 engine.")
+                    return f"aphrodite.v1.attention.backends.mla.{import_suffix}"
+                else:
+                    log_once("INFO", f"Using {name} backend.")
+                    return f"aphrodite.attention.backends.{import_suffix}"
+
+            if use_cutlassmla:
                 if use_v1:
                     log_once("INFO", "Using Cutlass MLA backend on V1 engine.")
                     return ("aphrodite.v1.attention.backends.mla."
@@ -229,35 +250,27 @@ class CudaPlatformBase(Platform):
                 else:
                     logger.warning(
                         "Cutlass MLA backend is only supported on V1 engine")
-            if selected_backend == _Backend.TRITON_MLA or block_size != 64:
-                if use_v1:
-                    log_once("INFO", "Using Triton MLA backend on V1 engine.")
-                    return ("aphrodite.v1.attention.backends.mla."
-                            "triton_mla.TritonMLABackend")
-                else:
-                    logger.info("Using Triton MLA backend.")
-                    return "aphrodite.attention.backends.triton_mla.TritonMLABackend"
-            else:
-                from aphrodite.attention.backends.flashmla import (
-                    is_flashmla_supported)
-                if not is_flashmla_supported()[0]:
-                    logger.warning(
-                        "FlashMLA backend is not supported due to {}",
-                        is_flashmla_supported()[1])
-                elif block_size != 64:
+            if use_flashmla:
+                if block_size != 64:
                     logger.warning(
                         "FlashMLA backend is not supported for block size {}"
                         " (currently only supports block size 64).",
                         block_size)
                 else:
-                    if use_v1:
-                        log_once("INFO", "Using FlashMLA backend on V1 engine.")
-                        return ("aphrodite.v1.attention.backends.mla."
-                                "flashmla.FlashMLABackend")
-                    else:
-                        logger.info("Using FlashMLA backend.")
-                        return ("aphrodite.attention.backends."
-                                "flashmla.FlashMLABackend")
+                    return _get_version("FlashMLA", "flashmla.FlashMLABackend")
+            if use_flashattn:
+                if use_v1:
+                    log_once("INFO",
+                        "Using FlashAttention MLA backend on V1 engine.")
+                    return ("aphrodite.v1.attention.backends.mla."
+                            "flashattn_mla.FlashAttnMLABackend")
+                else:
+                    logger.warning(
+                        "FlashAttention MLA backend is only supported on V1 "
+                        "engine.")
+            if use_triton:
+                return _get_version("Triton MLA",
+                                    "triton_mla.TritonMLABackend")
         if use_v1:
             FLASHINFER_V1 = "aphrodite.v1.attention.backends.flashinfer.FlashInferBackend"  # noqa: E501
             FLEX_ATTENTION_V1 = "aphrodite.v1.attention.backends.flex_attention.FlexAttentionBackend"  # noqa: E501
@@ -501,8 +514,8 @@ class CudaPlatformBase(Platform):
                 else:
                     attention_backend = "FLASHMLA"
 
-            # Only FlashMLA supports fp8
-            if attention_backend == "FLASHMLA":
+            # Only FlashMLA and CUTLASS_MLA support fp8
+            if attention_backend in ["FLASHMLA", "CUTLASS_MLA"]:
                 supported = True
             else:
                 supported = (not fp8_attention)

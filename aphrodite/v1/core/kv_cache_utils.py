@@ -842,6 +842,11 @@ def _get_kv_cache_config_uniform_type(aphrodite_config: AphroditeConfig,
     )
 
     num_tokens = num_blocks * aphrodite_config.cache_config.block_size
+    if aphrodite_config.parallel_config.decode_context_parallel_size > 1:
+        num_tokens *= aphrodite_config.parallel_config.decode_context_parallel_size
+        logger.info(
+            "Multiplying the GPU KV cache size by the dcp_world_size {}.",
+            aphrodite_config.parallel_config.decode_context_parallel_size)
     num_tokens_str = f"{num_tokens:,}"
     max_concurrency = get_max_concurrency_for_kv_cache_config(
         aphrodite_config, kv_cache_config)
