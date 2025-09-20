@@ -3,6 +3,7 @@ import glob
 import os
 import time
 from collections.abc import Generator, Iterable
+from contextlib import suppress
 from typing import Optional, cast
 
 import huggingface_hub
@@ -336,6 +337,16 @@ class DefaultModelLoader(BaseModelLoader):
             "Loading weights took {:.2f} seconds",
             self.counter_after_loading_weights -
             self.counter_before_loading_weights)
+
+        with suppress(Exception):
+            # Log the total number of parameters in the model
+            total_params = sum(p.numel() for p in model.parameters())
+            logger.info(f"Model loaded with {total_params:,} parameters")
+
+        with suppress(Exception):
+            # Check if this is an MoE model and log activated parameters
+            self._log_moe_parameters(model, model_config, total_params)
+
         # We only enable strict check for non-quantized models
         # that have loaded weights tracking currently.
         if model_config.quantization is None and loaded_weights is not None:
@@ -344,3 +355,79 @@ class DefaultModelLoader(BaseModelLoader):
                 raise ValueError(
                     "Following weights were not initialized from "
                     f"checkpoint: {weights_not_loaded}")
+
+    def _log_moe_parameters(self, model: nn.Module, model_config: ModelConfig,
+                           total_params: int) -> None:
+        """Log MoE-specific parameter information if this is an MoE model."""
+        hf_config = getattr(model_config, 'hf_config', None)
+
+        if hf_config is None:
+            return
+
+        num_experts_per_tok = None
+        num_total_experts = None
+
+        # First try to get from hf_config
+        if hf_config is not None:
+            num_experts_per_tok = getattr(
+                hf_config, 'num_experts_per_tok', None)
+            num_local_experts = getattr(hf_config, 'num_local_experts', None)
+            num_experts = getattr(hf_config, 'num_experts', None)
+            num_total_experts = num_local_experts or num_experts
+
+        # If not found in hf_config, try model_config itself
+        if num_experts_per_tok is None:
+            num_experts_per_tok = getattr(
+                model_config, 'num_experts_per_tok', None)
+        if num_total_experts is None:
+            num_local_experts = getattr(model_config, 'num_local_experts', None)
+            num_experts = getattr(model_config, 'num_experts', None)
+            num_total_experts = num_local_experts or num_experts
+
+        # some other common indicators
+        is_moe_by_name = False
+        if hf_config is not None:
+            architectures = getattr(hf_config, 'architectures', [])
+            if isinstance(architectures, list) and any(
+                'MoE' in arch or 'moe' in arch for arch in architectures):
+                is_moe_by_name = True
+
+        # If we detected MoE by architecture name but don't have expert params,
+        # try to infer them
+        if is_moe_by_name and (
+            num_experts_per_tok is None or num_total_experts is None):
+            logger.debug(
+                f"Detected MoE model by architecture name: {architectures}")
+
+        if num_experts_per_tok is not None and num_total_experts is not None:
+            logger.debug(
+                f"MoE detection: num_experts_per_tok={num_experts_per_tok}, "
+                f"num_total_experts={num_total_experts}"
+            )
+            # activated parameters: gate + fraction of expert
+            gate_params = 0
+            expert_params = 0
+            for name, param in model.named_parameters():
+                if 'gate' in name:
+                    gate_params += param.numel()
+                elif 'experts' in name:
+                    expert_params += param.numel()
+
+            # In most MoE models, only top-k experts are activated per token
+            # So activated parameters = gate_params + (top_k / num_experts) *
+            # expert_params
+            activated_expert_ratio = num_experts_per_tok / num_total_experts
+            activated_params = gate_params + (
+                activated_expert_ratio * expert_params)
+
+            activated_ratio = (activated_params / total_params * 100) \
+                if total_params > 0 else 0
+
+            logger.info(
+                "MoE model detected: {} experts, "
+                "{} experts per token, "
+                "activated params: {} ({:.1f}% of total), "
+                "expert utilization: {:.1%}",
+                num_total_experts, num_experts_per_tok, activated_params,
+                activated_ratio, activated_expert_ratio
+            )
