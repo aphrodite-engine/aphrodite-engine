@@ -23,9 +23,7 @@ import prometheus_client
 import pydantic
 import regex as re
 import uvloop
-import yaml
-from fastapi import (APIRouter, Depends, FastAPI, Form, HTTPException, Request,
-                     UploadFile)
+from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (HTMLResponse, JSONResponse, Response,
@@ -86,6 +84,7 @@ from aphrodite.endpoints.openai.serving_completions import (
     OpenAIServingCompletion)
 from aphrodite.endpoints.openai.serving_embedding import OpenAIServingEmbedding
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
+from aphrodite.endpoints.openai.serving_kobold import OpenAIServingKobold
 from aphrodite.endpoints.openai.serving_messages import OpenAIServingMessages
 from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
                                                        LoRAModulePath,
@@ -115,7 +114,7 @@ from aphrodite.transformers_utils.tokenizer import MistralTokenizer
 from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.utils import (Device, FlexibleArgumentParser, decorate_logs,
                              get_open_zmq_ipc_path, is_valid_ipv6_address,
-                             set_ulimit)
+                             random_uuid, set_ulimit)
 from aphrodite.v1.metrics.prometheus import get_prometheus_registry
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
@@ -453,6 +452,10 @@ def transcription(request: Request) -> OpenAIServingTranscription:
 
 def translation(request: Request) -> OpenAIServingTranslation:
     return request.app.state.openai_serving_translation
+
+
+def kobold(request: Request) -> Optional[OpenAIServingKobold]:
+    return request.app.state.openai_serving_kobold
 
 
 def engine_client(request: Request) -> EngineClient:
@@ -1458,7 +1461,8 @@ def prepare_engine_payload(
 async def generate(kai_payload: KAIGenerationInputSchema,
                    raw_request: Request) -> JSONResponse:
     tokenizer = await engine_client(raw_request).get_tokenizer()
-    sampling_params, input_tokens = prepare_engine_payload(kai_payload, tokenizer)
+    sampling_params, input_tokens = prepare_engine_payload(
+        kai_payload, tokenizer)
     result_generator = engine_client(raw_request).generate(
         {
             "prompt": kai_payload.prompt,
@@ -1488,32 +1492,21 @@ async def generate(kai_payload: KAIGenerationInputSchema,
 @extra_api.post("/generate/stream")
 async def generate_stream(kai_payload: KAIGenerationInputSchema,
                           raw_request: Request) -> StreamingResponse:
+    handler = kobold(raw_request)
+    if handler is None:
+        return base(raw_request).create_error_response(
+            message="The model does not support KoboldAI streaming API")
 
-    tokenizer = await engine_client(raw_request).get_tokenizer()
-    sampling_params, input_tokens = prepare_engine_payload(kai_payload, tokenizer)
-    results_generator = engine_client(raw_request).generate(
-        {
-            "prompt": kai_payload.prompt,
-            "prompt_token_ids": input_tokens,
+    generator = handler.create_kobold_stream(kai_payload, raw_request)
+
+    return StreamingResponse(
+        content=generator,
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
         },
-        sampling_params,
-        kai_payload.genkey,
+        media_type="text/event-stream"
     )
-
-    async def stream_kobold() -> AsyncGenerator[bytes, None]:
-        previous_output = ""
-        async for res in results_generator:
-            new_chunk = res.outputs[0].text[len(previous_output):]
-            previous_output += new_chunk
-            yield b"event: message\n"
-            yield f"data: {json.dumps({'token': new_chunk})}\n\n".encode()
-
-    return StreamingResponse(stream_kobold(),
-                             headers={
-                                 "Cache-Control": "no-cache",
-                                 "Connection": "keep-alive",
-                             },
-                             media_type="text/event-stream")
 
 
 @extra_api.post("/generate/check")
@@ -2173,6 +2166,13 @@ async def init_app_state(
         request_logger=request_logger,
         log_error_stack=args.log_error_stack,
     ) if "transcription" in supported_tasks else None
+    state.openai_serving_kobold = OpenAIServingKobold(
+        engine_client,
+        model_config,
+        state.openai_serving_models,
+        request_logger=request_logger,
+        log_error_stack=args.log_error_stack,
+    )
 
     state.enable_server_load_tracking = args.enable_server_load_tracking
     state.server_load_metrics = 0
