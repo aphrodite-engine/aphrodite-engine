@@ -13,6 +13,9 @@ from aphrodite.engine.protocol import EngineClient
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils import random_uuid
 
+# Global cache for generation tracking
+gen_cache: dict = {}
+
 
 class OpenAIServingKobold(OpenAIServing):
     """Serving class for KoboldAI API compatibility."""
@@ -33,6 +36,52 @@ class OpenAIServingKobold(OpenAIServing):
             request_logger=request_logger,
             **kwargs
         )
+
+    async def create_kobold_response(
+        self,
+        request: KAIGenerationInputSchema,
+        raw_request: Optional[Request] = None,
+    ):
+        """Create non-streaming response for KoboldAI API."""
+
+        tokenizer = await self.engine_client.get_tokenizer()
+        sampling_params, input_tokens = self._prepare_engine_payload(
+            request, tokenizer)
+
+        results_generator = self.engine_client.generate(
+            {
+                "prompt": request.prompt,
+                "prompt_token_ids": input_tokens,
+            },
+            sampling_params,
+            request.genkey,
+        )
+
+        final_res = None
+        previous_output = ""
+        async for res in results_generator:
+            final_res = res
+            new_chunk = res.outputs[0].text[len(previous_output):]
+            previous_output += new_chunk
+            # Update cache for streaming compatibility
+            if request.genkey:
+                gen_cache[request.genkey] = previous_output
+
+        assert final_res is not None
+        if request.genkey:
+            del gen_cache[request.genkey]
+
+        return {
+            "results": [{"text": output.text} for output in final_res.outputs]
+        }
+
+    async def check_generation(self, genkey: str) -> str:
+        """Check the current generation status for a given genkey."""
+        return gen_cache.get(genkey, "")
+
+    async def abort_generation(self, genkey: str) -> None:
+        """Abort generation for a given genkey."""
+        await self.engine_client.abort(genkey)
 
     async def create_kobold_stream(
         self,
