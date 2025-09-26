@@ -1402,10 +1402,6 @@ if envs.APHRODITE_ALLOW_RUNTIME_LORA_UPDATING:
 
 
 # ============ KoboldAI API ============ #
-
-badwordsids: list[int] = []
-
-
 @kai_api.post("/generate")
 async def generate(kai_payload: KAIGenerationInputSchema,
                    raw_request: Request):

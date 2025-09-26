@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 from typing import Optional
 
 from fastapi import Request
+from loguru import logger
 
 from aphrodite.common.sampling_params import _SAMPLING_EPS, SamplingParams
 from aphrodite.endpoints.logger import RequestLogger
@@ -10,12 +11,11 @@ from aphrodite.endpoints.openai.protocol import KAIGenerationInputSchema
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
-from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 from aphrodite.utils import random_uuid
 
 # Global cache for generation tracking
 gen_cache: dict = {}
-
 
 class OpenAIServingKobold(OpenAIServing):
     """Serving class for KoboldAI API compatibility."""
@@ -36,6 +36,60 @@ class OpenAIServingKobold(OpenAIServing):
             request_logger=request_logger,
             **kwargs
         )
+
+        self._initialize_badwordsids()
+
+    def _initialize_badwordsids(self) -> None:
+        """Initialize badwordsids from the model's HuggingFace configuration and tokenizer."""
+        self.badwordsids: list[int] = []
+
+        hf_config = getattr(self.model_config, 'hf_config', None)
+        if hf_config and hasattr(hf_config, 'bad_words_ids'
+        ) and hf_config.bad_words_ids:
+            self.badwordsids = list(hf_config.bad_words_ids)
+            return
+
+        # Fallback: extract from tokenizer vocabulary
+        try:
+            tokenizer_name = getattr(self.model_config, 'tokenizer', None) or \
+                           getattr(self.model_config, 'model', None)
+            if tokenizer_name:
+                trust_remote_code = getattr(
+                    self.model_config, 'trust_remote_code', False)
+                revision = getattr(self.model_config, 'revision', None)
+
+                tokenizer = get_tokenizer(
+                    tokenizer_name,
+                    trust_remote_code=trust_remote_code,
+                    revision=revision
+                )
+
+                if tokenizer:
+                    vocab = tokenizer.get_vocab()
+                    bracket_tokens = [
+                        v for k, v in vocab.items()
+                        if any(c in str(k) for c in "[]")
+                    ]
+                    self.badwordsids = bracket_tokens
+
+                    pad_token_id = getattr(tokenizer, 'pad_token_id', None)
+                    if (
+                        pad_token_id is not None and pad_token_id in
+                        self.badwordsids
+                    ):
+                        self.badwordsids.remove(pad_token_id)
+
+                    eos_token_id = getattr(tokenizer, 'eos_token_id', None)
+                    if (
+                        eos_token_id is not None and eos_token_id not in
+                        self.badwordsids
+                    ):
+                        self.badwordsids.append(eos_token_id)
+
+        except Exception as e:
+            logger.warning(
+                f"Could not initialize badwordsids from tokenizer: {e}")
+            self.badwordsids = []
 
     async def create_kobold_response(
         self,
@@ -147,6 +201,10 @@ class OpenAIServingKobold(OpenAIServing):
             stop=kai_payload.stop_sequence,
             include_stop_str_in_output=
             kai_payload.include_stop_str_in_output or False,
+            custom_token_bans=(
+                self.badwordsids if getattr(
+                    kai_payload, 'use_default_badwordsids', True
+                ) else []),
             max_tokens=kai_payload.max_length,
             seed=kai_payload.sampler_seed,
             xtc_probability=kai_payload.xtc_probability or 0.0,
