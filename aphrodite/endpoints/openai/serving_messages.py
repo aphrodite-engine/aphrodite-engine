@@ -12,6 +12,7 @@ from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (AnthropicContentBlockDelta,
                                                  AnthropicContentBlockStart,
                                                  AnthropicContentBlockStop,
+                                                 AnthropicError,
                                                  AnthropicImageBlock,
                                                  AnthropicMessage,
                                                  AnthropicMessageDelta,
@@ -30,6 +31,7 @@ from aphrodite.endpoints.openai.protocol import (AnthropicContentBlockDelta,
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.lora.request import LoRARequest
 
 
 class OpenAIServingMessages(OpenAIServing):
@@ -62,6 +64,10 @@ class OpenAIServingMessages(OpenAIServing):
 
         self.response_role = response_role
         self.chat_template = chat_template
+        self._primary_model_name = (
+            self.models.base_model_paths[0].name if
+            self.models.base_model_paths else None
+        )
         self.enable_auto_tools = enable_auto_tools
         self.tool_parser = tool_parser
         self.reasoning_parser = reasoning_parser
@@ -133,6 +139,60 @@ class OpenAIServingMessages(OpenAIServing):
             logger.exception("Error in Messages API processing")
             return self.create_error_response(str(e))
 
+    async def _check_model(self, request) -> Optional[ErrorResponse]:
+        """
+        Override model checking to allow Claude model name aliases.
+        """
+        # Check if it's a Claude alias - if so, treat it as valid
+        if self._is_claude_model_alias(request.model):
+            return None
+
+        # For non-Claude models, use the base implementation
+        return await super()._check_model(request)
+
+    def _is_claude_model_alias(self, model_name: Optional[str]) -> bool:
+        """
+        Check if the model name is a Claude alias that should be routed
+        to the primary model.
+        """
+        if not model_name:
+            return False
+        return model_name.startswith("claude-")
+
+    def _is_model_supported(self, model_name: Optional[str]) -> bool:
+        """
+        Override model support checking to allow Claude aliases.
+        """
+        if not model_name:
+            return True
+
+        # Claude aliases are always supported (routed to primary model)
+        if self._is_claude_model_alias(model_name):
+            return True
+
+        # For non-Claude models, use the base implementation
+        return super()._is_model_supported(model_name)
+
+    def _get_model_name(
+        self,
+        model_name: Optional[str] = None,
+        lora_request: Optional[LoRARequest] = None
+    ) -> str:
+        """
+        Override model name resolution to handle Claude aliases.
+        """
+        if lora_request:
+            return lora_request.lora_name
+
+        if not model_name:
+            return self.models.base_model_paths[0].name
+
+        if self._is_claude_model_alias(model_name):
+            return self._primary_model_name or \
+                self.models.base_model_paths[0].name
+
+        return model_name
+
     def _convert_to_chat_request(
         self, request: AnthropicMessagesRequest) -> ChatCompletionRequest:
         """
@@ -189,9 +249,10 @@ class OpenAIServingMessages(OpenAIServing):
         # Convert stop sequences
         stop = request.stop_sequences or []
 
-        # Build the ChatCompletion request
+        actual_model = self._get_model_name(request.model)
+
         chat_request_dict = {
-            "model": request.model,
+            "model": actual_model,
             "messages": messages,
             "max_tokens": request.max_tokens,
             "temperature": request.temperature or 0.7,
@@ -421,11 +482,10 @@ class OpenAIServingMessages(OpenAIServing):
                             pass
 
                         # Handle finish reason
-                        if choice.get("finish_reason"):
-                            # Send content_block_stop
-                            if current_text:
-                                content_stop = AnthropicContentBlockStop(index=content_index)
-                                yield f"data: {content_stop.model_dump_json()}\n\n"
+                    if choice.get("finish_reason") and current_text:
+                        # Send content_block_stop
+                        content_stop = AnthropicContentBlockStop(index=content_index)
+                        yield f"data: {content_stop.model_dump_json()}\n\n"
 
                     # Handle usage information
                     if "usage" in chunk_data:
