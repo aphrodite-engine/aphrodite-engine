@@ -1546,7 +1546,7 @@ async def get_kobold_lite_ui():
     global kobold_lite_ui
     if kobold_lite_ui == "":
         scriptpath = os.path.dirname(os.path.abspath(__file__))
-        klitepath = os.path.join(scriptpath, "../kobold/klite.embd")
+        klitepath = os.path.join(scriptpath, "./klite.embd")
         klitepath = os.path.normpath(klitepath)  # Normalize the path
         if os.path.exists(klitepath):
             with open(klitepath, "r", encoding="utf-8") as f:
