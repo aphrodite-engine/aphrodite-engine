@@ -2037,6 +2037,19 @@ async def init_app_state(
         enable_log_outputs=args.enable_log_outputs,
         log_error_stack=args.log_error_stack,
     ) if "generate" in supported_tasks else None
+    state.openai_serving_messages = OpenAIServingMessages(
+        engine_client,
+        model_config,
+        state.openai_serving_models,
+        args.response_role,
+        request_logger=request_logger,
+        chat_template=resolved_chat_template,
+        return_tokens_as_token_ids=args.return_tokens_as_token_ids,
+        reasoning_parser=args.reasoning_parser,
+        enable_auto_tools=args.enable_auto_tool_choice,
+        tool_parser=args.tool_call_parser,
+        log_error_stack=args.log_error_stack,
+    ) if "generate" in supported_tasks else None
     state.openai_serving_completion = OpenAIServingCompletion(
         engine_client,
         model_config,
