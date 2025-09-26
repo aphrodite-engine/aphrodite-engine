@@ -40,7 +40,8 @@ class OpenAIServingKobold(OpenAIServing):
         self._initialize_badwordsids()
 
     def _initialize_badwordsids(self) -> None:
-        """Initialize badwordsids from the model's HuggingFace configuration and tokenizer."""
+        """Initialize badwordsids from the model's HuggingFace configuration
+        and tokenizer."""
         self.badwordsids: list[int] = []
 
         hf_config = getattr(self.model_config, 'hf_config', None)
