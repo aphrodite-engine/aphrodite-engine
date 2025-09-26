@@ -17,15 +17,13 @@ from contextlib import asynccontextmanager
 from distutils.util import strtobool
 from functools import partial
 from http import HTTPStatus
-from typing import Annotated, Any, Callable, Optional
+from typing import Annotated, Any, Callable, Optional, Union
 
 import prometheus_client
 import pydantic
 import regex as re
 import uvloop
-import yaml
-from fastapi import (APIRouter, Depends, FastAPI, Form, HTTPException, Request,
-                     UploadFile)
+from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (HTMLResponse, JSONResponse, Response,
@@ -41,8 +39,6 @@ from typing_extensions import assert_never
 
 import aphrodite.common.envs as envs
 from aphrodite.common.logger import log_once
-from aphrodite.common.outputs import RequestOutput
-from aphrodite.common.sampling_params import _SAMPLING_EPS, SamplingParams
 from aphrodite.config import AphroditeConfig
 from aphrodite.endpoints.chat_utils import (load_chat_template,
                                             resolve_hf_chat_template,
@@ -86,6 +82,7 @@ from aphrodite.endpoints.openai.serving_completions import (
     OpenAIServingCompletion)
 from aphrodite.endpoints.openai.serving_embedding import OpenAIServingEmbedding
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
+from aphrodite.endpoints.openai.serving_kobold import OpenAIServingKobold
 from aphrodite.endpoints.openai.serving_messages import OpenAIServingMessages
 from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
                                                        LoRAModulePath,
@@ -126,7 +123,6 @@ kai_api = APIRouter()
 extra_api = APIRouter()
 kobold_lite_ui = ""
 sampler_json = ""
-gen_cache: dict = {}
 prometheus_multiproc_dir: tempfile.TemporaryDirectory
 
 _running_tasks: set[asyncio.Task] = set()
@@ -453,6 +449,10 @@ def transcription(request: Request) -> OpenAIServingTranscription:
 
 def translation(request: Request) -> OpenAIServingTranslation:
     return request.app.state.openai_serving_translation
+
+
+def kobold(request: Request) -> Optional[OpenAIServingKobold]:
+    return request.app.state.openai_serving_kobold
 
 
 def engine_client(request: Request) -> EngineClient:
@@ -1402,128 +1402,52 @@ if envs.APHRODITE_ALLOW_RUNTIME_LORA_UPDATING:
 
 
 # ============ KoboldAI API ============ #
-
-badwordsids: list[int] = []
-
-
-def prepare_engine_payload(
-        kai_payload: KAIGenerationInputSchema,
-        tokenizer
-) -> tuple[SamplingParams, list[int]]:
-    """Create SamplingParams and truncated input tokens for AsyncEngine"""
-
-    if not kai_payload.genkey:
-        kai_payload.genkey = f"kai-{random_uuid()}"
-
-    kai_payload.top_k = kai_payload.top_k if kai_payload.top_k != 0.0 else -1
-    kai_payload.tfs = max(_SAMPLING_EPS, kai_payload.tfs or 0.0)
-    if (kai_payload.temperature or 0.0) < _SAMPLING_EPS:
-        kai_payload.n = 1
-        kai_payload.top_p = 1.0
-        kai_payload.top_k = -1
-
-    sampling_params = SamplingParams(
-        n=kai_payload.n or 1,
-        best_of=kai_payload.n or 1,
-        repetition_penalty=kai_payload.rep_pen or 1.0,
-        temperature=kai_payload.temperature or 1.0,
-        smoothing_factor=kai_payload.smoothing_factor or 0.0,
-        smoothing_curve=kai_payload.smoothing_curve or 1.0,
-        tfs=kai_payload.tfs or 1.0,
-        top_p=kai_payload.top_p or 1.0,
-        top_k=kai_payload.top_k or -1,
-        top_a=kai_payload.top_a or 0.0,
-        min_p=kai_payload.min_p or 0.0,
-        typical_p=kai_payload.typical or 1.0,
-        eta_cutoff=kai_payload.eta_cutoff or 0.0,
-        epsilon_cutoff=kai_payload.eps_cutoff or 0.0,
-        stop=kai_payload.stop_sequence,
-        include_stop_str_in_output=kai_payload.include_stop_str_in_output or False,
-        custom_token_bans=badwordsids
-        if kai_payload.use_default_badwordsids else [],
-        max_tokens=kai_payload.max_length,
-        seed=kai_payload.sampler_seed,
-        xtc_probability=kai_payload.xtc_probability or 0.0,
-        xtc_threshold=kai_payload.xtc_threshold or 0.0,
-    )
-
-    max_input_tokens = max(
-        1, kai_payload.max_context_length - kai_payload.max_length)
-    input_tokens = tokenizer(kai_payload.prompt).input_ids[-max_input_tokens:]
-
-    return sampling_params, input_tokens
-
-
 @kai_api.post("/generate")
 async def generate(kai_payload: KAIGenerationInputSchema,
-                   raw_request: Request) -> JSONResponse:
-    tokenizer = await engine_client(raw_request).get_tokenizer()
-    sampling_params, input_tokens = prepare_engine_payload(kai_payload, tokenizer)
-    result_generator = engine_client(raw_request).generate(
-        {
-            "prompt": kai_payload.prompt,
-            "prompt_token_ids": input_tokens,
-        },
-        sampling_params,
-        kai_payload.genkey,
-    )
+                   raw_request: Request):
+    handler = kobold(raw_request)
+    if handler is None:
+        err = base(raw_request).create_error_response(
+            message="The model does not support KoboldAI API")
+        return JSONResponse(content=err.model_dump(), status_code=err.code)
 
-    final_res: RequestOutput = None
-    previous_output = ""
-    async for res in result_generator:
-        final_res = res
-        new_chunk = res.outputs[0].text[len(previous_output):]
-        previous_output += new_chunk
-        gen_cache[kai_payload.genkey] = previous_output
-
-    assert final_res is not None
-    del gen_cache[kai_payload.genkey]
-
-    return JSONResponse(
-        {"results": [{
-            "text": output.text
-        } for output in final_res.outputs]})
+    result = await handler.create_kobold_response(kai_payload, raw_request)
+    return JSONResponse(result)
 
 
 @extra_api.post("/generate/stream")
 async def generate_stream(kai_payload: KAIGenerationInputSchema,
-                          raw_request: Request) -> StreamingResponse:
+                          raw_request: Request):
+    handler = kobold(raw_request)
+    if handler is None:
+        err = base(raw_request).create_error_response(
+            message="The model does not support KoboldAI streaming API")
+        return JSONResponse(content=err.model_dump(), status_code=err.code)
 
-    tokenizer = await engine_client(raw_request).get_tokenizer()
-    sampling_params, input_tokens = prepare_engine_payload(kai_payload, tokenizer)
-    results_generator = engine_client(raw_request).generate(
-        {
-            "prompt": kai_payload.prompt,
-            "prompt_token_ids": input_tokens,
+    generator = handler.create_kobold_stream(kai_payload, raw_request)
+
+    return StreamingResponse(
+        content=generator,
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
         },
-        sampling_params,
-        kai_payload.genkey,
+        media_type="text/event-stream"
     )
-
-    async def stream_kobold() -> AsyncGenerator[bytes, None]:
-        previous_output = ""
-        async for res in results_generator:
-            new_chunk = res.outputs[0].text[len(previous_output):]
-            previous_output += new_chunk
-            yield b"event: message\n"
-            yield f"data: {json.dumps({'token': new_chunk})}\n\n".encode()
-
-    return StreamingResponse(stream_kobold(),
-                             headers={
-                                 "Cache-Control": "no-cache",
-                                 "Connection": "keep-alive",
-                             },
-                             media_type="text/event-stream")
 
 
 @extra_api.post("/generate/check")
 @extra_api.get("/generate/check")
 async def check_generation(request: Request):
+    handler = kobold(request)
+    if handler is None:
+        return JSONResponse({"results": [{"text": ""}]})
+
     text = ""
     try:
         request_dict = await request.json()
-        if "genkey" in request_dict and request_dict["genkey"] in gen_cache:
-            text = gen_cache[request_dict["genkey"]]
+        if "genkey" in request_dict:
+            text = await handler.check_generation(request_dict["genkey"])
     except json.JSONDecodeError:
         pass
 
@@ -1532,10 +1456,14 @@ async def check_generation(request: Request):
 
 @extra_api.post("/abort")
 async def abort_generation(raw_request: Request):
+    handler = kobold(raw_request)
+    if handler is None:
+        return JSONResponse({})
+
     try:
         request_dict = await raw_request.json()
         if "genkey" in request_dict:
-            await engine_client(raw_request).abort(request_dict["genkey"])
+            await handler.abort_generation(request_dict["genkey"])
     except json.JSONDecodeError:
         pass
 
@@ -1583,14 +1511,16 @@ async def set_current_softprompt():
 
 @kai_api.get("/config/max_length")
 async def get_max_length(raw_request: Request) -> JSONResponse:
-    max_length = raw_request.app.state.aphrodite_config.max_model_len
+    max_length = (
+        raw_request.app.state.aphrodite_config.model_config.max_model_len)
     return JSONResponse({"value": max_length})
 
 
 @kai_api.get("/config/max_context_length")
 @extra_api.get("/true_max_context_length")
 async def get_max_context_length(raw_request: Request) -> JSONResponse:
-    max_context_length = raw_request.app.state.aphrodite_config.max_model_len
+    max_context_length = (
+        raw_request.app.state.aphrodite_config.model_config.max_model_len)
     return JSONResponse({"value": max_context_length})
 
 
@@ -2174,6 +2104,13 @@ async def init_app_state(
         request_logger=request_logger,
         log_error_stack=args.log_error_stack,
     ) if "transcription" in supported_tasks else None
+    state.openai_serving_kobold = OpenAIServingKobold(
+        engine_client,
+        model_config,
+        state.openai_serving_models,
+        request_logger=request_logger,
+        log_error_stack=args.log_error_stack,
+    ) if "generate" in supported_tasks else None
 
     state.enable_server_load_tracking = args.enable_server_load_tracking
     state.server_load_metrics = 0
