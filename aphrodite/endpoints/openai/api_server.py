@@ -1907,9 +1907,10 @@ def build_app(args: Namespace) -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(_: Request, exc: HTTPException):
-        err = ErrorResponse(message=exc.detail,
+        err = ErrorResponse(
+            error=ErrorInfo(message=exc.detail,
                             type=HTTPStatus(exc.status_code).phrase,
-                            code=exc.status_code)
+                            code=exc.status_code))
         return JSONResponse(err.model_dump(), status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
