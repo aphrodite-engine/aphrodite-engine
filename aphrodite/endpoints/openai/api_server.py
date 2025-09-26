@@ -1491,11 +1491,12 @@ async def generate(kai_payload: KAIGenerationInputSchema,
 
 @extra_api.post("/generate/stream")
 async def generate_stream(kai_payload: KAIGenerationInputSchema,
-                          raw_request: Request) -> StreamingResponse:
+                          raw_request: Request) -> Union[StreamingResponse, JSONResponse]:
     handler = kobold(raw_request)
     if handler is None:
-        return base(raw_request).create_error_response(
+        err = base(raw_request).create_error_response(
             message="The model does not support KoboldAI streaming API")
+        return JSONResponse(content=err.model_dump(), status_code=err.error.code)
 
     generator = handler.create_kobold_stream(kai_payload, raw_request)
 
