@@ -2172,7 +2172,7 @@ async def init_app_state(
         state.openai_serving_models,
         request_logger=request_logger,
         log_error_stack=args.log_error_stack,
-    )
+    ) if "generate" in supported_tasks else None
 
     state.enable_server_load_tracking = args.enable_server_load_tracking
     state.server_load_metrics = 0
