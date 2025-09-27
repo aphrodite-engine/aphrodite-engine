@@ -20,7 +20,8 @@ Aphrodite builds upon and integrates the exceptional work from [various projects
 - Support for modern samplers such as DRY, XTC, Mirostat, and more
 - Disaggregated inference
 - Speculative decoding
-- Support for multiple hardware vendors
+- Multimodal support
+- Multi-LoRA support
 
 
 ## Quickstart
