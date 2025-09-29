@@ -52,7 +52,7 @@ if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.3 AND FLASH_MLA_ARCHS)
 
     define_gpu_extension_target(
         _flashmla_C
-        DESTINATION aphrodite
+        DESTINATION aphrodite/extensions/cuda
         LANGUAGE ${APHRODITE_GPU_LANG}
         SOURCES ${FlashMLA_SOURCES}
         COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}

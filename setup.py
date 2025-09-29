@@ -334,8 +334,11 @@ class cmake_build_ext(build_ext):
         targets = []
 
         def target_name(s: str) -> str:
-            return s.removeprefix("aphrodite.").removeprefix(
-                "aphrodite_flash_attn.")
+            return s.removeprefix("aphrodite.extensions.cuda.") \
+                .removeprefix("aphrodite.extensions.rocm.") \
+                .removeprefix("aphrodite.extensions.cpu.") \
+                .removeprefix("aphrodite.") \
+                .removeprefix("aphrodite_flash_attn.")
 
         # Build all the extensions
         for ext in self.extensions:
@@ -633,11 +636,15 @@ ext_modules = []
 
 # Skip building extensions if using precompiled binaries
 if not envs.APHRODITE_USE_PRECOMPILED:
-    if _is_cuda() or _is_hip():
-        ext_modules.append(CMakeExtension(name="aphrodite._moe_C"))
+    # MoE extension per backend
+    if _is_cuda():
+        ext_modules.append(CMakeExtension(name="aphrodite.extensions.cuda._moe_C"))
+    elif _is_hip():
+        ext_modules.append(CMakeExtension(name="aphrodite.extensions.rocm._moe_C"))
 
+    # ROCm-specific extension
     if _is_hip():
-        ext_modules.append(CMakeExtension(name="aphrodite._rocm_C"))
+        ext_modules.append(CMakeExtension(name="aphrodite.extensions.rocm._rocm_C"))
 
     if _is_cuda():
         if not envs.APHRODITE_DISABLE_FLASH_ATTN_COMPILE:
@@ -656,11 +663,17 @@ if not envs.APHRODITE_USE_PRECOMPILED:
         if envs.APHRODITE_USE_PRECOMPILED or \
                 get_nvcc_cuda_version() >= Version("12.3"):
             ext_modules.append(
-                CMakeExtension(name="aphrodite._flashmla_C", optional=True))
-        ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator"))
+                CMakeExtension(name="aphrodite.extensions.cuda._flashmla_C", optional=True))
+        ext_modules.append(CMakeExtension(name="aphrodite.extensions.cuda.cumem_allocator"))
 
+    # Core extension per backend
     if _build_custom_ops():
-        ext_modules.append(CMakeExtension(name="aphrodite._C"))
+        if _is_cuda():
+            ext_modules.append(CMakeExtension(name="aphrodite.extensions.cuda._C"))
+        elif _is_hip():
+            ext_modules.append(CMakeExtension(name="aphrodite.extensions.rocm._C"))
+        elif _is_cpu():
+            ext_modules.append(CMakeExtension(name="aphrodite.extensions.cpu._C"))
 
 package_data = {
     "aphrodite": [

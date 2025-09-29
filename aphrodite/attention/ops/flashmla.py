@@ -7,7 +7,7 @@ from aphrodite.platforms import current_platform
 
 if current_platform.is_cuda():
     try:
-        import aphrodite._flashmla_C  # noqa: F401
+        import aphrodite.extensions.cuda._flashmla_C  # noqa: F401
         _flashmla_C_AVAILABLE = True
     except ImportError:
         _flashmla_C_AVAILABLE = False
@@ -24,8 +24,9 @@ def is_flashmla_supported() -> Tuple[bool, Optional[str]]:
     if current_platform.get_device_capability()[0] != 9:
         return False, "FlashMLA is only supported on Hopper devices."
     if not _flashmla_C_AVAILABLE:
-        return False, "aphrodite._flashmla_C is not available, likely was not "\
-            "compiled due to insufficient nvcc version or a supported arch "\
+        return False, "aphrodite.extensions.cuda._flashmla_C is not " \
+            "available, likely was not compiled due to insufficient nvcc " \
+            "version or a supported arch "\
             "(only sm90a currently) was not in the list of target arches to "\
             "compile for."
     return True, None

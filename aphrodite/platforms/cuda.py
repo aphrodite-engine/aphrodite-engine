@@ -14,7 +14,7 @@ from torch.distributed.distributed_c10d import is_nccl_available
 from typing_extensions import ParamSpec
 
 # import custom ops, trigger op registration
-import aphrodite._C  # noqa
+import aphrodite.extensions.cuda._C  # noqa
 import aphrodite.common.envs as envs
 from aphrodite.common.logger import log_once
 from aphrodite.utils import cuda_device_count_stateless, import_pynvml

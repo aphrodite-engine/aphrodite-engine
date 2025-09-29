@@ -1,0 +1,1 @@
+This directory contains the compiled binaries for the Aphrodite extensions. By default, it's empty and will be populated when building the Aphrodite extensions.

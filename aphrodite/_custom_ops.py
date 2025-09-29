@@ -10,14 +10,30 @@ from aphrodite.scalar_type import ScalarType
 
 if not current_platform.is_tpu() and not current_platform.is_xpu():
     try:
-        import aphrodite._C
+        if current_platform.is_cuda():
+            import aphrodite.extensions.cuda._C  # noqa: F401
+        elif current_platform.is_rocm():
+            import aphrodite.extensions.rocm._C  # noqa: F401
+            # Also register ROCm-specific ops if present
+            with contextlib.suppress(ImportError):
+                import aphrodite.extensions.rocm._rocm_C  # noqa: F401
+        elif current_platform.is_cpu():
+            import aphrodite.extensions.cpu._C  # noqa: F401
+        else:
+            # Other platforms not handled here
+            pass
     except ImportError as e:
-        logger.warning("Failed to import from aphrodite._C with {!r}", e)
+        logger.warning("Failed to import platform-specific _C with {!r}", e)
 
 supports_moe_ops = False
-with contextlib.suppress(ImportError):
-    import aphrodite._moe_C  # noqa: F401
-    supports_moe_ops = True
+if current_platform.is_cuda():
+    with contextlib.suppress(ImportError):
+        import aphrodite.extensions.cuda._moe_C  # noqa: F401
+        supports_moe_ops = True
+elif current_platform.is_rocm():
+    with contextlib.suppress(ImportError):
+        import aphrodite.extensions.rocm._moe_C  # noqa: F401
+        supports_moe_ops = True
 
 if TYPE_CHECKING:
 
