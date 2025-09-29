@@ -106,6 +106,7 @@ Aphrodite Engine would have not been possible without the phenomenal work of oth
 Past and present, in alphabetical order:
 
 - [Arc Compute](https://www.arccompute.io/)
+- [Lium](https://lium.io)
 - [Prime Intellect](https://www.primeintellect.ai/)
 - [PygmalionAI](https://pygmalion.chat)
 - [Ruliad AI](https://ruliad.ai)
