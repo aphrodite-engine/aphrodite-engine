@@ -68,6 +68,10 @@ ARG TARGETPLATFORM
 ARG INSTALL_KV_CONNECTORS=false
 ENV DEBIAN_FRONTEND=noninteractive
 
+ARG GDRCOPY_CUDA_VERSION=12.8
+# Keep in line with FINAL_BASE_IMAGE
+ARG GDRCOPY_OS_VERSION=Ubuntu22_04
+
 ARG DEADSNAKES_MIRROR_URL
 ARG DEADSNAKES_GPGKEY_URL
 ARG GET_PIP_URL
@@ -137,13 +141,14 @@ COPY requirements/common.txt requirements/common.txt
 COPY requirements/cuda.txt requirements/cuda.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r requirements/cuda.txt \
-    --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
+    --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') \
+    --prerelease=allow
 
 # cuda arch list used by torch
 # can be useful for both `dev` and `test`
 # explicitly set the list to avoid issues with torch 2.2
 # see https://github.com/pytorch/pytorch/pull/123243
-ARG torch_cuda_arch_list='7.0 7.5 8.0 8.9 9.0 10.0 12.0'
+ARG torch_cuda_arch_list='7.5 8.0 8.9 9.0 10.0 12.0'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
 #################### BASE BUILD IMAGE ####################
 
@@ -197,6 +202,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
 SHELL ["/bin/bash", "-c"]
+
+ARG GDRCOPY_CUDA_VERSION=12.8
+# Keep in line with FINAL_BASE_IMAGE
+ARG GDRCOPY_OS_VERSION=Ubuntu22_04
 
 ARG DEADSNAKES_MIRROR_URL
 ARG DEADSNAKES_GPGKEY_URL
@@ -273,7 +282,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY --from=build /workspace/dist /aphrodite-workspace/dist
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system dist/*.whl --verbose \
-        --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
+        --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') \
+        --prerelease=allow
 
 # If we need to build FlashInfer wheel before its release:
 # $ # Note we remove 7.0 from the arch list compared to the list below, since FlashInfer only supports sm75+
@@ -351,13 +361,21 @@ COPY tools/install_deepgemm.sh /tmp/install_deepgemm.sh
 RUN --mount=type=cache,target=/root/.cache/uv \
     APHRODITE_DOCKER_BUILD_CONTEXT=1 /tmp/install_deepgemm.sh --cuda-version "${CUDA_VERSION}" ${DEEPGEMM_GIT_REF:+--ref "$DEEPGEMM_GIT_REF"} 
 
-# Install EP kernels(pplx-kernels and DeepEP), NixL
+    COPY tools/install_gdrcopy.sh install_gdrcopy.sh
+    RUN set -eux; \
+        case "${TARGETPLATFORM}" in \
+          linux/arm64) UUARCH="aarch64" ;; \
+          linux/amd64) UUARCH="x64" ;; \
+          *) echo "Unsupported TARGETPLATFORM: ${TARGETPLATFORM}" >&2; exit 1 ;; \
+        esac; \
+        ./install_gdrcopy.sh "${GDRCOPY_OS_VERSION}" "${GDRCOPY_CUDA_VERSION}" "${UUARCH}"; \
+        rm ./install_gdrcopy.sh
+    
+    # Install EP kernels(pplx-kernels and DeepEP)
 COPY tools/ep_kernels/install_python_libraries.sh install_python_libraries.sh
-COPY tools/install_nixl.sh install_nixl.sh
 ENV CUDA_HOME=/usr/local/cuda
 RUN export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-9.0a+PTX}" \
-    && bash install_python_libraries.sh \
-    && bash install_nixl.sh --force
+    && bash install_python_libraries.sh
 
 #################### Aphrodite installation IMAGE ####################
 
