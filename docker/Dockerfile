@@ -278,7 +278,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY --from=build /workspace/dist /aphrodite-workspace/dist
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system dist/*.whl --verbose \
-        --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
+        --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') \
+        --prerelease=allow
 
 # If we need to build FlashInfer wheel before its release:
 # $ # Note we remove 7.0 from the arch list compared to the list below, since FlashInfer only supports sm75+
