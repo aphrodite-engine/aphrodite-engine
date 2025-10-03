@@ -497,6 +497,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
     enable_deepconf: Optional[bool] = False
     deepconf_window_size: Optional[int] = 2048
     deepconf_threshold: Optional[float] = 17
+    enable_reasoning_recovery: Optional[bool] = False
+    max_recovery_attempts: Optional[int] = 3
+    recovery_phrases: Optional[list[str]] = None
+    final_admission: Optional[str] = None
     # --8<-- [end:chat-completion-sampling-params]
 
     # doc: begin-chat-completion-extra-params
@@ -806,6 +810,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
             enable_deepconf=self.enable_deepconf,
             deepconf_window_size=self.deepconf_window_size,
             deepconf_threshold=self.deepconf_threshold,
+            enable_reasoning_recovery=self.enable_reasoning_recovery,
+            max_recovery_attempts=self.max_recovery_attempts,
+            recovery_phrases=self.recovery_phrases,
+            final_admission=self.final_admission,
         )
 
     def _get_guided_json_from_tool(
@@ -1136,6 +1144,10 @@ class CompletionRequest(OpenAIBaseModel):
     enable_deepconf: Optional[bool] = False
     deepconf_window_size: Optional[int] = 2048
     deepconf_threshold: Optional[float] = 17
+    enable_reasoning_recovery: Optional[bool] = False
+    max_recovery_attempts: Optional[int] = 3
+    recovery_phrases: Optional[list[str]] = None
+    final_admission: Optional[str] = None
     # doc: end-completion-sampling-params
 
     # doc: begin-completion-extra-params
@@ -1408,6 +1420,10 @@ class CompletionRequest(OpenAIBaseModel):
             enable_deepconf=self.enable_deepconf,
             deepconf_window_size=self.deepconf_window_size,
             deepconf_threshold=self.deepconf_threshold,
+            enable_reasoning_recovery=self.enable_reasoning_recovery,
+            max_recovery_attempts=self.max_recovery_attempts,
+            recovery_phrases=self.recovery_phrases,
+            final_admission=self.final_admission,
             )
 
     @model_validator(mode="before")

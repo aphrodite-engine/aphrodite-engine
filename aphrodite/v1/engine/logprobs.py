@@ -8,6 +8,7 @@ from aphrodite.logprobs import Logprob, PromptLogprobs, SampleLogprobs
 from aphrodite.transformers_utils.detokenizer_utils import (
     AnyTokenizer, convert_ids_list_to_tokens)
 from aphrodite.v1.engine import EngineCoreOutput, EngineCoreRequest
+from aphrodite.v1.engine.reasoning_recovery import ReasoningRecoveryState
 from aphrodite.v1.outputs import LogprobsLists, LogprobsTensors
 
 NONES = itertools.repeat(None)
@@ -32,6 +33,8 @@ class LogprobsProcessor:
     conf_group_list: Optional[deque[float]]
     conf_group_size: Optional[int]
     conf_threshold: Optional[float]
+
+    reasoning_recovery_state: Optional[ReasoningRecoveryState] = None
 
     @classmethod
     def from_new_request(
@@ -80,6 +83,41 @@ class LogprobsProcessor:
         return (len(self.conf_group_list) >= self.conf_group_size
                 and self.conf_grouped / len(self.conf_group_list) <
                 self.conf_threshold)
+    
+    def check_reasoning_recovery_stop(self) -> tuple[bool, str, bool]:
+        """
+        Check if reasoning recovery should be triggered.
+        
+        Returns:
+            tuple[bool, str, bool]: (should_stop, recovery_phrase, 
+                                   is_final_admission)
+        """
+        if self.reasoning_recovery_state is None:
+            return self.check_conf_stop(), "", False
+
+        if not self.check_conf_stop():
+            return False, "", False
+
+        if self.reasoning_recovery_state.can_recover():
+            recovery_phrase = self.reasoning_recovery_state.start_recovery()
+            return False, recovery_phrase, False
+        else:
+            final_phrase = self.reasoning_recovery_state.finish_recovery()
+            return True, final_phrase, True
+
+    def initialize_reasoning_recovery(
+        self, 
+        sampling_params, 
+        prompt_tokens: list[int], 
+        output_tokens: list[int]
+    ) -> None:
+        """Initialize reasoning recovery state if enabled."""
+        if sampling_params.enable_reasoning_recovery:
+            self.reasoning_recovery_state = (
+                ReasoningRecoveryState.from_sampling_params(
+                    sampling_params, prompt_tokens, output_tokens
+                )
+            )
 
     def _update_sample_logprobs(self, logprobs_lists: LogprobsLists) -> None:
         """Update with sample logprobs from EngineCore.

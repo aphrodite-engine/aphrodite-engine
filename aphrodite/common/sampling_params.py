@@ -556,6 +556,37 @@ class SamplingParams(
     mathematical reasoning tasks, achieving up to 84.7% token reduction
     while maintaining or improving accuracy. Default: 17.
     """
+    enable_reasoning_recovery: Optional[bool] = False
+    """
+    Enable reasoning recovery for confidence-based early stopping in reasoning
+    content. When enabled, if DeepConf detects low confidence during reasoning
+    generation, instead of stopping completely, the system will insert a
+    recovery phrase and resume generation. This allows the model to recover
+    from low-confidence reasoning and continue generating.
+    Requires enable_deepconf to be True. Default: False.
+    """
+    max_recovery_attempts: Optional[int] = 3
+    """
+    Maximum number of recovery attempts for reasoning recovery. When confidence
+    drops below the threshold during reasoning, the system will attempt to
+    recover up to this many times by inserting recovery phrases and resuming
+    generation. If this limit is reached, the system will insert a final
+    admission phrase and stop reasoning. Default: 3.
+    """
+    recovery_phrases: Optional[List[str]] = None
+    """
+    List of recovery phrases to randomly choose from when confidence drops
+    during reasoning. If not provided, default phrases will be used.
+    These phrases are inserted into the reasoning content to help the model
+    recover and continue generating. Default: None (uses default phrases).
+    """
+    final_admission: Optional[str] = None
+    """
+    Final admission phrase to insert when maximum recovery attempts are reached.
+    This phrase indicates that the model is not confident in its reasoning
+    and will provide what it can. If not provided, a default phrase will be used.
+    Default: None (uses default phrase).
+    """
 
     @staticmethod
     def from_optional(
@@ -625,6 +656,10 @@ class SamplingParams(
         enable_deepconf: Optional[bool]= False,
         deepconf_window_size: Optional[int] = 2048,
         deepconf_threshold: Optional[float] = 17,
+        enable_reasoning_recovery: Optional[bool] = False,
+        max_recovery_attempts: Optional[int] = 3,
+        recovery_phrases: Optional[List[str]] = None,
+        final_admission: Optional[str] = None,
     ) -> "SamplingParams":
         if logit_bias is not None:
             # Convert token_id to integer
@@ -724,6 +759,10 @@ class SamplingParams(
             enable_deepconf=enable_deepconf,
             deepconf_window_size=deepconf_window_size,
             deepconf_threshold=deepconf_threshold,
+            enable_reasoning_recovery=enable_reasoning_recovery,
+            max_recovery_attempts=max_recovery_attempts,
+            recovery_phrases=recovery_phrases,
+            final_admission=final_admission,
         )
 
     default_values = {
@@ -793,6 +832,10 @@ class SamplingParams(
         "enable_deepconf": False,
         "deepconf_window_size": 2048,
         "deepconf_threshold": 17,
+        "enable_reasoning_recovery": False,
+        "max_recovery_attempts": 3,
+        "recovery_phrases": None,
+        "final_admission": None,
     }
 
     def __post_init__(self) -> None:
@@ -1024,6 +1067,36 @@ class SamplingParams(
                 raise ValueError(
                     "deepconf_threshold must be non-negative, got "
                     f"{self.deepconf_threshold}.")
+
+        if self.enable_reasoning_recovery:
+            if not self.enable_deepconf:
+                raise ValueError(
+                    "enable_reasoning_recovery requires enable_deepconf to be "
+                    "True")
+            if self.max_recovery_attempts < 1:
+                raise ValueError(
+                    "max_recovery_attempts must be at least 1, got "
+                    f"{self.max_recovery_attempts}.")
+            if (
+                self.recovery_phrases is not None and not
+                isinstance(self.recovery_phrases, list)
+            ):
+                raise ValueError(
+                    "recovery_phrases must be a list of strings, got "
+                    f"{type(self.recovery_phrases)}.")
+            if (
+                self.recovery_phrases is not None and not all(
+                    isinstance(p, str) for p in self.recovery_phrases)
+            ):
+                raise ValueError(
+                    "recovery_phrases must contain only strings.")
+            if (
+                self.final_admission is not None and not
+                isinstance(self.final_admission, str)
+            ):
+                raise ValueError(
+                    "final_admission must be a string, got "
+                    f"{type(self.final_admission)}.")
 
         if self.sampler_priority is not None:
             if not self.sampler_priority:
