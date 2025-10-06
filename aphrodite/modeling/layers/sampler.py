@@ -536,9 +536,10 @@ class Sampler(nn.Module):
                     sampling_tensors.xtc_probabilities)
 
 
-        # We use float32 for probabilities and log probabilities.
         # Compute the probabilities.
-        probs = torch.softmax(logits, dim=-1, dtype=torch.float)
+        # No cast required, as softmaxes internally accumulate with >= fp32.
+        # See https://github.com/pytorch/pytorch/blob/v2.4.0/aten/src/ATen/native/cuda/PersistentSoftmax.cuh#L62
+        probs = torch.softmax(logits, dim=-1)
 
         # skew needs to be applied post-softmax
         if do_skew:
@@ -556,7 +557,9 @@ class Sampler(nn.Module):
             logits = torch.log(probs)
 
         # Compute the log probabilities.
-        logprobs = torch.log_softmax(logits, dim=-1, dtype=torch.float)
+        logprobs = torch.log_softmax(logits, dim=-1)
+        # Logits unused past this point. They are HUGE, for prompt_logprobs.
+        del logits
 
         # Sample the next tokens.
         maybe_deferred_sample_results, maybe_sampled_tokens_tensor = _sample(
@@ -1448,7 +1451,7 @@ def _sample(
     )
 
 
-def _get_ranks(x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+def _get_ranks(logprobs: torch.Tensor, query_indices: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
     """
     This function calculates the ranks of the chosen tokens in a logprob tensor.
     Args:
@@ -1460,9 +1463,14 @@ def _get_ranks(x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
                     Each element in the returned tensor represents the rank
                     of the chosen token in the input logprob tensor.
     """
-    vals = x[torch.arange(0, len(x), device=x.device, dtype=indices.dtype),
-             indices]
-    return (x > vals[:, None]).long().sum(1).add_(1)
+    expanded_indices = torch.zeros(logprobs.shape[0], dtype=indices.dtype, device=indices.device)
+    expanded_indices.scatter_(-1, query_indices, indices)
+    vals = torch.gather(logprobs, -1, expanded_indices.unsqueeze(dim=1))
+    # doing this in a single pass is not practical for prompt_logprobs.
+    outs = torch.zeros_like(indices)
+    for i in range(0, vals.shape[0], 10):
+        outs[i:i+10] = (logprobs[i:i+10] > vals[i:i+10]).sum(dim=-1, dtype=indices.dtype)
+    return outs[query_indices].add_(1)
 
 
 def get_logprobs(
@@ -1560,7 +1568,8 @@ def get_logprobs(
             next_token_ids_gpu,
         )]
         ranks = _get_ranks(
-            logprobs[query_indices_gpu],
+            logprobs,
+            query_indices_gpu,
             next_token_ids_gpu,
         )
         assert selected_logprobs.shape[0] == ranks.shape[0]

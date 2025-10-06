@@ -1546,10 +1546,14 @@ class Scheduler:
                 block_tables[seq_id] = self.block_manager.get_block_table(seq)
                 self.block_manager.access_all_blocks_in_seq(seq, now)
 
-            if self.cache_config.enable_prefix_caching:
+
+            if (self.cache_config.enable_prefix_caching and
+                not seq_group.sampling_params.prompt_logprobs):
                 common_computed_block_nums = (
                     self.block_manager.get_common_computed_block_ids(
                         seq_group.get_seqs(status=SequenceStatus.RUNNING)))
+            else:
+                common_computed_block_nums = []
 
             do_sample = True
             is_prompt = seq_group.is_prefill()
