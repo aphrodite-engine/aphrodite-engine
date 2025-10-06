@@ -1,7 +1,6 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 import torch
-from loguru import logger
 from torch.nn.parameter import Parameter
 
 from aphrodite.common import envs
@@ -553,7 +552,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         expert_load_view: Optional[torch.Tensor] = None,
         logical_to_physical_map: Optional[torch.Tensor] = None,
         logical_replica_count: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
 
         if enable_eplb:
             raise NotImplementedError("EPLB is not supported for mxfp4")
