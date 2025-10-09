@@ -603,6 +603,10 @@ def main(args: argparse.Namespace):
         E = config.num_experts
         topk = config.num_experts_per_tok
         intermediate_size = config.intermediate_size
+    elif config.architectures[0] in ("BailingMoeV2ForCausalLM"):
+        E = config.num_experts
+        topk = config.num_experts_per_tok
+        intermediate_size = config.moe_intermediate_size
     else:
         # Support for llama4
         config = config.get_text_config()
