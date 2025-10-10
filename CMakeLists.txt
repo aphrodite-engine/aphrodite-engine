@@ -263,7 +263,8 @@ set(APHRODITE_EXT_SRC
   SET(CUTLASS_ENABLE_HEADERS_ONLY ON CACHE BOOL "Enable only the header library")
 
   # Set CUTLASS_REVISION. Used for FetchContent. Also fixes some bogus messages when building.
-  set(CUTLASS_REVISION "v4.0.0" CACHE STRING "CUTLASS revision to use")
+  # Updated to v4.2.0 (Sept 15, 2025) for improved SM120 support
+  set(CUTLASS_REVISION "v4.2.0" CACHE STRING "CUTLASS revision to use")
 
   # Use the specified CUTLASS source directory for compilation if APHRODITE_CUTLASS_SRC_DIR is provided
   if (DEFINED ENV{APHRODITE_CUTLASS_SRC_DIR})
@@ -553,7 +554,9 @@ set(APHRODITE_EXT_SRC
     set(SRCS
       "kernels/quantization/fp4/nvfp4_quant_kernels.cu"
       "kernels/quantization/fp4/activation_nvfp4_quant_fusion_kernels.cu"
-      "kernels/quantization/fp4/nvfp4_scaled_mm_sm120_kernels.cu")
+      "kernels/quantization/fp4/nvfp4_scaled_mm_sm120_kernels.cu"
+      "kernels/quantization/fp4/nvfp4_experts_quant.cu"
+      "kernels/quantization/fp4/nvfp4_blockwise_moe_sm120_kernels.cu")
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
       CUDA_ARCHS "${FP4_ARCHS}")
@@ -634,7 +637,7 @@ set(APHRODITE_EXT_SRC
     endif()
   endif()
 
-  cuda_archs_loose_intersection(SCALED_MM_ARCHS "10.0a" "${CUDA_ARCHS}")
+  cuda_archs_loose_intersection(SCALED_MM_ARCHS "10.0a;12.0;12.0a" "${CUDA_ARCHS}")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND SCALED_MM_ARCHS)
     set(SRCS "kernels/quantization/cutlass_w8a8/moe/grouped_mm_c3x_sm100.cu")
     set_gencode_flags_for_srcs(
@@ -655,7 +658,7 @@ set(APHRODITE_EXT_SRC
   endif()
 
   # moe_data.cu is used by all CUTLASS MoE kernels.
-  cuda_archs_loose_intersection(CUTLASS_MOE_DATA_ARCHS "9.0a;10.0a" "${CUDA_ARCHS}")
+  cuda_archs_loose_intersection(CUTLASS_MOE_DATA_ARCHS "9.0a;10.0a;12.0;12.0a" "${CUDA_ARCHS}")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.3 AND CUTLASS_MOE_DATA_ARCHS)
     set(SRCS "kernels/quantization/cutlass_w8a8/moe/moe_data.cu")
     set_gencode_flags_for_srcs(
