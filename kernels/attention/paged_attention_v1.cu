@@ -16,7 +16,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #include "attention_kernels.cuh"
 #include "../cuda_compat.h"
 
@@ -24,23 +23,23 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define DIVIDE_ROUND_UP(a, b) (((a) + (b) - 1) / (b))
 
-#define LAUNCH_PAGED_ATTENTION_V1(HEAD_SIZE)                                   \
-  APHRODITE_DevFuncAttribute_SET_MaxDynamicSharedMemorySize(                   \
-      ((void*)aphrodite::paged_attention_v1_kernel<                            \
-          T, CACHE_T, HEAD_SIZE, BLOCK_SIZE, NUM_THREADS, KV_DTYPE,            \
-          IS_BLOCK_SPARSE>),                                                   \
-      shared_mem_size);                                                        \
-  aphrodite::paged_attention_v1_kernel<T, CACHE_T, HEAD_SIZE, BLOCK_SIZE,      \
-                                       NUM_THREADS, KV_DTYPE, IS_BLOCK_SPARSE> \
-      <<<grid, block, shared_mem_size, stream>>>(                              \
-          out_ptr, query_ptr, key_cache_ptr, value_cache_ptr, num_kv_heads,    \
-          scale, block_tables_ptr, seq_lens_ptr, max_num_blocks_per_seq,       \
-          alibi_slopes_ptr, q_stride, kv_block_stride, kv_head_stride,         \
-          k_scale_ptr, v_scale_ptr, tp_rank, blocksparse_local_blocks,         \
-          blocksparse_vert_stride, blocksparse_block_size,                     \
+#define LAUNCH_PAGED_ATTENTION_V1(HEAD_SIZE)                                \
+  APHRODITE_DevFuncAttribute_SET_MaxDynamicSharedMemorySize(                     \
+      ((void*)aphrodite::paged_attention_v1_kernel<T, CACHE_T, HEAD_SIZE,        \
+                                              BLOCK_SIZE, NUM_THREADS,      \
+                                              KV_DTYPE, IS_BLOCK_SPARSE>),  \
+      shared_mem_size);                                                     \
+  aphrodite::paged_attention_v1_kernel<T, CACHE_T, HEAD_SIZE, BLOCK_SIZE,        \
+                                  NUM_THREADS, KV_DTYPE, IS_BLOCK_SPARSE>   \
+      <<<grid, block, shared_mem_size, stream>>>(                           \
+          out_ptr, query_ptr, key_cache_ptr, value_cache_ptr, num_kv_heads, \
+          scale, block_tables_ptr, seq_lens_ptr, max_num_blocks_per_seq,    \
+          alibi_slopes_ptr, q_stride, kv_block_stride, kv_head_stride,      \
+          k_scale_ptr, v_scale_ptr, tp_rank, blocksparse_local_blocks,      \
+          blocksparse_vert_stride, blocksparse_block_size,                  \
           blocksparse_head_sliding_step);
 
-// TODO: Tune NUM_THREADS.
+// TODO(woosuk): Tune NUM_THREADS.
 template <typename T, typename CACHE_T, int BLOCK_SIZE,
           aphrodite::Fp8KVCacheDataType KV_DTYPE, bool IS_BLOCK_SPARSE,
           int NUM_THREADS = 128>
@@ -80,9 +79,8 @@ void paged_attention_v1_launcher(
       DIVIDE_ROUND_UP(max_seq_len, BLOCK_SIZE) * BLOCK_SIZE;
   int logits_size = padded_max_seq_len * sizeof(float);
   int outputs_size = (NUM_WARPS / 2) * head_size * sizeof(float);
-  // Python-side check in
-  // aphrodite.worker.worker._check_if_can_support_max_seq_len Keep that in sync
-  // with the logic here!
+  // Python-side check in aphrodite.worker.worker._check_if_can_support_max_seq_len
+  // Keep that in sync with the logic here!
   int shared_mem_size = std::max(logits_size, outputs_size);
 
   dim3 grid(num_heads, num_seqs, 1);
@@ -90,7 +88,7 @@ void paged_attention_v1_launcher(
   const at::cuda::OptionalCUDAGuard device_guard(device_of(query));
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   switch (head_size) {
-    // NOTE: To reduce the compilation time, we only compile for the
+    // NOTE(woosuk): To reduce the compilation time, we only compile for the
     // head sizes that we use in the model. However, we can easily extend this
     // to support any head size which is a multiple of 16.
     case 32:
@@ -141,7 +139,7 @@ void paged_attention_v1_launcher(
     CALL_V1_LAUNCHER(T, CACHE_T, BLOCK_SIZE, IS_FP8_KV_CACHE, false);      \
   }
 
-// NOTE: To reduce the compilation time, we omitted block sizes
+// NOTE(woosuk): To reduce the compilation time, we omitted block sizes
 // 1, 2, 4, 64, 128, 256.
 #define CALL_V1_LAUNCHER_BLOCK_SIZE(T, CACHE_T, KV_DTYPE)         \
   switch (block_size) {                                           \

@@ -83,8 +83,6 @@ elif (sys.platform.startswith("linux") and torch.version.cuda is None
     # fallback to cpu
     APHRODITE_TARGET_DEVICE = "cpu"
 
-MAIN_CUDA_VERSION = "12.8"
-
 
 def _get_available_memory_bytes() -> Optional[int]:
     """Return available system memory in bytes, or None if unknown.
@@ -315,7 +313,11 @@ class cmake_build_ext(build_ext):
             build_tool = []
         # Make sure we use the nvcc from CUDA_HOME
         if _is_cuda():
-            cmake_args += [f'-DCMAKE_CUDA_COMPILER={CUDA_HOME}/bin/nvcc']
+            cmake_args += [f"-DCMAKE_CUDA_COMPILER={CUDA_HOME}/bin/nvcc"]
+
+        other_cmake_args = os.environ.get("CMAKE_ARGS")
+        if other_cmake_args:
+            cmake_args += other_cmake_args.split()
         subprocess.check_call(
             ['cmake', ext.cmake_lists_dir, *build_tool, *cmake_args],
             cwd=self.build_temp)
@@ -485,25 +487,6 @@ def get_rocm_version():
         return None
 
 
-def get_neuronxcc_version():
-    import sysconfig
-    site_dir = sysconfig.get_paths()["purelib"]
-    version_file = os.path.join(site_dir, "neuronxcc", "version",
-                                "__init__.py")
-
-    # Check if the command was executed successfully
-    with open(version_file) as fp:
-        content = fp.read()
-
-    # Extract the version using a regular expression
-    match = re.search(r"__version__ = '(\S+)'", content)
-    if match:
-        # Return the version string
-        return match.group(1)
-    else:
-        raise RuntimeError("Could not find Neuron version in the output")
-
-
 def get_nvcc_cuda_version() -> Version:
     """Get the CUDA version from nvcc.
 
@@ -546,7 +529,7 @@ def get_aphrodite_version() -> str:
             version += f"{sep}precompiled"
         else:
             cuda_version = str(get_nvcc_cuda_version())
-            if cuda_version != MAIN_CUDA_VERSION:
+            if cuda_version != envs.APHRODITE_MAIN_CUDA_VERSION:
                 cuda_version_str = cuda_version.replace(".", "")[:3]
                 # skip this for source tarball, required for pypi
                 if "sdist" not in sys.argv:
@@ -554,18 +537,12 @@ def get_aphrodite_version() -> str:
     elif _is_hip():
         # Get the Rocm Version
         rocm_version = get_rocm_version() or torch.version.hip
-        if rocm_version and rocm_version != MAIN_CUDA_VERSION:
+        if rocm_version and rocm_version != envs.APHRODITE_MAIN_CUDA_VERSION:
             version += f"{sep}rocm{rocm_version.replace('.', '')[:3]}"
-    elif _is_neuron():
-        # Get the Neuron version
-        neuron_version = str(get_neuronxcc_version())
-        if neuron_version != MAIN_CUDA_VERSION:
-            neuron_version_str = neuron_version.replace(".", "")[:3]
-            version += f"{sep}neuron{neuron_version_str}"
     elif _is_hpu():
         # Get the Intel Gaudi Software Suite version
         gaudi_sw_version = str(get_gaudi_sw_version())
-        if gaudi_sw_version != MAIN_CUDA_VERSION:
+        if gaudi_sw_version != envs.APHRODITE_MAIN_CUDA_VERSION:
             gaudi_sw_version = gaudi_sw_version.replace(".", "")[:3]
             version += f"{sep}gaudi{gaudi_sw_version}"
     elif _is_tpu():
@@ -612,8 +589,6 @@ def get_requirements() -> list[str]:
         requirements = modified_requirements
     elif _is_hip():
         requirements = _read_requirements("rocm.txt")
-    elif _is_neuron():
-        requirements = _read_requirements("neuron.txt")
     elif _is_hpu():
         requirements = _read_requirements("hpu.txt")
     elif _is_tpu():
@@ -624,7 +599,7 @@ def get_requirements() -> list[str]:
         requirements = _read_requirements("xpu.txt")
     else:
         raise ValueError(
-            "Unsupported platform, please use CUDA, ROCm, Neuron, HPU, "
+            "Unsupported platform, please use CUDA, ROCm, HPU, "
             "or CPU.")
     return requirements
 
@@ -657,6 +632,9 @@ if not envs.APHRODITE_USE_PRECOMPILED:
                 get_nvcc_cuda_version() >= Version("12.3"):
             ext_modules.append(
                 CMakeExtension(name="aphrodite._flashmla_C", optional=True))
+            ext_modules.append(
+                CMakeExtension(name="aphrodite._flashmla_extension_C", optional=True)
+            )
         ext_modules.append(CMakeExtension(name="aphrodite.cumem_allocator"))
 
     if _build_custom_ops():
@@ -689,7 +667,7 @@ setup(
                   "mistral_common[audio]"],  # Required for audio processing
         "video": [],  # Kept for backwards compatibility
         # FlashInfer should be updated together with the Dockerfile
-        "flashinfer": ["flashinfer-python==0.2.14.post1"],
+        "flashinfer": [],
         # Optional deps for AMD FP4 quantization support
         "petit-kernel": ["petit-kernel"],
     },

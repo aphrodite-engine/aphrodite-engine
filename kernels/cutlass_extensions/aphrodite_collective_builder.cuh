@@ -1,13 +1,13 @@
 #pragma once
 
-#include "cutlass_extensions/gemm/collective/collective_builder.hpp"
+#include "cutlass/gemm/collective/collective_builder.hpp"
 
 namespace cutlass::gemm::collective {
 using namespace cute;
 
 //
-// APHRODITECollectiveBuilder is a wrapper around CollectiveBuilder that allows
-// for for custom kernel tags, allowing you to build custom collectives. Without
+// APHRODITECollectiveBuilder is a wrapper around CollectiveBuilder that allows for
+// for custom kernel tags, allowing you to build custom collectives. Without
 // touching the cutlass library headers, using `CutlassKernelTag` will mean it
 // will resort to using the standard cutlass collective builder.
 //

@@ -1,4 +1,3 @@
-import contextlib
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
@@ -8,16 +7,7 @@ import aphrodite.common.envs as envs
 from aphrodite.platforms import current_platform
 from aphrodite.scalar_type import ScalarType
 
-if not current_platform.is_tpu() and not current_platform.is_xpu():
-    try:
-        import aphrodite._C
-    except ImportError as e:
-        logger.warning("Failed to import from aphrodite._C with {!r}", e)
-
-supports_moe_ops = False
-with contextlib.suppress(ImportError):
-    import aphrodite._moe_C  # noqa: F401
-    supports_moe_ops = True
+current_platform.import_kernels()
 
 if TYPE_CHECKING:
 
@@ -82,11 +72,26 @@ def paged_attention_v1(
     blocksparse_head_sliding_step: int = 0,
 ) -> None:
     torch.ops._C.paged_attention_v1(
-        out, query, key_cache, value_cache, num_kv_heads, scale, block_tables,
-        seq_lens, block_size, max_seq_len, alibi_slopes, kv_cache_dtype,
-        k_scale, v_scale, tp_rank, blocksparse_local_blocks,
-        blocksparse_vert_stride, blocksparse_block_size,
-        blocksparse_head_sliding_step)
+        out,
+        query,
+        key_cache,
+        value_cache,
+        num_kv_heads,
+        scale,
+        block_tables,
+        seq_lens,
+        block_size,
+        max_seq_len,
+        alibi_slopes,
+        kv_cache_dtype,
+        k_scale,
+        v_scale,
+        tp_rank,
+        blocksparse_local_blocks,
+        blocksparse_vert_stride,
+        blocksparse_block_size,
+        blocksparse_head_sliding_step,
+    )
 
 
 def paged_attention_v2(
@@ -114,11 +119,29 @@ def paged_attention_v2(
     blocksparse_head_sliding_step: int = 0,
 ) -> None:
     torch.ops._C.paged_attention_v2(
-        out, exp_sum, max_logits, tmp_out, query, key_cache, value_cache,
-        num_kv_heads, scale, block_tables, seq_lens, block_size, max_seq_len,
-        alibi_slopes, kv_cache_dtype, k_scale, v_scale, tp_rank,
-        blocksparse_local_blocks, blocksparse_vert_stride,
-        blocksparse_block_size, blocksparse_head_sliding_step)
+        out,
+        exp_sum,
+        max_logits,
+        tmp_out,
+        query,
+        key_cache,
+        value_cache,
+        num_kv_heads,
+        scale,
+        block_tables,
+        seq_lens,
+        block_size,
+        max_seq_len,
+        alibi_slopes,
+        kv_cache_dtype,
+        k_scale,
+        v_scale,
+        tp_rank,
+        blocksparse_local_blocks,
+        blocksparse_vert_stride,
+        blocksparse_block_size,
+        blocksparse_head_sliding_step,
+    )
 
 
 def paged_attention_rocm(
@@ -141,13 +164,30 @@ def paged_attention_rocm(
     k_scale: torch.Tensor,
     v_scale: torch.Tensor,
     fp8_out_scale: Optional[torch.Tensor] = None,
+    mfma_type: str = "fp8" if envs.APHRODITE_ROCM_FP8_MFMA_PAGE_ATTN else "f16",
 ) -> None:
-    torch.ops._rocm_C.paged_attention(out, exp_sum, max_logits, tmp_out, query,
-                                      key_cache, value_cache, num_kv_heads,
-                                      scale, block_tables, seq_lens,
-                                      query_start_loc, block_size, max_seq_len,
-                                      alibi_slopes, kv_cache_dtype, k_scale,
-                                      v_scale, fp8_out_scale)
+    torch.ops._rocm_C.paged_attention(
+        out,
+        exp_sum,
+        max_logits,
+        tmp_out,
+        query,
+        key_cache,
+        value_cache,
+        num_kv_heads,
+        scale,
+        block_tables,
+        seq_lens,
+        query_start_loc,
+        block_size,
+        max_seq_len,
+        alibi_slopes,
+        kv_cache_dtype,
+        k_scale,
+        v_scale,
+        fp8_out_scale,
+        mfma_type,
+    )
 
 
 def mla_decode_kvcache_cpu(
@@ -158,19 +198,23 @@ def mla_decode_kvcache_cpu(
     block_tables: torch.Tensor,
     seq_lens: torch.Tensor,
 ) -> None:
-    torch.ops._C_cpu.mla_decode_kvcache(out, query, kv_cache, scale,
-                                        block_tables, seq_lens)
+    torch.ops._C_cpu.mla_decode_kvcache(
+        out, query, kv_cache, scale, block_tables, seq_lens
+    )
 
 
 # merge attn states ops
-def merge_attn_states(output: torch.Tensor,
-                      prefix_output: torch.Tensor,
-                      prefix_lse: torch.Tensor,
-                      suffix_output: torch.Tensor,
-                      suffix_lse: torch.Tensor,
-                      output_lse: Optional[torch.Tensor] = None) -> None:
-    torch.ops._C.merge_attn_states(output, output_lse, prefix_output,
-                                   prefix_lse, suffix_output, suffix_lse)
+def merge_attn_states(
+    output: torch.Tensor,
+    prefix_output: torch.Tensor,
+    prefix_lse: torch.Tensor,
+    suffix_output: torch.Tensor,
+    suffix_lse: torch.Tensor,
+    output_lse: Optional[torch.Tensor] = None,
+) -> None:
+    torch.ops._C.merge_attn_states(
+        output, output_lse, prefix_output, prefix_lse, suffix_output, suffix_lse
+    )
 
 
 def convert_vertical_slash_indexes(
@@ -189,33 +233,43 @@ def convert_vertical_slash_indexes(
     nnz_vertical = vertical_indexes.size(2)
     num_rows = (context_size + block_size_M - 1) // block_size_M
 
-    block_count = torch.zeros(batch_size,
-                              num_heads,
-                              num_rows,
-                              dtype=q_seqlens.dtype,
-                              device=q_seqlens.device)
-    block_offset = torch.zeros(batch_size,
-                               num_heads,
-                               num_rows,
-                               nnz_slash,
-                               dtype=q_seqlens.dtype,
-                               device=q_seqlens.device)
-    column_count = torch.zeros(batch_size,
-                               num_heads,
-                               num_rows,
-                               dtype=q_seqlens.dtype,
-                               device=q_seqlens.device)
-    column_index = torch.zeros(batch_size,
-                               num_heads,
-                               num_rows,
-                               nnz_vertical,
-                               dtype=q_seqlens.dtype,
-                               device=q_seqlens.device)
+    block_count = torch.zeros(
+        batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device
+    )
+    block_offset = torch.zeros(
+        batch_size,
+        num_heads,
+        num_rows,
+        nnz_slash,
+        dtype=q_seqlens.dtype,
+        device=q_seqlens.device,
+    )
+    column_count = torch.zeros(
+        batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device
+    )
+    column_index = torch.zeros(
+        batch_size,
+        num_heads,
+        num_rows,
+        nnz_vertical,
+        dtype=q_seqlens.dtype,
+        device=q_seqlens.device,
+    )
 
     torch.ops._C.convert_vertical_slash_indexes(
-        block_count, block_offset, column_count, column_index, q_seqlens,
-        kv_seqlens, vertical_indexes, slash_indexes, context_size,
-        block_size_M, block_size_N, causal)
+        block_count,
+        block_offset,
+        column_count,
+        column_index,
+        q_seqlens,
+        kv_seqlens,
+        vertical_indexes,
+        slash_indexes,
+        context_size,
+        block_size_M,
+        block_size_N,
+        causal,
+    )
     return block_count, block_offset, column_count, column_index
 
 
@@ -238,33 +292,45 @@ def convert_vertical_slash_indexes_mergehead(
     nnz_vertical = vertical_indexes.size(2)
     num_rows = (context_size + block_size_M - 1) // block_size_M
 
-    block_count = torch.empty(batch_size,
-                              num_heads,
-                              num_rows,
-                              dtype=q_seqlens.dtype,
-                              device=q_seqlens.device)
-    block_offset = torch.empty(batch_size,
-                               num_heads,
-                               num_rows,
-                               nnz_slash,
-                               dtype=q_seqlens.dtype,
-                               device=q_seqlens.device)
-    column_count = torch.empty(batch_size,
-                               num_heads,
-                               num_rows,
-                               dtype=q_seqlens.dtype,
-                               device=q_seqlens.device)
-    column_index = torch.empty(batch_size,
-                               num_heads,
-                               num_rows,
-                               nnz_vertical,
-                               dtype=q_seqlens.dtype,
-                               device=q_seqlens.device)
+    block_count = torch.empty(
+        batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device
+    )
+    block_offset = torch.empty(
+        batch_size,
+        num_heads,
+        num_rows,
+        nnz_slash,
+        dtype=q_seqlens.dtype,
+        device=q_seqlens.device,
+    )
+    column_count = torch.empty(
+        batch_size, num_heads, num_rows, dtype=q_seqlens.dtype, device=q_seqlens.device
+    )
+    column_index = torch.empty(
+        batch_size,
+        num_heads,
+        num_rows,
+        nnz_vertical,
+        dtype=q_seqlens.dtype,
+        device=q_seqlens.device,
+    )
 
     torch.ops._C.convert_vertical_slash_indexes_mergehead(
-        block_count, block_offset, column_count, column_index, q_seqlens,
-        kv_seqlens, vertical_indexes, slash_indexes, vertical_indices_count,
-        slash_indices_count, context_size, block_size_M, block_size_N, causal)
+        block_count,
+        block_offset,
+        column_count,
+        column_index,
+        q_seqlens,
+        kv_seqlens,
+        vertical_indexes,
+        slash_indexes,
+        vertical_indices_count,
+        slash_indices_count,
+        context_size,
+        block_size_M,
+        block_size_N,
+        causal,
+    )
     return block_count, block_offset, column_count, column_index
 
 
@@ -277,31 +343,36 @@ def rotary_embedding(
     cos_sin_cache: torch.Tensor,
     is_neox: bool,
 ) -> None:
-    torch.ops._C.rotary_embedding(positions, query, key, head_size,
-                                  cos_sin_cache, is_neox)
-
-
-def batched_rotary_embedding(positions: torch.Tensor, query: torch.Tensor,
-                             key: Optional[torch.Tensor], head_size: int,
-                             cos_sin_cache: torch.Tensor, is_neox: bool,
-                             rot_dim: int,
-                             cos_sin_cache_offsets: torch.Tensor) -> None:
-    torch.ops._C.batched_rotary_embedding(positions, query, key, head_size,
-                                          cos_sin_cache, is_neox, rot_dim,
-                                          cos_sin_cache_offsets)
+    torch.ops._C.rotary_embedding(
+        positions, query, key, head_size, cos_sin_cache, is_neox
+    )
 
 
 # layer norm ops
-def rms_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
-             epsilon: float) -> None:
+def rms_norm(
+    out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor, epsilon: float
+) -> None:
     # TODO: Remove this contiguous call when the kernel is updated to support non-contiguous input
     input_contiguous = input.contiguous()
     torch.ops._C.rms_norm(out, input_contiguous, weight, epsilon)
 
 
-def fused_add_rms_norm(input: torch.Tensor, residual: torch.Tensor,
-                       weight: torch.Tensor, epsilon: float) -> None:
+def fused_add_rms_norm(
+    input: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor, epsilon: float
+) -> None:
     torch.ops._C.fused_add_rms_norm(input, residual, weight, epsilon)
+
+
+def poly_norm(
+    out: torch.Tensor,
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    epsilon: float,
+) -> None:
+    # TODO: Remove this contiguous call when the kernel is updated to support non-contiguous input
+    input_contiguous = input.contiguous()
+    torch.ops._C.poly_norm(out, input_contiguous, weight, bias, epsilon)
 
 
 def poly_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
@@ -312,28 +383,37 @@ def poly_norm(out: torch.Tensor, input: torch.Tensor, weight: torch.Tensor,
 
 
 def apply_repetition_penalties_torch(
-        logits: torch.Tensor, prompt_mask: torch.Tensor,
-        output_mask: torch.Tensor, repetition_penalties: torch.Tensor) -> None:
+    logits: torch.Tensor,
+    prompt_mask: torch.Tensor,
+    output_mask: torch.Tensor,
+    repetition_penalties: torch.Tensor,
+) -> None:
     repetition_penalties = repetition_penalties.unsqueeze(dim=1).repeat(
         1, logits.size(1))
     # If token appears in prompt or output, apply, otherwise use 1.0 for no-op.
-    penalties = torch.where(prompt_mask | output_mask, repetition_penalties,
-                            1.0)
+    penalties = torch.where(prompt_mask | output_mask, repetition_penalties, 1.0)
     # If logits are positive, divide by penalty, otherwise multiply by penalty.
     scaling = torch.where(logits > 0, 1.0 / penalties, penalties)
     logits *= scaling
 
 
 def apply_repetition_penalties_cuda(
-        logits: torch.Tensor, prompt_mask: torch.Tensor,
-        output_mask: torch.Tensor, repetition_penalties: torch.Tensor) -> None:
-    torch.ops._C.apply_repetition_penalties_(logits, prompt_mask, output_mask,
-                                             repetition_penalties)
+    logits: torch.Tensor,
+    prompt_mask: torch.Tensor,
+    output_mask: torch.Tensor,
+    repetition_penalties: torch.Tensor,
+) -> None:
+    torch.ops._C.apply_repetition_penalties_(
+        logits, prompt_mask, output_mask, repetition_penalties
+    )
 
 
-def apply_repetition_penalties(logits: torch.Tensor, prompt_mask: torch.Tensor,
-                               output_mask: torch.Tensor,
-                               repetition_penalties: torch.Tensor) -> None:
+def apply_repetition_penalties(
+    logits: torch.Tensor,
+    prompt_mask: torch.Tensor,
+    output_mask: torch.Tensor,
+    repetition_penalties: torch.Tensor,
+) -> None:
     """Apply repetition penalties to logits in-place.
     Args:
         logits: The logits tensor of shape [num_seqs, vocab_size].
@@ -342,11 +422,13 @@ def apply_repetition_penalties(logits: torch.Tensor, prompt_mask: torch.Tensor,
         repetition_penalties: The repetition penalties of shape (num_seqs, ).
     """
     if logits.is_cuda and logits.is_contiguous():
-        apply_repetition_penalties_cuda(logits, prompt_mask, output_mask,
-                                        repetition_penalties)
+        apply_repetition_penalties_cuda(
+            logits, prompt_mask, output_mask, repetition_penalties
+        )
     else:
-        apply_repetition_penalties_torch(logits, prompt_mask, output_mask,
-                                         repetition_penalties)
+        apply_repetition_penalties_torch(
+            logits, prompt_mask, output_mask, repetition_penalties
+        )
 
 
 # fused quant layer norm ops
@@ -1305,9 +1387,9 @@ def scaled_fp4_quant(
     rounded_m = round_up(m, 128)
     scale_n = n // block_size
     rounded_n = round_up(scale_n, 4)
-    output_scale = torch.empty((rounded_m, rounded_n // 4),
-                               device=device,
-                               dtype=torch.int32)
+    output_scale = torch.zeros(
+        (rounded_m, rounded_n // 4), device=device, dtype=torch.int32
+    )
 
     torch.ops._C.scaled_fp4_quant(output, input, output_scale,
                                   input_global_scale)
@@ -1354,17 +1436,23 @@ def scaled_fp4_experts_quant(
     padded_k = (scales_k + (4 - 1)) // 4
 
     # output is uint8 and packed fp4 values
-    output = torch.empty(m_numtopk,
-                         k // 2,
-                         device=input_tensor.device,
-                         dtype=torch.uint8)
-    output_scales = torch.empty(MAX_TOKENS_PER_EXPERT * topk,
-                                padded_k,
-                                dtype=torch.int32,
-                                device=input_tensor.device)
-    torch.ops._C.scaled_fp4_experts_quant(output, output_scales, input_tensor,
-                                          input_global_scale, expert_offsets,
-                                          blockscale_offsets)
+    output = torch.empty(
+        m_numtopk, k // 2, device=input_tensor.device, dtype=torch.uint8
+    )
+    output_scales = torch.empty(
+        MAX_TOKENS_PER_EXPERT * topk,
+        padded_k,
+        dtype=torch.int32,
+        device=input_tensor.device,
+    )
+    torch.ops._C.scaled_fp4_experts_quant(
+        output,
+        output_scales,
+        input_tensor,
+        input_global_scale,
+        expert_offsets,
+        blockscale_offsets,
+    )
     output_scales = output_scales.view(torch.float8_e4m3fn)
     return output, output_scales
 
@@ -1721,7 +1809,7 @@ def moe_wna16_marlin_gemm(input: torch.Tensor, output: Optional[torch.Tensor],
         is_k_full, use_atomic_add, use_fp32_reduce, is_zp_float)
 
 
-if supports_moe_ops and hasattr(torch.ops._moe_C, "marlin_gemm_moe"):
+if hasattr(torch.ops, "_moe_C") and hasattr(torch.ops._moe_C, "marlin_gemm_moe"):
 
     @register_fake("_moe_C::marlin_gemm_moe")
     def marlin_gemm_moe_fake(a: torch.Tensor, b_q_weights: torch.Tensor,
@@ -1773,9 +1861,16 @@ def reshape_and_cache(
     k_scale: torch.Tensor,
     v_scale: torch.Tensor,
 ) -> None:
-    torch.ops._C_cache_ops.reshape_and_cache(key, value, key_cache,
-                                             value_cache, slot_mapping,
-                                             kv_cache_dtype, k_scale, v_scale)
+    torch.ops._C_cache_ops.reshape_and_cache(
+        key,
+        value,
+        key_cache,
+        value_cache,
+        slot_mapping,
+        kv_cache_dtype,
+        k_scale,
+        v_scale,
+    )
 
 
 def reshape_and_cache_flash(
@@ -1788,10 +1883,16 @@ def reshape_and_cache_flash(
     k_scale: torch.Tensor,
     v_scale: torch.Tensor,
 ) -> None:
-    torch.ops._C_cache_ops.reshape_and_cache_flash(key, value, key_cache,
-                                                   value_cache, slot_mapping,
-                                                   kv_cache_dtype, k_scale,
-                                                   v_scale)
+    torch.ops._C_cache_ops.reshape_and_cache_flash(
+        key,
+        value,
+        key_cache,
+        value_cache,
+        slot_mapping,
+        kv_cache_dtype,
+        k_scale,
+        v_scale,
+    )
 
 
 def concat_and_cache_mla(
@@ -1852,6 +1953,30 @@ def cp_gather_cache(src_cache: torch.Tensor,
                     seq_starts: Optional[torch.Tensor] = None) -> None:
     torch.ops._C_cache_ops.cp_gather_cache(src_cache, dst, block_table,
                                            cu_seq_lens, batch_size, seq_starts)
+
+
+def indexer_k_quant_and_cache(
+    k: torch.Tensor,
+    kv_cache: torch.Tensor,
+    slot_mapping: torch.Tensor,
+    quant_block_size: int,
+    kv_cache_dtype: str,
+) -> None:
+    torch.ops._C_cache_ops.indexer_k_quant_and_cache(
+        k, kv_cache, slot_mapping, quant_block_size, kv_cache_dtype
+    )
+
+
+def cp_gather_indexer_k_quant_cache(
+    kv_cache: torch.Tensor,
+    dst_k: torch.Tensor,
+    dst_scale: torch.Tensor,
+    block_table: torch.Tensor,
+    cu_seq_lens: torch.Tensor,
+) -> None:
+    torch.ops._C_cache_ops.cp_gather_indexer_k_quant_cache(
+        kv_cache, dst_k, dst_scale, block_table, cu_seq_lens
+    )
 
 
 def get_device_attribute(attribute: int, device: int) -> int:
@@ -2006,25 +2131,30 @@ def flash_mla_with_kvcache(
     return out, softmax_lse
 
 
-def cutlass_mla_decode(out: torch.Tensor, q_nope: torch.Tensor,
-                       q_pe: torch.Tensor, kv_c_and_k_pe_cache: torch.Tensor,
-                       seq_lens: torch.Tensor, page_table: torch.Tensor,
-                       scale: float) -> torch.Tensor:
-    torch.ops._C.cutlass_mla_decode(out, q_nope, q_pe, kv_c_and_k_pe_cache,
-                                    seq_lens, page_table, scale)
-    return out
-
-
-def sm100_cutlass_mla_decode(out: torch.Tensor, lse: torch.Tensor,
-                             q_nope: torch.Tensor, q_pe: torch.Tensor,
-                             kv_c_and_k_pe_cache: torch.Tensor,
-                             seq_lens: torch.Tensor, page_table: torch.Tensor,
-                             workspace: torch.Tensor, scale: float,
-                             num_kv_splits: int) -> torch.Tensor:
-    torch.ops._C.sm100_cutlass_mla_decode(out, lse, q_nope, q_pe,
-                                          kv_c_and_k_pe_cache, seq_lens,
-                                          page_table, workspace, scale,
-                                          num_kv_splits)
+def sm100_cutlass_mla_decode(
+    out: torch.Tensor,
+    lse: torch.Tensor,
+    q_nope: torch.Tensor,
+    q_pe: torch.Tensor,
+    kv_c_and_k_pe_cache: torch.Tensor,
+    seq_lens: torch.Tensor,
+    page_table: torch.Tensor,
+    workspace: torch.Tensor,
+    scale: float,
+    num_kv_splits: int,
+) -> torch.Tensor:
+    torch.ops._C.sm100_cutlass_mla_decode(
+        out,
+        lse,
+        q_nope,
+        q_pe,
+        kv_c_and_k_pe_cache,
+        seq_lens,
+        page_table,
+        workspace,
+        scale,
+        num_kv_splits,
+    )
     return out
 
 
@@ -2222,6 +2352,38 @@ class CPUDNNLGEMMHandler:
             torch.ops._C.release_dnnl_matmul_handler(self.handler)
 
 
+_supports_onednn = bool(hasattr(torch.ops._C, "create_onednn_mm_handler"))
+
+
+def is_onednn_acl_supported():
+    return torch.ops._C.is_onednn_acl_supported()
+
+
+def create_onednn_mm(
+    weight: torch.Tensor,  # [K, N]
+    primitive_cache_size: int = 128,
+) -> CPUDNNLGEMMHandler:
+    handler = CPUDNNLGEMMHandler()
+    handler.k, handler.n = weight.size()
+    handler.handler = torch.ops._C.create_onednn_mm_handler(
+        weight, primitive_cache_size
+    )
+    return handler
+
+
+def onednn_mm(
+    dnnl_handler: CPUDNNLGEMMHandler,
+    x: torch.Tensor,
+    bias: Optional[torch.Tensor],
+) -> torch.Tensor:
+    output = torch.empty((*x.shape[0:-1], dnnl_handler.n), dtype=x.dtype)
+    torch.ops._C.onednn_mm(
+        output, x.reshape(-1, dnnl_handler.k), bias, dnnl_handler.handler
+    )
+
+    return output
+
+
 def create_onednn_scaled_mm(
     weight: torch.Tensor,  # [K, N]
     weight_scales: torch.Tensor,
@@ -2289,3 +2451,24 @@ def onednn_scaled_mm(
                                   input_zp_adj, bias, dnnl_handler.handler)
 
     return output
+
+
+def hadacore_transform(x: torch.Tensor, inplace: bool = True) -> torch.Tensor:
+    """
+    Perform Hadamard transforms using [Hadacore](https://arxiv.org/abs/2412.08832)
+    kernels. Note that these kernels exploit the recursive properties of
+    Sylvester Hadamards, and therefore do not require transform weight data
+    Note that sylvester hadamard transforms are also symmetric, which means that
+    this function is also applies the (transpose <=> inverse) transform.
+    :param x: value to be transformed inplace
+    :param inplace: modify value in place
+    :return: value after transformation
+    """
+    return torch.ops._C.hadacore_transform(x, inplace)
+
+
+if hasattr(torch.ops._C, "hadacore_transform"):
+
+    @register_fake("_C::hadacore_transform")
+    def _hadacore_transform_fake(x: torch.Tensor, inplace: bool) -> torch.Tensor:
+        return torch.empty_like(x) if not inplace else x

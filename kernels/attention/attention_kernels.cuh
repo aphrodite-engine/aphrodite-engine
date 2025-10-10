@@ -28,10 +28,10 @@
 
 #ifdef USE_ROCM
   #include <hip/hip_bf16.h>
-  #include "../quantization/fp8/amd/quant_utils.cuh"
+  #include "../quantization/w8a8/fp8/amd/quant_utils.cuh"
 typedef __hip_bfloat16 __nv_bfloat16;
 #else
-  #include "../quantization/fp8/nvidia/quant_utils.cuh"
+  #include "../quantization/w8a8/fp8/nvidia/quant_utils.cuh"
 #endif
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -76,7 +76,7 @@ inline __device__ float block_sum(float* red_smem, float sum) {
   return APHRODITE_SHFL_SYNC(sum, 0);
 }
 
-// TODO: Merge the last two dimensions of the grid.
+// TODO(woosuk): Merge the last two dimensions of the grid.
 // Grid: (num_heads, num_seqs, max_num_partitions).
 template <typename scalar_t, typename cache_t, int HEAD_SIZE, int BLOCK_SIZE,
           int NUM_THREADS, aphrodite::Fp8KVCacheDataType KV_DTYPE,
@@ -167,9 +167,9 @@ __device__ void paged_attention_kernel(
 
   // Load the query to registers.
   // Each thread in a thread group has a different part of the query.
-  // For example, if the the thread group size is 4, then the first thread in
+  // For example, if the thread group size is 4, then the first thread in
   // the group has 0, 4, 8, ... th vectors of the query, and the second thread
-  // has 1, 5, 9, ... th vectors of the query, and so on. NOTE: Because
+  // has 1, 5, 9, ... th vectors of the query, and so on. NOTE(woosuk): Because
   // q is split from a qkv tensor, it may not be contiguous.
   const scalar_t* q_ptr = q + seq_idx * q_stride + head_idx * HEAD_SIZE;
   __shared__ Q_vec q_vecs[THREAD_GROUP_SIZE][NUM_VECS_PER_THREAD];
@@ -185,7 +185,7 @@ __device__ void paged_attention_kernel(
 
   // Memory planning.
   extern __shared__ char shared_mem[];
-  // NOTE: We use FP32 for the softmax logits for better accuracy.
+  // NOTE(woosuk): We use FP32 for the softmax logits for better accuracy.
   float* logits = reinterpret_cast<float*>(shared_mem);
   // Workspace for reduction.
   __shared__ float red_smem[2 * NUM_WARPS];
@@ -221,7 +221,7 @@ __device__ void paged_attention_kernel(
 
   for (int block_idx = start_block_idx + warp_idx; block_idx < end_block_idx;
        block_idx += NUM_WARPS) {
-    // NOTE: The block number is stored in int32. However, we cast it to
+    // NOTE(woosuk): The block number is stored in int32. However, we cast it to
     // int64 because int32 can lead to overflow when this variable is multiplied
     // by large numbers (e.g., kv_block_stride).
     // For blocksparse attention: skip computation on blocks that are not
@@ -254,7 +254,7 @@ __device__ void paged_attention_kernel(
 
     // Load a key to registers.
     // Each thread in a thread group has a different part of the key.
-    // For example, if the the thread group size is 4, then the first thread in
+    // For example, if the thread group size is 4, then the first thread in
     // the group has 0, 4, 8, ... th vectors of the key, and the second thread
     // has 1, 5, 9, ... th vectors of the key, and so on.
     for (int i = 0; i < NUM_TOKENS_PER_THREAD_GROUP; i++) {
@@ -293,7 +293,7 @@ __device__ void paged_attention_kernel(
 
       if (thread_group_offset == 0) {
         // Store the partial reductions to shared memory.
-        // NOTE: It is required to zero out the masked logits.
+        // NOTE(woosuk): It is required to zero out the masked logits.
         const bool mask = token_idx >= seq_len;
         logits[token_idx - start_token_idx] = mask ? 0.f : qk;
         // Update the max value.
@@ -314,7 +314,7 @@ __device__ void paged_attention_kernel(
   }
   __syncthreads();
 
-  // TODO: Refactor this part.
+  // TODO(woosuk): Refactor this part.
   // Get the max qk value for the sequence.
   qk_max = lane < NUM_WARPS ? red_smem[lane] : -FLT_MAX;
 #pragma unroll
@@ -363,7 +363,7 @@ __device__ void paged_attention_kernel(
   constexpr int NUM_ROWS_PER_THREAD =
       DIVIDE_ROUND_UP(HEAD_SIZE, NUM_ROWS_PER_ITER);
 
-  // NOTE: We use FP32 for the accumulator for better accuracy.
+  // NOTE(woosuk): We use FP32 for the accumulator for better accuracy.
   float accs[NUM_ROWS_PER_THREAD];
 #pragma unroll
   for (int i = 0; i < NUM_ROWS_PER_THREAD; i++) {
@@ -374,7 +374,7 @@ __device__ void paged_attention_kernel(
   zero(zero_value);
   for (int block_idx = start_block_idx + warp_idx; block_idx < end_block_idx;
        block_idx += NUM_WARPS) {
-    // NOTE: The block number is stored in int32. However, we cast it to
+    // NOTE(woosuk): The block number is stored in int32. However, we cast it to
     // int64 because int32 can lead to overflow when this variable is multiplied
     // by large numbers (e.g., kv_block_stride).
     // For blocksparse attention: skip computation on blocks that are not
@@ -413,9 +413,10 @@ __device__ void paged_attention_kernel(
                                                                     *v_scale);
         }
         if (block_idx == num_seq_blocks - 1) {
-          // NOTE: When v_vec contains the tokens that are out of the
+          // NOTE(woosuk): When v_vec contains the tokens that are out of the
           // context, we should explicitly zero out the values since they may
-          // contain NaNs.
+          // contain NaNs. See
+          // https://github.com/aphrodite-project/aphrodite/issues/641#issuecomment-1682544472
           scalar_t* v_vec_ptr = reinterpret_cast<scalar_t*>(&v_vec);
 #pragma unroll
           for (int j = 0; j < V_VEC_SIZE; j++) {
@@ -438,7 +439,7 @@ __device__ void paged_attention_kernel(
     accs[i] = acc;
   }
 
-  // NOTE: A barrier is required because the shared memory space for
+  // NOTE(woosuk): A barrier is required because the shared memory space for
   // logits is reused for the output.
   __syncthreads();
 

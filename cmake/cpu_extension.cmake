@@ -59,6 +59,7 @@ function (find_isa CPUINFO TARGET OUT)
     endif()
 endfunction()
 
+
 function(check_sysctl TARGET OUT)
     execute_process(COMMAND sysctl -n "${TARGET}"
                     RESULT_VARIABLE SYSCTL_RET
@@ -73,6 +74,7 @@ function(check_sysctl TARGET OUT)
     endif()
 endfunction()
 
+
 function (is_avx512_disabled OUT)
     set(DISABLE_AVX512 $ENV{APHRODITE_CPU_DISABLE_AVX512})
     if(DISABLE_AVX512 AND DISABLE_AVX512 STREQUAL "true")
@@ -86,6 +88,7 @@ is_avx512_disabled(AVX512_DISABLED)
 
 if (MACOSX_FOUND AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
     message(STATUS "Apple Silicon Detected")
+    set(APPLE_SILICON_FOUND TRUE)
     set(ENABLE_NUMA OFF)
     check_sysctl(hw.optional.neon ASIMD_FOUND)
     check_sysctl(hw.optional.arm.FEAT_BF16 ARM_BF16_FOUND)
@@ -98,8 +101,8 @@ else()
     find_isa(${CPUINFO} "asimd" ASIMD_FOUND) # Check for ARM NEON support
     find_isa(${CPUINFO} "bf16" ARM_BF16_FOUND) # Check for ARM BF16 support
     find_isa(${CPUINFO} "S390" S390_FOUND)
+    find_isa(${CPUINFO} "v" RVV_FOUND) # Check for RISC-V RVV support
 endif()
-
 
 if (AVX512_FOUND AND NOT AVX512_DISABLED)
     list(APPEND CXX_COMPILE_FLAGS
@@ -175,24 +178,30 @@ elseif (S390_FOUND)
         "-mzvector"
         "-march=native"
         "-mtune=native")
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+    if(RVV_FOUND)
+	    message(FAIL_ERROR "Can't support rvv now.")
+    else()
+        list(APPEND CXX_COMPILE_FLAGS "-march=rv64gc")
+    endif()
 else()
-    message(FATAL_ERROR "Aphrodite CPU backend requires AVX512, AVX2, Power9+ ISA, S390X ISA or ARMv8 support.")
+    message(FATAL_ERROR "Aphrodite CPU backend requires AVX512, AVX2, Power9+ ISA, S390X ISA, ARMv8 or RISC-V support.")
 endif()
 
 #
 # Build oneDNN for W8A8 GEMM kernels (only for x86-AVX512 /ARM platforms)
 # Flag to enable ACL kernels for AARCH64 platforms
-if ( APHRODITE_BUILD_ACL STREQUAL "ON")
+if (APHRODITE_BUILD_ACL STREQUAL "ON")
     set(USE_ACL ON)
 else()
     set(USE_ACL OFF)
 endif()
 
-if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR ASIMD_FOUND OR POWER9_FOUND OR POWER10_FOUND OR POWER11_FOUND)
+if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR (ASIMD_FOUND AND NOT APPLE_SILICON_FOUND) OR POWER9_FOUND OR POWER10_FOUND OR POWER11_FOUND)
     FetchContent_Declare(
         oneDNN
         GIT_REPOSITORY https://github.com/oneapi-src/oneDNN.git
-        GIT_TAG  v3.9
+        GIT_TAG v3.9
         GIT_PROGRESS TRUE
         GIT_SHALLOW TRUE
     )
@@ -204,6 +213,7 @@ if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR ASIMD_FOUND OR POWER9_FOUND OR POW
         endif()
         set(ONEDNN_AARCH64_USE_ACL "ON")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-rpath,$ENV{ACL_ROOT_DIR}/build/")
+        add_compile_definitions(APHRODITE_USE_ACL)
     endif()
 
     set(ONEDNN_LIBRARY_TYPE "STATIC")
@@ -217,11 +227,10 @@ if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR ASIMD_FOUND OR POWER9_FOUND OR POW
     set(ONEDNN_ENABLE_ITT_TASKS "OFF")
     set(ONEDNN_ENABLE_MAX_CPU_ISA "OFF")
     set(ONEDNN_ENABLE_CPU_ISA_HINTS "OFF")
-    set(ONEDNN_VERBOSE "OFF")
+    set(ONEDNN_VERBOSE "ON")
     set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
     FetchContent_MakeAvailable(oneDNN)
-
     add_library(dnnl_ext OBJECT "kernels/cpu/dnnl_helper.cpp")
     target_include_directories(
         dnnl_ext
@@ -229,7 +238,6 @@ if ((AVX512_FOUND AND NOT AVX512_DISABLED) OR ASIMD_FOUND OR POWER9_FOUND OR POW
         PUBLIC ${oneDNN_BINARY_DIR}/include
         PRIVATE ${oneDNN_SOURCE_DIR}/src
     )
-
     target_link_libraries(dnnl_ext dnnl)
     target_compile_options(dnnl_ext PRIVATE ${CXX_COMPILE_FLAGS} -fPIC)
     list(APPEND LIBS dnnl_ext)
@@ -258,7 +266,8 @@ set(APHRODITE_EXT_SRC
     "kernels/cpu/layernorm.cpp"
     "kernels/cpu/mla_decode.cpp"
     "kernels/cpu/pos_encoding.cpp"
-    "kernels/cpu/torch_bindings.cpp")
+    "kernels/cpu/torch_bindings.cpp"
+    "kernels/moe/dynamic_4bit_int_moe_cpu.cpp")
 
 if (AVX512_FOUND AND NOT AVX512_DISABLED)
     set(APHRODITE_EXT_SRC
@@ -276,6 +285,7 @@ if (AVX512_FOUND AND NOT AVX512_DISABLED)
         add_compile_definitions(-DCPU_CAPABILITY_AVX512)
     endif()
 endif()
+
 if(USE_ONEDNN)
     set(APHRODITE_EXT_SRC
         "kernels/cpu/dnnl_kernels.cpp"
