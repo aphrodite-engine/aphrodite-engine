@@ -290,7 +290,7 @@ message(STATUS "CPU extension source files: ${APHRODITE_EXT_SRC}")
 
 define_gpu_extension_target(
     _C
-    DESTINATION aphrodite
+    DESTINATION aphrodite/extensions/cpu
     LANGUAGE CXX
     SOURCES ${APHRODITE_EXT_SRC}
     LIBRARIES ${LIBS}

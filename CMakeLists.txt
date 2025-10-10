@@ -221,9 +221,9 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
   message(STATUS "Enabling cumem allocator extension.")
   # link against cuda driver library
   list(APPEND CUMEM_LIBS CUDA::cuda_driver)
-  define_gpu_extension_target(
-    cumem_allocator
-    DESTINATION aphrodite
+define_gpu_extension_target(
+  cumem_allocator
+  DESTINATION aphrodite/extensions/cuda
     LANGUAGE CXX
     SOURCES ${APHRODITE_CUMEM_EXT_SRC}
     LIBRARIES ${CUMEM_LIBS}
@@ -804,7 +804,7 @@ endif()
 message(STATUS "Enabling C extension.")
 define_gpu_extension_target(
   _C
-  DESTINATION aphrodite
+  DESTINATION $<IF:$<STREQUAL:${APHRODITE_GPU_LANG},CUDA>,aphrodite/extensions/cuda,aphrodite/extensions/rocm>
   LANGUAGE ${APHRODITE_GPU_LANG}
   SOURCES ${APHRODITE_EXT_SRC}
   COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
@@ -918,7 +918,7 @@ endif()
 message(STATUS "Enabling moe extension.")
 define_gpu_extension_target(
   _moe_C
-  DESTINATION aphrodite
+  DESTINATION $<IF:$<STREQUAL:${APHRODITE_GPU_LANG},CUDA>,aphrodite/extensions/cuda,aphrodite/extensions/rocm>
   LANGUAGE ${APHRODITE_GPU_LANG}
   SOURCES ${APHRODITE_MOE_EXT_SRC}
   COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
@@ -939,7 +939,7 @@ if(APHRODITE_GPU_LANG STREQUAL "HIP")
 
   define_gpu_extension_target(
     _rocm_C
-    DESTINATION aphrodite
+    DESTINATION aphrodite/extensions/rocm
     LANGUAGE ${APHRODITE_GPU_LANG}
     SOURCES ${APHRODITE_ROCM_EXT_SRC}
     COMPILE_FLAGS ${APHRODITE_GPU_FLAGS}
