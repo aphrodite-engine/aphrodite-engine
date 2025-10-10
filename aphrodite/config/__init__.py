@@ -3102,6 +3102,8 @@ def _get_and_verify_max_len(
         "seq_length",
         # Command-R
         "model_max_length",
+        # Whisper
+        "max_target_positions",
         # Others
         "max_sequence_length",
         "max_seq_length",
@@ -3155,10 +3157,12 @@ def _get_and_verify_max_len(
         derived_max_model_len = default_max_len
 
     rope_scaling = getattr(hf_config, "rope_scaling", None)
-    if rope_scaling is not None:
-        # No need to consider "type" key because of patch_rope_scaling when
-        # loading HF config
-        rope_type = rope_scaling["rope_type"]
+    # NOTE: Gemma3's max_model_len is already scaled by RoPE scaling
+    if rope_scaling is not None and "gemma3" not in getattr(
+        hf_config, "model_type", ""
+    ):
+        # Support both "rope_type" and legacy/vanilla HF key "type"
+        rope_type = rope_scaling.get("rope_type") or rope_scaling.get("type")
         if rope_type not in {"su", "longrope", "llama3"}:
             if disable_sliding_window:
                 # TODO: Find a model that supports rope_scaling
