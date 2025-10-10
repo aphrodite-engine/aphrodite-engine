@@ -126,16 +126,16 @@ def tokenization(request: Request) -> OpenAIServingTokenization:
 
 
 @router.get("/health", response_class=Response)
-async def health(raw_request: Request) -> Response:
+async def health() -> Response:
     """Health check endpoint."""
     return Response(status_code=200)
 
 
 @router.get("/ping", response_class=Response)
 @router.post("/ping", response_class=Response)
-async def ping(raw_request: Request) -> Response:
+async def ping() -> Response:
     """Ping check endpoint."""
-    return await health(raw_request)
+    return Response(status_code=200)
 
 
 @router.post(
