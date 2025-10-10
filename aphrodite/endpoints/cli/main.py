@@ -11,11 +11,12 @@ def main():
     import aphrodite.endpoints.cli.benchmark.main
     import aphrodite.endpoints.cli.collect_env
     import aphrodite.endpoints.cli.openai
-    import aphrodite.endpoints.cli.run_batch
     import aphrodite.endpoints.cli.run
-    from aphrodite.utils import FlexibleArgumentParser
+    import aphrodite.endpoints.cli.run_batch
+    import aphrodite.endpoints.cli.tokenizer
     from aphrodite.endpoints.utils import (APHRODITE_SUBCMD_PARSER_EPILOG,
                                            cli_env_setup)
+    from aphrodite.utils import FlexibleArgumentParser
 
     CMD_MODULES = [
         aphrodite.endpoints.cli.openai,
@@ -23,6 +24,7 @@ def main():
         aphrodite.endpoints.cli.benchmark.main,
         aphrodite.endpoints.cli.collect_env,
         aphrodite.endpoints.cli.run_batch,
+        aphrodite.endpoints.cli.tokenizer,
     ]
 
     cli_env_setup()
