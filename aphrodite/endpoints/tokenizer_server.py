@@ -120,18 +120,6 @@ class DummyEngineClient:
         raise RuntimeError("Tokenizer server does not support this operation")
 
 
-async def validate_json_request(raw_request: Request):
-    """Validate that the request has application/json content-type."""
-    content_type = raw_request.headers.get("content-type", "").lower()
-    media_type = content_type.split(";", maxsplit=1)[0]
-    if media_type != "application/json":
-        raise RequestValidationError(
-            errors=[
-                "Unsupported Media Type: Only 'application/json' is allowed"
-            ]
-        )
-
-
 def tokenization(request: Request) -> OpenAIServingTokenization:
     """Dependency to get the tokenization handler from app state."""
     return request.app.state.openai_serving_tokenization
