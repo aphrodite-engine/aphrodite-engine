@@ -68,6 +68,10 @@ ARG TARGETPLATFORM
 ARG INSTALL_KV_CONNECTORS=false
 ENV DEBIAN_FRONTEND=noninteractive
 
+ARG GDRCOPY_CUDA_VERSION=12.8
+# Keep in line with FINAL_BASE_IMAGE
+ARG GDRCOPY_OS_VERSION=Ubuntu22_04
+
 ARG DEADSNAKES_MIRROR_URL
 ARG DEADSNAKES_GPGKEY_URL
 ARG GET_PIP_URL
@@ -137,13 +141,14 @@ COPY requirements/common.txt requirements/common.txt
 COPY requirements/cuda.txt requirements/cuda.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r requirements/cuda.txt \
-    --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
+    --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') \
+    --prerelease=allow
 
 # cuda arch list used by torch
 # can be useful for both `dev` and `test`
 # explicitly set the list to avoid issues with torch 2.2
 # see https://github.com/pytorch/pytorch/pull/123243
-ARG torch_cuda_arch_list='7.0 7.5 8.0 8.9 9.0 10.0 12.0'
+ARG torch_cuda_arch_list='7.5 8.0 8.9 9.0 10.0 12.0'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
 #################### BASE BUILD IMAGE ####################
 
@@ -197,6 +202,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
 SHELL ["/bin/bash", "-c"]
+
+ARG GDRCOPY_CUDA_VERSION=12.8
+# Keep in line with FINAL_BASE_IMAGE
+ARG GDRCOPY_OS_VERSION=Ubuntu22_04
 
 ARG DEADSNAKES_MIRROR_URL
 ARG DEADSNAKES_GPGKEY_URL
@@ -273,7 +282,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY --from=build /workspace/dist /aphrodite-workspace/dist
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system dist/*.whl --verbose \
-        --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
+        --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.') \
+        --prerelease=allow
 
 # If we need to build FlashInfer wheel before its release:
 # $ # Note we remove 7.0 from the arch list compared to the list below, since FlashInfer only supports sm75+
@@ -288,7 +298,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Install FlashInfer from source
 ARG FLASHINFER_GIT_REPO="https://github.com/flashinfer-ai/flashinfer.git"
 # Keep this in sync with "flashinfer" extra in setup.py
-ARG FLASHINFER_GIT_REF="v0.2.14.post1"
+ARG FLASHINFER_GIT_REF="v0.3.1"
 # Flag to control whether to compile FlashInfer AOT kernels
 # Set to "true" to enable AOT compilation:
 # docker build --build-arg FLASHINFER_AOT_COMPILE=true ...
@@ -298,19 +308,32 @@ RUN --mount=type=cache,target=/root/.cache/uv bash - <<'BASH'
     git clone --depth 1 --recursive --shallow-submodules \
         --branch ${FLASHINFER_GIT_REF} \
         ${FLASHINFER_GIT_REPO} flashinfer
+    # Exclude CUDA arches for older versions (11.x and 12.0-12.7)
+    # TODO: Update this to allow setting TORCH_CUDA_ARCH_LIST as a build arg.
+    if [[ "${CUDA_VERSION}" == 11.* ]]; then
+        FI_TORCH_CUDA_ARCH_LIST="7.5 8.0 8.9"
+    elif [[ "${CUDA_VERSION}" == 12.[0-7]* ]]; then
+        FI_TORCH_CUDA_ARCH_LIST="7.5 8.0 8.9 9.0a"
+    else
+        # CUDA 12.8+ supports 10.0a and 12.0
+        FI_TORCH_CUDA_ARCH_LIST="7.5 8.0 8.9 9.0a 10.0a 12.0"
+    fi
     pushd flashinfer
-        if [ "${FLASHINFER_AOT_COMPILE}" = "true" ]; then
-            # Exclude CUDA arches for older versions (11.x and 12.0-12.7)
-            # TODO: Update this to allow setting TORCH_CUDA_ARCH_LIST as a build arg.
-            if [[ "${CUDA_VERSION}" == 11.* ]]; then
-                FI_TORCH_CUDA_ARCH_LIST="7.5 8.0 8.9"
-            elif [[ "${CUDA_VERSION}" == 12.[0-7]* ]]; then
-                FI_TORCH_CUDA_ARCH_LIST="7.5 8.0 8.9 9.0a"
-            else
-                # CUDA 12.8+ supports 10.0a and 12.0
-                FI_TORCH_CUDA_ARCH_LIST="7.5 8.0 8.9 9.0a 10.0a 12.0"
+        if [[ "${CUDA_VERSION}" == 12.8.* ]] && [ "$TARGETPLATFORM" = "linux/amd64" ]; then
+            # NOTE: To make new precompiled wheels, see tools/flashinfer-build.sh
+            echo "🏗️  Installing FlashInfer from pre-compiled wheel"
+            uv pip install --system https://wheels.vllm.ai/flashinfer-python/flashinfer_python-0.3.1-cp39-abi3-manylinux1_x86_64.whl \
+                --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.')
+            if [ "${FLASHINFER_AOT_COMPILE}" = "true" ]; then
+                # Download pre-compiled cubins
+                TORCH_CUDA_ARCH_LIST="${FI_TORCH_CUDA_ARCH_LIST}" \
+                    python3 -m flashinfer --download-cubin || echo "WARNING: Failed to download flashinfer cubins."
             fi
+        elif [ "${FLASHINFER_AOT_COMPILE}" = "true" ]; then
             echo "🏗️  Installing FlashInfer with AOT compilation for arches: ${FI_TORCH_CUDA_ARCH_LIST}"
+            export FLASHINFER_CUDA_ARCH_LIST="${FI_TORCH_CUDA_ARCH_LIST}"
+            # HACK: We need these to run flashinfer.aot before installing flashinfer, get from the package in the future
+            uv pip install --system cuda-python==$(echo $CUDA_VERSION | cut -d. -f1,2) pynvml==$(echo $CUDA_VERSION | cut -d. -f1) nvidia-nvshmem-cu$(echo $CUDA_VERSION | cut -d. -f1)
             # Build AOT kernels
             TORCH_CUDA_ARCH_LIST="${FI_TORCH_CUDA_ARCH_LIST}" \
                 python3 -m flashinfer.aot
@@ -351,13 +374,27 @@ COPY tools/install_deepgemm.sh /tmp/install_deepgemm.sh
 RUN --mount=type=cache,target=/root/.cache/uv \
     APHRODITE_DOCKER_BUILD_CONTEXT=1 /tmp/install_deepgemm.sh --cuda-version "${CUDA_VERSION}" ${DEEPGEMM_GIT_REF:+--ref "$DEEPGEMM_GIT_REF"} 
 
-# Install EP kernels(pplx-kernels and DeepEP), NixL
+    COPY tools/install_gdrcopy.sh install_gdrcopy.sh
+    RUN set -eux; \
+        case "${TARGETPLATFORM}" in \
+          linux/arm64) UUARCH="aarch64" ;; \
+          linux/amd64) UUARCH="x64" ;; \
+          *) echo "Unsupported TARGETPLATFORM: ${TARGETPLATFORM}" >&2; exit 1 ;; \
+        esac; \
+        ./install_gdrcopy.sh "${GDRCOPY_OS_VERSION}" "${GDRCOPY_CUDA_VERSION}" "${UUARCH}"; \
+        rm ./install_gdrcopy.sh
+    
+    # Install EP kernels(pplx-kernels and DeepEP)
 COPY tools/ep_kernels/install_python_libraries.sh install_python_libraries.sh
-COPY tools/install_nixl.sh install_nixl.sh
 ENV CUDA_HOME=/usr/local/cuda
 RUN export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-9.0a+PTX}" \
-    && bash install_python_libraries.sh \
-    && bash install_nixl.sh --force
+    && bash install_python_libraries.sh
+
+# CUDA image changed from /usr/local/nvidia to /usr/local/cuda in 12.8 but will
+# return to /usr/local/nvidia in 13.0 to allow container providers to mount drivers
+# consistently from the host (see https://github.com/vllm-project/vllm/issues/18859).
+# Until then, add /usr/local/nvidia/lib64 before the image cuda path to allow override.
+ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
 
 #################### Aphrodite installation IMAGE ####################
 
