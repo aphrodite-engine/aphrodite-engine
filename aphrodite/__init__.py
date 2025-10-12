@@ -12,6 +12,8 @@ import typing
 import aphrodite.common.env_override  # noqa: F401
 
 MODULE_ATTRS = {
+    "bc_linter_skip": "._bc_linter:bc_linter_skip",
+    "bc_linter_include": "._bc_linter:bc_linter_include",
     "AsyncEngineArgs": ".engine.args_tools:AsyncEngineArgs",
     "EngineArgs": ".engine.args_tools:EngineArgs",
     "AsyncAphrodite": ".engine.async_aphrodite:AsyncAphrodite",
@@ -53,6 +55,8 @@ if typing.TYPE_CHECKING:
     from aphrodite.executor.ray_utils import initialize_ray_cluster
     from aphrodite.inputs import PromptType, TextPrompt, TokensPrompt
     from aphrodite.modeling.models import ModelRegistry
+
+    from ._bc_linter import bc_linter_include, bc_linter_skip
 else:
 
     def __getattr__(name: str) -> typing.Any:
@@ -70,6 +74,8 @@ else:
 __all__ = [
     "__version__",
     "__version_tuple__",
+    "bc_linter_skip",
+    "bc_linter_include",
     "LLM",
     "ModelRegistry",
     "PromptType",
