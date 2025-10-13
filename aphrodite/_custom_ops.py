@@ -378,6 +378,10 @@ def awq_dequantize(qweight: torch.Tensor, scales: torch.Tensor,
         from aphrodite.quantization.awq_triton import (
             awq_dequantize_triton)
         return awq_dequantize_triton(qweight, scales, zeros)
+    if envs.APHRODITE_USE_GLUON_AWQ:
+        from aphrodite.quantization.awq_gluon import (
+            awq_dequantize_gluon)
+        return awq_dequantize_gluon(qweight, scales, zeros)
     return torch.ops._C.awq_dequantize(qweight, scales, zeros, split_k_iters,
                                        thx, thy)
 
@@ -388,6 +392,10 @@ def awq_gemm(input: torch.Tensor, qweight: torch.Tensor, qzeros: torch.Tensor,
         from aphrodite.quantization.awq_triton import (
             awq_gemm_triton)
         return awq_gemm_triton(input, qweight, qzeros, scales, split_k_iters)
+    if envs.APHRODITE_USE_GLUON_AWQ:
+        from aphrodite.quantization.awq_gluon import (
+            awq_gemm_gluon)
+        return awq_gemm_gluon(input, qweight, scales, qzeros)
     return torch.ops._C.awq_gemm(input, qweight, qzeros, scales, split_k_iters)
 
 
