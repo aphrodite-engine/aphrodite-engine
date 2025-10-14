@@ -110,6 +110,23 @@ class RequestState:
         self.stats = RequestStateStats(
             arrival_time=arrival_time) if log_stats else None
 
+        self.reasoning_recovery_initialized = False
+    
+    def initialize_reasoning_recovery(self, sampling_params) -> None:
+        """Initialize reasoning recovery if enabled."""
+        if (sampling_params.enable_reasoning_recovery and 
+            self.logprobs_processor is not None and
+            not self.reasoning_recovery_initialized):
+
+            output_tokens = []
+            if self.detokenizer is not None:
+                output_tokens = self.detokenizer.output_token_ids
+
+            self.logprobs_processor.initialize_reasoning_recovery(
+                sampling_params, self.prompt_token_ids, output_tokens
+            )
+            self.reasoning_recovery_initialized = True
+
     @classmethod
     def from_new_request(
         cls,
@@ -413,11 +430,48 @@ class OutputProcessor:
                 req_state.logprobs_processor.update_from_output(
                     engine_core_output)
 
+                if (hasattr(engine_core_output, 'sampling_params') and 
+                    engine_core_output.sampling_params is not None):
+                    req_state.initialize_reasoning_recovery(
+                        engine_core_output.sampling_params)
+
                 if req_state.logprobs_processor.check_conf_stop():
-                    finish_reason = FinishReason.STOP
-                    stop_reason = (
-                        f"<deepconf-"
-                        f"{req_state.logprobs_processor.conf_threshold}>")
+                    if (req_state.logprobs_processor.reasoning_recovery_state
+                        is not None):
+                        should_stop, recovery_phrase, is_final = (
+                            req_state.logprobs_processor.check_reasoning_recovery_stop()
+                        )
+
+                        if (
+                            recovery_phrase and req_state.detokenizer is not
+                            None
+                           ):
+                                tokenizer = None
+                                if hasattr(req_state.detokenizer, 'tokenizer'):
+                                    tokenizer = req_state.detokenizer.tokenizer
+                                
+                                if tokenizer is not None:
+                                    recovery_tokens = tokenizer.encode(
+                                        recovery_phrase,
+                                        add_special_tokens=False
+                                    )
+                                    req_state.detokenizer.token_ids.extend(recovery_tokens)
+
+                        if should_stop:
+                            finish_reason = FinishReason.STOP
+                            if is_final:
+                                stop_reason = "<reasoning-recovery-final>"
+                            else:
+                                stop_reason = (
+                                    f"<reasoning-recovery-"
+                                    f"{req_state.logprobs_processor.reasoning_recovery_state.recovery_count}>"
+                                )
+                    else:
+                        # Regular DeepConf stop
+                        finish_reason = FinishReason.STOP
+                        stop_reason = (
+                            f"<deepconf-"
+                            f"{req_state.logprobs_processor.conf_threshold}>")
 
             # 4) Create and handle RequestOutput objects.
             if request_output := req_state.make_request_output(
