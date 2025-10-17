@@ -50,12 +50,6 @@ def get_lora_id():
 def is_moe_model(model: nn.Module) -> bool:
     """Checks if the model contains FusedMoE layers and warns the user."""
     if any(isinstance(module, FusedMoE) for module in model.modules()):
-        log_once(
-            "WARNING",
-            "For MoE models, Aphrodite currently does not support fused MoE LoRA "
-            "inference. Please ensure that the loaded LoRA model does not "
-            "contain expert weights."
-        )
         log_once("INFO", f"APHRODITE_ENABLE_LORA_ON_MOE is set to: "
                     f"{envs.APHRODITE_ENABLE_LORA_ON_MOE}")
         if not envs.APHRODITE_ENABLE_LORA_ON_MOE:
