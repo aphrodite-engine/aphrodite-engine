@@ -6,7 +6,7 @@ from typing import Any, Callable, Optional, Union
 import regex as re
 import safetensors.torch
 import torch
-from aphrodite.common.envs import envs as envs
+import aphrodite.common.envs as envs
 
 from loguru import logger
 from torch import nn

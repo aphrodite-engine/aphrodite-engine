@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from aphrodite.common.envs import envs as envs
+import aphrodite.common.envs as envs
 from aphrodite.modeling.layers.fused_moe.fused_moe import (
     activation_without_mul, fused_topk)
 
