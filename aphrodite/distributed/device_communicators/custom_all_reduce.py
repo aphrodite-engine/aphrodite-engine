@@ -141,13 +141,13 @@ class CustomAllreduce:
         assert current_platform.is_cuda_alike()
         fully_connected = current_platform.is_fully_connected(
             physical_device_ids)
-        if world_size > 2 and not fully_connected:
-            if self.rank == 0:
+        if envs.VLLM_FORCE_P2P == 0:
+            if world_size > 2 and not fully_connected:
                 logger.warning(
                     "Custom allreduce is disabled because it's not supported on"
                     " more than two PCIe-only GPUs. To silence this warning, "
                     "specify disable_custom_all_reduce=True explicitly.")
-            return
+                return
         # test P2P capability, this checks software/cudaruntime support
         # this is expensive to compute at the first time
         # then we cache the result
