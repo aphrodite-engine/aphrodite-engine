@@ -6,6 +6,8 @@ from typing import Any, Callable, Optional, Union
 import regex as re
 import safetensors.torch
 import torch
+from aphrodite.common.envs import envs as envs
+
 from loguru import logger
 from torch import nn
 
@@ -49,10 +51,17 @@ def is_moe_model(model: nn.Module) -> bool:
     """Checks if the model contains FusedMoE layers and warns the user."""
     if any(isinstance(module, FusedMoE) for module in model.modules()):
         log_once(
-            "WARNING",
-            "For MoE models, Aphrodite currently does not support fused MoE "
-            "LoRA inference. Please ensure that the loaded LoRA model does "
-            "not contain expert weights.")
+            "For MoE models, Aphrodite currently does not support fused MoE LoRA "
+            "inference. Please ensure that the loaded LoRA model does not "
+            "contain expert weights."
+        )
+        log_once(f"APHRODITE_ENABLE_LORA_ON_MOE is set to: "
+                    f"{envs.APHRODITE_ENABLE_LORA_ON_MOE}")
+        if not envs.APHRODITE_ENABLE_LORA_ON_MOE:
+            log_once(
+                "For MoE models, Aphrodite currently does not support fused MoE LoRA "
+                "inference. Please ensure that the loaded LoRA model does not "
+                "contain expert weights.")
         return True
     return False
 

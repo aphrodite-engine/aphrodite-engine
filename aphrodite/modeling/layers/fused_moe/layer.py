@@ -505,6 +505,23 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
                 expert_map=expert_map,
             )
         else:
+            if envs.VLLM_ENABLE_LORA_ON_MOE:
+                from aphrodite.modeling.layers.fused_moe.fused_moe import (
+                    fused_moe as fused_moe_torch_iterative)
+                return fused_moe_torch_iterative(
+                    hidden_states=x,
+                    w1=layer.w13_weight,
+                    w2=layer.w2_weight,
+                    gating_output=router_logits,
+                    topk=top_k,
+                    renormalize=renormalize,
+                    use_grouped_topk=use_grouped_topk,
+                    num_expert_group=num_expert_group,
+                    topk_group=topk_group,
+                    scoring_func=scoring_func,
+                    routed_scaling_factor=routed_scaling_factor,
+                    e_score_correction_bias=e_score_correction_bias,
+                )
             assert fused_experts is not None
             return fused_experts(
                 hidden_states=x,

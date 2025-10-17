@@ -131,6 +131,7 @@ if TYPE_CHECKING:
     APHRODITE_USE_DEEP_GEMM_E8M0_HOPPER: bool = False
     APHRODITE_SKIP_DEEP_GEMM_WARMUP: bool = False
     APHRODITE_USE_FUSED_MOE_GROUPED_TOPK: bool = True
+    APHRODITE_ENABLE_LORA_ON_MOE: bool = False
     APHRODITE_USE_FLASHINFER_MOE_FP8: bool = False
     APHRODITE_USE_FLASHINFER_MOE_FP4: bool = False
     APHRODITE_FLASHINFER_MOE_BACKEND: str = "throughput"
@@ -978,6 +979,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Whether to use fused grouped_topk used for MoE expert selection.
     "APHRODITE_USE_FUSED_MOE_GROUPED_TOPK":
     lambda: bool(int(os.getenv("APHRODITE_USE_FUSED_MOE_GROUPED_TOPK", "1"))),
+
+    # If set, Aphrodite will use a slower, iterative MoE implementation that is
+    # compatible with LoRA. This is useful for running LoRA on MoE models,
+    # but it will be slower than the default fused MoE implementation.
+    "APHRODITE_ENABLE_LORA_ON_MOE":
+    lambda: bool(int(os.getenv("APHRODITE_ENABLE_LORA_ON_MOE", "0"))),
 
     # Allow use of FlashInfer MoE kernels for fused moe ops.
     "APHRODITE_USE_FLASHINFER_MOE_FP8":
