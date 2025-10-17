@@ -141,7 +141,7 @@ class CustomAllreduce:
         assert current_platform.is_cuda_alike()
         fully_connected = current_platform.is_fully_connected(
             physical_device_ids)
-        if envs.VLLM_FORCE_P2P == 0:
+        if envs.APHRODITE_FORCE_P2P == 0:
             if world_size > 2 and not fully_connected:
                 logger.warning(
                     "Custom allreduce is disabled because it's not supported on"
