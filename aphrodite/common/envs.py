@@ -86,6 +86,7 @@ if TYPE_CHECKING:
     APHRODITE_USE_TRITON_AWQ: bool = False
     APHRODITE_ALLOW_RUNTIME_LORA_UPDATING: bool = False
     APHRODITE_SKIP_P2P_CHECK: bool = False
+    APHRODITE_FORCE_P2P: bool = False
     APHRODITE_DISABLED_KERNELS: list[str] = []
     APHRODITE_USE_V1: bool = True
     APHRODITE_ROCM_USE_AITER: bool = False
@@ -716,6 +717,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # See https://github.com/aphrodite-project/aphrodite/blob/a9b15c606fea67a072416ea0ea115261a2756058/aphrodite/distributed/device_communicators/custom_all_reduce_utils.py#L101-L108 for details. # noqa
     "APHRODITE_SKIP_P2P_CHECK":
     lambda: os.getenv("APHRODITE_SKIP_P2P_CHECK", "1") == "1",
+
+    # If set, Aphrodite will skip the P2P check and assume that P2P is
+    # available. Used for custom all-reduce kernels.
+    "APHRODITE_FORCE_P2P":
+    lambda: bool(int(os.getenv("APHRODITE_FORCE_P2P", "0"))),
 
     # List of quantization kernels that should be disabled, used for testing
     # and performance comparisons. Currently only affects MPLinearKernel
