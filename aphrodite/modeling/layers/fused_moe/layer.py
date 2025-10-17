@@ -506,7 +506,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
             )
         else:
             if envs.VLLM_ENABLE_LORA_ON_MOE:
-                from aphrodite.modeling.layers.fused_moe.fused_moe import (
+                from aphrodite.modeling.layers.fused_moe.moe_torch_iterative import (
                     fused_moe as fused_moe_torch_iterative)
                 return fused_moe_torch_iterative(
                     hidden_states=x,
