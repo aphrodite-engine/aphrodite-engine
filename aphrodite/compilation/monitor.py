@@ -8,6 +8,7 @@ logger = init_logger(__name__)
 
 context_manager = None
 torch_compile_start_time: float = 0.0
+dynamo_progress_task = None
 
 
 def start_monitoring_torch_compile(aphrodite_config: AphroditeConfig):
@@ -25,11 +26,25 @@ def start_monitoring_torch_compile(aphrodite_config: AphroditeConfig):
         context_manager = depyf.prepare_debug(path.as_posix())
         context_manager.__enter__()
 
+    from aphrodite.distributed.parallel_state import is_global_first_rank
+
+    if is_global_first_rank():
+        from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
+        global dynamo_progress_task
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            TimeElapsedColumn(),
+        )
+        progress.start()
+        dynamo_progress_task = (progress, progress.add_task("Analyzing model for compilation (Dynamo)..."))
+
 
 def end_monitoring_torch_compile(aphrodite_config: AphroditeConfig):
     compilation_config: CompilationConfig = aphrodite_config.compilation_config
     if compilation_config.mode == CompilationMode.APHRODITE_COMPILE:
-        logger.info_once(
+        logger.debug_once(
             "torch.compile takes %.2f s in total",
             compilation_config.compilation_time,
             scope="local",

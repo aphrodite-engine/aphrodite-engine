@@ -195,14 +195,14 @@ class CompilerManager:
                 elapsed = now - compilation_start_time
                 compilation_config.compilation_time += elapsed
                 if runtime_shape is None:
-                    logger.info_once(
+                    logger.debug_once(
                         "Directly load the compiled graph(s) for dynamic shape "
                         "from the cache, took %.3f s",
                         elapsed,
                         scope="global"
                     )
                 else:
-                    logger.info(
+                    logger.debug_once(
                         "Directly load the compiled graph(s) for shape %s "
                         "from the cache, took %.3f s",
                         str(runtime_shape),
@@ -237,11 +237,11 @@ class CompilerManager:
             if graph_index == 0:
                 # adds some info logging for the first graph
                 if runtime_shape is None:
-                    logger.info_once(
+                    logger.debug_once(
                         "Cache the graph for dynamic shape for later use", scope="local"
                     )
                 else:
-                    logger.info_once(
+                    logger.debug_once(
                         "Cache the graph of shape %s for later use",
                         str(runtime_shape),
                         scope="local",
@@ -268,13 +268,13 @@ class CompilerManager:
             elapsed = now - compilation_start_time
             compilation_config.compilation_time += elapsed
             if runtime_shape is None:
-                logger.info_once(
+                logger.debug_once(
                     "Compiling a graph for dynamic shape takes %.2f s",
                     elapsed,
                     scope="local",
                 )
             else:
-                logger.info_once(
+                logger.debug_once(
                     "Compiling a graph for shape %s takes %.2f s",
                     runtime_shape,
                     elapsed,
@@ -376,6 +376,12 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
         # When True, it annoyingly dumps the torch.fx.Graph on errors.
         self.extra_traceback = False
 
+        # Initialize progress tracking
+        self.compiled_count = 0
+        self.total_to_compile = len(compile_submod_names)
+        self.progress = None
+        self.progress_task = None
+
     def run(self, *args):
         fake_args = [
             self.fake_mode.from_tensor(t) if isinstance(t, torch.Tensor) else t
@@ -399,6 +405,37 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
             sym_shape_indices = [
                 i for i, x in enumerate(args) if isinstance(x, torch.SymInt)
             ]
+
+            from aphrodite.distributed.parallel_state import is_global_first_rank
+
+            if self.progress is None and is_global_first_rank():
+                from rich.progress import (
+                    BarColumn,
+                    Progress,
+                    TaskProgressColumn,
+                    TextColumn,
+                    TimeRemainingColumn,
+                )
+
+                self.progress = Progress(
+                    TextColumn("[bold blue]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    TextColumn("({task.elapsed:.1f}s)"),
+                    TimeRemainingColumn(),
+                )
+                self.progress.start()
+                self.progress_task = self.progress.add_task(
+                    "Compiling piecewise graphs", total=self.total_to_compile
+                )
+
+            if self.progress_task is not None:
+                self.progress.update(
+                    self.progress_task,
+                    description=f"torch.compile ({self.compiled_count + 1}/"
+                    f"{self.total_to_compile})",
+                )
+
             global compilation_start_time
 
             compiled_graph_for_dynamic_shape = (
@@ -457,6 +494,17 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
                 self.module.__dict__[target] = piecewise_backend
 
             compilation_counter.num_piecewise_capturable_graphs_seen += 1
+
+            # Advance progress
+            self.compiled_count += 1
+            if self.progress_task is not None:
+                self.progress.advance(self.progress_task)
+
+            # Close progress bar when done
+            if self.compiled_count >= self.total_to_compile and self.progress is not None:
+                self.progress.stop()
+                self.progress = None
+                self.progress_task = None
 
         return output
 
@@ -605,11 +653,31 @@ class AphroditeBackend:
 
         disable_cache = envs.APHRODITE_DISABLE_COMPILE_CACHE
 
+        # when dynamo calls the backend, it means the bytecode
+        # transform and analysis are done
+        compilation_counter.num_graphs_seen += 1
+        from .monitor import torch_compile_start_time, dynamo_progress_task
+
+        dynamo_time = time.time() - torch_compile_start_time
+
+        # Stop the dynamo progress spinner before any logging
+        if dynamo_progress_task is not None:
+            progress, _ = dynamo_progress_task
+            progress.stop()
+            from . import monitor
+            monitor.dynamo_progress_task = None
+
+        # Log in order: Dynamo time first, then cache directory
+        logger.debug_once(
+            "Dynamo bytecode transform time: %.2fs", dynamo_time, scope="local"
+        )
+        self.compilation_config.compilation_time += dynamo_time
+
         if disable_cache:
             logger.info_once("Aphrodite's torch.compile cache is disabled.", scope="local")
         else:
             logger.info_once(
-                "Using cache directory: %s for Aphrodite's torch.compile",
+                "torch.compile cache directory: %s",
                 local_cache_dir,
                 scope="local",
             )
@@ -617,17 +685,6 @@ class AphroditeBackend:
         self.compiler_manager.initialize_cache(
             local_cache_dir, disable_cache, self.prefix
         )
-
-        # when dynamo calls the backend, it means the bytecode
-        # transform and analysis are done
-        compilation_counter.num_graphs_seen += 1
-        from .monitor import torch_compile_start_time
-
-        dynamo_time = time.time() - torch_compile_start_time
-        logger.info_once(
-            "Dynamo bytecode transform time: %.2f s", dynamo_time, scope="local"
-        )
-        self.compilation_config.compilation_time += dynamo_time
 
         # we control the compilation process, each instance can only be
         # called once

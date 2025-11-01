@@ -13,7 +13,6 @@ import numpy as np
 import torch
 import torch.distributed
 import torch.nn as nn
-from tqdm import tqdm
 
 import aphrodite.envs as envs
 from aphrodite.attention import Attention, AttentionType
@@ -2893,7 +2892,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 self.model.set_aux_hidden_state_layers(aux_layers)
             time_after_load = time.perf_counter()
         self.model_memory_usage = m.consumed_memory
-        logger.info_once(
+        logger.debug_once(
             "Model loading took %.4f GiB and %.6f seconds",
             self.model_memory_usage / GiB_bytes,
             time_after_load - time_before_load,
@@ -3868,15 +3867,28 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         ), f"Invalid cudagraph runtime mode: {cudagraph_runtime_mode}"
 
         # Only rank 0 should print progress bar during capture
-        if is_global_first_rank():
-            compilation_cases = tqdm(
-                compilation_cases,
-                disable=not self.load_config.use_tqdm_on_load,
-                desc="Capturing CUDA graphs ({}, {})".format(
-                    "decode" if uniform_decode else "mixed prefill-decode",
-                    cudagraph_runtime_mode.name,
-                ),
+        show_progress = is_global_first_rank() and self.load_config.use_tqdm_on_load
+
+        if show_progress:
+            from rich.progress import (
+                Progress, BarColumn, TextColumn, 
+                TimeElapsedColumn, MofNCompleteColumn
             )
+
+            desc = "Capturing CUDA graphs ({}, {})".format(
+                "decode" if uniform_decode else "mixed prefill-decode",
+                cudagraph_runtime_mode.name,
+            )
+
+            progress = Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+            )
+            progress.start()
+            task = progress.add_task(f"[bold blue]{desc}", total=len(compilation_cases))
 
         # We skip EPLB here since we don't want to record dummy metrics
         for num_tokens, activate_lora in compilation_cases:
@@ -3921,6 +3933,13 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 remove_lora=False,
                 activate_lora=activate_lora,
             )
+            
+            if show_progress:
+                progress.update(task, advance=1)
+        
+        if show_progress:
+            progress.stop()
+        
         self.maybe_remove_all_loras(self.lora_config)
 
     def initialize_attn_backend(self, kv_cache_config: KVCacheConfig) -> None:

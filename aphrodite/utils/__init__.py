@@ -139,9 +139,9 @@ def length_from_prompt_token_ids_or_embeds(
 def tensor_progress_bar(iterable: Iterable[tuple[str, torch.Tensor]],
                         final_bytes: int,
                         desc="Processing"):
-    from aphrodite.distributed.parallel_state import (
-        get_tensor_model_parallel_rank)
-    show_progress = get_tensor_model_parallel_rank() == 0
+    from aphrodite.distributed.parallel_state import is_global_first_rank
+    
+    show_progress = is_global_first_rank()
     units = 1024**(int(math.log2(final_bytes)) // 10)
 
     if show_progress:

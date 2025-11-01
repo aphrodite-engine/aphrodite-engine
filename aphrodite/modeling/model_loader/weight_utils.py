@@ -592,7 +592,7 @@ def safetensors_weights_iterator(
     for st_file in tqdm(
         hf_weights_files,
         desc=loading_desc,
-        disable=not enable_tqdm(use_tqdm_on_load),
+        disable=True, #not enable_tqdm(use_tqdm_on_load),
         bar_format=_BAR_FORMAT,
     ):
         if safetensors_load_strategy == "eager":
@@ -677,7 +677,7 @@ def runai_safetensors_weights_iterator(
             total=total_tensors,
             desc="Loading safetensors using Runai Model Streamer",
             bar_format=_BAR_FORMAT,
-            disable=not enable_tqdm(use_tqdm_on_load),
+            disable=True, #not enable_tqdm(use_tqdm_on_load),
             mininterval=2,
         )
 
@@ -719,7 +719,7 @@ def fastsafetensors_weights_iterator(
     for f_list in tqdm(
         weight_files_sub_lists,
         desc="Loading safetensors using Fastsafetensor loader",
-        disable=not enable_tqdm(use_tqdm_on_load),
+        disable=True, #not enable_tqdm(use_tqdm_on_load),
         bar_format=_BAR_FORMAT,
     ):
         loader = _init_loader(pg, device, f_list, nogds=nogds)

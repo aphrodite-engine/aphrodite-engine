@@ -209,8 +209,11 @@ def load_weights_and_online_quantize(
                 setattr(weight, attr_name, _bond_method_to_cls(attr, weight))
 
     # Step I1: reload bfloat16 / high precision weights
+    weights_iter, total_bytes = model_loader.get_all_weights(model_config, model)
+    from aphrodite.utils import tensor_progress_bar
+
     loaded_weights = model.load_weights(
-        model_loader.get_all_weights(model_config, model)
+        tensor_progress_bar(weights_iter, total_bytes, "Loading model weights")
     )
 
     # Step I2: online quantize the weights

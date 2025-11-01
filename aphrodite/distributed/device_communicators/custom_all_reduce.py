@@ -208,7 +208,7 @@ class CustomAllreduce:
 
     def register_graph_buffers(self):
         handle, offset = ops.get_graph_buffer_ipc_meta(self._ptr)
-        logger.info_once("Registering %d cuda graph addresses", len(offset), scope="global")
+        logger.debug_once("Registering %d cuda graph addresses", len(offset), scope="global")
         # We cannot directly use `dist.all_gather_object` here
         # because it is incompatible with `gloo` backend under inference mode.
         # see https://github.com/pytorch/pytorch/issues/126032 for details.

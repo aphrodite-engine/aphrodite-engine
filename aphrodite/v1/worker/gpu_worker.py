@@ -358,7 +358,7 @@ class Worker(WorkerBase):
         )
         logger.debug(profile_result)
         logger.info_once(
-            "Available KV cache memory: %.2f GiB",
+            "Available KV cache memory per GPU: %.2f GiB",
             GiB(self.available_kv_cache_memory_bytes),
             scope="local",
         )
