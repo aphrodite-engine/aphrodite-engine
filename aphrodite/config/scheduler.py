@@ -172,24 +172,15 @@ class SchedulerConfig:
         if self.max_num_seqs is None:
             self.max_num_seqs = 128
 
-        if self.single_user_mode:
+        if self.single_user_mode and self.max_num_seqs != 1:
             # In single user mode, we only need to support one sequence at a
-            # time.
-            original_max_num_seqs = self.max_num_seqs
-            original_cuda_graph_sizes = self.cuda_graph_sizes.copy()
-
-            if self.max_num_seqs != 1:
-                self.max_num_seqs = 1
-
-            # In single user mode, we only need CUDA graphs for batch size 1
-            if self.cuda_graph_sizes != [2]:
-                self.cuda_graph_sizes = [2]
-
-            if original_max_num_seqs != 1 or original_cuda_graph_sizes != [2]:
-                logger.info(
-                    "Single user mode enabled. Setting max_num_seqs from {} to"
-                    " 1, and cuda_graph_sizes from {} to [2].",
-                    original_max_num_seqs, original_cuda_graph_sizes)
+            # time. max_num_seqs will be set to 1 here, and cuda_graph_sizes
+            # will be set to [2] in AphroditeConfig.__post_init__.
+            logger.info(
+                "Single user mode enabled. Setting max_num_seqs from %d to 1.",
+                self.max_num_seqs
+            )
+            self.max_num_seqs = 1
 
         if is_encoder_decoder:
             # Chunked prefill should be disabled for encoder-decoder models.

@@ -415,6 +415,23 @@ class AphroditeConfig:
                 self.compilation_config.cudagraph_num_of_warmups = 1
 
             self._set_cudagraph_sizes()
+
+            # Handle single_user_mode: In single user mode, we only need CUDA
+            # graphs for batch size 1 (padded to 2 for cudagraph capture)
+            if self.scheduler_config.single_user_mode:
+                original_cudagraph_capture_sizes = (
+                    self.compilation_config.cudagraph_capture_sizes.copy()
+                )
+                if self.compilation_config.cudagraph_capture_sizes != [2]:
+                    self.compilation_config.cudagraph_capture_sizes = [2]
+                    self.compilation_config.max_cudagraph_capture_size = 2
+                    logger.info(
+                        "Single user mode: Setting cudagraph_capture_sizes "
+                        "from %s to [2].",
+                        original_cudagraph_capture_sizes,
+                    )
+                    # Reinitialize after changing sizes
+                    self.compilation_config.post_init_cudagraph_sizes()
         else:
             self.compilation_config.cudagraph_mode = CUDAGraphMode.NONE
 
