@@ -421,33 +421,36 @@ def init_gloo_process_group(
     Stateless init ProcessGroup with gloo backend compatible with
     different torch versions.
     """
-    if is_torch_equal_or_newer("2.6"):
-        pg = ProcessGroup(
-            prefix_store,
-            group_rank,
-            group_size,
-        )
-    else:
-        options = ProcessGroup.Options(backend="gloo")
-        pg = ProcessGroup(
-            prefix_store,
-            group_rank,
-            group_size,
-            options,
-        )
-    from torch.distributed.distributed_c10d import ProcessGroupGloo
+    from aphrodite.utils.system_utils import suppress_c_lib_output
+    
+    with suppress_c_lib_output():
+        if is_torch_equal_or_newer("2.6"):
+            pg = ProcessGroup(
+                prefix_store,
+                group_rank,
+                group_size,
+            )
+        else:
+            options = ProcessGroup.Options(backend="gloo")
+            pg = ProcessGroup(
+                prefix_store,
+                group_rank,
+                group_size,
+                options,
+            )
+        from torch.distributed.distributed_c10d import ProcessGroupGloo
 
-    backend_class = ProcessGroupGloo(
-        prefix_store, group_rank, group_size, timeout=timeout
-    )
-    backend_type = ProcessGroup.BackendType.GLOO
-    device = torch.device("cpu")
-    if is_torch_equal_or_newer("2.6"):
-        # _set_default_backend is supported in torch >= 2.6
-        pg._set_default_backend(backend_type)
-    backend_class._set_sequence_number_for_group()
+        backend_class = ProcessGroupGloo(
+            prefix_store, group_rank, group_size, timeout=timeout
+        )
+        backend_type = ProcessGroup.BackendType.GLOO
+        device = torch.device("cpu")
+        if is_torch_equal_or_newer("2.6"):
+            # _set_default_backend is supported in torch >= 2.6
+            pg._set_default_backend(backend_type)
+        backend_class._set_sequence_number_for_group()
 
-    pg._register_backend(device, backend_type, backend_class)
+        pg._register_backend(device, backend_type, backend_class)
     return pg
 
 

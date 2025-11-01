@@ -195,10 +195,11 @@ class CompilerManager:
                 elapsed = now - compilation_start_time
                 compilation_config.compilation_time += elapsed
                 if runtime_shape is None:
-                    logger.info(
+                    logger.info_once(
                         "Directly load the compiled graph(s) for dynamic shape "
                         "from the cache, took %.3f s",
                         elapsed,
+                        scope="global"
                     )
                 else:
                     logger.info(

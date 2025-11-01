@@ -79,7 +79,7 @@ class EngineCore:
 
         self.aphrodite_config = aphrodite_config
         if aphrodite_config.parallel_config.data_parallel_rank == 0:
-            logger.info(
+            logger.debug(
                 "Initializing a V1 LLM engine (v%s) with config: %s",
                 APHRODITE_VERSION,
                 aphrodite_config,
@@ -161,7 +161,7 @@ class EngineCore:
             deque[tuple[Future[ModelRunnerOutput], SchedulerOutput]] | None
         ) = None
         if self.batch_queue_size > 1:
-            logger.info("Batch queue is enabled with size %d", self.batch_queue_size)
+            logger.info_once("Batch queue is enabled with size %d", self.batch_queue_size, scope="global")
             self.batch_queue = deque(maxlen=self.batch_queue_size)
 
         self.request_block_hasher: Callable[[Request], list[BlockHash]] | None = None

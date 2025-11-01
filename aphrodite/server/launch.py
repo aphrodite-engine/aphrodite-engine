@@ -38,7 +38,7 @@ async def serve_http(
         if methods is None or path is None:
             continue
 
-        logger.info("Route: %s, Methods: %s", path, ", ".join(methods))
+        logger.debug("Route: %s, Methods: %s", path, ", ".join(methods))
 
     # Extract header limit options if present
     h11_max_incomplete_event_size = uvicorn_kwargs.pop(

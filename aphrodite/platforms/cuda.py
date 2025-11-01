@@ -287,7 +287,7 @@ class CudaPlatformBase(Platform):
                 flash_attn_supports_mla)
 
             if use_sparse:
-                logger.info_once("Using Sparse MLA backend on V1 engine.")
+                logger.info_once("Using Sparse MLA backend on V1 engine.", scope="global")
                 return (
                     "aphrodite.v1.attention.backends.mla.flashmla_sparse."
                     "FlashMLASparseBackend"
@@ -323,7 +323,7 @@ class CudaPlatformBase(Platform):
                     set_kv_cache_layout)
 
                 set_kv_cache_layout("HND")
-                logger.info_once("Using FlashInfer MLA backend on V1 engine.")
+                logger.info_once("Using FlashInfer MLA backend on V1 engine.", scope="global")
                 return (
                     "aphrodite.v1.attention.backends.mla.flashinfer_mla.FlashInferMLABackend"
                 )
@@ -335,15 +335,15 @@ class CudaPlatformBase(Platform):
                         block_size,
                     )
                 else:
-                    logger.info_once("Using FlashMLA backend on V1 engine.")
+                    logger.info_once("Using FlashMLA backend on V1 engine.", scope="global")
                     return "aphrodite.v1.attention.backends.mla.flashmla.FlashMLABackend"
             if use_flashattn:
-                logger.info_once("Using FlashAttention MLA backend on V1 engine.")
+                logger.info_once("Using FlashAttention MLA backend on V1 engine.", scope="global")
                 return (
                     "aphrodite.v1.attention.backends.mla.flashattn_mla.FlashAttnMLABackend"
                 )
             if use_triton:
-                logger.info_once("Using Triton MLA backend on V1 engine.")
+                logger.info_once("Using Triton MLA backend on V1 engine.", scope="global")
                 return "aphrodite.v1.attention.backends.mla.triton_mla.TritonMLABackend"
         if use_v1:
             FLASHINFER_V1 = "aphrodite.v1.attention.backends.flashinfer.FlashInferBackend"  # noqa: E501
@@ -364,7 +364,7 @@ class CudaPlatformBase(Platform):
             )
 
             if selected_backend == _Backend.FLASHINFER:
-                logger.info_once("Using FlashInfer backend on V1 engine.")
+                logger.info_once("Using FlashInfer backend on V1 engine.", scope="global")
                 if cls.has_device_capability(100):
                     from aphrodite.v1.attention.backends.utils import (
                         set_kv_cache_layout)
@@ -372,19 +372,19 @@ class CudaPlatformBase(Platform):
                     set_kv_cache_layout("HND")
                 return FLASHINFER_V1
             elif selected_backend == _Backend.FLEX_ATTENTION:
-                logger.info_once("Using FlexAttention backend on V1 engine.")
+                logger.info_once("Using FlexAttention backend on V1 engine.", scope="global")
                 return FLEX_ATTENTION_V1
             elif selected_backend == _Backend.TRITON_ATTN:
-                logger.info_once("Using Triton backend on V1 engine.")
+                logger.info_once("Using Triton backend on V1 engine.", scope="global")
                 return TRITON_ATTN
             elif selected_backend == _Backend.FLASH_ATTN:
-                logger.info_once("Using Flash Attention backend on V1 engine.")
+                logger.info_once("Using Flash Attention backend on V1 engine.", scope="global")
                 return FLASH_ATTN_V1
             elif selected_backend == _Backend.TREE_ATTN:
-                logger.info_once("Using Tree Attention backend on V1 engine.")
+                logger.info_once("Using Tree Attention backend on V1 engine.", scope="global")
                 return TREE_ATTN_V1
             elif selected_backend == _Backend.XFORMERS:
-                logger.info_once("Using XFormers backend on V1 engine.")
+                logger.info_once("Using XFormers backend on V1 engine.", scope="global")
                 return XFORMERS_V1
 
             from aphrodite.attention.selector import is_attn_backend_supported
@@ -400,7 +400,8 @@ class CudaPlatformBase(Platform):
 
                     logger.info_once(
                         "Using FlashInfer backend with HND KV cache layout on "
-                        "V1 engine by default for Blackwell (SM 10.0) GPUs."
+                        "V1 engine by default for Blackwell (SM 10.0) GPUs.",
+                        scope="global"
                     )
                     set_kv_cache_layout("HND")
 
@@ -410,23 +411,24 @@ class CudaPlatformBase(Platform):
                     logger.warning_once(
                         "FlashInfer failed to import for V1 engine on "
                         "Blackwell (SM 10.0) GPUs; it is recommended to "
-                        "install FlashInfer for better performance."
+                        "install FlashInfer for better performance.",
+                        scope="global"
                     )
 
             # FlashAttention is the default for SM 8.0+ GPUs
             if cls.has_device_capability(80):
                 if (has_sink or use_fp8_kv_cache) and not cls.is_device_capability(90):
-                    logger.info_once("Using Triton backend on V1 engine.")
+                    logger.info_once("Using Triton backend on V1 engine.", scope="global")
                     return TRITON_ATTN
                 elif is_default_backend_supported := is_attn_backend_supported(
                     FLASH_ATTN_V1, head_size, dtype, allow_import_error=False
                 ):
-                    logger.info_once("Using Flash Attention backend on V1 engine.")
+                    logger.info_once("Using Flash Attention backend on V1 engine.", scope="global")
                     return FLASH_ATTN_V1
 
             # FlexAttention is the default for older GPUs
             else:
-                logger.info_once("Using FlexAttention backend on V1 engine.")
+                logger.info_once("Using FlexAttention backend on V1 engine.", scope="global")
                 return FLEX_ATTENTION_V1
 
             assert not is_default_backend_supported
@@ -440,6 +442,7 @@ class CudaPlatformBase(Platform):
             logger.info_once(
                 "Using FlexAttention backend for %s on V1 engine.",
                 ", ".join(f"{k}={v}" for k, v in use_flex_attention_reason.items()),
+                scope="global"
             )
             return FLEX_ATTENTION_V1
 

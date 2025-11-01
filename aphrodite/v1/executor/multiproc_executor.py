@@ -740,7 +740,7 @@ def set_multiprocessing_worker_envs():
         "OMP_NUM_THREADS" not in os.environ
         and (current_parallelism := torch.get_num_threads()) > default_omp_num_threads
     ):
-        logger.warning(
+        logger.debug(
             "Reducing Torch parallelism from %d threads to %d to avoid "
             "unnecessary CPU contention. Set OMP_NUM_THREADS in the "
             "external environment to tune this value as needed.",

@@ -317,13 +317,16 @@ class GroupCoordinator:
         self_device_group = None
         self_cpu_group = None
 
+        from aphrodite.utils.system_utils import suppress_c_lib_output
+
         for ranks in group_ranks:
             device_group = torch.distributed.new_group(
                 ranks, backend=torch_distributed_backend
             )
             # a group with `gloo` backend, to allow direct coordination between
             # processes through the CPU.
-            cpu_group = torch.distributed.new_group(ranks, backend="gloo")
+            with suppress_c_lib_output():
+                cpu_group = torch.distributed.new_group(ranks, backend="gloo")
             if self.rank in ranks:
                 self.ranks = ranks
                 self.world_size = len(ranks)
@@ -1316,16 +1319,21 @@ def initialize_model_parallel(
         group_ranks, get_world_group().local_rank, backend, group_name="ep"
     )
 
-    logger.info_once(
-        "rank %s in world size %s is assigned as "
-        "DP rank %s, PP rank %s, TP rank %s, EP rank %s",
-        rank,
-        world_size,
-        _DP.rank_in_group,
-        _PP.rank_in_group,
-        _TP.rank_in_group,
-        _EP.rank_in_group,
-    )
+    if rank == 0:
+        parallel_info = []
+        if _DP.world_size > 1:
+            parallel_info.append(f"DP={_DP.world_size}")
+        if _PP.world_size > 1:
+            parallel_info.append(f"PP={_PP.world_size}")
+        if _TP.world_size > 1:
+            parallel_info.append(f"TP={_TP.world_size}")
+        if _EP.world_size > 1:
+            parallel_info.append(f"EP={_EP.world_size}")
+
+        if parallel_info:
+            logger.info("world_size=%s, %s", world_size, ", ".join(parallel_info))
+        else:
+            logger.info("world_size=%s, single_gpu", world_size)
 
 
 def ensure_model_parallel_initialized(

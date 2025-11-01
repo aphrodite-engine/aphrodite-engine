@@ -97,7 +97,7 @@ class PyNcclCommunicator:
         if self.rank == 0:
             # get the unique id from NCCL
             self.unique_id = self.nccl.ncclGetUniqueId()
-            logger.info_once(
+            logger.debug_once(
                 "Aphrodite is using nccl==%s", self.nccl.ncclGetVersion(), scope="local"
             )
         else:

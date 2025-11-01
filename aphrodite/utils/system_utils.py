@@ -53,6 +53,43 @@ def set_env_var(key: str, value: str) -> Iterator[None]:
             os.environ[key] = old
 
 
+@contextlib.contextmanager
+def suppress_c_lib_output():
+    """
+    Suppress stdout/stderr from C libraries at the file descriptor level.
+
+    Example:
+        with suppress_c_lib_output():
+            # C library calls that would normally print to stdout/stderr
+            torch.distributed.new_group(ranks, backend="gloo")
+    """
+    if not envs.APHRODITE_SUPPRESS_C_LIB_OUTPUT:
+        yield
+        return
+ 
+    stdout_fd = sys.stdout.fileno()
+    stderr_fd = sys.stderr.fileno()
+    stdout_dup = os.dup(stdout_fd)
+    stderr_dup = os.dup(stderr_fd)
+
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(devnull_fd, stdout_fd)
+        os.dup2(devnull_fd, stderr_fd)
+        yield
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(stdout_dup, stdout_fd)
+        os.dup2(stderr_dup, stderr_fd)
+        os.close(stdout_dup)
+        os.close(stderr_dup)
+        os.close(devnull_fd)
+
+
 # File path utilities
 
 
@@ -137,9 +174,42 @@ def set_process_title(
     setproctitle.setproctitle(f"{prefix}::{name}")
 
 
+def _simplify_process_name(process_name: str) -> str:
+    """Simplify process names to match the desired format.
+    
+    Examples:
+        EngineCore -> Engine
+        EngineCore_DP0 -> Engine (DP0)
+        Worker_PP0 -> Worker (PP0)
+        Worker_TP1 -> Worker (TP1)
+        APIServer -> API
+        APIServer_0 -> API (0)
+    """
+    if process_name.startswith("EngineCore"):
+        if "_" in process_name:
+            suffix = process_name.split("_", 1)[1]
+            return f"Engine ({suffix})"
+        return "Engine"
+    
+    if process_name.startswith("Worker"):
+        if "_" in process_name:
+            suffix = process_name.split("_", 1)[1]
+            return f"Worker ({suffix})"
+        return "Worker"
+    
+    if process_name.startswith("APIServer"):
+        if "_" in process_name:
+            suffix = process_name.split("_", 1)[1]
+            return f"API ({suffix})"
+        return "API"
+    
+    return process_name
+
+
 def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
     """Add colored prefix to file output for log decoration."""
-    prefix = f"{CYAN}({worker_name} pid={pid}){RESET} "
+    simplified_name = _simplify_process_name(worker_name)
+    prefix = f"{CYAN}({simplified_name}){RESET} "
     file_write = file.write
 
     def write_with_prefix(s: str):
