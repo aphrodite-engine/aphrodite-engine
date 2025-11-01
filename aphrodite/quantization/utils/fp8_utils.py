@@ -770,10 +770,11 @@ def get_w8a8_block_fp8_configs(
 
     # If no optimized configuration is available, we will use the default
     # configuration
-    logger.warning(
+    logger.warning_once(
         "Using default W8A8 Block FP8 kernel config. Performance might "
         "be sub-optimal! Config file not found at %s",
         config_file_path,
+        scope="global",
     )
     return None
 
