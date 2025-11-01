@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from aphrodite.common.logits_processor import (
+    LogitsProcessor as RequestLogitsProcessor)
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.logger import init_logger
-from aphrodite.logits_process import LogitsProcessor as RequestLogitsProcessor
 from aphrodite.v1.sample.logits_processor.builtin import (
     LogitBiasLogitsProcessor, MinPLogitsProcessor, MinTokensLogitsProcessor,
     process_dict_updates)

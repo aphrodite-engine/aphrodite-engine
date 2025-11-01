@@ -23,9 +23,9 @@ class RunBatchSubcommand(CLISubcommand):
     def cmd(args: argparse.Namespace) -> None:
         from aphrodite.endpoints.openai.run_batch import main as run_batch_main
 
-        logger.info("Aphrodite batch processing API version {}",
+        logger.info("Aphrodite batch processing API version %s",
                     importlib.metadata.version("aphrodite-engine"))
-        logger.info("args: {}", args)
+        logger.info("args: %s", args)
 
         # Start the Prometheus metrics server.
         # LLMEngine uses the Prometheus client

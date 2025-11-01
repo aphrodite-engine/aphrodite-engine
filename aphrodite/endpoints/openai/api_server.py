@@ -38,7 +38,6 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from typing_extensions import assert_never
 
 import aphrodite.envs as envs
-from aphrodite.common.logger import log_once
 from aphrodite.config import AphroditeConfig
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.args import (make_arg_parser,
@@ -402,7 +401,7 @@ async def ping(raw_request: Request) -> Response:
 
 
 @router.post(
-    "/tokenize",
+    "/v1/tokenize",
     dependencies=[Depends(validate_json_request)],
     responses={
         HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
@@ -434,7 +433,7 @@ async def tokenize(request: TokenizeRequest, raw_request: Request):
 
 
 @router.post(
-    "/detokenize",
+    "/v1/detokenize",
     dependencies=[Depends(validate_json_request)],
     responses={
         HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
@@ -649,37 +648,6 @@ async def create_chat_completion(request: ChatCompletionRequest,
                             status_code=generator.error.code)
 
     elif isinstance(generator, ChatCompletionResponse):
-        return JSONResponse(content=generator.model_dump())
-
-    return StreamingResponse(content=generator, media_type="text/event-stream")
-
-
-@router.post(
-    "/v1/messages",
-    dependencies=[Depends(validate_json_request)],
-    responses={
-        HTTPStatus.OK.value: {"content": {"text/event-stream": {}}},
-        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
-        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
-        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
-    },
-)
-@with_cancellation
-@load_aware_call
-async def create_messages(request: AnthropicMessagesRequest,
-                          raw_request: Request):
-    handler = messages(raw_request)
-    if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Anthropic Messages API")
-
-    generator = await handler.create_message(request, raw_request)
-
-    if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
-
-    elif isinstance(generator, AnthropicMessagesResponse):
         return JSONResponse(content=generator.model_dump())
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
@@ -981,8 +949,7 @@ async def do_rerank(request: RerankRequest, raw_request: Request):
 )
 @with_cancellation
 async def do_rerank_v1(request: RerankRequest, raw_request: Request):
-    log_once(
-        "warning",
+    logger.warning_once(
         "To indicate that the rerank API is not part of the standard OpenAI"
         " API, we have located it at `/rerank`. Please update your client "
         "accordingly. (Note: Conforms to JinaAI rerank API)",
@@ -1036,7 +1003,7 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         device_str = raw_request.query_params.get("device")
         if device_str is not None:
             device = Device[device_str.upper()]
-        logger.info("Resetting prefix cache with specific {}...", str(device))
+        logger.info("Resetting prefix cache with specific %s...", str(device))
         await engine_client(raw_request).reset_prefix_cache(device)
         return Response(status_code=200)
 
@@ -1065,7 +1032,7 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         if tags == []:
             # set to None to wake up all tags if no tags are provided
             tags = None
-        logger.info("wake up the engine with tags: {}", tags)
+        logger.info("wake up the engine with tags: %s", tags)
         await engine_client(raw_request).wake_up(tags)
         # FIXME: in v0 with frontend multiprocessing, the wake-up command
         # is sent but does not finish yet when we return a response.
@@ -1156,7 +1123,7 @@ async def scale_elastic_ep(raw_request: Request):
                             detail="Scale failed due to request drain timeout "
                             f"after {drain_timeout} seconds") from e
     except Exception as e:
-        logger.error("Scale failed: {}", e)
+        logger.error("Scale failed: %s", e)
         raise HTTPException(status_code=500, detail="Scale failed") from e
     finally:
         _scaling_elastic_ep = False
@@ -1432,7 +1399,7 @@ async def get_kobold_lite_ui():
             with open(klitepath, "r", encoding="utf-8") as f:
                 kobold_lite_ui = f.read()
         else:
-            logger.error("Kobold Lite UI not found at " + klitepath)
+            logger.error("Kobold Lite UI not found at %s", klitepath)
     return HTMLResponse(content=kobold_lite_ui)
 
 
@@ -1446,7 +1413,7 @@ def load_log_config(log_config_file: str | None) -> dict | None:
         with open(log_config_file) as f:
             return json.load(f)
     except Exception as e:
-        logger.warning("Failed to load log config from file {}: error {}",
+        logger.warning("Failed to load log config from file %s: error %s",
                        log_config_file, e)
         return None
 
@@ -1688,7 +1655,7 @@ def _log_streaming_response(response, response_body: list) -> None:
                     return
 
     response.body_iterator = iterate_in_threadpool(buffered_iterator())
-    logger.info("response_body={streaming_started: chunks={}}",
+    logger.info("response_body={streaming_started: chunks=%s}",
                 len(response_body))
 
 
@@ -1696,7 +1663,7 @@ def _log_non_streaming_response(response_body: list) -> None:
     """Log non-streaming response."""
     try:
         decoded_body = response_body[0].decode()
-        logger.info("response_body={{}}", decoded_body)
+        logger.info("response_body=%s", decoded_body)
     except UnicodeDecodeError:
         logger.info("response_body={<binary_data>}")
 
@@ -1909,22 +1876,6 @@ async def init_app_state(
         if "generate" in supported_tasks
         else None
     )
-    state.openai_serving_messages = (
-        OpenAIServingMessages(
-            engine_client,
-            state.openai_serving_models,
-            args.response_role,
-            request_logger=request_logger,
-            chat_template=resolved_chat_template,
-            return_tokens_as_token_ids=args.return_tokens_as_token_ids,
-            reasoning_parser=args.reasoning_parser,
-            enable_auto_tools=args.enable_auto_tool_choice,
-            tool_parser=args.tool_call_parser,
-            log_error_stack=args.log_error_stack,
-        )
-        if "generate" in supported_tasks
-        else None
-    )
     state.openai_serving_completion = (
         OpenAIServingCompletion(
             engine_client,
@@ -2018,7 +1969,8 @@ async def init_app_state(
         if "transcription" in supported_tasks
         else None
     )
-    state.openai_serving_kobold = (OpenAIServingKobold(
+    state.openai_serving_kobold = (
+        OpenAIServingKobold(
             engine_client,
             state.openai_serving_models,
             request_logger=request_logger,
@@ -2071,7 +2023,7 @@ def setup_server(args):
     """Validate API server args, set up signal handler, create socket
     ready to serve."""
 
-    logger.info("Aphrodite API server version {}", APHRODITE_VERSION)
+    logger.info("Aphrodite API server version %s", APHRODITE_VERSION)
     log_non_default_args(args)
 
     if args.tool_parser_plugin and len(args.tool_parser_plugin) > 3:
@@ -2172,9 +2124,6 @@ async def run_server_worker(listen_address,
         )  # noqa: E501
         logger.info(
             f"Responses API:                   {protocol}://{host_name}:{port_str}{root_path}/v1/responses"
-        )  # noqa: E501
-        logger.info(
-            f"Anthropic Messages API:          {protocol}://{host_name}:{port_str}{root_path}/v1/messages"
         )  # noqa: E501
         logger.info(
             f"Embeddings API:                  {protocol}://{host_name}:{port_str}{root_path}/v1/embeddings"

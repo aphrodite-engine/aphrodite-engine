@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 
-from aphrodite.common.logger import log_once
 from aphrodite.common.sampling_params import SamplerID
 from aphrodite.config.model import LogprobsMode
 from aphrodite.logger import init_logger
@@ -106,7 +105,7 @@ class Sampler(nn.Module):
         # Use float32 for the logits.
         logits = logits.to(torch.float32)
 
-        logits = self.apply_logits_processors(
+        logits = self.sampling_ops.apply_logits_processors(
             logits, sampling_metadata, predict_bonus_token
         )
 
@@ -208,8 +207,7 @@ class Sampler(nn.Module):
         else:
             # Warn if both custom order and temp_last are specified
             if do_temp_last:
-                log_once(
-                    "WARNING",
+                logger.warning_once(
                     "Both sampler_priority and temperature_last=True "
                     "were specified. Using custom sampler_priority order "
                     "and ignoring temperature_last.")

@@ -5,7 +5,7 @@ from typing import Any, Generic, TypeVar
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import AphroditeConfig
-from aphrodite.entrypoints.openai.protocol import IOProcessorResponse
+from aphrodite.endpoints.openai.protocol import IOProcessorResponse
 from aphrodite.inputs.data import PromptType
 from aphrodite.outputs import PoolingRequestOutput
 

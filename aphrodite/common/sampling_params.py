@@ -10,7 +10,6 @@ import msgspec
 from pydantic.dataclasses import dataclass
 from typing_extensions import Annotated
 
-import aphrodite.envs as envs
 from aphrodite.config import SchedulerConfig
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
@@ -19,8 +18,6 @@ logger = init_logger(__name__)
 
 _SAMPLING_EPS = 1e-5
 _MAX_TEMP = 1e-2
-
-APHRODITE_NO_DEPRECATION_WARNING = envs.APHRODITE_NO_DEPRECATION_WARNING
 
 
 class SamplingType(IntEnum):
@@ -55,12 +52,12 @@ class StructuredOutputsParams:
         """Validate that some fields are mutually exclusive."""
         count = sum(
             [
-                self.json is not None,
-                self.regex is not None,
-                self.choice is not None,
-                self.grammar is not None,
+                bool(self.json),
+                bool(self.regex),
+                bool(self.choice),
+                bool(self.grammar),
                 self.json_object is not None,
-                self.structural_tag is not None,
+                bool(self.structural_tag),
             ]
         )
         if count > 1:
@@ -142,7 +139,7 @@ class SamplerID(IntEnum):
     XTC = 13
 
     @classmethod
-    def from_str(cls, value: Union[str, int]) -> "SamplerID":
+    def from_str(cls, value: str | int) -> "SamplerID":
         """Convert string or int to SamplerID enum.
 
         Args:
@@ -874,12 +871,6 @@ class SamplingParams(
 
         self._verify_args()
         if self.use_beam_search:
-            if not APHRODITE_NO_DEPRECATION_WARNING:
-                logger.warning(
-                    "[IMPORTANT] We plan to discontinue the support for beam "
-                    "search in the next major release. set "
-                    "APHRODITE_NO_DEPRECATION_WARNING=1 to "
-                    "suppress this warning.")
             self._verify_beam_search()
         else:
             self._verify_non_beam_search()

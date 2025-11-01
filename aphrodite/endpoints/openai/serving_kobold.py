@@ -25,7 +25,6 @@ class OpenAIServingKobold(OpenAIServing):
     def __init__(
         self,
         engine_client: EngineClient,
-        model_config,
         models: OpenAIServingModels,
         *,
         request_logger: Optional[RequestLogger] = None,
@@ -33,7 +32,6 @@ class OpenAIServingKobold(OpenAIServing):
     ) -> None:
         super().__init__(
             engine_client=engine_client,
-            model_config=model_config,
             models=models,
             request_logger=request_logger,
             **kwargs

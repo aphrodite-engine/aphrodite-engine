@@ -28,14 +28,14 @@ MODULE_ATTRS = {
     "PoolingParams": ".common.pooling_params:PoolingParams",
     "ClassificationOutput": ".outputs:ClassificationOutput",
     "ClassificationRequestOutput": ".outputs:ClassificationRequestOutput",
-    "CompletionOutput": ".common.outputs:CompletionOutput",
-    "EmbeddingOutput": ".common.outputs:EmbeddingOutput",
-    "EmbeddingRequestOutput": ".common.outputs:EmbeddingRequestOutput",
-    "PoolingOutput": ".common.outputs:PoolingOutput",
-    "PoolingRequestOutput": ".common.outputs:PoolingRequestOutput",
-    "RequestOutput": ".common.outputs:RequestOutput",
-    "ScoringOutput": ".common.outputs:ScoringOutput",
-    "ScoringRequestOutput": ".common.outputs:ScoringRequestOutput",
+    "CompletionOutput": ".outputs:CompletionOutput",
+    "EmbeddingOutput": ".outputs:EmbeddingOutput",
+    "EmbeddingRequestOutput": ".outputs:EmbeddingRequestOutput",
+    "PoolingOutput": ".outputs:PoolingOutput",
+    "PoolingRequestOutput": ".outputs:PoolingRequestOutput",
+    "RequestOutput": ".outputs:RequestOutput",
+    "ScoringOutput": ".outputs:ScoringOutput",
+    "ScoringRequestOutput": ".outputs:ScoringRequestOutput",
 }
 
 if typing.TYPE_CHECKING:

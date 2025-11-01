@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from aphrodite.entrypoints.chat_utils import ChatCompletionMessageParam
+    from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
 
 
 class TokenizerBase(ABC):

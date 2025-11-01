@@ -6,6 +6,7 @@ from http import HTTPStatus
 from typing import (Annotated, Any, ClassVar, Generic, Literal, TypeAlias,
                     TypeVar)
 
+from pydantic_core.core_schema import NoneSchema
 import regex as re
 import torch
 from fastapi import HTTPException, UploadFile
@@ -1118,24 +1119,24 @@ class CompletionRequest(OpenAIBaseModel):
     model: str
     prompt: list[int] | list[list[int]] | str | list[str] | None = None
     best_of: int | None = None
-    echo: bool | False = False
-    frequency_penalty: float | 0.0 = 0.0
+    echo: bool | None = False
+    frequency_penalty: float | None = 0.0
     logit_bias: dict[str, float] | None = None
     logprobs: int | None = None
-    max_tokens: int | 16 = 16
+    max_tokens: int | NoneSchema = 16
     n: int = 1
     presence_penalty: float | None = 0.0
     seed: int | None = Field(None, ge=_LONG_INFO.min, le=_LONG_INFO.max)
     stop: str | list[str] | None = []
-    stream: bool | False = False
+    stream: bool | None = False
     stream_options: StreamOptions | None = None
     suffix: str | None = None
-    temperature: float | 1.0 = 1.0
-    top_p: float | 1.0 = 1.0
+    temperature: float | None = 1.0
+    top_p: float | None = 1.0
     user: str | None = None
 
     # doc: begin-completion-sampling-params
-    use_beam_search: bool | False = False
+    use_beam_search: bool | None = False
     top_k: int | None = -1
     min_p: float | None = 0.0
     top_a: float | None = 0.0
@@ -3326,12 +3327,12 @@ class AnthropicTool(OpenAIBaseModel):
 
 class AnthropicToolChoiceAuto(OpenAIBaseModel):
     type: Literal["auto"] = "auto"
-    disable_parallel_tool_use: bool | False = False
+    disable_parallel_tool_use: bool | None = False
 
 
 class AnthropicToolChoiceAny(OpenAIBaseModel):
     type: Literal["any"] = "any"
-    disable_parallel_tool_use: bool | False = False
+    disable_parallel_tool_use: bool | None = False
 
 
 class AnthropicToolChoiceNone(OpenAIBaseModel):
@@ -3341,7 +3342,7 @@ class AnthropicToolChoiceNone(OpenAIBaseModel):
 class AnthropicToolChoiceTool(OpenAIBaseModel):
     type: Literal["tool"] = "tool"
     name: str
-    disable_parallel_tool_use: bool | False = False
+    disable_parallel_tool_use: bool | None = False
 
 
 AnthropicToolChoice = (
@@ -3390,7 +3391,7 @@ class AnthropicMessagesRequest(OpenAIBaseModel):
     metadata: AnthropicMetadata | None = None
     service_tier: Literal["auto", "standard_only"] | None = None
     stop_sequences: list[str] | None = Field(default_factory=list)
-    stream: bool | False = False
+    stream: bool | None = False
     system: str | list[AnthropicTextBlock] | None = None
     temperature: float | None = Field(None, ge=0.0, le=1.0)
     thinking: AnthropicThinking | None = None
@@ -3403,8 +3404,8 @@ class AnthropicMessagesRequest(OpenAIBaseModel):
     request_id: str | None = None
 
     # For sampling params conversion
-    frequency_penalty: float | 0.0 = 0.0
-    presence_penalty: float | 0.0 = 0.0
+    frequency_penalty: float | None = 0.0
+    presence_penalty: float | None = 0.0
     seed: int | None = None
 
     # TODO: add more parameters
@@ -3483,31 +3484,31 @@ AnthropicStreamEvent = (
 class KAIGenerationInputSchema(BaseModel):
     genkey: str | None = None
     prompt: str
-    n: int | 1 = 1
+    n: int | None = 1
     max_context_length: int
     max_length: int
-    rep_pen: float | 1.0 = 1.0
-    top_k: int | 0 = 0
-    top_a: float | 0.0 = 0.0
-    top_p: float | 1.0 = 1.0
-    min_p: float | 0.0 = 0.0
-    tfs: float | 1.0 = 1.0
-    eps_cutoff: float | 0.0 = 0.0
-    eta_cutoff: float | 0.0 = 0.0
-    typical: float | 1.0 = 1.0
-    temperature: float | 1.0 = 1.0
-    dynatemp_range: float | 0.0 = 0.0
-    dynatemp_exponent: float | 1.0 = 1.0
-    smoothing_factor: float | 0.0 = 0.0
-    smoothing_curve: float | 1.0 = 1.0
-    xtc_threshold: float | 0.1 = 0.1
-    xtc_probability: float | 0.0 = 0.0
+    rep_pen: float | None = 1.0
+    top_k: int | None = 0
+    top_a: float | None = 0.0
+    top_p: float | None = 1.0
+    min_p: float | None = 0.0
+    tfs: float | None = 1.0
+    eps_cutoff: float | None = 0.0
+    eta_cutoff: float | None = 0.0
+    typical: float | None = 1.0
+    temperature: float | None = 1.0
+    dynatemp_range: float | None = 0.0
+    dynatemp_exponent: float | None = 1.0
+    smoothing_factor: float | None = 0.0
+    smoothing_curve: float | None = 1.0
+    xtc_threshold: float | None = 0.1
+    xtc_probability: float | None = 0.0
     use_default_badwordsids: bool | None = None
     quiet: bool | None = None
     # pylint: disable=unexpected-keyword-arg
     sampler_seed: int | None = None
     stop_sequence: list[str] | None = None
-    include_stop_str_in_output: bool | False = False
+    include_stop_str_in_output: bool | None = False
 
     @model_validator(mode='before')
     def check_context(cls, values):  # pylint: disable=no-self-argument

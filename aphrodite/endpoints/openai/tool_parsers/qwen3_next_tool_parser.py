@@ -70,7 +70,7 @@ class Qwen3NextToolParser(ToolParser):
                 "Qwen3 Next JSON-XML Tool parser could not locate tool call "
                 "start/end tokens in the tokenizer!")
 
-        logger.info("Successfully imported tool parser {} !",
+        logger.info("Successfully imported tool parser %s !",
                     self.__class__.__name__)
 
     def _generate_tool_call_id(self) -> str:

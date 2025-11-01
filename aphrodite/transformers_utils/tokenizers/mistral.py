@@ -10,8 +10,8 @@ if TYPE_CHECKING:
     from transformers.tokenization_mistral_common import (
         MistralCommonTokenizer as TransformersMistralTokenizer)
 
-    from aphrodite.entrypoints.chat_utils import ChatCompletionMessageParam
-    from aphrodite.entrypoints.openai.protocol import ChatCompletionRequest
+    from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
+    from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
 
 logger = init_logger(__name__)
 

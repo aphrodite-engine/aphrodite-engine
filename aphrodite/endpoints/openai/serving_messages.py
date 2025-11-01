@@ -95,7 +95,7 @@ class OpenAIServingMessages(OpenAIServing):
         if self.default_sampling_params:
             source = self.model_config.generation_config
             source = "model" if source == "auto" else source
-            logger.info("Using default messages sampling params from {}: {}",
+            logger.info("Using default messages sampling params from %s: %s",
                         source, self.default_sampling_params)
 
     async def create_message(
