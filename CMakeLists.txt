@@ -853,7 +853,7 @@ set(APHRODITE_EXT_SRC
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
       CUDA_ARCHS "${HADACORE_ARCHS}")
-    list(APPEND VLLM_EXT_SRC "${SRCS}")
+    list(APPEND APHRODITE_EXT_SRC "${SRCS}")
     message(STATUS "Building hadacore")
   endif()
 
