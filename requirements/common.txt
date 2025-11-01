@@ -49,7 +49,6 @@ cbor2 # Required for cross-language serialization of hashable objects
 setproctitle # Used to set process names for better debugging and monitoring
 openai-harmony >= 0.0.3  # Required for gpt-oss
 python-multipart # required for multipart/form-data requests
-loguru # required for logging
 blobfile
 numba
 anthropic == 0.71.0
