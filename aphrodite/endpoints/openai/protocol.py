@@ -570,6 +570,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     ignore_eos: bool | None = False
     min_tokens: int | None = 0
     stop_token_ids: list[int] | None = []
+    include_stop_str_in_output: bool = False
     skip_special_tokens: bool | None = True
     spaces_between_special_tokens: bool | None = True
     truncate_prompt_tokens: Annotated[int, Field(ge=-1)] | None = None
@@ -615,45 +616,50 @@ class ChatCompletionRequest(OpenAIBaseModel):
     # --8<-- [end:chat-completion-sampling-params]
 
     # doc: begin-chat-completion-extra-params
-    echo: bool | None = Field(
+    echo: bool = Field(
         default=False,
         description=(
             "If true, the new message will be prepended with the last message "
-            "if they belong to the same role."),
+            "if they belong to the same role."
+        ),
     )
-    add_generation_prompt: bool | None = Field(
+    add_generation_prompt: bool = Field(
         default=True,
-        description=
-        ("If true, the generation prompt will be added to the chat template. "
-         "This is a parameter used by chat template in tokenizer config of the "
-         "model."),
+        description=(
+            "If true, the generation prompt will be added to the chat template. "
+            "This is a parameter used by chat template in tokenizer config of the "
+            "model."
+        ),
     )
     continue_final_message: bool = Field(
         default=False,
-        description=
-        ("If this is set, the chat will be formatted so that the final "
-         "message in the chat is open-ended, without any EOS tokens. The "
-         "model will continue this message rather than starting a new one. "
-         "This allows you to \"prefill\" part of the model's response for it. "
-         "Cannot be used at the same time as `add_generation_prompt`."),
+        description=(
+            "If this is set, the chat will be formatted so that the final "
+            "message in the chat is open-ended, without any EOS tokens. The "
+            "model will continue this message rather than starting a new one. "
+            'This allows you to "prefill" part of the model\'s response for it. '
+            "Cannot be used at the same time as `add_generation_prompt`."
+        ),
     )
-    add_special_tokens: bool | None = Field(
+    add_special_tokens: bool = Field(
         default=False,
         description=(
             "If true, special tokens (e.g. BOS) will be added to the prompt "
             "on top of what is added by the chat template. "
             "For most models, the chat template takes care of adding the "
-            "special tokens so this should be set to False (as is the "
-            "default)."),
+            "special tokens so this should be set to false (as is the "
+            "default)."
+        ),
     )
     documents: list[dict[str, str]] | None = Field(
         default=None,
-        description=
-        ("A list of dicts representing documents that will be accessible to "
-         "the model if it is performing RAG (retrieval-augmented generation)."
-         " If the template does not support RAG, this argument will have no "
-         "effect. We recommend that each document should be a dict containing "
-         "\"title\" and \"text\" keys."),
+        description=(
+            "A list of dicts representing documents that will be accessible to "
+            "the model if it is performing RAG (retrieval-augmented generation)."
+            " If the template does not support RAG, this argument will have no "
+            "effect. We recommend that each document should be a dict containing "
+            '"title" and "text" keys.'
+        ),
     )
     chat_template: str | None = Field(
         default=None,
@@ -661,19 +667,15 @@ class ChatCompletionRequest(OpenAIBaseModel):
             "A Jinja template to use for this conversion. "
             "As of transformers v4.44, default chat template is no longer "
             "allowed, so you must provide a chat template if the tokenizer "
-            "does not define one."),
+            "does not define one."
+        ),
     )
     chat_template_kwargs: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Additional keyword args to pass to the template renderer. "
-            "Will be accessible by the chat template."),
-    )
-    include_stop_str_in_output: bool | None = Field(
-        default=False,
-        description=(
-            "Whether to include the stop string in the output. "
-            "This is only applied when the stop or stop_token_ids is set."),
+            "Will be accessible by the chat template."
+        ),
     )
     mm_processor_kwargs: dict[str, Any] | None = Field(
         default=None,
@@ -685,59 +687,96 @@ class ChatCompletionRequest(OpenAIBaseModel):
     )
     guided_json: str | dict | BaseModel | None = Field(
         default=None,
-        description=("If specified, the output will follow the JSON schema."),
+        description=(
+            "`guided_json` is deprecated. "
+            "This will be removed in v0.12.0 or v1.0.0, whichever is soonest. "
+            "Please pass `json` to `structured_outputs` instead."
+        ),
     )
     guided_regex: str | None = Field(
         default=None,
         description=(
-            "If specified, the output will follow the regex pattern."),
+            "`guided_regex` is deprecated. "
+            "This will be removed in v0.12.0 or v1.0.0, whichever is soonest. "
+            "Please pass `regex` to `structured_outputs` instead."
+        ),
     )
     guided_choice: list[str] | None = Field(
         default=None,
         description=(
-            "If specified, the output will be exactly one of the choices."),
+            "`guided_choice` is deprecated. "
+            "This will be removed in v0.12.0 or v1.0.0, whichever is soonest. "
+            "Please pass `choice` to `structured_outputs` instead."
+        ),
     )
     guided_grammar: str | None = Field(
         default=None,
         description=(
-            "If specified, the output will follow the context free grammar."),
+            "`guided_grammar` is deprecated. "
+            "This will be removed in v0.12.0 or v1.0.0, whichever is soonest. "
+            "Please pass `grammar` to `structured_outputs` instead."
+        ),
     )
     structural_tag: str | None = Field(
         default=None,
         description=(
-            "If specified, the output will follow the structural tag schema."),
+            "`structural_tag` is deprecated. "
+            "This will be removed in v0.12.0 or v1.0.0, whichever is soonest. "
+            "Please pass `structural_tag` to `structured_outputs` instead."
+        ),
     )
     guided_decoding_backend: str | None = Field(
         default=None,
         description=(
-            "If specified, will override the default guided decoding backend "
-            "of the server for this specific request. If set, must be either "
-            "'outlines' / 'lm-format-enforcer'"))
+            "`guided_decoding_backend` is deprecated. "
+            "This will be removed in v0.12.0 or v1.0.0, whichever is soonest. "
+            "Please remove it from your request."
+        ),
+    )
     guided_whitespace_pattern: str | None = Field(
         default=None,
         description=(
-            "If specified, will override the default whitespace pattern "
-            "for guided json decoding."))
+            "`guided_whitespace_pattern` is deprecated. "
+            "This will be removed in v0.12.0 or v1.0.0, whichever is soonest. "
+            "Please pass `whitespace_pattern` to `structured_outputs` instead."
+        ),
+    )
     priority: int = Field(
         default=0,
         description=(
             "The priority of the request (lower means earlier handling; "
             "default: 0). Any priority other than 0 will raise an error "
-            "if the served model does not use priority scheduling."))
+            "if the served model does not use priority scheduling."
+        ),
+    )
     request_id: str = Field(
         default_factory=lambda: f"{random_uuid()}",
         description=(
             "The request_id related to this request. If the caller does "
             "not set it, a random_uuid will be generated. This id is used "
-            "through out the inference process and return in response."))
-    kv_transfer_params: dict[str, Any] | None = Field(
+            "through out the inference process and return in response."
+        ),
+    )
+    logits_processors: LogitsProcessors | None = Field(
         default=None,
-        description="KVTransfer parameters used for disaggregated serving.")
-
-    aphrodite_xargs: dict[str, str | int | float] | None = Field(
+        description=(
+            "A list of either qualified names of logits processors, or "
+            "constructor objects, to apply when sampling. A constructor is "
+            "a JSON object with a required 'qualname' field specifying the "
+            "qualified name of the processor class/factory, and optional "
+            "'args' and 'kwargs' fields containing positional and keyword "
+            "arguments. For example: {'qualname': "
+            "'my_module.MyLogitsProcessor', 'args': [1, 2], 'kwargs': "
+            "{'param': 'value'}}."
+        ),
+    )
+    return_tokens_as_token_ids: bool | None = Field(
         default=None,
-        description=("Additional request parameters with string or "
-                     "numeric values, used by custom extensions."),
+        description=(
+            "If specified with 'logprobs', tokens are represented "
+            " as strings of the form 'token_id:{token_id}' so that tokens "
+            "that are not JSON-encodable can be identified."
+        ),
     )
     return_token_ids: bool | None = Field(
         default=None,
@@ -746,7 +785,32 @@ class ChatCompletionRequest(OpenAIBaseModel):
             "generated text. In streaming mode, prompt_token_ids is included "
             "only in the first chunk, and token_ids contains the delta tokens "
             "for each chunk. This is useful for debugging or when you "
-            "need to map generated text back to input tokens."))
+            "need to map generated text back to input tokens."
+        ),
+    )
+    cache_salt: str | None = Field(
+        default=None,
+        description=(
+            "If specified, the prefix cache will be salted with the provided "
+            "string to prevent an attacker to guess prompts in multi-user "
+            "environments. The salt should be random, protected from "
+            "access by 3rd parties, and long enough to be "
+            "unpredictable (e.g., 43 characters base64-encoded, corresponding "
+            "to 256 bit). Not supported by vLLM engine V0."
+        ),
+    )
+    kv_transfer_params: dict[str, Any] | None = Field(
+        default=None,
+        description="KVTransfer parameters used for disaggregated serving.",
+    )
+
+    aphrodite_xargs: dict[str, str | int | float] | None = Field(
+        default=None,
+        description=(
+            "Additional request parameters with string or "
+            "numeric values, used by custom extensions."
+        ),
+    )
 
     # doc: end-chat-completion-extra-params
 
