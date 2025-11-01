@@ -135,6 +135,18 @@ class SchedulerConfig:
     single_user_mode: bool = False
     """If set to True, only allocate enough memory for one sequence."""
 
+    num_iterp: int = 8
+    """Number of iterations to process waiting prefill tokens (Token Throttling)
+    """
+
+    kv_thresh: float = 0.1
+    """KV cache threshold for prefill operations (Token Throttling)
+    """
+
+    minp: int = 32
+    """Minimum prefill token count per batch (Token Throttling)
+    """
+
     def compute_hash(self) -> str:
         """
         WARNING: Whenever a new field is added to this config,

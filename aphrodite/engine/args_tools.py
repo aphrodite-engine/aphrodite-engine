@@ -521,6 +521,11 @@ class EngineArgs:
 
     single_user_mode: bool = SchedulerConfig.single_user_mode
 
+    # Token Throttling
+    num_iterp: int = SchedulerConfig.num_iterp
+    kv_thresh: float = SchedulerConfig.kv_thresh
+    minp: int = SchedulerConfig.minp
+
     def __post_init__(self):
         # support `EngineArgs(compilation_config={...})`
         # without having to manually construct a
@@ -1015,6 +1020,14 @@ class EngineArgs:
         scheduler_group.add_argument(
             "--single-user-mode", **scheduler_kwargs["single_user_mode"]
         )
+
+        scheduler_group.add_argument("--num-iterp",
+                                     **scheduler_kwargs["num_iterp"])
+
+        scheduler_group.add_argument("--kv-thresh",
+                                     **scheduler_kwargs["kv_thresh"])
+
+        scheduler_group.add_argument("--minp", **scheduler_kwargs["minp"])
 
         # Compilation arguments
         compilation_kwargs = get_kwargs(CompilationConfig)
