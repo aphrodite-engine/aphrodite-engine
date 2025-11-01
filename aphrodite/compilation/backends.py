@@ -416,9 +416,13 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
                     TextColumn,
                     TimeRemainingColumn,
                 )
+                from aphrodite.utils import get_progress_log_prefix
+
+                log_prefix = get_progress_log_prefix()
 
                 self.progress = Progress(
-                    TextColumn("[bold blue]{task.description}"),
+                    TextColumn(log_prefix),
+                    TextColumn("{task.description}"),
                     BarColumn(),
                     TaskProgressColumn(),
                     TextColumn("({task.elapsed:.1f}s)"),

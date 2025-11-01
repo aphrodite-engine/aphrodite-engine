@@ -112,13 +112,26 @@ class NewLineFormatter(logging.Formatter):
         else:
             record.fileinfo = record.filename
 
+        # it's a given that the fileinfo ends with .py
+        if record.fileinfo.endswith('.py'):
+            record.fileinfo = record.fileinfo[:-3]
+
+        max_fileinfo_width = 15
+        if len(record.fileinfo) > max_fileinfo_width:
+            record.fileinfo = "..." + record.fileinfo[-(max_fileinfo_width - 3):]
+
         msg = super().format(record)
+
+        # for brevity
+        if 'WARNING' in msg:
+            msg = msg.replace('WARNING', 'WARN', 1)
 
         if self.use_color:
             level_color = self.level_colors.get(record.levelname, '')
 
             # Format: PREFIX + LEVEL + TIME + [PATH:LINE] + MESSAGE
-            level_str = record.levelname
+            level_str = 'WARN' if record.levelname == 'WARNING' else record.levelname
+
             if level_str in msg:
                 # Color the level
                 msg = msg.replace(level_str, f"{level_color}{level_str}{Colors.RESET}", 1)
@@ -127,7 +140,8 @@ class NewLineFormatter(logging.Formatter):
             if asctime in msg:
                 msg = msg.replace(asctime, f"{Colors.TIME}{asctime}{Colors.RESET}", 1)
 
-            fileinfo_str = f"[{record.fileinfo}:{record.lineno}]"
+            # Match the formatted fileinfo with padding (left-aligned 15 chars + : + 4 digit lineno)
+            fileinfo_str = f"[{record.fileinfo:<15}:{record.lineno:>4}]"
             if fileinfo_str in msg:
                 msg = msg.replace(fileinfo_str, f"{Colors.PATH}{fileinfo_str}{Colors.RESET}", 1)
 

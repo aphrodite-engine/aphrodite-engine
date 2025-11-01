@@ -1597,10 +1597,9 @@ class ModelConfig:
 
         if diff_sampling_param:
             logger.warning_once(
-                "Default sampling parameters have been overridden by the "
-                "model's Hugging Face generation config recommended from the "
-                "model creator. If this is not intended, please relaunch "
-                "Aphrodite instance with `--generation-config aphrodite`."
+                "Default sampling params have been overridden by the "
+                "model creator. Relaunch Aphrodite with "
+                "`--generation-config aphrodite` to use Aphrodite's defaults."
             )
         return diff_sampling_param
 

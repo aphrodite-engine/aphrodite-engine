@@ -30,7 +30,6 @@ async def serve_http(
     options.  Supports http header limits via h11_max_incomplete_event_size and
     h11_max_header_count.
     """
-    logger.info("Available routes are:")
     for route in app.routes:
         methods = getattr(route, "methods", None)
         path = getattr(route, "path", None)

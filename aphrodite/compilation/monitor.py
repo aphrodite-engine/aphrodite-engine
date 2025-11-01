@@ -30,11 +30,16 @@ def start_monitoring_torch_compile(aphrodite_config: AphroditeConfig):
 
     if is_global_first_rank():
         from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+        from aphrodite.utils import get_progress_log_prefix
 
         global dynamo_progress_task
+
+        log_prefix = get_progress_log_prefix()
+
         progress = Progress(
+            TextColumn(log_prefix),
             SpinnerColumn(),
-            TextColumn("[bold blue]{task.description}"),
+            TextColumn("{task.description}"),
             TimeElapsedColumn(),
         )
         progress.start()

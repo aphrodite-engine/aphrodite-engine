@@ -235,6 +235,9 @@ def _add_prefix(file: TextIO, worker_name: str, pid: int) -> None:
 
 def decorate_logs(process_name: str | None = None) -> None:
     """Decorate stdout/stderr with process name and PID prefix."""
+    if os.environ.get('APHRODITE_DECORATE_LOGS', '0') not in ('1', 'true', 'True'):
+        return
+
     if process_name is None:
         process_name = get_mp_context().current_process().name
 

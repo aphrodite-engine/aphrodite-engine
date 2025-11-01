@@ -23,7 +23,7 @@ APHRODITE_LOGGING_STREAM = envs.APHRODITE_LOGGING_STREAM
 
 _FORMAT = (
     f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
-    "[%(fileinfo)s:%(lineno)d] %(message)s"
+    "[%(fileinfo)-15s:%(lineno)4d] %(message)s"
 )
 _DATE_FORMAT = "%m-%d %H:%M:%S"
 

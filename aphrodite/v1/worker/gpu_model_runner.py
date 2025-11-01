@@ -3874,21 +3874,24 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 Progress, BarColumn, TextColumn, 
                 TimeElapsedColumn, MofNCompleteColumn
             )
+            from aphrodite.utils import get_progress_log_prefix
 
             desc = "Capturing CUDA graphs ({}, {})".format(
                 "decode" if uniform_decode else "mixed prefill-decode",
                 cudagraph_runtime_mode.name,
             )
 
+            log_prefix = get_progress_log_prefix()
+
             progress = Progress(
-                TextColumn("[progress.description]{task.description}"),
+                TextColumn(log_prefix + " [progress.description]{task.description}"),
                 BarColumn(),
                 MofNCompleteColumn(),
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
                 TimeElapsedColumn(),
             )
             progress.start()
-            task = progress.add_task(f"[bold blue]{desc}", total=len(compilation_cases))
+            task = progress.add_task(desc, total=len(compilation_cases))
 
         # We skip EPLB here since we don't want to record dummy metrics
         for num_tokens, activate_lora in compilation_cases:

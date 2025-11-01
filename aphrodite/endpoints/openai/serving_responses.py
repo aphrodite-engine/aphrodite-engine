@@ -127,7 +127,7 @@ class OpenAIServingResponses(OpenAIServing):
         if self.default_sampling_params:
             source = self.model_config.generation_config
             source = "model" if source == "auto" else source
-            logger.info(
+            logger.debug(
                 "Using default chat sampling params from %s: %s",
                 source,
                 self.default_sampling_params,

@@ -2103,70 +2103,30 @@ async def run_server_worker(listen_address,
             listen_address,
         )
 
-        protocol = "https" if args.ssl_certfile else "http"
-        root_path = args.root_path.rstrip("/") if args.root_path else ""
-        host_name = args.host if args.host else "localhost"
-        port_str = str(args.port)
+        url_prefix = listen_address.rstrip("/")
 
         if SERVE_KOBOLD_LITE_UI:
-            ui_url = f"{protocol}://{host_name}:{port_str}{root_path}/"
-            logger.info(f"Kobold Lite UI:                  {ui_url}")
+            logger.info(f"Kobold Lite UI:         {url_prefix}/")
 
         if not args.disable_fastapi_docs:
-            logger.info(
-                f"Documentation:                   {protocol}://{host_name}:{port_str}{root_path}/redoc"
-            )  # noqa: E501
-        logger.info(
-            f"Completions API:                 {protocol}://{host_name}:{port_str}{root_path}/v1/completions"
-        )  # noqa: E501
-        logger.info(
-            f"Chat API:                        {protocol}://{host_name}:{port_str}{root_path}/v1/chat/completions"
-        )  # noqa: E501
-        logger.info(
-            f"Responses API:                   {protocol}://{host_name}:{port_str}{root_path}/v1/responses"
-        )  # noqa: E501
-        logger.info(
-            f"Embeddings API:                  {protocol}://{host_name}:{port_str}{root_path}/v1/embeddings"
-        )  # noqa: E501
-        logger.info(
-            f"Pooling API:                     {protocol}://{host_name}:{port_str}{root_path}/pooling"
-        )  # noqa: E501
-        logger.info(
-            f"Score API:                       {protocol}://{host_name}:{port_str}{root_path}/score"
-        )  # noqa: E501
-        logger.info(
-            f"Rerank API:                      {protocol}://{host_name}:{port_str}{root_path}/rerank"
-        )  # noqa: E501
-        logger.info(
-            f"Rerank API v1:                   {protocol}://{host_name}:{port_str}{root_path}/v1/rerank"
-        )  # noqa: E501
-        logger.info(
-            f"Rerank API v2:                   {protocol}://{host_name}:{port_str}{root_path}/v2/rerank"
-        )  # noqa: E501
-        logger.info(
-            f"Transcription API:               {protocol}://{host_name}:{port_str}{root_path}/v1/audio/transcriptions"
-        )  # noqa: E501
-        logger.info(
-            f"Translation API:                 {protocol}://{host_name}:{port_str}{root_path}/v1/audio/translations"
-        )  # noqa: E501
-        logger.info(
-            f"Classification API:              {protocol}://{host_name}:{port_str}{root_path}/classify"
-        )  # noqa: E501
-        logger.info(
-            f"Detokenization API:              {protocol}://{host_name}:{port_str}{root_path}/v1/detokenize"
-        )  # noqa: E501
-        logger.info(
-            f"Tokenizer Info API:              {protocol}://{host_name}:{port_str}{root_path}/tokenizer_info"
-        )  # noqa: E501
-        logger.info(
-            f"Tokenization API:                {protocol}://{host_name}:{port_str}{root_path}/v1/tokenize"
-        )  # noqa: E501
-        logger.info(
-            f"KoboldAI API:                    {protocol}://{host_name}:{port_str}{root_path}/api/v1"
-        )  # noqa: E501
-        logger.info(
-            f"KoboldAI Extra:                  {protocol}://{host_name}:{port_str}{root_path}/api/extra"
-        )  # noqa: E501
+            logger.info(f"Documentation:          {url_prefix}/redoc")
+        logger.info(f"Completions API:        {url_prefix}/v1/completions")
+        logger.info(f"Chat API:               {url_prefix}/v1/chat/completions")
+        logger.info(f"Responses API:          {url_prefix}/v1/responses")
+        logger.info(f"Embeddings API:         {url_prefix}/v1/embeddings")
+        logger.info(f"Pooling API:            {url_prefix}/pooling")
+        logger.info(f"Score API:              {url_prefix}/score")
+        logger.info(f"Rerank API:             {url_prefix}/rerank")
+        logger.info(f"Rerank API v1:          {url_prefix}/v1/rerank")
+        logger.info(f"Rerank API v2:          {url_prefix}/v2/rerank")
+        logger.info(f"Transcription API:      {url_prefix}/v1/audio/transcriptions")
+        logger.info(f"Translation API:        {url_prefix}/v1/audio/translations")
+        logger.info(f"Classification API:     {url_prefix}/classify")
+        logger.info(f"Detokenization API:     {url_prefix}/v1/detokenize")
+        logger.info(f"Tokenizer Info API:     {url_prefix}/tokenizer_info")
+        logger.info(f"Tokenization API:       {url_prefix}/v1/tokenize")
+        logger.info(f"KoboldAI API:           {url_prefix}/api/v1")
+        logger.info(f"KoboldAI Extra:         {url_prefix}/api/extra")
 
         shutdown_task = await serve_http(
             app,

@@ -57,7 +57,7 @@ class OpenAIServingCompletion(OpenAIServing):
             source = self.model_config.generation_config
             source = "model" if source == "auto" else source
             logger.info(
-                "Using default completion sampling params from %s: %s",
+                "Using default sampling params from %s: %s",
                 source,
                 self.default_sampling_params,
             )

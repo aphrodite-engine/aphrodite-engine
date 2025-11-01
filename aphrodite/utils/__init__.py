@@ -136,6 +136,36 @@ def length_from_prompt_token_ids_or_embeds(
         return prompt_token_len
 
 
+def get_progress_log_prefix() -> str:
+    """
+    Generate a log-like prefix for progress bars to match log formatting.
+    
+    Returns a string formatted like: "INFO 11-01 15:55:24 [        ...         ]"
+    This makes progress bars visually consistent with log messages.
+    """
+    import datetime
+    from aphrodite.logging_utils.formatter import Colors, _supports_color
+
+    timestamp = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
+
+    # Use a placeholder bracket with the same width as the logger's filename padding
+    # Format is [filename (15 chars):lineno (4 chars)] = 20 chars inside brackets
+    padding = (20 - 3) // 2
+    placeholder = " " * padding + "..." + " " * (20 - 3 - padding)
+
+    use_color = _supports_color()
+    if use_color:
+        level_color = Colors.INFO
+        time_color = Colors.TIME
+        path_color = Colors.PATH
+        reset = Colors.RESET
+
+        return (f"{level_color}INFO{reset} {time_color}{timestamp}{reset} "
+                f"{path_color}[{placeholder}]{reset}")
+    else:
+        return f"INFO {timestamp} [{placeholder}]"
+
+
 def tensor_progress_bar(iterable: Iterable[tuple[str, torch.Tensor]],
                         final_bytes: int,
                         desc="Processing"):
@@ -145,16 +175,17 @@ def tensor_progress_bar(iterable: Iterable[tuple[str, torch.Tensor]],
     units = 1024**(int(math.log2(final_bytes)) // 10)
 
     if show_progress:
+        log_prefix = get_progress_log_prefix()
+        
         with Progress(
-                TextColumn("[progress.description]{task.description}"),
+                TextColumn(log_prefix + " [progress.description]{task.description}"),
                 BarColumn(),
                 # MofNCompleteColumn(),
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
                 TextColumn("{task.completed:.2f}/{task.total:.2f} GiB"),
                 TimeElapsedColumn(),
         ) as progress:
-            task = progress.add_task(f"[bold blue]{desc}",
-                                     total=final_bytes / units)
+            task = progress.add_task(desc, total=final_bytes / units)
             for item in iterable:
                 steps = item[1].element_size() * item[1].nelement() / units
                 yield item
