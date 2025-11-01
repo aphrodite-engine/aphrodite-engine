@@ -51,6 +51,8 @@ class NewLineFormatter(logging.Formatter):
 
         self.use_color = _supports_color() and os.environ.get('APHRODITE_LOGGING_COLOR', '1') in ('1', 'true', 'True')
 
+        self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
+
         self.level_colors = {
             'DEBUG': Colors.DEBUG,
             'INFO': Colors.INFO,
@@ -60,6 +62,16 @@ class NewLineFormatter(logging.Formatter):
         }
 
     def format(self, record):
+        # Adjust format based on APHRODITE_LOGGING_VERBOSE
+        # True = detailed (with brackets, date+time)
+        # False = simplified (no brackets, time only)
+        if self.verbose_logging:
+            original_datefmt = self.datefmt
+            self.datefmt = "%m-%d %H:%M:%S"
+        else:
+            original_datefmt = self.datefmt
+            self.datefmt = "%H:%M:%S"
+        
         def shrink_path(relpath: Path) -> str:
             """
             Shortens a file path for logging display:
@@ -120,7 +132,14 @@ class NewLineFormatter(logging.Formatter):
         if len(record.fileinfo) > max_fileinfo_width:
             record.fileinfo = "..." + record.fileinfo[-(max_fileinfo_width - 3):]
 
-        msg = super().format(record)
+        if self.verbose_logging:
+            msg = super().format(record)
+        else:
+            original_fmt = self._style._fmt
+            from aphrodite.logger import _FORMAT_INFO
+            self._style._fmt = _FORMAT_INFO
+            msg = super().format(record)
+            self._style._fmt = original_fmt
 
         # for brevity
         if 'WARNING' in msg:
@@ -141,9 +160,13 @@ class NewLineFormatter(logging.Formatter):
                 msg = msg.replace(asctime, f"{Colors.TIME}{asctime}{Colors.RESET}", 1)
 
             # Match the formatted fileinfo with padding (left-aligned 15 chars + : + 4 digit lineno)
-            fileinfo_str = f"[{record.fileinfo:<15}:{record.lineno:>4}]"
-            if fileinfo_str in msg:
-                msg = msg.replace(fileinfo_str, f"{Colors.PATH}{fileinfo_str}{Colors.RESET}", 1)
+            # Only apply when in verbose_logging mode (i.e., when brackets are shown)
+            if self.verbose_logging:
+                fileinfo_str = f"[{record.fileinfo:<15}:{record.lineno:>4}]"
+                if fileinfo_str in msg:
+                    msg = msg.replace(fileinfo_str, f"{Colors.PATH}{fileinfo_str}{Colors.RESET}", 1)
+
+        self.datefmt = original_datefmt
 
         if record.message != "":
             parts = msg.split(record.message)

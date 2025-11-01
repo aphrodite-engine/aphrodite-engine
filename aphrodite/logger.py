@@ -25,6 +25,9 @@ _FORMAT = (
     f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
     "[%(fileinfo)-15s:%(lineno)4d] %(message)s"
 )
+_FORMAT_INFO = (
+    f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
+)
 _DATE_FORMAT = "%m-%d %H:%M:%S"
 
 DEFAULT_LOGGING_CONFIG = {

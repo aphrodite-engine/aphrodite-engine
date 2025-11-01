@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     APHRODITE_LOGGING_PREFIX: str = ""
     APHRODITE_LOGGING_STREAM: str = "ext://sys.stdout"
     APHRODITE_LOGGING_CONFIG_PATH: str | None = None
+    APHRODITE_LOGGING_VERBOSE: bool = False
     APHRODITE_SUPPRESS_C_LIB_OUTPUT: bool = True
     APHRODITE_LOG_STATS_INTERVAL: float = 10.0
     APHRODITE_TRACE_FUNCTION: int = 0
@@ -598,6 +599,8 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_LOGGING_STREAM": lambda: os.getenv("APHRODITE_LOGGING_STREAM", "ext://sys.stdout"),
     # if set, APHRODITE_LOGGING_PREFIX will be prepended to all log messages
     "APHRODITE_LOGGING_PREFIX": lambda: os.getenv("APHRODITE_LOGGING_PREFIX", ""),
+    # if set, aphrodite will log verbose messages
+    "APHRODITE_LOGGING_VERBOSE": lambda: os.environ.get("APHRODITE_LOGGING_VERBOSE", "0").lower() in ("1", "true"),
     # if set, aphrodite will suppress stdout/stderr from C libraries (like Gloo)
     # that bypass Python's logging system
     "APHRODITE_SUPPRESS_C_LIB_OUTPUT": lambda: os.environ.get(

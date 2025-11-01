@@ -140,30 +140,43 @@ def get_progress_log_prefix() -> str:
     """
     Generate a log-like prefix for progress bars to match log formatting.
     
-    Returns a string formatted like: "INFO 11-01 15:55:24 [        ...         ]"
-    This makes progress bars visually consistent with log messages.
+    When APHRODITE_LOGGING_VERBOSE=True: "INFO 11-01 19:11:35 [      ...      ]"
+    When APHRODITE_LOGGING_VERBOSE=False: "INFO 19:11:35"
     """
     import datetime
     from aphrodite.logging_utils.formatter import Colors, _supports_color
+    from aphrodite import envs
 
-    timestamp = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
+    verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
 
-    # Use a placeholder bracket with the same width as the logger's filename padding
-    # Format is [filename (15 chars):lineno (4 chars)] = 20 chars inside brackets
-    padding = (20 - 3) // 2
-    placeholder = " " * padding + "..." + " " * (20 - 3 - padding)
+    if verbose_logging:
+        timestamp = datetime.datetime.now().strftime("%m-%d %H:%M:%S")
 
-    use_color = _supports_color()
-    if use_color:
-        level_color = Colors.INFO
-        time_color = Colors.TIME
-        path_color = Colors.PATH
-        reset = Colors.RESET
+        padding = (20 - 3) // 2
+        placeholder = " " * padding + "..." + " " * (20 - 3 - padding)
 
-        return (f"{level_color}INFO{reset} {time_color}{timestamp}{reset} "
-                f"{path_color}[{placeholder}]{reset}")
+        use_color = _supports_color()
+        if use_color:
+            level_color = Colors.INFO
+            time_color = Colors.TIME
+            path_color = Colors.PATH
+            reset = Colors.RESET
+
+            return (f"{level_color}INFO{reset} {time_color}{timestamp}{reset} "
+                    f"{path_color}[{placeholder}]{reset}")
+        else:
+            return f"INFO {timestamp} [{placeholder}]"
     else:
-        return f"INFO {timestamp} [{placeholder}]"
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+
+        use_color = _supports_color()
+        if use_color:
+            level_color = Colors.INFO
+            time_color = Colors.TIME
+            reset = Colors.RESET
+            return f"{level_color}INFO{reset} {time_color}{timestamp}{reset}"
+        else:
+            return f"INFO {timestamp}"
 
 
 def tensor_progress_bar(iterable: Iterable[tuple[str, torch.Tensor]],
