@@ -1,16 +1,15 @@
-
 import os
 from collections.abc import Mapping
-from typing import Optional
 
-from loguru import logger
-from aphrodite.utils import run_once
+from aphrodite.logger import init_logger
+from aphrodite.utils.func_utils import run_once
 
 TRACE_HEADERS = ["traceparent", "tracestate"]
 
+logger = init_logger(__name__)
 
 _is_otel_imported = False
-otel_import_error_traceback: Optional[str] = None
+otel_import_error_traceback: str | None = None
 try:
     from opentelemetry.context.context import Context
     from opentelemetry.sdk.environment_variables import (
@@ -20,12 +19,15 @@ try:
     from opentelemetry.trace import SpanKind, Tracer, set_tracer_provider
     from opentelemetry.trace.propagation.tracecontext import (
         TraceContextTextMapPropagator)
+
     _is_otel_imported = True
 except ImportError:
     # Capture and format traceback to provide detailed context for the import
     # error. Only the string representation of the error is retained to avoid
     # memory leaks.
+    # See https://github.com/vllm-project/vllm/pull/7266#discussion_r1707395458
     import traceback
+
     otel_import_error_traceback = traceback.format_exc()
 
     class Context:  # type: ignore
@@ -45,13 +47,15 @@ def is_otel_available() -> bool:
     return _is_otel_imported
 
 
-def init_tracer(instrumenting_module_name: str,
-                otlp_traces_endpoint: str) -> Optional[Tracer]:
+def init_tracer(
+    instrumenting_module_name: str, otlp_traces_endpoint: str
+) -> Tracer | None:
     if not is_otel_available():
         raise ValueError(
             "OpenTelemetry is not available. Unable to initialize "
             "a tracer. Ensure OpenTelemetry packages are installed. "
-            f"Original error:\n{otel_import_error_traceback}")
+            f"Original error:\n{otel_import_error_traceback}"
+        )
     trace_provider = TracerProvider()
 
     span_exporter = get_span_exporter(otlp_traces_endpoint)
@@ -71,14 +75,12 @@ def get_span_exporter(endpoint):
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
             OTLPSpanExporter)  # type: ignore
     else:
-        raise ValueError(
-            f"Unsupported OTLP protocol '{protocol}' is configured")
+        raise ValueError(f"Unsupported OTLP protocol '{protocol}' is configured")
 
     return OTLPSpanExporter(endpoint=endpoint)
 
 
-def extract_trace_context(
-        headers: Optional[Mapping[str, str]]) -> Optional[Context]:
+def extract_trace_context(headers: Mapping[str, str] | None) -> Context | None:
     if is_otel_available():
         headers = headers or {}
         return TraceContextTextMapPropagator().extract(headers)
@@ -87,7 +89,6 @@ def extract_trace_context(
 
 
 def extract_trace_headers(headers: Mapping[str, str]) -> Mapping[str, str]:
-
     return {h: headers[h] for h in TRACE_HEADERS if h in headers}
 
 
@@ -109,12 +110,13 @@ class SpanAttributes:
     GEN_AI_LATENCY_E2E = "gen_ai.latency.e2e"
     GEN_AI_LATENCY_TIME_IN_SCHEDULER = "gen_ai.latency.time_in_scheduler"
     # Time taken in the forward pass for this across all workers
-    GEN_AI_LATENCY_TIME_IN_MODEL_FORWARD = (
-        "gen_ai.latency.time_in_model_forward")
+    GEN_AI_LATENCY_TIME_IN_MODEL_FORWARD = "gen_ai.latency.time_in_model_forward"
     # Time taken in the model execute function. This will include model
     # forward, block/sync across workers, cpu-gpu sync time and sampling time.
-    GEN_AI_LATENCY_TIME_IN_MODEL_EXECUTE = (
-        "gen_ai.latency.time_in_model_execute")
+    GEN_AI_LATENCY_TIME_IN_MODEL_EXECUTE = "gen_ai.latency.time_in_model_execute"
+    GEN_AI_LATENCY_TIME_IN_MODEL_PREFILL = "gen_ai.latency.time_in_model_prefill"
+    GEN_AI_LATENCY_TIME_IN_MODEL_DECODE = "gen_ai.latency.time_in_model_decode"
+    GEN_AI_LATENCY_TIME_IN_MODEL_INFERENCE = "gen_ai.latency.time_in_model_inference"
 
 
 def contains_trace_headers(headers: Mapping[str, str]) -> bool:
@@ -123,5 +125,4 @@ def contains_trace_headers(headers: Mapping[str, str]) -> bool:
 
 @run_once
 def log_tracing_disabled_warning() -> None:
-    logger.warning(
-        "Received a request with trace context but tracing is disabled")
+    logger.warning("Received a request with trace context but tracing is disabled")

@@ -21,7 +21,7 @@ from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
 from aphrodite.config import (ConvertOption, RunnerOption,
                                      _get_and_verify_dtype)
-from aphrodite.common.outputs import RequestOutput
+from aphrodite.outputs import RequestOutput
 from aphrodite.common.sampling_params import BeamSearchParams
 from aphrodite.connections import global_http_connection
 from aphrodite.distributed import (cleanup_dist_env_and_memory,

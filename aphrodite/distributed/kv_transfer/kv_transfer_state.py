@@ -1,6 +1,6 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from aphrodite.common import envs
+from aphrodite import envs
 from aphrodite.distributed.kv_transfer.kv_connector.base import (
     KVConnectorBaseType)
 from aphrodite.distributed.kv_transfer.kv_connector.factory import (
@@ -11,12 +11,13 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
 
-_KV_CONNECTOR_AGENT: Optional[KVConnectorBaseType] = None
+_KV_CONNECTOR_AGENT: KVConnectorBaseType | None = None
 
 
 def get_kv_transfer_group() -> KVConnectorBaseType:
     assert _KV_CONNECTOR_AGENT is not None, (
-        "disaggregated KV cache transfer parallel group is not initialized")
+        "disaggregated KV cache transfer parallel group is not initialized"
+    )
     return _KV_CONNECTOR_AGENT
 
 
@@ -24,8 +25,7 @@ def has_kv_transfer_group() -> bool:
     return _KV_CONNECTOR_AGENT is not None
 
 
-def is_v1_kv_transfer_group(
-        connector: Optional[KVConnectorBaseType] = None) -> bool:
+def is_v1_kv_transfer_group(connector: KVConnectorBaseType | None = None) -> bool:
     """Check if the KV connector is the v1 connector.
     If the argument is None, it will check the global KV connector
 
@@ -56,10 +56,20 @@ def ensure_kv_transfer_initialized(aphrodite_config: "AphroditeConfig") -> None:
     if aphrodite_config.kv_transfer_config is None:
         return
 
-    if (aphrodite_config.kv_transfer_config.is_kv_transfer_instance
-            and _KV_CONNECTOR_AGENT is None):
+    if (
+        aphrodite_config.kv_transfer_config.is_kv_transfer_instance
+        and _KV_CONNECTOR_AGENT is None
+    ):
         if envs.APHRODITE_USE_V1:
             _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(
-                config=aphrodite_config, role=KVConnectorRole.WORKER)
+                config=aphrodite_config, role=KVConnectorRole.WORKER
+            )
         else:
             raise ValueError("V0 is no longer supported")
+
+
+def ensure_kv_transfer_shutdown() -> None:
+    global _KV_CONNECTOR_AGENT
+    if _KV_CONNECTOR_AGENT is not None:
+        _KV_CONNECTOR_AGENT.shutdown()
+        _KV_CONNECTOR_AGENT = None

@@ -55,9 +55,9 @@ def _prithvi_field_config(hf_inputs: Mapping[str, torch.Tensor]):
     # This model however allows the user to also submit multiple image
     # patches as a batch, adding a further dimension to the above shape.
     # At this stage we only support submitting one patch per request and
-    # batching is achieved via vLLM batching.
+    # batching is achieved via Aphrodite batching.
     # TODO (christian-pinto): enable support for multi patch requests
-    # in tandem with vLLM batching.
+    # in tandem with Aphrodite batching.
     return dict(
         pixel_values=MultiModalFieldConfig.shared(batch_size=1,
                                                   modality="image"),

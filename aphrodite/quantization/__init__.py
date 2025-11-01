@@ -3,16 +3,15 @@ from typing import Literal, get_args
 from aphrodite.quantization.base_config import QuantizationConfig
 
 QuantizationMethods = Literal[
-    "aqlm",
     "awq",
     "deepspeedfp",
     "tpu_int8",
     "fp8",
     "ptpc_fp8",
     "fbgemm_fp8",
+    "fp_quant",
     "modelopt",
     "modelopt_fp4",
-    "marlin",
     "bitblas",
     "gguf",
     "gptq_marlin_24",
@@ -22,10 +21,8 @@ QuantizationMethods = Literal[
     "gptq",
     "compressed-tensors",
     "bitsandbytes",
-    "qqq",
     "hqq",
     "experts_int8",
-    "neuron_quant",
     "ipex",
     "quark",
     "moe_wna16",
@@ -33,12 +30,6 @@ QuantizationMethods = Literal[
     "auto-round",
     "rtn",
     "inc",
-    "fp2",
-    "fp3",
-    "fp4",
-    "fp5",
-    "fp6",
-    "fp7",
     "mxfp4",
     "petit_nvfp4",
 ]
@@ -58,9 +49,13 @@ def register_quantization_config(quantization: str):
         quantization (str): The quantization method name.
 
     Examples:
-        >>> from aphrodite.quantization import register_quantization_config
+        >>> from aphrodite.quantization import (
+        ...     register_quantization_config,
+        ... )
         >>> from aphrodite.quantization import get_quantization_config
-        >>> from aphrodite.quantization.base_config import QuantizationConfig
+        >>> from aphrodite.quantization.base_config import (
+        ...     QuantizationConfig,
+        ... )
         >>>
         >>> @register_quantization_config("my_quant")
         ... class MyQuantConfig(QuantizationConfig):
@@ -73,10 +68,12 @@ def register_quantization_config(quantization: str):
     def _wrapper(quant_config_cls):
         if quantization in QUANTIZATION_METHODS:
             raise ValueError(
-                f"The quantization method `{quantization}` is already exists.")
+                f"The quantization method `{quantization}` is already exists."
+            )
         if not issubclass(quant_config_cls, QuantizationConfig):
-            raise ValueError("The quantization config must be a subclass of "
-                             "`QuantizationConfig`.")
+            raise ValueError(
+                "The quantization config must be a subclass of `QuantizationConfig`."
+            )
         _CUSTOMIZED_METHOD_TO_QUANT_CONFIG[quantization] = quant_config_cls
         QUANTIZATION_METHODS.append(quantization)
         return quant_config_cls
@@ -91,19 +88,17 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
     # lazy import to avoid triggering `torch.compile` too early
     from aphrodite.quantization.quark.quark import QuarkConfig
 
-    from .aqlm import AQLMConfig
     from .auto_round import AutoRoundConfig
     from .awq import AWQConfig
     from .awq_marlin import AWQMarlinConfig
     from .bitblas import BitBLASConfig
     from .bitsandbytes import BitsAndBytesConfig
-    from .compressed_tensors.compressed_tensors import (  # noqa: E501
-        CompressedTensorsConfig)
+    from .compressed_tensors.compressed_tensors import CompressedTensorsConfig
     from .deepspeedfp import DeepSpeedFPConfig
     from .experts_int8 import ExpertsInt8Config
     from .fbgemm_fp8 import FBGEMMFp8Config
-    from .fp6 import QuantLLMFPConfig
     from .fp8 import Fp8Config
+    from .fp_quant import FPQuantConfig
     from .gguf import GGUFConfig
     from .gptq import GPTQConfig
     from .gptq_bitblas import GPTQBitBLASConfig
@@ -112,28 +107,24 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
     from .hqq_marlin import HQQMarlinConfig
     from .inc import INCConfig
     from .ipex_quant import IPEXConfig
-    from .marlin import MarlinConfig
     from .modelopt import ModelOptFp8Config, ModelOptNvFp4Config
     from .moe_wna16 import MoeWNA16Config
     from .mxfp4 import Mxfp4Config
-    from .neuron_quant import NeuronQuantConfig
     from .petit import PetitNvFp4Config
     from .ptpc_fp8 import PTPCFp8Config
-    from .qqq import QQQConfig
     from .rtn import RTNConfig
     from .torchao import TorchAOConfig
     from .tpu_int8 import Int8TpuConfig
 
     method_to_config: dict[str, type[QuantizationConfig]] = {
-        "aqlm": AQLMConfig,
         "awq": AWQConfig,
         "deepspeedfp": DeepSpeedFPConfig,
         "tpu_int8": Int8TpuConfig,
         "fp8": Fp8Config,
         "fbgemm_fp8": FBGEMMFp8Config,
+        "fp_quant": FPQuantConfig,
         "modelopt": ModelOptFp8Config,
         "modelopt_fp4": ModelOptNvFp4Config,
-        "marlin": MarlinConfig,
         "bitblas": BitBLASConfig,
         "gguf": GGUFConfig,
         "gptq_marlin_24": GPTQMarlin24Config,
@@ -144,10 +135,8 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
         "compressed-tensors": CompressedTensorsConfig,
         "bitsandbytes": BitsAndBytesConfig,
         "ptpc_fp8": PTPCFp8Config,
-        "qqq": QQQConfig,
         "hqq": HQQMarlinConfig,
         "experts_int8": ExpertsInt8Config,
-        "neuron_quant": NeuronQuantConfig,
         "ipex": IPEXConfig,
         "quark": QuarkConfig,
         "moe_wna16": MoeWNA16Config,
@@ -155,12 +144,6 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]:
         "auto-round": AutoRoundConfig,
         "rtn": RTNConfig,
         "inc": INCConfig,
-        "fp2": QuantLLMFPConfig,
-        "fp3": QuantLLMFPConfig,
-        "fp4": QuantLLMFPConfig,
-        "fp5": QuantLLMFPConfig,
-        "fp6": QuantLLMFPConfig,
-        "fp7": QuantLLMFPConfig,
         "mxfp4": Mxfp4Config,
         "petit_nvfp4": PetitNvFp4Config,
     }

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aphrodite.attention.backends.abstract import AttentionBackend
@@ -6,7 +6,6 @@ if TYPE_CHECKING:
 import torch
 
 from aphrodite.attention.backends.abstract import AttentionMetadata
-from aphrodite.common import envs
 from aphrodite.config import (CacheConfig, ModelConfig,
                               get_current_aphrodite_config)
 from aphrodite.distributed import get_tensor_model_parallel_world_size
@@ -16,27 +15,26 @@ from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
                                               MergedColumnParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.mamba.abstract import MambaBase
-from aphrodite.modeling.layers.mamba.mamba2_metadata import update_metadata
 from aphrodite.modeling.layers.mamba.mamba_utils import (
     MambaStateDtypeCalculator, MambaStateShapeCalculator)
 from aphrodite.modeling.layers.mamba.ops.causal_conv1d import (
     causal_conv1d_fn, causal_conv1d_update)
-from aphrodite.platforms import current_platform
-from aphrodite.utils import direct_register_custom_op
+from aphrodite.utils.torch_utils import direct_register_custom_op
 from aphrodite.v1.attention.backends.short_conv_attn import (
     ShortConvAttentionMetadata)
 
 
 @CustomOp.register("short_conv")
 class ShortConv(MambaBase, CustomOp):
-
-    def __init__(self,
-                 config,
-                 dim: int,
-                 layer_idx: int,
-                 model_config: Optional[ModelConfig] = None,
-                 cache_config: Optional[CacheConfig] = None,
-                 prefix: str = ""):
+    def __init__(
+        self,
+        config,
+        dim: int,
+        layer_idx: int,
+        model_config: ModelConfig | None = None,
+        cache_config: CacheConfig | None = None,
+        prefix: str = "",
+    ):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
@@ -69,15 +67,11 @@ class ShortConv(MambaBase, CustomOp):
             prefix=f"{prefix}.out_proj",
         )
 
-        assert envs.APHRODITE_USE_V1, ("ShortConv layers are only supported in V1")
         compilation_config = get_current_aphrodite_config().compilation_config
         if prefix in compilation_config.static_forward_context:
             raise ValueError(f"Duplicate layer name: {prefix}")
         compilation_config.static_forward_context[prefix] = self
-        # The outer list is for v0 PP virtual engine. Though this code path
-        # only runs for v1, we have to do this to unify with the interface
-        # of Attention + v0 PP.
-        self.kv_cache = [(torch.tensor([]), )]
+        self.kv_cache = (torch.tensor([]),)
 
         self.model_config = model_config
         self.cache_config = cache_config
@@ -87,7 +81,6 @@ class ShortConv(MambaBase, CustomOp):
         self,
         hidden_states: torch.Tensor,
         output: torch.Tensor,
-        conv_metadata: ShortConvAttentionMetadata,
     ):
         return
 
@@ -95,7 +88,6 @@ class ShortConv(MambaBase, CustomOp):
         self,
         hidden_states: torch.Tensor,
         output: torch.Tensor,
-        conv_metadata: ShortConvAttentionMetadata,
     ):
         torch.ops.aphrodite.short_conv(
             hidden_states,
@@ -107,7 +99,6 @@ class ShortConv(MambaBase, CustomOp):
         self,
         hidden_states: torch.Tensor,
         output: torch.Tensor,
-        conv_metadata: ShortConvAttentionMetadata,
     ):
         forward_context = get_forward_context()
         # ShortConvAttentionMetadata contains metadata necessary for the
@@ -119,19 +110,19 @@ class ShortConv(MambaBase, CustomOp):
         if attn_metadata is not None:
             assert isinstance(attn_metadata, dict)
             attn_metadata = attn_metadata[self.prefix]
-            conv_metadata = attn_metadata
             assert isinstance(attn_metadata, ShortConvAttentionMetadata)
             self_kv_cache = self.kv_cache[forward_context.virtual_engine]
             conv_state = self_kv_cache[0].transpose(-1, -2)
             state_indices_tensor = attn_metadata.state_indices_tensor
-            has_initial_states_p = attn_metadata.has_initial_states
+            has_initial_states_p = attn_metadata.has_initial_states_p
 
         BCx, _ = self.in_proj(hidden_states)
 
         B, C, x = BCx.chunk(3, dim=-1)
 
-        conv_weights = self.conv.weight.view(self.conv.weight.size(0),
-                                             self.conv.weight.size(2))
+        conv_weights = self.conv.weight.view(
+            self.conv.weight.size(0), self.conv.weight.size(2)
+        )
 
         if attn_metadata is None:
             # V1 profile run
@@ -172,26 +163,26 @@ class ShortConv(MambaBase, CustomOp):
             dim=0,
         )
         query_start_loc_p = (
-            attn_metadata.query_start_loc[-num_prefills - 1:] -
-            num_decodes if has_prefill else None)
+            attn_metadata.query_start_loc[-num_prefills - 1 :] - num_decodes
+            if has_prefill
+            else None
+        )
 
         conv_output_list = []
 
         if has_prefill:
             Bx_p = (B_p * x_p).transpose(0, 1)
-            if conv_metadata.cu_seqlen is None:
-                conv_metadata = update_metadata(Bx_p, query_start_loc_p,
-                                                conv_metadata)
-            Bx = causal_conv1d_fn(Bx_p,
-                                  conv_weights,
-                                  self.conv.bias,
-                                  activation=None,
-                                  conv_states=conv_state,
-                                  has_initial_state=has_initial_states_p,
-                                  cache_indices=state_indices_tensor_p,
-                                  metadata=conv_metadata,
-                                  query_start_loc=query_start_loc_p).transpose(
-                                      0, 1)[:num_prefill_tokens]
+            Bx = causal_conv1d_fn(
+                Bx_p,
+                conv_weights,
+                self.conv.bias,
+                activation=None,
+                conv_states=conv_state,
+                has_initial_state=has_initial_states_p,
+                cache_indices=state_indices_tensor_p,
+                metadata=attn_metadata,
+                query_start_loc=query_start_loc_p,
+            ).transpose(0, 1)[:num_prefill_tokens]
 
             y = C_p * Bx
             conv_output_list.append(y)
@@ -204,7 +195,8 @@ class ShortConv(MambaBase, CustomOp):
                 conv_weights,
                 self.conv.bias,
                 activation=None,
-                conv_state_indices=state_indices_tensor_d)
+                conv_state_indices=state_indices_tensor_d,
+            )
             y = C_d * Bx
             conv_output_list.insert(0, y)
 
@@ -236,6 +228,7 @@ class ShortConv(MambaBase, CustomOp):
     def get_attn_backend(self) -> type["AttentionBackend"]:
         from aphrodite.v1.attention.backends.short_conv_attn import (
             ShortConvAttentionBackend)
+
         return ShortConvAttentionBackend
 
 
@@ -246,9 +239,7 @@ def short_conv(
 ) -> None:
     forward_context: ForwardContext = get_forward_context()
     self = forward_context.no_compile_layers[layer_name]
-    self.forward_cuda(hidden_states=hidden_states,
-                      output=output,
-                      conv_metadata=None)
+    self.forward_cuda(hidden_states=hidden_states, output=output)
 
 
 def short_conv_fake(
@@ -264,5 +255,4 @@ direct_register_custom_op(
     op_func=short_conv,
     mutates_args=["output"],
     fake_impl=short_conv_fake,
-    dispatch_key=current_platform.dispatch_key,
 )

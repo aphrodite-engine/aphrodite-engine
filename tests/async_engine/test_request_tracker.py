@@ -1,7 +1,7 @@
 import pytest
 
 from aphrodite.engine.async_aphrodite import RequestTracker
-from aphrodite.common.outputs import RequestOutput
+from aphrodite.outputs import RequestOutput
 
 
 @pytest.mark.asyncio

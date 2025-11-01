@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel
 
 from aphrodite.endpoints.llm import LLM
-from aphrodite.common.outputs import RequestOutput
+from aphrodite.outputs import RequestOutput
 from aphrodite.platforms import current_platform
 from aphrodite.common.sampling_params import GuidedDecodingParams, SamplingParams
 

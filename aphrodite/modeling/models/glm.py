@@ -1,4 +1,5 @@
 """Inference-only HF format GLM-4 model compatible with THUDM weights."""
+
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 
@@ -6,7 +7,6 @@ from .utils import PPMissingLayer
 
 
 class GlmForCausalLM(LlamaForCausalLM):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         aphrodite_config.model_config.hf_config.partial_rotary_factor = 0.5
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)

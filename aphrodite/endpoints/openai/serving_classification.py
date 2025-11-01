@@ -1,13 +1,10 @@
 from http import HTTPStatus
-from typing import Optional, Union, cast
+from typing import cast
 
 import numpy as np
 from fastapi import Request
-from loguru import logger
 from typing_extensions import override
 
-from aphrodite.config import ModelConfig
-from aphrodite.common.outputs import ClassificationOutput, PoolingRequestOutput
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (ClassificationData,
@@ -17,16 +14,20 @@ from aphrodite.endpoints.openai.protocol import (ClassificationData,
 from aphrodite.endpoints.openai.serving_engine import (
     ClassificationServeContext, OpenAIServing, ServeContext)
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
+from aphrodite.endpoints.renderer import RenderConfig
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.logger import init_logger
+from aphrodite.outputs import ClassificationOutput, PoolingRequestOutput
+
+logger = init_logger(__name__)
 
 
 class ClassificationMixin(OpenAIServing):
-
     @override
     async def _preprocess(
         self,
         ctx: ServeContext,
-    ) -> Optional[ErrorResponse]:
+    ) -> ErrorResponse | None:
         """
         Process classification inputs: tokenize text, resolve adapters,
         and prepare model-specific inputs.
@@ -42,18 +43,12 @@ class ClassificationMixin(OpenAIServing):
             return None
 
         try:
-            ctx.lora_request = self._maybe_get_adapters(ctx.request)
+            ctx.tokenizer = await self.engine_client.get_tokenizer()
 
-            ctx.tokenizer = await self.engine_client.get_tokenizer(
-                ctx.lora_request)
-
-            (
-                ctx.request_prompts,
-                ctx.engine_prompts,
-            ) = await self._preprocess_completion(
-                ctx.request,
-                ctx.tokenizer,
-                ctx.request.input,
+            renderer = self._get_renderer(ctx.tokenizer)
+            ctx.engine_prompts = await renderer.render_prompt(
+                prompt_or_prompts=ctx.request.input,
+                config=self._build_render_config(ctx.request),
             )
 
             return None
@@ -66,7 +61,7 @@ class ClassificationMixin(OpenAIServing):
     def _build_response(
         self,
         ctx: ServeContext,
-    ) -> Union[ClassificationResponse, ErrorResponse]:
+    ) -> ClassificationResponse | ErrorResponse:
         """
         Convert model outputs to a formatted classification response
         with probabilities and labels.
@@ -75,16 +70,16 @@ class ClassificationMixin(OpenAIServing):
         items: list[ClassificationData] = []
         num_prompt_tokens = 0
 
-        final_res_batch_checked = cast(list[PoolingRequestOutput],
-                                       ctx.final_res_batch)
+        final_res_batch_checked = cast(list[PoolingRequestOutput], ctx.final_res_batch)
 
         for idx, final_res in enumerate(final_res_batch_checked):
             classify_res = ClassificationOutput.from_base(final_res.outputs)
 
             probs = classify_res.probs
             predicted_index = int(np.argmax(probs))
-            label = getattr(self.model_config.hf_config, "id2label",
-                            {}).get(predicted_index)
+            label = getattr(self.model_config.hf_config, "id2label", {}).get(
+                predicted_index
+            )
 
             item = ClassificationData(
                 index=idx,
@@ -110,6 +105,12 @@ class ClassificationMixin(OpenAIServing):
             usage=usage,
         )
 
+    def _build_render_config(self, request: ClassificationRequest) -> RenderConfig:
+        return RenderConfig(
+            max_length=self.max_model_len,
+            truncate_prompt_tokens=request.truncate_prompt_tokens,
+        )
+
 
 class ServingClassification(ClassificationMixin):
     request_id_prefix = "classify"
@@ -117,15 +118,13 @@ class ServingClassification(ClassificationMixin):
     def __init__(
         self,
         engine_client: EngineClient,
-        model_config: ModelConfig,
         models: OpenAIServingModels,
         *,
-        request_logger: Optional[RequestLogger],
+        request_logger: RequestLogger | None,
         log_error_stack: bool = False,
     ) -> None:
         super().__init__(
             engine_client=engine_client,
-            model_config=model_config,
             models=models,
             request_logger=request_logger,
             log_error_stack=log_error_stack,
@@ -135,10 +134,9 @@ class ServingClassification(ClassificationMixin):
         self,
         request: ClassificationRequest,
         raw_request: Request,
-    ) -> Union[ClassificationResponse, ErrorResponse]:
-        model_name = self._get_model_name(request.model)
-        request_id = (f"{self.request_id_prefix}-"
-                      f"{self._base_request_id(raw_request)}")
+    ) -> ClassificationResponse | ErrorResponse:
+        model_name = self.models.model_name()
+        request_id = f"{self.request_id_prefix}-{self._base_request_id(raw_request)}"
 
         ctx = ClassificationServeContext(
             request=request,
@@ -153,7 +151,7 @@ class ServingClassification(ClassificationMixin):
     def _create_pooling_params(
         self,
         ctx: ClassificationServeContext,
-    ) -> Union[PoolingParams, ErrorResponse]:
+    ) -> PoolingParams | ErrorResponse:
         pooling_params = super()._create_pooling_params(ctx)
         if isinstance(pooling_params, ErrorResponse):
             return pooling_params

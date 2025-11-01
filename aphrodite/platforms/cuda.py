@@ -3,27 +3,29 @@ pynvml. However, it should not initialize cuda context.
 """
 
 import os
-from datetime import timedelta
+from collections.abc import Callable
 from functools import cache, wraps
-from typing import TYPE_CHECKING, Callable, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, TypeVar
 
 import torch
-from loguru import logger
-from torch.distributed import PrefixStore, ProcessGroup
-from torch.distributed.distributed_c10d import is_nccl_available
 from typing_extensions import ParamSpec
 
 # import custom ops, trigger op registration
 import aphrodite._C  # noqa
-import aphrodite.common.envs as envs
-from aphrodite.common.logger import log_once
-from aphrodite.utils import cuda_device_count_stateless, import_pynvml
+import aphrodite.envs as envs
+from aphrodite.logger import init_logger
+from aphrodite.utils.import_utils import import_pynvml
+from aphrodite.utils.torch_utils import cuda_device_count_stateless
 
-from .interface import DeviceCapability, Platform, PlatformEnum, _Backend
+from .interface import DeviceCapability, Platform, PlatformEnum
 
 if TYPE_CHECKING:
-    from aphrodite.config import AphroditeConfig, ModelConfig
+    from aphrodite.attention.backends.registry import _Backend
+    from aphrodite.config import AphroditeConfig
+else:
+    _Backend = None
 
+logger = init_logger(__name__)
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -36,7 +38,6 @@ torch.backends.cuda.enable_cudnn_sdp(False)
 
 
 def with_nvml_context(fn: Callable[_P, _R]) -> Callable[_P, _R]:
-
     @wraps(fn)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         pynvml.nvmlInit()
@@ -62,8 +63,7 @@ class CudaPlatformBase(Platform):
         if self.has_device_capability(80):
             # Ampere and Hopper or later NVIDIA GPUs.
             return [torch.bfloat16, torch.float16, torch.float32]
-        elif (not self.has_device_capability(80)
-              ) and self.has_device_capability(60):
+        if self.has_device_capability(60):
             # Pascal, Volta and Turing NVIDIA GPUs, BF16 is not supported
             return [torch.float16, torch.float32]
         # Kepler and Maxwell NVIDIA GPUs, only FP32 is supported,
@@ -82,9 +82,7 @@ class CudaPlatformBase(Platform):
         _ = torch.zeros(1, device=device)
 
     @classmethod
-    def get_device_capability(cls,
-                              device_id: int = 0
-                              ) -> Optional[DeviceCapability]:
+    def get_device_capability(cls, device_id: int = 0) -> DeviceCapability | None:
         raise NotImplementedError
 
     @classmethod
@@ -94,16 +92,6 @@ class CudaPlatformBase(Platform):
     @classmethod
     def get_device_total_memory(cls, device_id: int = 0) -> int:
         raise NotImplementedError
-
-    @classmethod
-    def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
-        if enforce_eager and not envs.APHRODITE_USE_V1:
-            logger.warning(
-                "To see benefits of async output processing, enable CUDA "
-                "graph. Since, enforce-eager is enabled, async output "
-                "processor cannot be used")
-            return False
-        return True
 
     @classmethod
     def is_fully_connected(cls, device_ids: list[int]) -> bool:
@@ -119,17 +107,7 @@ class CudaPlatformBase(Platform):
         model_config = aphrodite_config.model_config
 
         if parallel_config.worker_cls == "auto":
-            if aphrodite_config.speculative_config:
-                if not envs.APHRODITE_USE_V1:
-                    raise NotImplementedError(
-                        "Speculative decoding is not supported on Aphrodite V0.")
-                parallel_config.worker_cls = "aphrodite.v1.worker.gpu_worker.Worker"
-            else:
-                if envs.APHRODITE_USE_V1:
-                    parallel_config.worker_cls = \
-                        "aphrodite.v1.worker.gpu_worker.Worker"
-                else:
-                    parallel_config.worker_cls = "aphrodite.worker.worker.Worker"
+            parallel_config.worker_cls = "aphrodite.v1.worker.gpu_worker.Worker"
 
         cache_config = aphrodite_config.cache_config
         if cache_config and cache_config.block_size is None:
@@ -137,163 +115,277 @@ class CudaPlatformBase(Platform):
 
         # TODO(lucas): handle this more gracefully
         # Note: model_config may be None during testing
-        if model_config is not None and model_config.use_mla:
+        # Note: block_size is initialized in
+        # HybridAttentionMambaModelConfig.verify_and_update_config
+        # for models with both attention and mamba,
+        # and doesn't need to be reinitialized here
+        if (
+            model_config is not None
+            and model_config.use_mla
+            and cache_config.block_size is not None
+        ):
+            use_sparse = hasattr(aphrodite_config.model_config.hf_config, "index_topk")
             # If `APHRODITE_ATTENTION_BACKEND` is not set and we are using MLA,
             # then we default to FlashMLA backend for non-blackwell GPUs,
             # else we default to CutlassMLA. For each case, we force the
             # required block_size.
             use_flashmla = False
             use_cutlass_mla = False
+            use_flashinfer_mla = False
 
             if envs.APHRODITE_ATTENTION_BACKEND is None:
                 # Default case
                 if cls.is_device_capability(100):
                     # Blackwell => Force CutlassMLA.
                     use_cutlass_mla = True
+                    # TODO: This does not work, because the
+                    # global_force_attn_backend_context_manager is not set.
+                    # See aphrodite/attention/selector.py:_cached_get_attn_backend
                     envs.APHRODITE_ATTENTION_BACKEND = "CUTLASS_MLA"
                 else:
                     # Not Blackwell
                     use_flashmla = True
             else:
                 # Forced case
-                use_flashmla = (envs.APHRODITE_ATTENTION_BACKEND == "FLASHMLA")
-                use_cutlass_mla = (
-                    envs.APHRODITE_ATTENTION_BACKEND == "CUTLASS_MLA")
+                use_flashmla = envs.APHRODITE_ATTENTION_BACKEND == "FLASHMLA"
+                use_cutlass_mla = envs.APHRODITE_ATTENTION_BACKEND == "CUTLASS_MLA"
+                use_flashinfer_mla = envs.APHRODITE_ATTENTION_BACKEND == "FLASHINFER_MLA"
 
-            from aphrodite.attention.ops.flashmla import is_flashmla_supported
-            if use_flashmla and is_flashmla_supported()[0] \
-                and cache_config.block_size != 64:
+            from aphrodite.attention.ops.flashmla import (
+                is_flashmla_dense_supported)
+
+            if (
+                use_flashmla
+                and is_flashmla_dense_supported()[0]
+                and cache_config.block_size % 64 != 0
+            ):
+                cache_config.block_size = 64
+                logger.info("Forcing kv cache block size to 64 for FlashMLA backend.")
+
+            if use_cutlass_mla and cache_config.block_size % 128 != 0:
+                cache_config.block_size = 128
+                logger.info(
+                    "Forcing kv cache block size to 128 for CUTLASS_MLA backend."
+                )
+
+            if (
+                use_flashinfer_mla
+                and cache_config.block_size != 32
+                and cache_config.block_size % 64 != 0
+            ):
                 cache_config.block_size = 64
                 logger.info(
-                    "Forcing kv cache block size to 64 for FlashMLA backend.")
+                    "Forcing kv cache block size to 64 for FlashInferMLA backend."
+                )
 
-            if use_cutlass_mla and cache_config.block_size != 128:
-                cache_config.block_size = 128
-                logger.info("Forcing kv cache block size to 128 for "
-                            "CUTLASS_MLA backend.")
-
+            # TODO(Chen): remove this hacky code
+            if use_sparse and cache_config.block_size != 64:
+                cache_config.block_size = 64
+                logger.info(
+                    "Forcing kv cache block size to 64 for FlashMLASparse backend."
+                )
         # lazy import to avoid circular import
         from aphrodite.config import CUDAGraphMode
 
         compilation_config = aphrodite_config.compilation_config
-        if (envs.APHRODITE_ALL2ALL_BACKEND == "deepep_high_throughput"
-                and parallel_config.data_parallel_size > 1
-                and compilation_config.cudagraph_mode != CUDAGraphMode.NONE):
+        if (
+            parallel_config.all2all_backend == "deepep_high_throughput"
+            and parallel_config.data_parallel_size > 1
+            and compilation_config.cudagraph_mode != CUDAGraphMode.NONE
+        ):
+            # TODO: Piecewise Cuda graph might be enabled
+            # if torch compile cache key issue fixed
+            # See https://github.com/vllm-project/vllm/pull/25093
             logger.info(
-                "Data Parallel: disabling cudagraphs since DP "
-                "with DeepEP high-throughput kernels are not CUDA Graph "
-                "compatible. The DeepEP low-latency kernels are CUDA Graph "
-                "compatible. Set the all_to_all backend to deepep_low_latency "
-                "to use those kernels instead.")
+                "WideEP: Disabling CUDA Graphs since DeepEP high-throughput "
+                "kernels are optimized for prefill and are incompatible with "
+                "CUDA Graphs. "
+                "In order to use CUDA Graphs for decode-optimized workloads, "
+                "use --all2all-backend with another option, such as "
+                "deepep_low_latency, pplx, or allgather_reducescatter."
+            )
             compilation_config.cudagraph_mode = CUDAGraphMode.NONE
-            if model_config is not None:
-                model_config.enforce_eager = True
 
     @classmethod
-    def get_current_memory_usage(cls,
-                                 device: Optional[torch.types.Device] = None
-                                 ) -> float:
+    def get_current_memory_usage(
+        cls, device: torch.types.Device | None = None
+    ) -> float:
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
         return torch.cuda.max_memory_allocated(device)
 
     @classmethod
-    def get_vit_attn_backend(cls, support_fa: bool = False) -> _Backend:
-        if cls.has_device_capability(80) and support_fa:
-            from transformers.utils import is_flash_attn_2_available
-            if is_flash_attn_2_available():
+    def get_vit_attn_backend(cls, head_size: int, dtype: torch.dtype) -> "_Backend":
+        from aphrodite.attention.backends.registry import _Backend
+
+        # For Blackwell GPUs, force TORCH_SDPA for now.
+        # See https://github.com/facebookresearch/xformers/issues/1317#issuecomment-3199392579 # noqa: E501
+        if cls.has_device_capability(100):
+            return _Backend.TORCH_SDPA
+
+        if dtype not in (torch.float16, torch.bfloat16):
+            return _Backend.XFORMERS
+
+        if cls.has_device_capability(80):
+            FLASH_ATTN_V1 = (
+                "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"  # noqa: E501
+            )
+            from aphrodite.attention.selector import is_attn_backend_supported
+
+            is_default_fa_supported = is_attn_backend_supported(
+                FLASH_ATTN_V1, head_size, dtype, allow_import_error=False
+            )
+            if is_default_fa_supported:
                 return _Backend.FLASH_ATTN
-            log_once(
-                "WARNING",
-                "Current `aphrodite-flash-attn` has a bug inside vision "
-                "module, so we use xformers backend instead. You can "
-                "run `pip install flash-attn` to use flash-attention "
-                "backend.")
-        # Fallback for Volta/Turing GPUs or FA not supported
-        return _Backend.XFORMERS
+            else:
+                # Fallback to XFORMERS
+                return _Backend.XFORMERS
+        else:
+            # Fallback for Volta/Turing GPUs or FA not supported
+            return _Backend.XFORMERS
 
     @classmethod
-    def get_attn_backend_cls(cls, selected_backend, head_size, dtype,
-                             kv_cache_dtype, block_size, use_v1, use_mla,
-                             has_sink) -> str:
+    def get_attn_backend_cls(
+        cls,
+        selected_backend,
+        head_size,
+        dtype,
+        kv_cache_dtype,
+        block_size,
+        use_v1,
+        use_mla,
+        has_sink,
+        use_sparse,
+    ) -> str:
+        from aphrodite.attention.backends.registry import _Backend
+
         if use_mla:
-            # TODO(lucas): refactor to be more concise
-            #  we should probably consider factoring out V1 here
-            from aphrodite.attention.ops.flashmla import is_flashmla_supported
+            # explicitly reject non-MLA backends when MLA is enabled to avoid
+            # silently selecting an incompatible backend (e.g., FLASHINFER).
+            if selected_backend in {
+                _Backend.FLASHINFER,
+                _Backend.FLASH_ATTN,
+                _Backend.TRITON_ATTN,
+                _Backend.TREE_ATTN,
+                _Backend.XFORMERS,
+            }:
+                raise ValueError(
+                    f"Attention backend {selected_backend} incompatible with MLA. "
+                    "Please use one of the MLA backends: FLASHINFER_MLA, CUTLASS_MLA, "
+                    "FLASHMLA, FLASH_ATTN_MLA, or TRITON_MLA. Alternatively, set "
+                    "APHRODITE_MLA_DISABLE=1 to disable MLA for this model."
+                )
+            if not use_v1:
+                raise RuntimeError(
+                    "MLA attention backends require the V1 engine. "
+                    "Set APHRODITE_USE_V1=1 to enable them."
+                )
+
+            from aphrodite.attention.ops.flashmla import (
+                is_flashmla_dense_supported)
             from aphrodite.attention.utils.fa_utils import (
                 flash_attn_supports_mla)
 
-            use_cutlassmla = selected_backend == _Backend.CUTLASS_MLA or (
-                selected_backend is None and cls.is_device_capability(100)
-                and block_size == 128)
-            use_flashmla = selected_backend in [
-                _Backend.FLASHMLA, _Backend.FLASHMLA_APHRODITE_V1
-            ] or (selected_backend is None and is_flashmla_supported()[0])
-            use_flashattn = selected_backend == _Backend.FLASH_ATTN_MLA or (
-                selected_backend is None and flash_attn_supports_mla())
-            use_triton = selected_backend == _Backend.TRITON_MLA or (
-                selected_backend is None)
+            if use_sparse:
+                logger.info_once("Using Sparse MLA backend on V1 engine.")
+                return (
+                    "aphrodite.v1.attention.backends.mla.flashmla_sparse."
+                    "FlashMLASparseBackend"
+                )
 
-            def _get_version(name, import_suffix) -> str:
-                if use_v1:
-                    log_once("INFO", f"Using {name} backend on V1 engine.")
-                    return f"aphrodite.v1.attention.backends.mla.{import_suffix}"
-                else:
-                    log_once("INFO", f"Using {name} backend.")
-                    return f"aphrodite.attention.backends.{import_suffix}"
+            use_cutlassmla = selected_backend == _Backend.CUTLASS_MLA or (
+                selected_backend is None
+                and cls.is_device_capability(100)
+                and block_size % 128 == 0
+            )
+            use_flashinfermla = selected_backend == _Backend.FLASHINFER_MLA or (
+                selected_backend is None
+                and cls.is_device_capability(100)
+                and (block_size == 32 or block_size % 64 == 0)
+            )
+            use_flashmla = selected_backend == _Backend.FLASHMLA or (
+                selected_backend is None and is_flashmla_dense_supported()[0]
+            )
+            use_flashattn = selected_backend == _Backend.FLASH_ATTN_MLA or (
+                selected_backend is None and flash_attn_supports_mla()
+            )
+            use_triton = selected_backend == _Backend.TRITON_MLA or (
+                selected_backend is None
+            )
 
             if use_cutlassmla:
-                if use_v1:
-                    log_once("INFO", "Using Cutlass MLA backend on V1 engine.")
-                    return ("aphrodite.v1.attention.backends.mla."
-                            "cutlass_mla.CutlassMLABackend")
-                else:
-                    logger.warning(
-                        "Cutlass MLA backend is only supported on V1 engine")
+                logger.info_once(
+                    "Using Cutlass MLA backend on V1 engine.", scope="local"
+                )
+                return "aphrodite.v1.attention.backends.mla.cutlass_mla.CutlassMLABackend"
+            if use_flashinfermla:
+                from aphrodite.v1.attention.backends.utils import (
+                    set_kv_cache_layout)
+
+                set_kv_cache_layout("HND")
+                logger.info_once("Using FlashInfer MLA backend on V1 engine.")
+                return (
+                    "aphrodite.v1.attention.backends.mla.flashinfer_mla.FlashInferMLABackend"
+                )
             if use_flashmla:
-                if block_size != 64:
+                if block_size % 64 != 0:
                     logger.warning(
-                        "FlashMLA backend is not supported for block size {}"
+                        "FlashMLA backend is not supported for block size %d"
                         " (currently only supports block size 64).",
-                        block_size)
+                        block_size,
+                    )
                 else:
-                    return _get_version("FlashMLA", "flashmla.FlashMLABackend")
+                    logger.info_once("Using FlashMLA backend on V1 engine.")
+                    return "aphrodite.v1.attention.backends.mla.flashmla.FlashMLABackend"
             if use_flashattn:
-                if use_v1:
-                    log_once("INFO",
-                        "Using FlashAttention MLA backend on V1 engine.")
-                    return ("aphrodite.v1.attention.backends.mla."
-                            "flashattn_mla.FlashAttnMLABackend")
-                else:
-                    logger.warning(
-                        "FlashAttention MLA backend is only supported on V1 "
-                        "engine.")
+                logger.info_once("Using FlashAttention MLA backend on V1 engine.")
+                return (
+                    "aphrodite.v1.attention.backends.mla.flashattn_mla.FlashAttnMLABackend"
+                )
             if use_triton:
-                return _get_version("Triton MLA",
-                                    "triton_mla.TritonMLABackend")
+                logger.info_once("Using Triton MLA backend on V1 engine.")
+                return "aphrodite.v1.attention.backends.mla.triton_mla.TritonMLABackend"
         if use_v1:
             FLASHINFER_V1 = "aphrodite.v1.attention.backends.flashinfer.FlashInferBackend"  # noqa: E501
-            FLEX_ATTENTION_V1 = "aphrodite.v1.attention.backends.flex_attention.FlexAttentionBackend"  # noqa: E501
-            TRITON_ATTN_APHRODITE_V1 = "aphrodite.v1.attention.backends.triton_attn.TritonAttentionBackend"  # noqa: E501
-            FLASH_ATTN_V1 = "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"  # noqa: E501
+            FLEX_ATTENTION_V1 = (
+                "aphrodite.v1.attention.backends.flex_attention.FlexAttentionBackend"  # noqa: E501
+            )
+            TRITON_ATTN = (
+                "aphrodite.v1.attention.backends.triton_attn.TritonAttentionBackend"  # noqa: E501
+            )
+            FLASH_ATTN_V1 = (
+                "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"  # noqa: E501
+            )
             TREE_ATTN_V1 = "aphrodite.v1.attention.backends.tree_attn.TreeAttentionBackend"  # noqa: E501
-            XFORMERS_APHRODITE_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
+            XFORMERS_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
 
-            if selected_backend == _Backend.FLEX_ATTENTION:
-                log_once("INFO", "Using FlexAttention backend on V1 engine.")
+            use_fp8_kv_cache = kv_cache_dtype is not None and kv_cache_dtype.startswith(
+                "fp8"
+            )
+
+            if selected_backend == _Backend.FLASHINFER:
+                logger.info_once("Using FlashInfer backend on V1 engine.")
+                if cls.has_device_capability(100):
+                    from aphrodite.v1.attention.backends.utils import (
+                        set_kv_cache_layout)
+
+                    set_kv_cache_layout("HND")
+                return FLASHINFER_V1
+            elif selected_backend == _Backend.FLEX_ATTENTION:
+                logger.info_once("Using FlexAttention backend on V1 engine.")
                 return FLEX_ATTENTION_V1
-            elif selected_backend == _Backend.TRITON_ATTN_APHRODITE_V1:
-                log_once("INFO", "Using Triton backend on V1 engine.")
-                return TRITON_ATTN_APHRODITE_V1
+            elif selected_backend == _Backend.TRITON_ATTN:
+                logger.info_once("Using Triton backend on V1 engine.")
+                return TRITON_ATTN
             elif selected_backend == _Backend.FLASH_ATTN:
-                log_once("INFO", "Using Flash Attention backend on V1 engine.")
+                logger.info_once("Using Flash Attention backend on V1 engine.")
                 return FLASH_ATTN_V1
             elif selected_backend == _Backend.TREE_ATTN:
-                log_once("INFO", "Using Tree Attention backend on V1 engine.")
+                logger.info_once("Using Tree Attention backend on V1 engine.")
                 return TREE_ATTN_V1
             elif selected_backend == _Backend.XFORMERS:
-                log_once("INFO", "Using XFormers backend on V1 engine.")
-                return XFORMERS_APHRODITE_V1
+                logger.info_once("Using XFormers backend on V1 engine.")
+                return XFORMERS_V1
 
             from aphrodite.attention.selector import is_attn_backend_supported
 
@@ -301,38 +393,40 @@ class CudaPlatformBase(Platform):
             # Prefer FlashInfer for Blackwell GPUs if installed
             if cls.is_device_capability(100):
                 if is_default_backend_supported := is_attn_backend_supported(
-                        FLASHINFER_V1, head_size, dtype):
+                    FLASHINFER_V1, head_size, dtype
+                ):
                     from aphrodite.v1.attention.backends.utils import (
                         set_kv_cache_layout)
 
-                    log_once("INFO",
+                    logger.info_once(
                         "Using FlashInfer backend with HND KV cache layout on "
-                        "V1 engine by default for Blackwell (SM 10.0) GPUs.")
+                        "V1 engine by default for Blackwell (SM 10.0) GPUs."
+                    )
                     set_kv_cache_layout("HND")
 
                     return FLASHINFER_V1
 
                 if not is_default_backend_supported.can_import:
-                    log_once("WARNING",
+                    logger.warning_once(
                         "FlashInfer failed to import for V1 engine on "
                         "Blackwell (SM 10.0) GPUs; it is recommended to "
-                        "install FlashInfer for better performance.")
+                        "install FlashInfer for better performance."
+                    )
 
             # FlashAttention is the default for SM 8.0+ GPUs
             if cls.has_device_capability(80):
-                if has_sink and not cls.is_device_capability(90):
-                    log_once("INFO", "Using Triton backend on V1 engine.")
-                    return TRITON_ATTN_APHRODITE_V1
-                if is_default_backend_supported := is_attn_backend_supported(
-                        FLASH_ATTN_V1, head_size, dtype,
-                        allow_import_error=False):
-                    log_once("INFO", "Using Flash Attention backend on "
-                             "V1 engine.")
+                if (has_sink or use_fp8_kv_cache) and not cls.is_device_capability(90):
+                    logger.info_once("Using Triton backend on V1 engine.")
+                    return TRITON_ATTN
+                elif is_default_backend_supported := is_attn_backend_supported(
+                    FLASH_ATTN_V1, head_size, dtype, allow_import_error=False
+                ):
+                    logger.info_once("Using Flash Attention backend on V1 engine.")
                     return FLASH_ATTN_V1
 
             # FlexAttention is the default for older GPUs
             else:
-                log_once("INFO", "Using FlexAttention backend on V1 engine.")
+                logger.info_once("Using FlexAttention backend on V1 engine.")
                 return FLEX_ATTENTION_V1
 
             assert not is_default_backend_supported
@@ -343,99 +437,16 @@ class CudaPlatformBase(Platform):
             if not is_default_backend_supported.dtype:
                 use_flex_attention_reason["dtype"] = dtype
 
-            log_once("INFO",
-                "Using FlexAttention backend for {} on V1 engine.",
-                ", ".join(f"{k}={v}"
-                          for k, v in use_flex_attention_reason.items()),
+            logger.info_once(
+                "Using FlexAttention backend for %s on V1 engine.",
+                ", ".join(f"{k}={v}" for k, v in use_flex_attention_reason.items()),
             )
             return FLEX_ATTENTION_V1
 
-        # Backends for V0 engine
-        if selected_backend == _Backend.FLASHINFER:
-            logger.info("Using FlashInfer backend.")
-            if cls.has_device_capability(100):
-                from aphrodite.v1.attention.backends.utils import (
-                    set_kv_cache_layout)
-                log_once("INFO",
-                    "Using HND KV cache layout on V1 engine by default for "
-                    "Blackwell (SM 10.0) GPUs.")
-                set_kv_cache_layout("HND")
-            return "aphrodite.attention.backends.flashinfer.FlashInferBackend"
-        elif selected_backend == _Backend.XFORMERS:
-            if use_v1:
-                logger.info("Using XFormers backend on V1 engine.")
-                return "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"
-            else:
-                logger.info("Using XFormers backend.")
-                return "aphrodite.attention.backends.xformers.XFormersBackend"
-        elif selected_backend == _Backend.DUAL_CHUNK_FLASH_ATTN:
-            logger.info("Using DualChunkFlashAttention backend.")
-            return ("aphrodite.attention.backends.dual_chunk_flash_attn."
-                    "DualChunkFlashAttentionBackend")
-        elif selected_backend == _Backend.DIFFERENTIAL_FLASH_ATTN:
-            logger.info("Using DifferentialFlashAttention backend.")
-            return ("aphrodite.attention.backends.differential_flash_attn."
-                    "DifferentialFlashAttentionBackend")
-        elif selected_backend == _Backend.FLASH_ATTN:
-            pass
-        elif selected_backend:
-            raise ValueError(
-                f"Invalid attention backend for {cls.device_name}, "
-                f"with use_v1: {use_v1} use_mla: {use_mla}")
-
-        target_backend = _Backend.FLASH_ATTN
-        if not cls.has_device_capability(80):
-            # Volta and Turing NVIDIA GPUs.
-            logger.info(
-                "Cannot use FlashAttention-2 backend for Volta and Turing "
-                "GPUs.")
-            target_backend = _Backend.XFORMERS
-        elif dtype not in (torch.float16, torch.bfloat16):
-            logger.info(
-                "Cannot use FlashAttention-2 backend for dtype other than "
-                "torch.float16 or torch.bfloat16.")
-            target_backend = _Backend.XFORMERS
-        elif block_size % 16 != 0:
-            logger.info(
-                "Cannot use FlashAttention-2 backend for block size not "
-                "divisible by 16.")
-            target_backend = _Backend.XFORMERS
-
-        # FlashAttn is valid for the model, checking if the package is
-        # installed.
-        if target_backend == _Backend.FLASH_ATTN:
-            try:
-                import aphrodite.aphrodite_flash_attn  # noqa: F401
-                from aphrodite.attention.backends.flash_attn import (  # noqa: F401
-                    FlashAttentionBackend, flash_attn_supports_fp8)
-
-                supported_sizes = \
-                    FlashAttentionBackend.get_supported_head_sizes()
-                if head_size not in supported_sizes:
-                    logger.info(
-                        "Cannot use FlashAttention-2 backend for head size {}.",
-                        head_size)
-                    target_backend = _Backend.XFORMERS
-                fp8_kv_cache = (kv_cache_dtype is not None
-                                and kv_cache_dtype.startswith("fp8"))
-                if (fp8_kv_cache and not flash_attn_supports_fp8()):
-                    logger.info(
-                        "Cannot use FlashAttention backend for FP8 KV cache.")
-                    target_backend = _Backend.XFORMERS
-            except ImportError:
-                logger.info(
-                    "Cannot use FlashAttention-2 backend because the "
-                    "aphrodite.aphrodite_flash_attn package is not found. "
-                    "Make sure that aphrodite_flash_attn was built and installed "
-                    "(on by default).")
-                target_backend = _Backend.XFORMERS
-
-        if target_backend == _Backend.XFORMERS:
-            logger.info("Using XFormers backend.")
-            return "aphrodite.attention.backends.xformers.XFormersBackend"
-
-        logger.info("Using Flash Attention backend.")
-        return "aphrodite.attention.backends.flash_attn.FlashAttentionBackend"
+        raise RuntimeError(
+            "V0 attention backends have been removed. Set APHRODITE_USE_V1=1 "
+            "to select a supported backend."
+        )
 
     @classmethod
     def get_punica_wrapper(cls) -> str:
@@ -443,15 +454,13 @@ class CudaPlatformBase(Platform):
 
     @classmethod
     def get_device_communicator_cls(cls) -> str:
-        return "aphrodite.distributed.device_communicators.cuda_communicator.CudaCommunicator"  # noqa
+        return (
+            "aphrodite.distributed.device_communicators.cuda_communicator.CudaCommunicator"  # noqa
+        )
 
     @classmethod
     def supports_fp8(cls) -> bool:
         return cls.has_device_capability(89)
-
-    @classmethod
-    def supports_v1(cls, model_config: "ModelConfig") -> bool:
-        return True
 
     @classmethod
     def use_custom_allreduce(cls) -> bool:
@@ -466,82 +475,12 @@ class CudaPlatformBase(Platform):
         return "aphrodite.compilation.cuda_graph.CUDAGraphWrapper"
 
     @classmethod
-    def stateless_init_device_torch_dist_pg(
-        cls,
-        backend: str,
-        prefix_store: PrefixStore,
-        group_rank: int,
-        group_size: int,
-        timeout: timedelta,
-    ) -> ProcessGroup:
-        assert is_nccl_available()
-        pg: ProcessGroup = ProcessGroup(
-            prefix_store,
-            group_rank,
-            group_size,
-        )
-        from torch.distributed.distributed_c10d import ProcessGroupNCCL
-
-        backend_options = ProcessGroupNCCL.Options()
-        backend_options._timeout = timeout
-
-        backend_class = ProcessGroupNCCL(prefix_store, group_rank, group_size,
-                                         backend_options)
-        backend_type = ProcessGroup.BackendType.NCCL
-        device = torch.device("cuda")
-        pg._set_default_backend(backend_type)
-        backend_class._set_sequence_number_for_group()
-
-        pg._register_backend(device, backend_type, backend_class)
-        return pg
-
-    @classmethod
     def device_count(cls) -> int:
         return cuda_device_count_stateless()
 
     @classmethod
-    def is_kv_cache_dtype_supported(cls, kv_cache_dtype: str,
-                                    model_config: "ModelConfig") -> bool:
-        fp8_attention = kv_cache_dtype.startswith("fp8")
-        attention_backend = envs.APHRODITE_ATTENTION_BACKEND
-        supported = False
-        if model_config is not None and model_config.use_mla:
-            # Default to CutlassMLA for blackwell,
-            # FlashMLA otherwise
-            if attention_backend is None:
-                if cls.is_device_capability(100):
-                    attention_backend = "CUTLASS_MLA"
-                else:
-                    attention_backend = "FLASHMLA"
-
-            # Only FlashMLA and CUTLASS_MLA support fp8
-            if attention_backend in ["FLASHMLA", "CUTLASS_MLA"]:
-                supported = True
-            else:
-                supported = (not fp8_attention)
-        else:
-            # Default to FlashAttention
-            if attention_backend is None:
-                attention_backend = "FLASH_ATTN_APHRODITE_V1"
-
-            # All Blackwell backends support fp8
-            if cls.is_device_capability(100):
-                supported = True
-            elif attention_backend == "FLASH_ATTN_APHRODITE_V1":
-                if fp8_attention:
-                    from aphrodite.attention.utils.fa_utils import (
-                        flash_attn_supports_fp8)
-                    supported = flash_attn_supports_fp8()
-                else:
-                    supported = True
-            elif attention_backend in (
-                "FLASHINFER_APHRODITE_V1", "FLASHINFER"):
-                supported = True
-        return supported
-
-    @classmethod
-    def check_if_supports_dtype(cls, torch_dtype: torch.dtype):
-        if torch_dtype == torch.bfloat16:  # noqa: SIM102
+    def check_if_supports_dtype(cls, dtype: torch.dtype):
+        if dtype == torch.bfloat16:  # noqa: SIM102
             if not cls.has_device_capability(80):
                 capability = cls.get_device_capability()
                 gpu_name = cls.get_device_name()
@@ -557,7 +496,40 @@ class CudaPlatformBase(Platform):
                     "with compute capability of at least 8.0. "
                     f"Your {gpu_name} GPU {compute_str}. "
                     "You can use float16 instead by explicitly setting the "
-                    "`dtype` flag in CLI, for example: --dtype=half.")
+                    "`dtype` flag in CLI, for example: --dtype=half."
+                )
+
+    @classmethod
+    def insert_blocks_to_device(
+        cls,
+        src_cache: torch.Tensor,
+        dst_cache: torch.Tensor,
+        src_block_indices: torch.Tensor,
+        dst_block_indices: torch.Tensor,
+    ) -> None:
+        """Copy blocks from src_cache to dst_cache on GPU."""
+        _src_cache = src_cache[:, src_block_indices]
+        dst_cache[:, dst_block_indices] = _src_cache.to(dst_cache.device)
+
+    @classmethod
+    def swap_out_blocks_to_host(
+        cls,
+        src_cache: torch.Tensor,
+        dst_cache: torch.Tensor,
+        src_block_indices: torch.Tensor,
+        dst_block_indices: torch.Tensor,
+    ) -> None:
+        """Copy blocks from GPU to host (CPU)."""
+        _src_cache = src_cache[:, src_block_indices]
+        dst_cache[:, dst_block_indices] = _src_cache.cpu()
+
+    @classmethod
+    def support_hybrid_kv_cache(cls) -> bool:
+        return True
+
+    @classmethod
+    def support_static_graph_mode(cls) -> bool:
+        return True
 
 
 # NVML utils
@@ -565,13 +537,10 @@ class CudaPlatformBase(Platform):
 # all the related functions work on real physical device ids.
 # the major benefit of using NVML is that it will not initialize CUDA
 class NvmlCudaPlatform(CudaPlatformBase):
-
     @classmethod
     @cache
     @with_nvml_context
-    def get_device_capability(cls,
-                              device_id: int = 0
-                              ) -> Optional[DeviceCapability]:
+    def get_device_capability(cls, device_id: int = 0) -> DeviceCapability | None:
         try:
             physical_device_id = cls.device_id_to_physical_device_id(device_id)
             handle = pynvml.nvmlDeviceGetHandleByIndex(physical_device_id)
@@ -584,7 +553,7 @@ class NvmlCudaPlatform(CudaPlatformBase):
     @with_nvml_context
     def has_device_capability(
         cls,
-        capability: Union[tuple[int, int], int],
+        capability: tuple[int, int] | int,
         device_id: int = 0,
     ) -> bool:
         try:
@@ -618,9 +587,7 @@ class NvmlCudaPlatform(CudaPlatformBase):
         """
         query if the set of gpus are fully connected by nvlink (1 hop)
         """
-        handles = [
-            pynvml.nvmlDeviceGetHandleByIndex(i) for i in physical_device_ids
-        ]
+        handles = [pynvml.nvmlDeviceGetHandleByIndex(i) for i in physical_device_ids]
         for i, handle in enumerate(handles):
             for j, peer_handle in enumerate(handles):
                 if i < j:
@@ -635,7 +602,8 @@ class NvmlCudaPlatform(CudaPlatformBase):
                     except pynvml.NVMLError:
                         logger.exception(
                             "NVLink detection failed. This is normal if"
-                            " your machine has no NVLink equipped.")
+                            " your machine has no NVLink equipped."
+                        )
                         return False
         return True
 
@@ -649,13 +617,13 @@ class NvmlCudaPlatform(CudaPlatformBase):
     def log_warnings(cls):
         device_ids: int = pynvml.nvmlDeviceGetCount()
         if device_ids > 1:
-            device_names = [
-                cls._get_physical_device_name(i) for i in range(device_ids)
-            ]
-            if (len(set(device_names)) > 1
-                    and os.environ.get("CUDA_DEVICE_ORDER") != "PCI_BUS_ID"):
+            device_names = [cls._get_physical_device_name(i) for i in range(device_ids)]
+            if (
+                len(set(device_names)) > 1
+                and os.environ.get("CUDA_DEVICE_ORDER") != "PCI_BUS_ID"
+            ):
                 logger.warning(
-                    "Detected different devices in the system: {}. Please"
+                    "Detected different devices in the system: %s. Please"
                     " make sure to set `CUDA_DEVICE_ORDER=PCI_BUS_ID` to "
                     "avoid unexpected behavior.",
                     ", ".join(device_names),
@@ -663,7 +631,6 @@ class NvmlCudaPlatform(CudaPlatformBase):
 
 
 class NonNvmlCudaPlatform(CudaPlatformBase):
-
     @classmethod
     @cache
     def get_device_capability(cls, device_id: int = 0) -> DeviceCapability:
@@ -683,7 +650,8 @@ class NonNvmlCudaPlatform(CudaPlatformBase):
     def is_fully_connected(cls, physical_device_ids: list[int]) -> bool:
         logger.exception(
             "NVLink detection not possible, as context support was"
-            " not found. Assuming no NVLink available.")
+            " not found. Assuming no NVLink available."
+        )
         return False
 
 

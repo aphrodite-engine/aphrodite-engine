@@ -14,7 +14,7 @@ from aphrodite import SamplingParams
 from aphrodite.config import ParallelConfig
 from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.engine.async_aphrodite import AsyncEngineArgs, AsyncAphrodite
-from aphrodite.common.outputs import RequestOutput as RealRequestOutput
+from aphrodite.outputs import RequestOutput as RealRequestOutput
 from aphrodite.common.sampling_params import RequestOutputKind
 
 from ..utils import wait_for_gpu_memory_to_clear

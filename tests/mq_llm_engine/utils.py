@@ -6,7 +6,7 @@ from aphrodite import SamplingParams
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.multiprocessing.client import MQLLMEngineClient
 from aphrodite.engine.multiprocessing.engine import MQLLMEngine
-from aphrodite.common.outputs import RequestOutput
+from aphrodite.outputs import RequestOutput
 from aphrodite.usage.usage_lib import UsageContext
 
 

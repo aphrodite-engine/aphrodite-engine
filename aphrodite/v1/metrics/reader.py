@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from prometheus_client import REGISTRY
 from prometheus_client import Metric as PromMetric
@@ -11,9 +10,10 @@ class Metric:
     """A base class for prometheus metrics.
 
     Each metric may be associated with key=value labels, and
-    in some cases a single vLLM instance may have multiple
+    in some cases a single aphrodite instance may have multiple
     metrics with the same name but different sets of labels.
     """
+
     name: str
     labels: dict[str, str]
 
@@ -21,6 +21,7 @@ class Metric:
 @dataclass
 class Counter(Metric):
     """A monotonically increasing integer counter."""
+
     value: int
 
 
@@ -31,12 +32,14 @@ class Vector(Metric):
     This type - which doesn't exist in Prometheus - models one very
     specific metric, aphrodite:spec_decode_num_accepted_tokens_per_pos.
     """
+
     values: list[int]
 
 
 @dataclass
 class Gauge(Metric):
     """A numerical value that can go up or down."""
+
     value: float
 
 
@@ -55,6 +58,7 @@ class Histogram(Metric):
     The sum property is the total sum of all observed
     values.
     """
+
     count: int
     sum: float
     buckets: dict[str, int]
@@ -84,7 +88,8 @@ def get_metrics_snapshot() -> list[Metric]:
             samples = _get_samples(metric)
             for s in samples:
                 collected.append(
-                    Gauge(name=metric.name, labels=s.labels, value=s.value))
+                    Gauge(name=metric.name, labels=s.labels, value=s.value)
+                )
         elif metric.type == "counter":
             samples = _get_samples(metric, "_total")
             if metric.name == "aphrodite:spec_decode_num_accepted_tokens_per_pos":
@@ -96,16 +101,15 @@ def get_metrics_snapshot() -> list[Metric]:
                 # accepted tokens using a Counter labeled with 'position'.
                 # We convert these into a vector of integer values.
                 #
-                for labels, values in _digest_num_accepted_by_pos_samples(
-                        samples):
+                for labels, values in _digest_num_accepted_by_pos_samples(samples):
                     collected.append(
-                        Vector(name=metric.name, labels=labels, values=values))
+                        Vector(name=metric.name, labels=labels, values=values)
+                    )
             else:
                 for s in samples:
                     collected.append(
-                        Counter(name=metric.name,
-                                labels=s.labels,
-                                value=int(s.value)))
+                        Counter(name=metric.name, labels=s.labels, value=int(s.value))
+                    )
 
         elif metric.type == "histogram":
             #
@@ -119,21 +123,24 @@ def get_metrics_snapshot() -> list[Metric]:
             count_samples = _get_samples(metric, "_count")
             sum_samples = _get_samples(metric, "_sum")
             for labels, buckets, count_value, sum_value in _digest_histogram(
-                    bucket_samples, count_samples, sum_samples):
+                bucket_samples, count_samples, sum_samples
+            ):
                 collected.append(
-                    Histogram(name=metric.name,
-                              labels=labels,
-                              buckets=buckets,
-                              count=count_value,
-                              sum=sum_value))
+                    Histogram(
+                        name=metric.name,
+                        labels=labels,
+                        buckets=buckets,
+                        count=count_value,
+                        sum=sum_value,
+                    )
+                )
         else:
             raise AssertionError(f"Unknown metric type {metric.type}")
 
     return collected
 
 
-def _get_samples(metric: PromMetric,
-                 suffix: Optional[str] = None) -> list[Sample]:
+def _get_samples(metric: PromMetric, suffix: str | None = None) -> list[Sample]:
     name = (metric.name + suffix) if suffix is not None else metric.name
     return [s for s in metric.samples if s.name == name]
 
@@ -145,8 +152,7 @@ def _strip_label(labels: dict[str, str], key_to_remove: str) -> dict[str, str]:
 
 
 def _digest_histogram(
-    bucket_samples: list[Sample], count_samples: list[Sample],
-    sum_samples: list[Sample]
+    bucket_samples: list[Sample], count_samples: list[Sample], sum_samples: list[Sample]
 ) -> list[tuple[dict[str, str], dict[str, int], int, float]]:
     #
     # In the case of DP, we have an indigestable
@@ -189,20 +195,25 @@ def _digest_histogram(
         labels_key = frozenset(s.labels.items())
         sums_by_labels[labels_key] = s.value
 
-    assert set(buckets_by_labels.keys()) == set(
-        counts_by_labels.keys()) == set(sums_by_labels.keys())
+    assert (
+        set(buckets_by_labels.keys())
+        == set(counts_by_labels.keys())
+        == set(sums_by_labels.keys())
+    )
 
     output = []
     label_keys = list(buckets_by_labels.keys())
     for k in label_keys:
         labels = dict(k)
-        output.append((labels, buckets_by_labels[k], counts_by_labels[k],
-                       sums_by_labels[k]))
+        output.append(
+            (labels, buckets_by_labels[k], counts_by_labels[k], sums_by_labels[k])
+        )
     return output
 
 
 def _digest_num_accepted_by_pos_samples(
-        samples: list[Sample]) -> list[tuple[dict[str, str], list[int]]]:
+    samples: list[Sample],
+) -> list[tuple[dict[str, str], list[int]]]:
     #
     # In the case of DP, we have an indigestable
     # per-position-per-engine count as a list of

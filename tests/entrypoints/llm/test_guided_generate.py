@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from aphrodite.distributed import cleanup_dist_env_and_memory
 from aphrodite.endpoints.llm import LLM
-from aphrodite.common.outputs import RequestOutput
+from aphrodite.outputs import RequestOutput
 from aphrodite.common.sampling_params import GuidedDecodingParams, SamplingParams
 
 MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"

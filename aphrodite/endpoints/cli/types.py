@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 import argparse
 import typing
 
 if typing.TYPE_CHECKING:
-    from aphrodite.utils import FlexibleArgumentParser
-
+    from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+else:
+    FlexibleArgumentParser = argparse.ArgumentParser
 
 class CLISubcommand:
     """Base class for CLI argument handlers."""

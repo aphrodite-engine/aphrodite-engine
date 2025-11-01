@@ -1,18 +1,18 @@
-from __future__ import annotations
-
 import argparse
 import asyncio
 import importlib.metadata
 import typing
 
-from loguru import logger
-
 from aphrodite.endpoints.cli.types import CLISubcommand
-from aphrodite.endpoints.utils import (
-    APHRODITE_SUBCMD_PARSER_EPILOG, show_filtered_argument_or_group_from_help)
+from aphrodite.endpoints.utils import APHRODITE_SUBCMD_PARSER_EPILOG
+from aphrodite.logger import init_logger
+
+logger = init_logger(__name__)
 
 if typing.TYPE_CHECKING:
-    from aphrodite.utils import FlexibleArgumentParser
+    from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+else:
+    FlexibleArgumentParser = argparse.ArgumentParser
 
 
 class RunBatchSubcommand(CLISubcommand):
@@ -46,7 +46,7 @@ class RunBatchSubcommand(CLISubcommand):
         from aphrodite.endpoints.openai.run_batch import make_arg_parser
 
         run_batch_parser = subparsers.add_parser(
-            "run-batch",
+            self.name,
             help="Run batch prompts and write results to file.",
             description=(
                 "Run batch prompts using Aphrodite's OpenAI-compatible API.\n"
@@ -55,9 +55,7 @@ class RunBatchSubcommand(CLISubcommand):
             "aphrodite run-batch -i INPUT.jsonl -o OUTPUT.jsonl --model <model>",
         )
         run_batch_parser = make_arg_parser(run_batch_parser)
-        show_filtered_argument_or_group_from_help(run_batch_parser,
-                                                  ["run-batch"])
-        run_batch_parser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG
+        run_batch_parser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG.format(subcmd=self.name)
         return run_batch_parser
 
 

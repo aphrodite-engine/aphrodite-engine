@@ -24,7 +24,6 @@
 from collections.abc import Iterable
 from functools import partial
 from itertools import islice
-from typing import Optional, Union
 
 import torch
 from torch import nn
@@ -52,22 +51,22 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.interfaces import SupportsLoRA, SupportsPP
 from aphrodite.modeling.models.utils import (
-    AutoWeightsLoader, is_pp_missing_parameter,
+    AutoWeightsLoader, extract_layer_index, is_pp_missing_parameter,
     make_empty_intermediate_tensors_factory, make_layers, maybe_prefix)
-from aphrodite.modeling.sampling_metadata import SamplingMetadata
+from aphrodite.transformers_utils.configs import Olmo3Config
 
 
 class Olmo2Attention(nn.Module):
     """
     This is the attention block where the output is computed as
-    ``Attention(LN(x))`` in ``MLP(LN(x + Attention(LN(x))))``
+    `Attention(LN(x))` in `MLP(LN(x + Attention(LN(x))))`
     (plus another skip connection).
     """
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         self.config = aphrodite_config.model_config.hf_config
-        assert isinstance(self.config, Olmo2Config)
+        assert isinstance(self.config, (Olmo2Config, Olmo3Config))
 
         hidden_size = self.config.hidden_size
         self.tp_size = get_tensor_model_parallel_world_size()
@@ -77,8 +76,9 @@ class Olmo2Attention(nn.Module):
         assert self.total_num_heads % self.tp_size == 0
 
         self.num_heads = self.total_num_heads // self.tp_size
-        self.total_num_kv_heads = (self.config.num_key_value_heads
-                                   or self.total_num_heads)
+        self.total_num_kv_heads = (
+            self.config.num_key_value_heads or self.total_num_heads
+        )
         if self.total_num_kv_heads >= self.tp_size:
             assert self.total_num_kv_heads % self.tp_size == 0
         else:
@@ -107,17 +107,17 @@ class Olmo2Attention(nn.Module):
             self.total_num_kv_heads * self.head_dim,
             eps=self.config.rms_norm_eps,
         )
-        self.q_norm = RMSNorm(self.config.hidden_size,
-                              eps=self.config.rms_norm_eps)
+        self.q_norm = RMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps)
 
-        # Rotary embeddings.
-        self.rotary_emb = get_rope(
-            self.head_dim,
-            rotary_dim=self.head_dim,
-            max_position=self.max_position_embeddings,
-            base=self.rope_theta,  # type: ignore
-        )
         self.scaling = self.head_dim**-0.5
+
+        layer_idx = extract_layer_index(prefix)
+        sliding_window = None
+        if (
+            layer_types := getattr(self.config, "layer_types", None)
+        ) is not None and layer_types[layer_idx] == "sliding_attention":
+            sliding_window = self.config.sliding_window
+
         self.attn = Attention(
             self.num_heads,
             self.head_dim,
@@ -125,7 +125,19 @@ class Olmo2Attention(nn.Module):
             num_kv_heads=self.num_kv_heads,
             cache_config=aphrodite_config.cache_config,
             quant_config=aphrodite_config.quant_config,
-            prefix=prefix,
+            per_layer_sliding_window=sliding_window,
+            prefix=f"{prefix}.attn",
+        )
+
+        # Rotary embeddings. Rope scaling is only applied on full attention
+        # layers.
+        self.rope_scaling = self.config.rope_scaling if sliding_window is None else None
+        self.rotary_emb = get_rope(
+            self.head_dim,
+            rotary_dim=self.head_dim,
+            max_position=self.max_position_embeddings,
+            base=self.rope_theta,  # type: ignore
+            rope_scaling=self.rope_scaling,
         )
 
         # Attention output projection.
@@ -137,16 +149,16 @@ class Olmo2Attention(nn.Module):
             prefix=f"{prefix}.o_proj",
         )
 
-    def _apply_qk_norm(self, q: torch.Tensor,
-                       k: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def _apply_qk_norm(
+        self, q: torch.Tensor, k: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if self.tp_size > 1:
             q = tensor_model_parallel_all_gather(q.contiguous())
             k = tensor_model_parallel_all_gather(k.contiguous())
         q = self.q_norm(q)
         k = self.k_norm(k)
         if self.tp_size > 1:
-            splitter = partial(split_tensor_along_last_dim,
-                               num_partitions=self.tp_size)
+            splitter = partial(split_tensor_along_last_dim, num_partitions=self.tp_size)
             q = splitter(q)[self.tp_rank]
             k = splitter(k)[self.tp_rank]
         return q, k
@@ -168,14 +180,14 @@ class Olmo2Attention(nn.Module):
 class Olmo2MLP(nn.Module):
     """
     This is the MLP block where the output is computed as
-    ``MLP(x)`` in ``LN(MLP(x + LN(Attention(x))))``
+    `MLP(x)` in `LN(MLP(x + LN(Attention(x))))`
     (plus another skip connection).
     """
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
-        assert isinstance(config, Olmo2Config)
+        assert isinstance(config, (Olmo2Config, Olmo3Config))
         hidden_size = config.hidden_size
         intermediate_size = config.intermediate_size
 
@@ -213,27 +225,30 @@ class Olmo2MLP(nn.Module):
 class Olmo2DecoderLayer(nn.Module):
     """
     This is a typical transformer block where the output is
-    computed as ``MLP(LN(x + Attention(LN(x))))``
+    computed as `MLP(LN(x + Attention(LN(x))))`
     (plus another skip connection).
     """
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
-        assert isinstance(config, Olmo2Config)
+        assert isinstance(config, (Olmo2Config, Olmo3Config))
         # Attention block.
-        self.self_attn = Olmo2Attention(aphrodite_config=aphrodite_config,
-                                        prefix=f"{prefix}.self_attn")
+        self.self_attn = Olmo2Attention(
+            aphrodite_config=aphrodite_config, prefix=f"{prefix}.self_attn"
+        )
 
         # MLP block.
         self.mlp = Olmo2MLP(aphrodite_config=aphrodite_config, prefix=f"{prefix}.mlp")
 
         # LayerNorm
-        self.post_attention_layernorm = RMSNorm(config.hidden_size,
-                                                eps=config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
 
-        self.post_feedforward_layernorm = RMSNorm(config.hidden_size,
-                                                  eps=config.rms_norm_eps)
+        self.post_feedforward_layernorm = RMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
 
     def forward(
         self,
@@ -256,11 +271,10 @@ class Olmo2DecoderLayer(nn.Module):
 
 @support_torch_compile
 class Olmo2Model(nn.Module):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         self.config = aphrodite_config.model_config.hf_config
-        assert isinstance(self.config, Olmo2Config)
+        assert isinstance(self.config, (Olmo2Config, Olmo3Config))
 
         self.embed_tokens = VocabParallelEmbedding(
             self.config.vocab_size,
@@ -269,25 +283,27 @@ class Olmo2Model(nn.Module):
         )
         self.start_layer, self.end_layer, self.layers = make_layers(
             self.config.num_hidden_layers,
-            lambda prefix: Olmo2DecoderLayer(aphrodite_config=aphrodite_config,
-                                             prefix=prefix),
+            lambda prefix: Olmo2DecoderLayer(aphrodite_config=aphrodite_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
         self.norm = RMSNorm(
             self.config.hidden_size,
             eps=self.config.rms_norm_eps,
         )
-        self.make_empty_intermediate_tensors = (
-            make_empty_intermediate_tensors_factory(["hidden_states"],
-                                                    self.config.hidden_size))
+        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
+            ["hidden_states"], self.config.hidden_size
+        )
+
+    def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return self.embed_tokens(input_ids)
 
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors],
-        inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, IntermediateTensors]:
+        intermediate_tensors: IntermediateTensors | None,
+        inputs_embeds: torch.Tensor | None = None,
+    ) -> torch.Tensor | IntermediateTensors:
         """
         :param input_ids: A tensor of shape `(batch_size, seq_len)`.
         """
@@ -317,8 +333,7 @@ class Olmo2Model(nn.Module):
         hidden_states = self.norm(hidden_states)
         return hidden_states
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
@@ -349,8 +364,7 @@ class Olmo2Model(nn.Module):
                 if name.endswith(".bias") and name not in params_dict:
                     continue
                 param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -360,6 +374,7 @@ class Olmo2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
     """
     Extremely barebones HF model wrapper.
     """
+
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
@@ -375,10 +390,11 @@ class Olmo2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
-        assert isinstance(config, Olmo2Config)
+        assert isinstance(config, (Olmo2Config, Olmo3Config))
         self.config = config
-        self.model = Olmo2Model(aphrodite_config=aphrodite_config,
-                                prefix=maybe_prefix(prefix, "model"))
+        self.model = Olmo2Model(
+            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
+        )
         if config.tie_word_embeddings:
             self.lm_head = self.model.embed_tokens
         else:
@@ -392,15 +408,19 @@ class Olmo2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
             )
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors)
+            self.model.make_empty_intermediate_tensors
+        )
+
+    def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return self.model.get_input_embeddings(input_ids)
 
     def forward(
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, IntermediateTensors]:
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+    ) -> torch.Tensor | IntermediateTensors:
         hidden_states = self.model(
             input_ids=input_ids,
             positions=positions,
@@ -412,16 +432,15 @@ class Olmo2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
-        sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
-        logits = self.logits_processor(self.lm_head, hidden_states,
-                                       sampling_metadata)
+    ) -> torch.Tensor | None:
+        logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head.weight"]
-                           if self.config.tie_word_embeddings else None),
+            skip_prefixes=(
+                ["lm_head.weight"] if self.config.tie_word_embeddings else None
+            ),
         )
         return loader.load_weights(weights)

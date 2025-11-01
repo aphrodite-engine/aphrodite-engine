@@ -4,12 +4,12 @@ import torch
 from torch.nn.parameter import Parameter
 
 from aphrodite import _custom_ops as ops
-from aphrodite.utils import is_hip
 from aphrodite.modeling.layers.linear import LinearBase
 from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
-from aphrodite.quantization import QuantizationMethods
+from aphrodite.utils import is_hip
 
 
 class SqueezeLLMConfig(QuantizationConfig):

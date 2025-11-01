@@ -3,11 +3,14 @@ Warmup kernels used during model execution.
 This is useful specifically for JIT'ed kernels as we don't want JIT'ing to
 happen during model execution.
 """
+
 from typing import TYPE_CHECKING
 
 import torch
 
-import aphrodite.common.envs as envs
+import aphrodite.envs as envs
+from aphrodite.config import AphroditeConfig, CUDAGraphMode
+from aphrodite.logger import init_logger
 from aphrodite.modeling.warmup.deep_gemm_warmup import deep_gemm_warmup
 from aphrodite.platforms import current_platform
 from aphrodite.utils.deep_gemm import is_deep_gemm_supported
@@ -17,20 +20,73 @@ if TYPE_CHECKING:
     from aphrodite.v1.worker.gpu_model_runner import GPUModelRunner
     from aphrodite.v1.worker.gpu_worker import Worker
 
+logger = init_logger(__name__)
+
+
+def flashinfer_autotune_supported(aphrodite_config: AphroditeConfig) -> bool:
+    """
+    Record known issues with aphrodite + flashinfer autotune here. Return True if
+    and only if flashinfer autotune will run through without issues.
+    """
+    is_tp_or_dp = (aphrodite_config.parallel_config.data_parallel_size > 1) or (
+        aphrodite_config.parallel_config.tensor_parallel_size > 1
+    )
+    is_fi_mxfp4_backend = (
+        envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8
+        or envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16
+        or envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8_CUTLASS
+    ) or (
+        current_platform.is_cuda() and current_platform.is_device_capability(100)
+    )  # on >=sm100, default mxfp4 backend is flashinfer
+    is_eager = aphrodite_config.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
+
+    return not (is_tp_or_dp and is_fi_mxfp4_backend and is_eager)
+
 
 def kernel_warmup(worker: "Worker"):
     # Deep GEMM warmup
-    do_deep_gemm_warmup = (envs.APHRODITE_USE_DEEP_GEMM
-                           and is_deep_gemm_supported()
-                           and not envs.APHRODITE_SKIP_DEEP_GEMM_WARMUP)
+    do_deep_gemm_warmup = (
+        envs.APHRODITE_USE_DEEP_GEMM
+        and is_deep_gemm_supported()
+        and envs.APHRODITE_DEEP_GEMM_WARMUP != "skip"
+    )
     if do_deep_gemm_warmup:
         model = worker.get_model()
         max_tokens = worker.scheduler_config.max_num_batched_tokens
         deep_gemm_warmup(model, max_tokens)
 
-    # FlashInfer autotune for Blackwell (SM 10.0) GPUs
-    if has_flashinfer() and current_platform.is_device_capability(100):
+    # FlashInfer autotune for Hopper (SM 9.0) and Blackwell (SM 10.0) GPUs
+    if (
+        has_flashinfer()
+        and current_platform.has_device_capability(90)
+        and flashinfer_autotune_supported(worker.aphrodite_config)
+    ):
         flashinfer_autotune(worker.model_runner)
+
+    # FlashInfer attention warmup
+    # Only warmup if the model has FlashInfer attention groups
+    # and is not a pooling model
+    def _is_flashinfer_backend(backend):
+        try:
+            return backend.get_name() == "FLASHINFER"
+        except NotImplementedError:
+            return False
+
+    if not worker.model_runner.is_pooling_model and all(
+        _is_flashinfer_backend(group.backend)
+        for groups in worker.model_runner.attn_groups
+        for group in groups
+    ):
+        logger.info("Warming up FlashInfer attention.")
+        # Warmup with mixed batch containing both prefill and decode tokens
+        # This is to warm up both prefill and decode attention kernels
+        worker.model_runner._dummy_run(
+            num_tokens=16,
+            skip_eplb=True,
+            is_profile=True,
+            force_attention=True,
+            create_mixed_batch=True,
+        )
 
 
 def flashinfer_autotune(runner: "GPUModelRunner") -> None:
@@ -50,6 +106,8 @@ def flashinfer_autotune(runner: "GPUModelRunner") -> None:
         # When autotuning with number of tokens m, flashinfer will autotune
         # operations for all number of tokens up to m.
         # So we only need to run with the max number of tokens.
-        runner._dummy_run(runner.scheduler_config.max_num_batched_tokens,
-                          skip_eplb=True,
-                          is_profile=True)
+        runner._dummy_run(
+            runner.scheduler_config.max_num_batched_tokens,
+            skip_eplb=True,
+            is_profile=True,
+        )

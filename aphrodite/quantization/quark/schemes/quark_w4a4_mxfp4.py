@@ -2,9 +2,9 @@ from typing import Any, Callable, Optional
 
 import torch
 import torch.nn.functional as F
-from loguru import logger
 
 from aphrodite.common.logger import log_once
+from aphrodite.logger import init_logger
 from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
                                           PackedAphroditeParameter)
 from aphrodite.platforms import current_platform
@@ -14,6 +14,8 @@ from aphrodite.quantization.utils.mxfp4_utils import (OCP_MX_BLOCK_SIZE,
                                                       quant_dequant_mxfp4)
 
 __all__ = ["QuarkW4A4MXFP4"]
+
+logger = init_logger(__name__)
 
 
 class QuarkW4A4MXFP4(QuarkScheme):

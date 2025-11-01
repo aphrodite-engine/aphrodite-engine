@@ -9,13 +9,15 @@ import sys
 from functools import partial
 from typing import Optional
 
-from loguru import logger
 from rich.console import Console
 from rich.markup import escape
 from rich.progress import (BarColumn, MofNCompleteColumn, Progress,
                            TaskProgressColumn, TextColumn, TimeRemainingColumn)
 
-import aphrodite.common.envs as envs
+import aphrodite.envs as envs
+from aphrodite.logger import init_logger
+
+logger = init_logger(__name__)
 
 RICH_CONSOLE = Console()
 LOG_LEVEL = os.getenv("APHRODITE_LOG_LEVEL", "INFO").upper()

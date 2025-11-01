@@ -6,11 +6,12 @@ import time
 import aiohttp
 from tqdm.asyncio import tqdm
 
-from .endpoint_request_func import RequestFuncInput, RequestFuncOutput
+from .endpoint_request_func import (RequestFunc, RequestFuncInput,
+                                    RequestFuncOutput)
 
 
 async def wait_for_endpoint(
-    request_func,
+    request_func: RequestFunc,
     test_input: RequestFuncInput,
     session: aiohttp.ClientSession,
     timeout_seconds: int = 600,
@@ -36,12 +37,11 @@ async def wait_for_endpoint(
     print(f"Waiting for endpoint to become up in {timeout_seconds} seconds")
 
     with tqdm(
-        total=timeout_seconds, 
+        total=timeout_seconds,
         bar_format="{desc} |{bar}| {elapsed} elapsed, {remaining} remaining",
         unit="s",
     ) as pbar:
-
-        while True:            
+        while True:
             # update progress bar
             remaining = deadline - time.perf_counter()
             elapsed = timeout_seconds - remaining
@@ -55,7 +55,8 @@ async def wait_for_endpoint(
             # ping the endpoint using request_func
             try:
                 output = await request_func(
-                    request_func_input=test_input, session=session)
+                    request_func_input=test_input, session=session
+                )
                 if output.success:
                     pbar.close()
                     return output

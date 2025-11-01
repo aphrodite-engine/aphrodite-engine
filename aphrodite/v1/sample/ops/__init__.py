@@ -22,22 +22,72 @@ from aphrodite.v1.sample.ops.xtc import xtc
 class SamplingOps:
     """Handles all sampling operations applied to logits."""
 
-    def apply_penalties(
+    @staticmethod
+    def _combine_outputs_with_spec_tokens(
+        output_token_ids: list[list[int]],
+        spec_token_ids: list[list[int]] | None = None,
+    ) -> list[list[int]]:
+        if spec_token_ids is None:
+            return output_token_ids
+
+        return [
+            [*out, *spec] if spec else out
+            for out, spec in zip(output_token_ids, spec_token_ids)
+        ]
+
+    def apply_logits_processors(
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
+        predict_bonus_token: bool = False,
     ) -> torch.Tensor:
-        if not sampling_metadata.no_penalties:
-            assert sampling_metadata.prompt_token_ids is not None
-            logits = apply_all_penalties(
-                logits,
-                sampling_metadata.prompt_token_ids,
-                sampling_metadata.presence_penalties,
-                sampling_metadata.frequency_penalties,
-                sampling_metadata.repetition_penalties,
-                sampling_metadata.output_token_ids,
+        bad_words_token_ids = sampling_metadata.bad_words_token_ids
+        any_penalties_or_bad_words = (
+            bool(bad_words_token_ids) or not sampling_metadata.no_penalties
+        )
+
+        output_token_ids = sampling_metadata.output_token_ids
+        if predict_bonus_token and any_penalties_or_bad_words:
+            # Combine base outputs with spec tokens when speculative decoding
+            # is enabled.
+            output_token_ids = self._combine_outputs_with_spec_tokens(
+                output_token_ids,
+                sampling_metadata.spec_token_ids,
             )
+        # Apply allowed token ids.
+        if sampling_metadata.allowed_token_ids_mask is not None:
+            logits.masked_fill_(sampling_metadata.allowed_token_ids_mask, float("-inf"))
+
+        # Apply bad words exclusion.
+        if bad_words_token_ids:
+            apply_bad_words(logits, bad_words_token_ids, output_token_ids)
+
+        # Apply logits processors which can impact greedy sampling.
+        for processor in sampling_metadata.logitsprocs.non_argmax_invariant:
+            logits = processor.apply(logits)
+
+        # Apply penalties (e.g., freq_penalties).
+        logits = self.apply_penalties(logits, sampling_metadata, output_token_ids)
         return logits
+
+    @staticmethod
+    def apply_penalties(
+        logits: torch.Tensor,
+        sampling_metadata: SamplingMetadata,
+        output_token_ids: list[list[int]],
+    ) -> torch.Tensor:
+        if sampling_metadata.no_penalties:
+            return logits
+
+        assert sampling_metadata.prompt_token_ids is not None
+        return apply_all_penalties(
+            logits,
+            sampling_metadata.prompt_token_ids,
+            sampling_metadata.presence_penalties,
+            sampling_metadata.frequency_penalties,
+            sampling_metadata.repetition_penalties,
+            output_token_ids,
+        )
 
     def apply_dry(
         self,
@@ -189,16 +239,6 @@ class SamplingOps:
                             f"out-of-vocab token id. Vocabulary size: "
                             f"{vocab_size}")
                     logits[i, token_id] += bias
-        return logits
-
-    def apply_allowed_token_ids(
-        self,
-        logits: torch.Tensor,
-        sampling_metadata: SamplingMetadata,
-    ) -> torch.Tensor:
-        if sampling_metadata.allowed_token_ids_mask is not None:
-            logits.masked_fill_(sampling_metadata.allowed_token_ids_mask,
-                                float("-inf"))
         return logits
 
     def apply_bad_words(

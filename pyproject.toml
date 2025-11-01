@@ -6,7 +6,7 @@ requires = [
     "packaging>=24.2",
     "setuptools>=77.0.3,<80.0.0",
     "setuptools-scm>=8.0",
-    "torch == 2.8.0",
+    "torch == 2.9.0",
     "wheel",
     "jinja2",
 ]
@@ -19,7 +19,6 @@ license = { file = "LICENSE" }
 readme = "README.md"
 description = "Serving LLMs at Scale"
 classifiers = [
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -30,7 +29,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
-requires-python = ">=3.9,<3.14"
+requires-python = ">=3.10,<3.14"
 dynamic = [ "version", "dependencies", "optional-dependencies"]
 
 [project.urls]
@@ -49,8 +48,8 @@ include = ["aphrodite*"]
 
 
 [tool.ruff]
-# Allow lines to be as long as 80.
-line-length = 80
+# Allow lines to be as long as 120.
+line-length = 120
 exclude = [
     "examples/fp8/quantizer/quantize.py",
     "kernels/hadamard/generator.py",
@@ -93,3 +92,6 @@ skip = "./tests/,./aphrodite/endpoints/kobold/klite.embd,./kernels/,./tests/benc
 [tool.isort]
 use_parentheses = true
 skip_gitignore = true
+
+[tool.uv]
+no-build-isolation-package = ["torch"]

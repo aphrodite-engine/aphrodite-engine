@@ -9,7 +9,7 @@ from tests.v1.engine.utils import (NUM_PROMPT_LOGPROBS_UNDER_TEST,
                                    STOP_STRINGS,
                                    DummyOutputProcessorTestVectors,
                                    MockEngineCore)
-from aphrodite.common.outputs import CompletionOutput, RequestOutput
+from aphrodite.outputs import CompletionOutput, RequestOutput
 from aphrodite.common.sampling_params import RequestOutputKind, SamplingParams
 from aphrodite.common.sequence import PromptLogprobs, SampleLogprobs
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer

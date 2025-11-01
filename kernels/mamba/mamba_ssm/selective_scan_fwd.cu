@@ -136,7 +136,7 @@ void selective_scan_fwd_kernel(SSMParamsBase params) {
     typename Ktraits::state_t *ssm_states = reinterpret_cast<typename Ktraits::state_t *>(params.ssm_states_ptr) + 
     cache_index * params.ssm_states_batch_stride + 
     dim_id * kNRows * params.ssm_states_dim_stride;
-
+    
     float D_val[kNRows] = {0};
     if (params.D_ptr != nullptr) {
         #pragma unroll
@@ -535,7 +535,7 @@ void set_ssm_params_fwd(SSMParamsBase &params,
         }
         params.out_batch_stride = out.stride(0);
         params.out_d_stride = out.stride(1);
-
+        
         params.ssm_states_batch_stride = ssm_states.stride(0);
         params.ssm_states_dim_stride = ssm_states.stride(1);  
         params.ssm_states_dstate_stride = ssm_states.stride(2);
@@ -662,7 +662,7 @@ void selective_scan_fwd(const torch::Tensor &u, const torch::Tensor &delta,
         } else {
             CHECK_SHAPE(z, batch_size, dim, seqlen);
         }
-
+        
         out_z = z;
     }
 
@@ -696,4 +696,3 @@ void selective_scan_fwd(const torch::Tensor &u, const torch::Tensor &delta,
         selective_scan_fwd_cuda<input_t, weight_t, state_t>(params, stream);
     });
 }
-

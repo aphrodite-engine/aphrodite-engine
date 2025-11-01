@@ -1,10 +1,10 @@
 from typing import Any, Optional
 
 import torch
-from loguru import logger
 from torch.nn.parameter import Parameter
 
 from aphrodite import _custom_ops as ops
+from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.parameter import (BaseAphroditeParameter,
@@ -13,6 +13,8 @@ from aphrodite.modeling.parameter import (BaseAphroditeParameter,
                                           PackedAphroditeParameter)
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
+
+logger = init_logger(__name__)
 
 
 class MarlinConfig(QuantizationConfig):

@@ -17,7 +17,6 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from loguru import logger
 from typing_extensions import assert_never
 
 from aphrodite.endpoints.logger import RequestLogger
@@ -31,6 +30,7 @@ from aphrodite.endpoints.openai.serving_tokenization import (
     OpenAIServingTokenization)
 from aphrodite.endpoints.utils import with_cancellation
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.server import serve_http
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
@@ -38,6 +38,8 @@ from aphrodite.utils import FlexibleArgumentParser, is_valid_ipv6_address
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
 router = APIRouter()
+
+logger = init_logger(__name__)
 
 
 class MinimalModelConfig:

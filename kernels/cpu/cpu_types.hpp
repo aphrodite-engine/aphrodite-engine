@@ -14,7 +14,12 @@
   // arm implementation
   #include "cpu_types_arm.hpp"
 #else
-  #warning "unsupported Aphrodite cpu implementation"
+  #warning "unsupported Aphrodite cpu implementation, Aphrodite will compile with scalar"
+  #include "cpu_types_scalar.hpp"
+#endif
+
+#ifdef _OPENMP
+  #include <omp.h>
 #endif
 
 #endif

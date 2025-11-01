@@ -64,7 +64,7 @@ function (hipify_sources_target OUT_SRCS NAME ORIG_SRCS)
   #
   # Generate ROCm/HIP source file names from CUDA file names.
   # Since HIP files are generated code, they will appear in the build area
-  # `CMAKE_CURRENT_BINARY_DIR` directory rather than the original kernels dir.
+  # `CMAKE_CURRENT_BINARY_DIR` directory rather than the original csrc dir.
   #
   set(HIP_SRCS)
   foreach (SRC ${SRCS})
@@ -73,10 +73,10 @@ function (hipify_sources_target OUT_SRCS NAME ORIG_SRCS)
     list(APPEND HIP_SRCS "${CMAKE_CURRENT_BINARY_DIR}/${SRC}")
   endforeach()
 
-  set(kernels_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/kernels)
+  set(CSRC_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/csrc)
   add_custom_target(
     hipify${NAME}
-    COMMAND ${Python_EXECUTABLE} ${CMAKE_SOURCE_DIR}/cmake/hipify.py -p ${CMAKE_SOURCE_DIR}/kernels -o ${kernels_BUILD_DIR} ${SRCS}
+    COMMAND ${Python_EXECUTABLE} ${CMAKE_SOURCE_DIR}/cmake/hipify.py -p ${CMAKE_SOURCE_DIR}/csrc -o ${CSRC_BUILD_DIR} ${SRCS}
     DEPENDS ${CMAKE_SOURCE_DIR}/cmake/hipify.py ${SRCS}
     BYPRODUCTS ${HIP_SRCS}
     COMMENT "Running hipify on ${NAME} extension source files.")
@@ -127,6 +127,44 @@ function (get_torch_gpu_compiler_flags OUT_GPU_FLAGS GPU_LANG)
 
   endif()
   set(${OUT_GPU_FLAGS} ${GPU_FLAGS} PARENT_SCOPE)
+endfunction()
+
+# Find libgomp that gets shipped with PyTorch wheel and create a shim dir with:
+#   libgomp.so    -> libgomp-<hash>.so...
+#   libgomp.so.1  -> libgomp-<hash>.so...
+# OUTPUT: TORCH_GOMP_SHIM_DIR  ("" if not found)
+function(aphrodite_prepare_torch_gomp_shim TORCH_GOMP_SHIM_DIR)
+  set(${TORCH_GOMP_SHIM_DIR} "" PARENT_SCOPE)
+
+  # Use run_python to locate vendored libgomp; never throw on failure.
+  run_python(_APHRODITE_TORCH_GOMP_PATH
+    "
+import os, glob
+try:
+  import torch
+  torch_pkg = os.path.dirname(torch.__file__)
+  site_root = os.path.dirname(torch_pkg)
+  torch_libs = os.path.join(site_root, 'torch.libs')
+  print(glob.glob(os.path.join(torch_libs, 'libgomp-*.so*'))[0])
+except:
+  print('')
+"
+    "failed to probe torch.libs for libgomp")
+
+  if(_APHRODITE_TORCH_GOMP_PATH STREQUAL "" OR NOT EXISTS "${_APHRODITE_TORCH_GOMP_PATH}")
+    return()
+  endif()
+
+  # Create shim under the build tree
+  set(_shim "${CMAKE_BINARY_DIR}/gomp_shim")
+  file(MAKE_DIRECTORY "${_shim}")
+
+  execute_process(COMMAND ${CMAKE_COMMAND} -E rm -f "${_shim}/libgomp.so")
+  execute_process(COMMAND ${CMAKE_COMMAND} -E rm -f "${_shim}/libgomp.so.1")
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink "${_APHRODITE_TORCH_GOMP_PATH}" "${_shim}/libgomp.so")
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink "${_APHRODITE_TORCH_GOMP_PATH}" "${_shim}/libgomp.so.1")
+
+  set(${TORCH_GOMP_SHIM_DIR} "${_shim}" PARENT_SCOPE)
 endfunction()
 
 # Macro for converting a `gencode` version number to a cmake version number.
@@ -278,7 +316,7 @@ endmacro()
 #  in `SRC_CUDA_ARCHS` that is less or equal to the version in `TGT_CUDA_ARCHS`.
 # We have special handling for x.0a, if x.0a is in `SRC_CUDA_ARCHS` and x.0 is
 #  in `TGT_CUDA_ARCHS` then we should remove x.0a from `SRC_CUDA_ARCHS` and add
-#  x.0a to the result (and remove x.0 from TGT_CUDA_ARCHS). 
+#  x.0a to the result (and remove x.0 from TGT_CUDA_ARCHS).
 # The result is stored in `OUT_CUDA_ARCHS`.
 #
 # Example:
@@ -310,13 +348,13 @@ function(cuda_archs_loose_intersection OUT_CUDA_ARCHS SRC_CUDA_ARCHS TGT_CUDA_AR
   list(REMOVE_DUPLICATES _PTX_ARCHS)
   list(REMOVE_DUPLICATES _SRC_CUDA_ARCHS)
 
-  # if x.0a is in SRC_CUDA_ARCHS and x.0 is in CUDA_ARCHS then we should
-  # remove x.0a from SRC_CUDA_ARCHS and add x.0a to _CUDA_ARCHS
+  # If x.0a or x.0f is in SRC_CUDA_ARCHS and x.0 is in CUDA_ARCHS then we should
+  # remove x.0a or x.0f from SRC_CUDA_ARCHS and add x.0a or x.0f to _CUDA_ARCHS
   set(_CUDA_ARCHS)
   foreach(_arch ${_SRC_CUDA_ARCHS})
-    if(_arch MATCHES "\\a$")
+    if(_arch MATCHES "[af]$")
       list(REMOVE_ITEM _SRC_CUDA_ARCHS "${_arch}")
-      string(REPLACE "a" "" _base "${_arch}")
+      string(REGEX REPLACE "[af]$" "" _base "${_arch}")
       if ("${_base}" IN_LIST TGT_CUDA_ARCHS)
         list(REMOVE_ITEM _TGT_CUDA_ARCHS "${_base}")
         list(APPEND _CUDA_ARCHS "${_arch}")
@@ -338,7 +376,7 @@ function(cuda_archs_loose_intersection OUT_CUDA_ARCHS SRC_CUDA_ARCHS TGT_CUDA_AR
       string(REGEX REPLACE "^([0-9]+)\\..*$" "\\1" SRC_ARCH_MAJOR "${_SRC_ARCH}")
       # Check version-less-or-equal, and allow PTX arches to match across majors
       if (_SRC_ARCH VERSION_LESS_EQUAL _ARCH)
-      if (_SRC_ARCH IN_LIST _PTX_ARCHS OR SRC_ARCH_MAJOR STREQUAL TGT_ARCH_MAJOR)
+        if (_SRC_ARCH IN_LIST _PTX_ARCHS OR SRC_ARCH_MAJOR STREQUAL TGT_ARCH_MAJOR)
           set(_TMP_ARCH "${_SRC_ARCH}")
         endif()
       else()
@@ -468,10 +506,10 @@ function (define_gpu_extension_target GPU_MOD_NAME)
     # Make this target dependent on the hipify preprocessor step.
     add_dependencies(${GPU_MOD_NAME} hipify${GPU_MOD_NAME})
     # Make sure we include the hipified versions of the headers, and avoid conflicts with the ones in the original source folder
-    target_include_directories(${GPU_MOD_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/kernels
+    target_include_directories(${GPU_MOD_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/csrc
       ${GPU_INCLUDE_DIRECTORIES})
   else()
-    target_include_directories(${GPU_MOD_NAME} PRIVATE kernels
+    target_include_directories(${GPU_MOD_NAME} PRIVATE csrc
       ${GPU_INCLUDE_DIRECTORIES})
   endif()
 
@@ -480,13 +518,13 @@ function (define_gpu_extension_target GPU_MOD_NAME)
       ${GPU_LANGUAGE}_ARCHITECTURES "${GPU_ARCHITECTURES}")
   endif()
 
-  set_property(TARGET ${GPU_MOD_NAME} PROPERTY CXX_STANDARD 17)
 
   target_compile_options(${GPU_MOD_NAME} PRIVATE
     $<$<COMPILE_LANGUAGE:${GPU_LANGUAGE}>:${GPU_COMPILE_FLAGS}>)
 
   target_compile_definitions(${GPU_MOD_NAME} PRIVATE
     "-DTORCH_EXTENSION_NAME=${GPU_MOD_NAME}")
+
 
   target_link_libraries(${GPU_MOD_NAME} PRIVATE torch ${GPU_LIBRARIES})
 

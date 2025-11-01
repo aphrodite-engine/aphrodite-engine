@@ -42,7 +42,7 @@ void cutlass_scaled_fp4_mm(torch::Tensor& D, torch::Tensor const& A,
   return cutlass_scaled_fp4_mm_sm120a(D, A, B, A_sf, B_sf, alpha);
 #endif
   TORCH_CHECK_NOT_IMPLEMENTED(false,
-                              "No compiled nvfp4 mm kernel, Aphrodite should "
+                              "No compiled nvfp4 mm kernel, vLLM should "
                               "be compiled using CUDA 12.8 and target "
                               "compute capability 100 or above.");
 }

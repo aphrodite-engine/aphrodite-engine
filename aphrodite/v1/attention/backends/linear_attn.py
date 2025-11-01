@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import ClassVar
 
 import torch
 
@@ -12,7 +11,6 @@ from aphrodite.v1.kv_cache_interface import AttentionSpec, MambaSpec
 
 
 class LinearAttentionBackend(AttentionBackend):
-
     @staticmethod
     def get_builder_cls() -> type["LinearAttentionMetadataBuilder"]:
         return LinearAttentionMetadataBuilder
@@ -30,20 +28,25 @@ class LinearAttentionMetadata:
     state_indices_tensor: torch.Tensor  # shape: [batch,]
 
 
-class LinearAttentionMetadataBuilder(
-        AttentionMetadataBuilder[LinearAttentionMetadata]):
+class LinearAttentionMetadataBuilder(AttentionMetadataBuilder[LinearAttentionMetadata]):
+    reorder_batch_threshold: int = 1
 
-    reorder_batch_threshold: ClassVar[int] = 1
-
-    def __init__(self, kv_cache_spec: AttentionSpec, layer_names: list[str],
-                 aphrodite_config: AphroditeConfig, device: torch.device):
+    def __init__(
+        self,
+        kv_cache_spec: AttentionSpec,
+        layer_names: list[str],
+        aphrodite_config: AphroditeConfig,
+        device: torch.device,
+    ):
+        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device)
         assert isinstance(kv_cache_spec, MambaSpec)
-        self.kv_cache_spec = kv_cache_spec
 
-    def build(self,
-              common_prefix_len: int,
-              common_attn_metadata: CommonAttentionMetadata,
-              fast_build: bool = False) -> LinearAttentionMetadata:
+    def build(
+        self,
+        common_prefix_len: int,
+        common_attn_metadata: CommonAttentionMetadata,
+        fast_build: bool = False,
+    ) -> LinearAttentionMetadata:
         query_start_loc = common_attn_metadata.query_start_loc
         seq_lens = common_attn_metadata.seq_lens
 
@@ -51,8 +54,9 @@ class LinearAttentionMetadataBuilder(
 
         num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
             split_decodes_and_prefills(
-                common_attn_metadata,
-                decode_threshold=self.reorder_batch_threshold))
+                common_attn_metadata, decode_threshold=self.reorder_batch_threshold
+            )
+        )
 
         attn_metadata = LinearAttentionMetadata(
             num_prefills=num_prefills,

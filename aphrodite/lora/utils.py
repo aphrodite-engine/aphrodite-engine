@@ -1,37 +1,42 @@
 import os
-import re
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional
 
 import huggingface_hub
+import regex as re
 from huggingface_hub.utils import (EntryNotFoundError, HfHubHTTPError,
                                    HFValidationError, RepositoryNotFoundError)
-from loguru import logger
 from torch import nn
 from transformers import PretrainedConfig
 
-from aphrodite.config import LoRAConfig
-from aphrodite.lora.fully_sharded_layers import (
-    ColumnParallelLinearWithShardedLoRA,
-    MergedColumnParallelLinearWithShardedLoRA,
-    MergedQKVParallelLinearWithShardedLoRA, QKVParallelLinearWithShardedLoRA,
-    RowParallelLinearWithShardedLoRA)
+from aphrodite.config.lora import LoRAConfig
+from aphrodite.logger import init_logger
+# being imported for _all_lora_classes below
 from aphrodite.lora.layers import (BaseLayerWithLoRA,
                                    ColumnParallelLinearWithLoRA,
-                                   LogitsProcessorWithLoRA,
+                                   ColumnParallelLinearWithShardedLoRA,
+                                   FusedMoEWithLoRA, LogitsProcessorWithLoRA,
                                    MergedColumnParallelLinearWithLoRA,
+                                   MergedColumnParallelLinearWithShardedLoRA,
                                    MergedQKVParallelLinearWithLoRA,
-                                   ModulesToSaveWrapper,
+                                   MergedQKVParallelLinearWithShardedLoRA,
                                    QKVParallelLinearWithLoRA,
+                                   QKVParallelLinearWithShardedLoRA,
                                    ReplicatedLinearWithLoRA,
                                    RowParallelLinearWithLoRA,
+                                   RowParallelLinearWithShardedLoRA,
                                    VocabParallelEmbeddingWithLoRA)
+from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.linear import LinearBase
+from aphrodite.modeling.utils import (get_moe_expert_mapping,
+                                      get_packed_modules_mapping)
 
 if TYPE_CHECKING:
     from aphrodite.modeling.layers.logits_processor import LogitsProcessor
     from aphrodite.modeling.layers.vocab_parallel_embedding import (
         ParallelLMHead)
     from aphrodite.modeling.models.utils import WeightsMapper
+
+logger = init_logger(__name__)
 
 _all_lora_classes: set[type[BaseLayerWithLoRA]] = {
     VocabParallelEmbeddingWithLoRA,
@@ -47,23 +52,35 @@ _all_lora_classes: set[type[BaseLayerWithLoRA]] = {
     MergedColumnParallelLinearWithShardedLoRA,
     MergedQKVParallelLinearWithShardedLoRA,
     RowParallelLinearWithShardedLoRA,
+    FusedMoEWithLoRA,
 }
 
 
-def from_layer(layer: nn.Module,
-               max_loras: int,
-               lora_config: LoRAConfig,
-               packed_modules_list: list,
-               model_config: Optional[PretrainedConfig] = None) -> nn.Module:
+def is_moe_model(model: nn.Module) -> bool:
+    """Checks if the model contains FusedMoE layers and warns the user."""
+    if any(isinstance(module, FusedMoE) for module in model.modules()):
+        logger.info_once("MoE model detected. Using fused MoE LoRA implementation.")
+        return True
+    return False
+
+
+def from_layer(
+    layer: nn.Module,
+    max_loras: int,
+    lora_config: LoRAConfig,
+    packed_modules_list: list,
+    model_config: PretrainedConfig | None = None,
+) -> nn.Module:
     for lora_cls in _all_lora_classes:
         # specifying kwargs so they can be easily accessed in decorator
-        if lora_cls.can_replace_layer(source_layer=layer,
-                                      lora_config=lora_config,
-                                      packed_modules_list=packed_modules_list,
-                                      model_config=model_config):
+        if lora_cls.can_replace_layer(
+            source_layer=layer,
+            lora_config=lora_config,
+            packed_modules_list=packed_modules_list,
+            model_config=model_config,
+        ):
             instance_layer = lora_cls(layer)
-            instance_layer.create_lora_weights(max_loras, lora_config,
-                                               model_config)
+            instance_layer.create_lora_weights(max_loras, lora_config, model_config)
             return instance_layer
     return layer
 
@@ -73,17 +90,22 @@ def from_layer_logits_processor(
     lm_head: "ParallelLMHead",
     max_loras: int,
     lora_config: LoRAConfig,
-    model_config: Optional[PretrainedConfig] = None,
+    model_config: PretrainedConfig | None = None,
 ) -> LogitsProcessorWithLoRA:
-    ret = LogitsProcessorWithLoRA(layer, lm_head.embedding_dim,
-                                  lm_head.weight.dtype, lm_head.weight.device,
-                                  lm_head.get_sharded_to_full_mapping())
+    ret = LogitsProcessorWithLoRA(
+        layer,
+        lm_head.embedding_dim,
+        lm_head.weight.dtype,
+        lm_head.weight.device,
+        lm_head.get_sharded_to_full_mapping(),
+    )
     ret.create_lora_weights(max_loras, lora_config, model_config)
     return ret
 
 
-def replace_submodule(model: nn.Module, module_name: str,
-                      new_module: nn.Module) -> nn.Module:
+def replace_submodule(
+    model: nn.Module, module_name: str, new_module: nn.Module
+) -> nn.Module:
     """Replace a submodule in a model with a new module."""
     parent = model.get_submodule(".".join(module_name.split(".")[:-1]))
     target_name = module_name.split(".")[-1]
@@ -92,10 +114,8 @@ def replace_submodule(model: nn.Module, module_name: str,
 
 
 def parse_fine_tuned_lora_name(
-    name: str,
-    enable_lora_modules_to_save: bool = False,
-    weights_mapper: Optional["WeightsMapper"] = None
-) -> Optional[tuple[str, Optional[bool], bool]]:
+    name: str, weights_mapper: Optional["WeightsMapper"] = None
+) -> tuple[str, bool]:
     """Parse the name of lora weights.
 
     args:
@@ -104,11 +124,9 @@ def parse_fine_tuned_lora_name(
         weights_mapper: maps the name of weight, e.g.
             `model.` -> `language_model.model.`,
     return:
-        tuple(module_name, is_lora_a, is_bias) or None if unsupported:
+        tuple(module_name, is_lora_a):
             module_name: the name of the module, e.g. model.dense1,
             is_lora_a whether the tensor is lora_a or lora_b.
-            is_bias whether the tensor is lora bias.
-            None if the weight name is not a supported LoRA weight format.
     """
 
     # LoRA weight qualified name usually starts with `base_model.model.`,
@@ -128,51 +146,24 @@ def parse_fine_tuned_lora_name(
     start_index = 2 if name.startswith("base_model.model.") else 0
 
     parts = name.split(".")
-    if parts[-1] == "weight":
-        if parts[-2] == "lora_A" or parts[-2] == "lora_B":
-            return ".".join(parts[2:-2]), parts[-2] == "lora_A", False
-
-        if parts[-2] in ModulesToSaveWrapper.implemented_layers:
-
-            if not enable_lora_modules_to_save:
-                error_msg = f"""enable_lora_modules_to_save is False,
-                but found tensor name {name} in LoRA checkpoint.
-                Set enable_lora_modules_to_save=True to process
-                lm_head and embed_tokens as fully trained tensors"""
-                raise ValueError(error_msg)
-
-            return '.'.join(parts[2:-1]), None, False
+    if parts[-1] == "weight" and (parts[-2] == "lora_A" or parts[-2] == "lora_B"):
+        new_name = ".".join(parts[start_index:-2])
+        return new_name, parts[-2] == "lora_A"
 
     if parts[-1] == "lora_embedding_A" or parts[-1] == "lora_embedding_B":
         new_name = ".".join(parts[start_index:-1])
-        return new_name, parts[-1] == "lora_embedding_A", False
+        return new_name, parts[-1] == "lora_embedding_A"
 
-    if parts[-1] == "bias":
-        new_name = ".".join(parts[start_index:-2])
-        return new_name, False, True
-
-    # Return None for unsupported weights instead of raising an exception
-    return None
+    raise ValueError(f"{name} is unsupported LoRA weight")
 
 
-def is_supported_lora_weight(name: str) -> bool:
-    """Check if a weight name follows a supported LoRA format.
-    
-    args:
-        name: the name of the weight to check
-        
-    return:
-        True if the weight name follows a supported LoRA format, False otherwise.
+def is_regex_target_modules(
+    load_modules: str | list[str], expected_lora_modules: list[str]
+) -> bool:
     """
-    return parse_fine_tuned_lora_name(name) is not None
-
-
-def is_regex_target_modules(load_modules: Union[str, list[str]],
-                            expected_lora_modules: list[str]) -> bool:
-    """
-    PEFT supports passing `target_modules` in the form of regular expressions, 
-    such as `model.*(q_proj|k_proj|v_proj)$`. This function is mainly used to 
-    determine whether the suffix in the regular expression is present in the 
+    PEFT supports passing `target_modules` in the form of regular expressions,
+    such as `model.*(q_proj|k_proj|v_proj)$`. This function is mainly used to
+    determine whether the suffix in the regular expression is present in the
     `expected_lora_modules`.
     """
 
@@ -214,7 +205,10 @@ def get_supported_lora_modules(model: nn.Module) -> list[str]:
                 supported_lora_modules.add(name)
 
         # get all the linear subfixes.
-        if isinstance(module, (LinearBase, )):
+        if isinstance(module, (LinearBase,)):
+            supported_lora_modules.add(name.split(".")[-1])
+
+        if isinstance(module, (FusedMoE,)):
             supported_lora_modules.add(name.split(".")[-1])
 
     return list(supported_lora_modules)
@@ -242,7 +236,7 @@ def get_adapter_absolute_path(lora_path: str) -> str:
         return lora_path
 
     # If the path starts with ~, expand the user home directory.
-    if lora_path.startswith('~'):
+    if lora_path.startswith("~"):
         return os.path.expanduser(lora_path)
 
     # Check if the expanded relative path exists locally.
@@ -251,13 +245,40 @@ def get_adapter_absolute_path(lora_path: str) -> str:
 
     # If the path does not exist locally, assume it's a Hugging Face repo.
     try:
-        local_snapshot_path = huggingface_hub.snapshot_download(
-            repo_id=lora_path)
-    except (HfHubHTTPError, RepositoryNotFoundError, EntryNotFoundError,
-            HFValidationError):
+        local_snapshot_path = huggingface_hub.snapshot_download(repo_id=lora_path)
+    except (
+        HfHubHTTPError,
+        RepositoryNotFoundError,
+        EntryNotFoundError,
+        HFValidationError,
+    ):
         # Handle errors that may occur during the download
-        # Return original path instead instead of throwing error here
+        # Return original path instead of throwing error here
         logger.exception("Error downloading the HuggingFace model")
         return lora_path
 
     return local_snapshot_path
+
+
+def process_packed_modules_mapping(model: nn.Module) -> dict[str, list[str]]:
+    if is_moe_model(model):
+        if moe_packed_mapping := get_moe_expert_mapping(model):
+            # This method generates and returns a dictionary mapping packed module
+            # names to lists of their corresponding submodule names. It includes
+            # both static mappings and dynamic mappings for expert layers, where
+            # the expert indices are expanded based on the configured number
+            # of routed experts.
+            packed_modules_mapping = get_packed_modules_mapping(model)
+
+            packed_modules_mapping["experts"] = [
+                weight_name.rstrip(".") for _, weight_name, _, _ in moe_packed_mapping
+            ]
+
+            return packed_modules_mapping
+        else:
+            raise AttributeError(
+                "To support LoRA for MoE model, "
+                "'get_expert_mapping' must be implemented"
+            )
+    else:
+        return get_packed_modules_mapping(model)

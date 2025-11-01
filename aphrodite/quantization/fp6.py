@@ -2,10 +2,10 @@ from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
-from loguru import logger
 
 from aphrodite import _custom_ops as ops
 from aphrodite.distributed import get_tensor_model_parallel_rank
+from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
@@ -13,6 +13,8 @@ from aphrodite.quantization.base_config import QuantizationConfig
 from aphrodite.quantization.utils.fp6_utils import (_SPLIT_K_MAP,
                                                     from_scaled_tc_fpx,
                                                     to_scaled_tc_fpx)
+
+logger = init_logger(__name__)
 
 
 class QuantLLMFPConfig(QuantizationConfig):
@@ -96,7 +98,8 @@ class QuantLLMFPConfig(QuantizationConfig):
     def _log_if_needed(self):
         """Log quantization info only once from rank 0 after model parallel groups are initialized."""
         if not self._logged:
-            from aphrodite.distributed.parallel_state import model_parallel_is_initialized
+            from aphrodite.distributed.parallel_state import (
+                model_parallel_is_initialized)
             if model_parallel_is_initialized():
                 try:
                     if get_tensor_model_parallel_rank() == 0:

@@ -1,15 +1,15 @@
 """Utility helpers for NVFP4 + FlashInfer fused-MoE path"""
-from __future__ import annotations
 
 import torch
 
-import aphrodite.common.envs as envs
+import aphrodite.envs as envs
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
-from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig
+from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
+                                                        FusedMoEQuantConfig)
 from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import (
     FlashInferExperts)
 from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_prepare_finalize import (  # noqa: E501
-    FlashInferCutlassMoEPrepareAndFinalize)
+    create_flashinfer_prepare_finalize)
 from aphrodite.platforms import current_platform
 from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe
 
@@ -21,16 +21,18 @@ __all__ = [
 
 
 def is_flashinfer_fp4_cutlass_moe_available() -> bool:
-    """Return ``True`` when FlashInfer CUTLASS NV-FP4 kernels can be used."""
-    return (envs.APHRODITE_USE_FLASHINFER_MOE_FP4
-            and has_flashinfer_cutlass_fused_moe()
-            and current_platform.is_cuda()
-            and current_platform.is_device_capability(100))
+    """Return `True` when FlashInfer CUTLASS NV-FP4 kernels can be used."""
+    return (
+        envs.APHRODITE_USE_FLASHINFER_MOE_FP4
+        and has_flashinfer_cutlass_fused_moe()
+        and current_platform.is_cuda()
+        and current_platform.has_device_capability(100)
+    )
 
 
-def reorder_w1w3_to_w3w1(weight: torch.Tensor,
-                         scale: torch.Tensor,
-                         dim: int = -2) -> tuple[torch.Tensor, torch.Tensor]:
+def reorder_w1w3_to_w3w1(
+    weight: torch.Tensor, scale: torch.Tensor, dim: int = -2
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Re-order the concatenated `[w1, w3]` tensors to `[w3, w1]`"""
     size = weight.size(dim)
     assert size % 2 == 0, f"Expected even size in dim {dim}, got {size}"
@@ -39,38 +41,34 @@ def reorder_w1w3_to_w3w1(weight: torch.Tensor,
     w1, w3 = weight.split(half, dim=dim)
     s1, s3 = scale.split(half, dim=dim)
 
-    return (torch.cat([w3, w1],
-                      dim=dim).contiguous(), torch.cat([s3, s1],
-                                                       dim=dim).contiguous())
+    return (
+        torch.cat([w3, w1], dim=dim).contiguous(),
+        torch.cat([s3, s1], dim=dim).contiguous(),
+    )
 
 
 def build_flashinfer_fp4_cutlass_moe_prepare_finalize(
     moe: FusedMoEConfig,
-    a1_gscale: torch.Tensor,
 ) -> mk.FusedMoEPrepareAndFinalize:
     """Create a FlashInfer CUTLASS fused-MoE prepare finalize kernel"""
     use_dp = moe.moe_parallel_config.dp_size > 1
-    return FlashInferCutlassMoEPrepareAndFinalize(use_dp, a1_gscale=a1_gscale)
+    enable_alltoallv = moe.moe_parallel_config.all2all_backend == "flashinfer_all2allv"
+    return create_flashinfer_prepare_finalize(
+        use_dp=use_dp, use_nvfp4=True, enable_alltoallv=enable_alltoallv
+    )
 
 
 def select_nvfp4_gemm_impl(
     moe: FusedMoEConfig,
-    g1_alphas: torch.Tensor,
-    g2_alphas: torch.Tensor,
-    a1_gscale: torch.Tensor,
-    a2_gscale: torch.Tensor,
+    moe_quant_config: FusedMoEQuantConfig,
     allow_flashinfer: bool,
 ) -> mk.FusedMoEPermuteExpertsUnpermute:
     """Return a GEMM *experts* implementation for NV-FP4 fused-MoE layers"""
 
     if allow_flashinfer:
         return FlashInferExperts(
-            g1_alphas=g1_alphas,
-            g2_alphas=g2_alphas,
-            a1_gscale=a1_gscale,
-            a2_gscale=a2_gscale,
             out_dtype=moe.in_dtype,
-            quant_dtype="nvfp4",
+            quant_config=moe_quant_config,
             ep_rank=moe.moe_parallel_config.ep_rank,
             ep_size=moe.moe_parallel_config.ep_size,
             tp_rank=moe.moe_parallel_config.tp_rank,
@@ -80,4 +78,5 @@ def select_nvfp4_gemm_impl(
     # native cutlass experts currently don't support DP; TP case won't call this
     raise ValueError(
         "CutlassExpertsFp4 doesn't support DP. Use flashinfer CUTLASS "
-        "Fused MoE backend instead (set APHRODITE_USE_FLASHINFER_MOE_FP4=1)")
+        "Fused MoE backend instead (set APHRODITE_USE_FLASHINFER_MOE_FP4=1)"
+    )

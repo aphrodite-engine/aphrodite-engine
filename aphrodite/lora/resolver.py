@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 from collections.abc import Set
 from dataclasses import dataclass, field
-from typing import Optional
 
-from loguru import logger
-
+from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
+
+logger = init_logger(__name__)
 
 
 class LoRAResolver(ABC):
@@ -18,8 +18,9 @@ class LoRAResolver(ABC):
     """
 
     @abstractmethod
-    async def resolve_lora(self, base_model_name: str,
-                           lora_name: str) -> Optional[LoRARequest]:
+    async def resolve_lora(
+        self, base_model_name: str, lora_name: str
+    ) -> LoRARequest | None:
         """Abstract method to resolve and fetch a LoRA model adapter.
 
         Implements logic to locate and download LoRA adapter based on the name.
@@ -56,9 +57,11 @@ class _LoRAResolverRegistry:
         """
         if resolver_name in self.resolvers:
             logger.warning(
-                "LoRA resolver {} is already registered, and will be "
-                "overwritten by the new resolver instance {}.", resolver_name,
-                resolver)
+                "LoRA resolver %s is already registered, and will be "
+                "overwritten by the new resolver instance %s.",
+                resolver_name,
+                resolver,
+            )
 
         self.resolvers[resolver_name] = resolver
 
@@ -74,7 +77,8 @@ class _LoRAResolverRegistry:
         if resolver_name not in self.resolvers:
             raise KeyError(
                 f"LoRA resolver '{resolver_name}' not found. "
-                f"Available resolvers: {list(self.resolvers.keys())}")
+                f"Available resolvers: {list(self.resolvers.keys())}"
+            )
         return self.resolvers[resolver_name]
 
 

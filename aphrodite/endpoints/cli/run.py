@@ -1,23 +1,21 @@
 import argparse
 import signal
-from typing import Optional
 
 import uvloop
-from loguru import logger
 
 import aphrodite
-import aphrodite.common.envs as envs
-from aphrodite.utils import (FlexibleArgumentParser, decorate_logs,
-                                    get_tcp_uri, set_process_title)
+import aphrodite.envs as envs
 from aphrodite.endpoints.cli.types import CLISubcommand
 from aphrodite.endpoints.openai.api_server import (run_server,
                                                    run_server_worker,
                                                    setup_server)
 from aphrodite.endpoints.openai.args import (make_arg_parser,
                                              validate_parsed_serve_args)
-from aphrodite.endpoints.utils import (
-    APHRODITE_SUBCMD_PARSER_EPILOG, show_filtered_argument_or_group_from_help)
+from aphrodite.endpoints.utils import APHRODITE_SUBCMD_PARSER_EPILOG
+from aphrodite.logger import init_logger
 from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.utils import (FlexibleArgumentParser, decorate_logs,
+                             get_tcp_uri, set_process_title)
 from aphrodite.v1.engine.core import EngineCoreProc
 from aphrodite.v1.engine.utils import (CoreEngineProcManager,
                                        launch_core_engines)
@@ -25,6 +23,8 @@ from aphrodite.v1.executor.abstract import Executor
 from aphrodite.v1.metrics.prometheus import setup_multiprocess_prometheus
 from aphrodite.v1.utils import (APIServerProcessManager,
                                 wait_for_completion_or_failure)
+
+logger = init_logger(__name__)
 
 
 class ServeSubcommand(CLISubcommand):
