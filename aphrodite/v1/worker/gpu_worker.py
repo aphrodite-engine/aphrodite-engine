@@ -351,8 +351,8 @@ class Worker(WorkerBase):
             GiB(self.requested_memory),
         )
         logger.debug(
-            "Free memory after profiling: {:.2f} GiB (total), "
-            "{:.2f} GiB (within requested)",
+            "Free memory after profiling: %.2f GiB (total), "
+            "%.2f GiB (within requested)",
             GiB(free_gpu_memory),
             GiB(free_gpu_memory - unrequested_memory),
         )
