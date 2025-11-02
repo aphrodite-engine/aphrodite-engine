@@ -342,7 +342,7 @@ set(APHRODITE_EXT_SRC
   # Keep building Marlin for 9.0 as there are some group sizes and shapes that
   # are not supported by Machete yet.
   # 9.0 for latest bf16 atomicAdd PTX
-  cuda_archs_loose_intersection(MARLIN_ARCHS "8.0;8.7;9.0+PTX" "${CUDA_ARCHS}")
+  cuda_archs_loose_intersection(MARLIN_ARCHS "8.0;8.7;8.9;9.0+PTX" "${CUDA_ARCHS}")
   if (MARLIN_ARCHS)
 
     #
@@ -926,7 +926,7 @@ if(APHRODITE_GPU_LANG STREQUAL "CUDA")
 
   list(APPEND APHRODITE_MOE_EXT_SRC "${APHRODITE_MOE_WNA16_SRC}")
   # 9.0 for latest bf16 atomicAdd PTX
-  cuda_archs_loose_intersection(MARLIN_MOE_ARCHS "8.0;8.7;9.0+PTX" "${CUDA_ARCHS}")
+  cuda_archs_loose_intersection(MARLIN_MOE_ARCHS "8.0;8.7;8.9;9.0+PTX" "${CUDA_ARCHS}")
   if (MARLIN_MOE_ARCHS)
 
     #
