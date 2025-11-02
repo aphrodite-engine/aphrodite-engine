@@ -189,8 +189,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     rm -rf .deps && \
         mkdir -p .deps && \
         export APHRODITE_DOCKER_BUILD_CONTEXT=1 && \
-        python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38; \
-    fi
+        python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38
 #################### EXTENSION Build IMAGE ####################
 
 #################### DEV IMAGE ####################
