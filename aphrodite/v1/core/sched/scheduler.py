@@ -136,6 +136,15 @@ class TokenBudget:
             else:
                 self.prefill_token_budget -= num_new_tokens
 
+    def restore(self, num_tokens: int, computed_prompt: bool):
+        if not self.use_pp:
+            self.token_budget += num_tokens
+        else:
+            if computed_prompt:
+                self.decode_token_budget += num_tokens
+            else:
+                self.prefill_token_budget += num_tokens
+
     def verify(self):
         if not self.use_pp:
             assert self.token_budget >= 0
@@ -384,7 +393,10 @@ class Scheduler(SchedulerInterface):
                     self.running.remove(preempted_req)
                     if preempted_req in scheduled_running_reqs:
                         scheduled_running_reqs.remove(preempted_req)
-                        token_budget += num_scheduled_tokens[preempted_req.request_id]
+                        token_budget.restore(
+                            num_scheduled_tokens[preempted_req.request_id],
+                            preempted_req.computed_prompt
+                        )
                         req_to_new_blocks.pop(preempted_req.request_id)
                         num_scheduled_tokens.pop(preempted_req.request_id)
                         req_index -= 1
