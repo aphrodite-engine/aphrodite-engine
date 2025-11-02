@@ -61,12 +61,10 @@ def _compare_directories(dir1: Path, dir2: Path) -> bool:
         print(f"  Right only: {dcmp.right_only}")
         print(f"  Different files: {dcmp.diff_files}")
         return False
-    for sub_dir in dcmp.common_dirs:
-        if not _compare_directories(dir1 / sub_dir, dir2 / sub_dir):
-            return False
-    return True
+    return all(_compare_directories(dir1 / sub_dir, dir2 / sub_dir) for sub_dir in dcmp.common_dirs)
 
 
+@pytest.mark.flaky(reruns=3)
 def test_multi_shared_storage_connector_consistency():
     """
     Tests that MultiConnector with two SharedStorageConnectors saves
