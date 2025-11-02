@@ -2,21 +2,21 @@ import pytest
 import torch
 
 import aphrodite._custom_ops as ops
-from tests.kernels.utils import opcheck
 from aphrodite.modeling.layers.activation import SiluAndMul
+from aphrodite.platforms import current_platform
+from tests.kernels.utils import opcheck
 
 DTYPES = [torch.bfloat16, torch.float16]
-QUANT_DTYPES = [torch.float8_e4m3fn]
+QUANT_DTYPES = [current_platform.fp8_dtype()]
 NUM_TOKENS = [1, 17, 86, 1234, 3045]  # Arbitrary values for testing
 HIDDEN_SIZES = [16, 48, 128, 1562, 4096]  # Arbitrary values for testing
 SEEDS = [0]
-CUDA_DEVICES = [
-    f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)
-]
+CUDA_DEVICES = [f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)]
 
 
-def ref_impl(silu_and_mul: SiluAndMul, x: torch.Tensor,
-             scale: torch.Tensor) -> torch.Tensor:
+def ref_impl(
+    silu_and_mul: SiluAndMul, x: torch.Tensor, scale: torch.Tensor
+) -> torch.Tensor:
     silu_and_mul_out = silu_and_mul.forward_native(x)
     out, scales = ops.scaled_fp8_quant(silu_and_mul_out, scale)
     return out
@@ -24,9 +24,7 @@ def ref_impl(silu_and_mul: SiluAndMul, x: torch.Tensor,
 
 def ops_impl(x: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     out_shape = (x.shape[0], x.shape[1] // 2)
-    out = torch.empty(out_shape,
-                      dtype=torch.torch.float8_e4m3fn,
-                      device=x.device)
+    out = torch.empty(out_shape, dtype=current_platform.fp8_dtype(), device=x.device)
     torch.ops._C.silu_and_mul_quant(out, x, scale)
     return out
 
@@ -54,7 +52,7 @@ def test_silu_and_mul(
     layer = SiluAndMul()
 
     # Make inputs
-    scale = (torch.randn((1), device=device, dtype=torch.float32))
+    scale = torch.randn((1), device=device, dtype=torch.float32)
     x = torch.randn(num_tokens, hidden_size, dtype=dtype)
 
     ref_out = ref_impl(layer, x, scale)
@@ -63,6 +61,7 @@ def test_silu_and_mul(
     assert ref_out.dtype == quant_dtype
     assert ops_out.dtype == quant_dtype
     assert ref_out.shape == ops_out.shape
-    assert torch.allclose(ref_out.to(dtype=torch.float32),
-                          ops_out.to(dtype=torch.float32))
+    assert torch.allclose(
+        ref_out.to(dtype=torch.float32), ops_out.to(dtype=torch.float32)
+    )
     opcheck(torch.ops._C.silu_and_mul_quant, (ops_out, x, scale))

@@ -1,5 +1,5 @@
-from aphrodite.quantization import get_quantization_config
 from aphrodite.platforms import current_platform
+from aphrodite.quantization import get_quantization_config
 
 
 def is_quant_method_supported(quant_method: str) -> bool:

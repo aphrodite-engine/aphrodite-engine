@@ -1,24 +1,20 @@
 import tempfile
 from collections import OrderedDict
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import torch
 import torch.nn as nn
 from huggingface_hub import snapshot_download
 
-import aphrodite
-from aphrodite.config import LoRAConfig
 from aphrodite.distributed import (cleanup_dist_env_and_memory,
-                              init_distributed_environment,
-                              initialize_model_parallel)
+                                   init_distributed_environment,
+                                   initialize_model_parallel)
 from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                               MergedColumnParallelLinear,
-                                               RowParallelLinear)
+                                              MergedColumnParallelLinear,
+                                              RowParallelLinear)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.sampler import Sampler
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
-from aphrodite.modeling.model_loader import get_model
 from aphrodite.modeling.models.interfaces import SupportsLoRA
 from aphrodite.platforms import current_platform
 
@@ -45,14 +41,16 @@ def dist_init():
     temp_file = tempfile.mkstemp()[1]
 
     backend = "nccl"
-    if current_platform.is_cpu():
+    if current_platform.is_cpu() or current_platform.is_tpu():
         backend = "gloo"
 
-    init_distributed_environment(world_size=1,
-                                 rank=0,
-                                 distributed_init_method=f"file://{temp_file}",
-                                 local_rank=0,
-                                 backend=backend)
+    init_distributed_environment(
+        world_size=1,
+        rank=0,
+        distributed_init_method=f"file://{temp_file}",
+        local_rank=0,
+        backend=backend,
+    )
     initialize_model_parallel(1, 1)
     yield
     cleanup_dist_env_and_memory(shutdown_ray=True)
@@ -67,10 +65,9 @@ def dist_init_torch_only():
         backend = "gloo"
 
     temp_file = tempfile.mkstemp()[1]
-    torch.distributed.init_process_group(world_size=1,
-                                         rank=0,
-                                         init_method=f"file://{temp_file}",
-                                         backend=backend)
+    torch.distributed.init_process_group(
+        world_size=1, rank=0, init_method=f"file://{temp_file}", backend=backend
+    )
 
 
 class DummyLoRAModel(nn.Sequential, SupportsLoRA):
@@ -80,52 +77,63 @@ class DummyLoRAModel(nn.Sequential, SupportsLoRA):
 @pytest.fixture
 def dummy_model() -> nn.Module:
     model = DummyLoRAModel(
-        OrderedDict([
-            ("dense1", ColumnParallelLinear(764, 100)),
-            ("dense2", RowParallelLinear(100, 50)),
-            (
-                "layer1",
-                nn.Sequential(
-                    OrderedDict([
-                        ("dense1", ColumnParallelLinear(100, 10)),
-                        ("dense2", RowParallelLinear(10, 50)),
-                    ])),
-            ),
-            ("act2", nn.ReLU()),
-            ("output", ColumnParallelLinear(50, 10)),
-            ("outact", nn.Sigmoid()),
-            # Special handling for lm_head & sampler
-            ("lm_head", ParallelLMHead(512, 10)),
-            ("logits_processor", LogitsProcessor(512)),
-            ("sampler", Sampler())
-        ]))
+        OrderedDict(
+            [
+                ("dense1", ColumnParallelLinear(764, 100)),
+                ("dense2", RowParallelLinear(100, 50)),
+                (
+                    "layer1",
+                    nn.Sequential(
+                        OrderedDict(
+                            [
+                                ("dense1", ColumnParallelLinear(100, 10)),
+                                ("dense2", RowParallelLinear(10, 50)),
+                            ]
+                        )
+                    ),
+                ),
+                ("act2", nn.ReLU()),
+                ("output", ColumnParallelLinear(50, 10)),
+                ("outact", nn.Sigmoid()),
+                # Special handling for lm_head & sampler
+                ("lm_head", ParallelLMHead(512, 10)),
+                ("logits_processor", LogitsProcessor(512)),
+            ]
+        )
+    )
     model.config = MagicMock()
     model.embedding_modules = {"lm_head": "lm_head"}
+    model.unpadded_vocab_size = 32000
     return model
 
 
 @pytest.fixture
 def dummy_model_gate_up() -> nn.Module:
     model = DummyLoRAModel(
-        OrderedDict([
-            ("dense1", ColumnParallelLinear(764, 100)),
-            ("dense2", RowParallelLinear(100, 50)),
-            (
-                "layer1",
-                nn.Sequential(
-                    OrderedDict([
-                        ("dense1", ColumnParallelLinear(100, 10)),
-                        ("dense2", RowParallelLinear(10, 50)),
-                    ])),
-            ),
-            ("act2", nn.ReLU()),
-            ("gate_up_proj", MergedColumnParallelLinear(50, [5, 5])),
-            ("outact", nn.Sigmoid()),
-            # Special handling for lm_head & sampler
-            ("lm_head", ParallelLMHead(512, 10)),
-            ("logits_processor", LogitsProcessor(512)),
-            ("sampler", Sampler())
-        ]))
+        OrderedDict(
+            [
+                ("dense1", ColumnParallelLinear(764, 100)),
+                ("dense2", RowParallelLinear(100, 50)),
+                (
+                    "layer1",
+                    nn.Sequential(
+                        OrderedDict(
+                            [
+                                ("dense1", ColumnParallelLinear(100, 10)),
+                                ("dense2", RowParallelLinear(10, 50)),
+                            ]
+                        )
+                    ),
+                ),
+                ("act2", nn.ReLU()),
+                ("gate_up_proj", MergedColumnParallelLinear(50, [5, 5])),
+                ("outact", nn.Sigmoid()),
+                # Special handling for lm_head & sampler
+                ("lm_head", ParallelLMHead(512, 10)),
+                ("logits_processor", LogitsProcessor(512)),
+            ]
+        )
+    )
     model.config = MagicMock()
     model.packed_modules_mapping = {
         "gate_up_proj": [
@@ -134,7 +142,15 @@ def dummy_model_gate_up() -> nn.Module:
         ],
     }
     model.embedding_modules = {"lm_head": "lm_head"}
+    model.unpadded_vocab_size = 32000
+
     return model
+
+
+@pytest.fixture(scope="session")
+def llama_2_7b_base_huggingface_id():
+    # used as a base model for testing with sql lora adapter
+    return "meta-llama/Llama-2-7b-hf"
 
 
 @pytest.fixture(scope="session")
@@ -151,12 +167,8 @@ def sql_lora_files(sql_lora_huggingface_id):
 @pytest.fixture(scope="session")
 def mixtral_lora_files():
     # Note: this module has incorrect adapter_config.json to test
+    # https://github.com/vllm-project/vllm/pull/5909/files.
     return snapshot_download(repo_id="SangBinCho/mixtral-lora")
-
-
-@pytest.fixture(scope="session")
-def gemma_lora_files():
-    return snapshot_download(repo_id="wskwon/gemma-7b-test-lora")
 
 
 @pytest.fixture(scope="session")
@@ -196,6 +208,12 @@ def qwen2vl_lora_files():
 
 
 @pytest.fixture(scope="session")
+def qwen25vl_base_huggingface_id():
+    # used as a base model for testing with qwen25vl lora adapter
+    return "Qwen/Qwen2.5-VL-3B-Instruct"
+
+
+@pytest.fixture(scope="session")
 def qwen25vl_lora_files():
     return snapshot_download(repo_id="jeeejeee/qwen25-vl-lora-pokemon")
 
@@ -206,60 +224,30 @@ def tinyllama_lora_files():
 
 
 @pytest.fixture(scope="session")
-def phi2_lora_files():
-    return snapshot_download(repo_id="isotr0py/phi-2-test-sql-lora")
+def deepseekv2_lora_files():
+    return snapshot_download(repo_id="wuchen01/DeepSeek-V2-Lite-Chat-All-LoRA")
 
 
 @pytest.fixture(scope="session")
-def long_context_lora_files_16k_1():
-    return snapshot_download(repo_id="SangBinCho/long_context_16k_testing_1")
+def gptoss20b_lora_files():
+    return snapshot_download(repo_id="LevinZheng/gpt-oss-20b-lora-adapter")
 
 
-@pytest.fixture
-def llama_2_7b_engine_extra_embeddings():
-    cleanup_dist_env_and_memory(shutdown_ray=True)
-    get_model_old = get_model
-
-    def get_model_patched(**kwargs):
-        kwargs["aphrodite_config"].lora_config = LoRAConfig(max_loras=4,
-                                                       max_lora_rank=8)
-        return get_model_old(**kwargs)
-
-    with patch("aphrodite.worker.model_runner.get_model", get_model_patched):
-        engine = aphrodite.LLM("meta-llama/Llama-2-7b-hf", enable_lora=False)
-    yield engine.llm_engine
-    del engine
-    cleanup_dist_env_and_memory(shutdown_ray=True)
+@pytest.fixture(scope="session")
+def qwen3moe_lora_files():
+    return snapshot_download(repo_id="jeeejeee/qwen3-moe-text2sql-spider")
 
 
-@pytest.fixture
-def llama_2_7b_model_extra_embeddings(llama_2_7b_engine_extra_embeddings):
-    yield (llama_2_7b_engine_extra_embeddings.modeling.driver_worker.
-           model_runner.model)
-
-
-@pytest.fixture(params=[True, False])
-def run_with_both_engines_lora(request, monkeypatch):
-    # Automatically runs tests twice, once with V1 and once without
-    use_v1 = request.param
-    # Tests decorated with `@skip_v1` are only run without v1
-    skip_v1 = request.node.get_closest_marker("skip_v1")
-
-    if use_v1:
-        if skip_v1:
-            pytest.skip("Skipping test on aphrodite V1")
-        monkeypatch.setenv('APHRODITE_USE_V1', '1')
-    else:
-        monkeypatch.setenv('APHRODITE_USE_V1', '0')
-
-    yield
+@pytest.fixture(scope="session")
+def olmoe_lora_files():
+    return snapshot_download(repo_id="jeeejeee/olmoe-instruct-text2sql-spider")
 
 
 @pytest.fixture
 def reset_default_device():
     """
-    Some tests, such as `test_punica_ops.py`, explicitly set the 
-    default device, which can affect subsequent tests. Adding this fixture 
+    Some tests, such as `test_punica_ops.py`, explicitly set the
+    default device, which can affect subsequent tests. Adding this fixture
     helps avoid this problem.
     """
     original_device = torch.get_default_device()

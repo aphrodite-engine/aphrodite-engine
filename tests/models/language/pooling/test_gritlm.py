@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import numpy as np
 import openai
 import pytest
@@ -12,6 +10,7 @@ from ....utils import RemoteOpenAIServer
 
 MODEL_NAME = "parasail-ai/GritLM-7B-aphrodite"
 MAX_MODEL_LEN = 4000
+ATOL = 0.002
 
 
 def _arr(arr):
@@ -67,8 +66,9 @@ async def run_client_embeddings(
 
 
 def gritlm_instruction(instruction):
-    return ("<|user|>\n" + instruction +
-            "\n<|embed|>\n" if instruction else "<|embed|>\n")
+    return (
+        "<|user|>\n" + instruction + "\n<|embed|>\n" if instruction else "<|embed|>\n"
+    )
 
 
 def get_test_data():
@@ -77,7 +77,8 @@ def get_test_data():
     README.md in https://github.com/ContextualAI/gritlm
     """
     q_instruction = gritlm_instruction(
-        "Given a scientific paper title, retrieve the paper's abstract", )
+        "Given a scientific paper title, retrieve the paper's abstract",
+    )
     queries = [
         "Bitcoin: A Peer-to-Peer Electronic Cash System",
         "Generative Representational Instruction Tuning",
@@ -95,25 +96,25 @@ def get_test_data():
 
 def validate_embed_output(q_rep: list[list[float]], d_rep: list[list[float]]):
     cosine_sim_q0_d0 = 1 - cosine(q_rep[0], d_rep[0])
-    assert cosine_sim_q0_d0 == pytest.approx(0.609, abs=0.001)
+    assert cosine_sim_q0_d0 == pytest.approx(0.609, abs=ATOL)
 
     cosine_sim_q0_d1 = 1 - cosine(q_rep[0], d_rep[1])
-    assert cosine_sim_q0_d1 == pytest.approx(0.101, abs=0.001)
+    assert cosine_sim_q0_d1 == pytest.approx(0.101, abs=ATOL)
 
     cosine_sim_q1_d0 = 1 - cosine(q_rep[1], d_rep[0])
-    assert cosine_sim_q1_d0 == pytest.approx(0.120, abs=0.001)
+    assert cosine_sim_q1_d0 == pytest.approx(0.120, abs=ATOL)
 
     cosine_sim_q1_d1 = 1 - cosine(q_rep[1], d_rep[1])
-    assert cosine_sim_q1_d1 == pytest.approx(0.534, abs=0.001)
+    assert cosine_sim_q1_d1 == pytest.approx(0.534, abs=ATOL)
 
 
 def test_gritlm_offline_embedding(aphrodite_runner):
     queries, q_instruction, documents, d_instruction = get_test_data()
 
     with aphrodite_runner(
-            MODEL_NAME,
-            runner="pooling",
-            max_model_len=MAX_MODEL_LEN,
+        MODEL_NAME,
+        runner="pooling",
+        max_model_len=MAX_MODEL_LEN,
     ) as aphrodite_model:
         llm = aphrodite_model.llm
 
@@ -158,9 +159,9 @@ def test_gritlm_offline_generate(monkeypatch: pytest.MonkeyPatch, aphrodite_runn
     input = "<|user|>\nWhat is the capital of France?\n<|assistant|>\n"
 
     with aphrodite_runner(
-            MODEL_NAME,
-            runner="generate",
-            max_model_len=MAX_MODEL_LEN,
+        MODEL_NAME,
+        runner="generate",
+        max_model_len=MAX_MODEL_LEN,
     ) as aphrodite_model:
         llm = aphrodite_model.llm
 

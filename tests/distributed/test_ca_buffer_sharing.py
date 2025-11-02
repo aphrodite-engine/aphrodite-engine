@@ -7,7 +7,8 @@ import ctypes
 import torch
 import torch.distributed as dist
 
-from aphrodite.distributed.device_communicators.cuda_wrapper import CudaRTLibrary
+from aphrodite.distributed.device_communicators.cuda_wrapper import (
+    CudaRTLibrary)
 from aphrodite.distributed.device_communicators.custom_all_reduce import (  # noqa
     CustomAllreduce)
 
@@ -49,7 +50,8 @@ for p in pointers:
         assert ord(host_data[i]) == byte_value, (
             f"Rank {rank} failed"
             f" to verify buffer {p}. Expected {byte_value}, "
-            f"got {ord(host_data[i])}")
+            f"got {ord(host_data[i])}"
+        )
 
 print(f"Rank {rank} verified all buffers")
 

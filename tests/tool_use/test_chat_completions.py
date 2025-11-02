@@ -9,8 +9,9 @@ from .utils import (MESSAGES_WITHOUT_TOOLS, WEATHER_TOOL, ServerConfig,
 # are enabled. This makes sure tool call chat templates work, AND that the tool
 # parser stream processing doesn't change the output of the model.
 @pytest.mark.asyncio
-async def test_chat_completion_without_tools(client: openai.AsyncOpenAI,
-                                             server_config: ServerConfig):
+async def test_chat_completion_without_tools(
+    client: openai.AsyncOpenAI, server_config: ServerConfig
+):
     models = await client.models.list()
     model_name: str = models.data[0].id
     chat_completion = await client.chat.completions.create(
@@ -18,7 +19,8 @@ async def test_chat_completion_without_tools(client: openai.AsyncOpenAI,
         temperature=0,
         max_completion_tokens=150,
         model=model_name,
-        logprobs=False)
+        logprobs=False,
+    )
     choice = chat_completion.choices[0]
     stop_reason = chat_completion.choices[0].finish_reason
     output_text = chat_completion.choices[0].message.content
@@ -29,8 +31,7 @@ async def test_chat_completion_without_tools(client: openai.AsyncOpenAI,
     assert stop_reason != "tool_calls"
 
     # check to make sure no tool calls were returned
-    assert (choice.message.tool_calls is None
-            or len(choice.message.tool_calls) == 0)
+    assert choice.message.tool_calls is None or len(choice.message.tool_calls) == 0
 
     # make the same request, streaming
     stream = await client.chat.completions.create(
@@ -52,7 +53,7 @@ async def test_chat_completion_without_tools(client: openai.AsyncOpenAI,
         # make sure the role is assistant
         if delta.role:
             assert not role_sent
-            assert delta.role == 'assistant'
+            assert delta.role == "assistant"
             role_sent = True
 
         if delta.content:
@@ -77,8 +78,9 @@ async def test_chat_completion_without_tools(client: openai.AsyncOpenAI,
 # tools, to make sure we can still get normal chat completion responses
 # and that they won't be parsed as tools
 @pytest.mark.asyncio
-async def test_chat_completion_with_tools(client: openai.AsyncOpenAI,
-                                          server_config: ServerConfig):
+async def test_chat_completion_with_tools(
+    client: openai.AsyncOpenAI, server_config: ServerConfig
+):
     models = await client.models.list()
     model_name: str = models.data[0].id
     chat_completion = await client.chat.completions.create(
@@ -87,19 +89,19 @@ async def test_chat_completion_with_tools(client: openai.AsyncOpenAI,
         max_completion_tokens=150,
         model=model_name,
         tools=[WEATHER_TOOL],
-        logprobs=False)
+        logprobs=False,
+    )
     choice = chat_completion.choices[0]
     stop_reason = chat_completion.choices[0].finish_reason
     output_text = chat_completion.choices[0].message.content
 
     # check to make sure we got text
     assert output_text is not None
-    assert stop_reason != 'tool_calls'
+    assert stop_reason != "tool_calls"
     assert len(output_text) > 0
 
     # check to make sure no tool calls were returned
-    assert (choice.message.tool_calls is None
-            or len(choice.message.tool_calls) == 0)
+    assert choice.message.tool_calls is None or len(choice.message.tool_calls) == 0
 
     # make the same request, streaming
     stream = await client.chat.completions.create(
@@ -122,7 +124,7 @@ async def test_chat_completion_with_tools(client: openai.AsyncOpenAI,
 
         # make sure the role is assistant
         if delta.role:
-            assert delta.role == 'assistant'
+            assert delta.role == "assistant"
             role_sent = True
 
         if delta.content:
@@ -139,6 +141,6 @@ async def test_chat_completion_with_tools(client: openai.AsyncOpenAI,
     assert role_sent
     assert finish_reason_count == 1
     assert chunk.choices[0].finish_reason == stop_reason
-    assert chunk.choices[0].finish_reason != 'tool_calls'
+    assert chunk.choices[0].finish_reason != "tool_calls"
     assert len(chunks)
     assert "".join(chunks) == output_text

@@ -4,13 +4,13 @@ import asyncio
 
 import pytest
 
-from tests.v1.shutdown.utils import SHUTDOWN_TEST_TIMEOUT_SEC
 from aphrodite import SamplingParams
+from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.inputs.data import TokensPrompt
-from aphrodite.common.sampling_params import RequestOutputKind
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from aphrodite.v1.engine.exceptions import EngineGenerateError
+from tests.v1.shutdown.utils import SHUTDOWN_TEST_TIMEOUT_SEC
 
 MODELS = ["meta-llama/Llama-3.2-1B"]
 
@@ -28,9 +28,9 @@ async def test_async_llm_processor_error(model: str) -> None:
 
     async def generate(request_id: str):
         # [] is not allowed and will raise a ValueError in Processor.
-        generator = async_llm.generate(TokensPrompt([]),
-                                       request_id=request_id,
-                                       sampling_params=SamplingParams())
+        generator = async_llm.generate(
+            TokensPrompt([]), request_id=request_id, sampling_params=SamplingParams()
+        )
         try:
             async for _ in generator:
                 pass
@@ -53,11 +53,12 @@ async def test_async_llm_processor_error(model: str) -> None:
     EXPECTED_TOKENS = 5
     outputs = []
     async for out in async_llm.generate(
-            "Hello my name is",
-            request_id="abc",
-            sampling_params=SamplingParams(
-                max_tokens=EXPECTED_TOKENS,
-                output_kind=RequestOutputKind.DELTA)):
+        "Hello my name is",
+        request_id="abc",
+        sampling_params=SamplingParams(
+            max_tokens=EXPECTED_TOKENS, output_kind=RequestOutputKind.DELTA
+        ),
+    ):
         outputs.append(out)
 
     generated_tokens = []
