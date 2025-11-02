@@ -22,6 +22,7 @@ from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
                                               UnquantizedLinearMethod)
 from aphrodite.modeling.parameter import (ModelWeightParameter,
                                           PerTensorScaleParameter)
+from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import (QuantizationConfig,
                                                 QuantizeMethodBase)
@@ -920,7 +921,7 @@ class ModelOptNvFp4LinearMethod(LinearMethodBase):
 
         self.backend = "none"
         if envs.APHRODITE_NVFP4_GEMM_BACKEND is None:
-            if has_flashinfer():
+            if has_flashinfer() and current_platform.has_device_capability(90):
                 self.backend = "flashinfer-cutlass"
             elif cutlass_fp4_supported():
                 self.backend = "cutlass"
