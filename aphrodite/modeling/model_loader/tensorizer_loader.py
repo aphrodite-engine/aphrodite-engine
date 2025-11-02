@@ -1,21 +1,23 @@
 # ruff: noqa: SIM117
 import copy
 from collections.abc import Generator
-from typing import Union
 
 import torch
 from torch import nn
 
-from aphrodite.config import (AphroditeConfig, LoadConfig, ModelConfig,
-                                     ParallelConfig)
+from aphrodite.config import AphroditeConfig, ModelConfig, ParallelConfig
+from aphrodite.config.load import LoadConfig
+from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.tensorizer import (
     TensorizerConfig, deserialize_tensorizer_model, init_tensorizer_model,
     is_aphrodite_tensorized, serialize_aphrodite_model,
     tensorizer_weights_iterator)
 from aphrodite.modeling.model_loader.utils import (get_model_architecture,
-                                                   initialize_model,
-                                                   set_default_torch_dtype)
+                                                   initialize_model)
+from aphrodite.utils.torch_utils import set_default_torch_dtype
+
+logger = init_logger(__name__)
 
 BLACKLISTED_TENSORIZER_ARGS = {
     "device",  # Aphrodite decides this
@@ -40,15 +42,18 @@ class TensorizerLoader(BaseModelLoader):
         else:
             validate_config(load_config.model_loader_extra_config)
             self.tensorizer_config = TensorizerConfig(
-                **load_config.model_loader_extra_config["tensorizer_config"])
+                **load_config.model_loader_extra_config["tensorizer_config"]
+            )
 
-    def _verify_config(self, model_config: ModelConfig,
-                       parallel_config: ParallelConfig):
+    def _verify_config(
+        self, model_config: ModelConfig, parallel_config: ParallelConfig
+    ):
         self.tensorizer_config.verify_with_model_config(model_config)
         self.tensorizer_config.verify_with_parallel_config(parallel_config)
 
     def _get_weights_iterator(
-        self, ) -> Generator[tuple[str, torch.Tensor], None, None]:
+        self,
+    ) -> Generator[tuple[str, torch.Tensor], None, None]:
         tensorizer_args = self.tensorizer_config._construct_tensorizer_args()
         return tensorizer_weights_iterator(tensorizer_args)
 
@@ -78,8 +83,7 @@ class TensorizerLoader(BaseModelLoader):
         with self.tensorizer_config.open_stream():
             pass
 
-    def _patch_tensorizer_config(
-            self, model_config: ModelConfig) -> TensorizerConfig:
+    def _patch_tensorizer_config(self, model_config: ModelConfig) -> TensorizerConfig:
         model_class = get_model_architecture(model_config)[0]
         tensorizer_config = copy.copy(self.tensorizer_config)
         tensorizer_config.model_class = model_class
@@ -87,8 +91,7 @@ class TensorizerLoader(BaseModelLoader):
         tensorizer_config.dtype = model_config.dtype
         return tensorizer_config
 
-    def load_weights(self, model: nn.Module,
-                     model_config: ModelConfig) -> None:
+    def load_weights(self, model: nn.Module, model_config: ModelConfig) -> None:
         """Load serialized model weights with tensorizer.
 
         Expects a Aphrodite-tensorized model. See the
@@ -100,8 +103,9 @@ class TensorizerLoader(BaseModelLoader):
         else:
             model.load_weights(self._get_weights_iterator())
 
-    def load_model(self, aphrodite_config: AphroditeConfig,
-                   model_config: ModelConfig) -> nn.Module:
+    def load_model(
+        self, aphrodite_config: AphroditeConfig, model_config: ModelConfig
+    ) -> nn.Module:
         parallel_config = aphrodite_config.parallel_config
         self._verify_config(model_config, parallel_config)
 
@@ -109,8 +113,8 @@ class TensorizerLoader(BaseModelLoader):
             from aphrodite.distributed import get_tensor_model_parallel_rank
 
             self.tensorizer_config.tensorizer_uri = (
-                self.tensorizer_config.tensorizer_uri %
-                get_tensor_model_parallel_rank())
+                self.tensorizer_config.tensorizer_uri % get_tensor_model_parallel_rank()
+            )
 
         if is_aphrodite_tensorized(self.tensorizer_config):
             tensorizer_config = self._patch_tensorizer_config(model_config)
@@ -118,8 +122,8 @@ class TensorizerLoader(BaseModelLoader):
             with set_default_torch_dtype(model_config.dtype):
                 with torch.device(device_config.device):
                     model = init_tensorizer_model(
-                        tensorizer_config=tensorizer_config,
-                        aphrodite_config=aphrodite_config)
+                        tensorizer_config=tensorizer_config, aphrodite_config=aphrodite_config
+                    )
             self.load_weights(model, model_config)
             return model
         return self._load_model_serialized_cpu(aphrodite_config=aphrodite_config)
@@ -127,7 +131,7 @@ class TensorizerLoader(BaseModelLoader):
     @staticmethod
     def save_model(
         model: torch.nn.Module,
-        tensorizer_config: Union[TensorizerConfig, dict],
+        tensorizer_config: TensorizerConfig | dict,
         model_config: ModelConfig,
     ) -> None:
         if isinstance(tensorizer_config, dict):

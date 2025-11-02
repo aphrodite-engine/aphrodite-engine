@@ -4,10 +4,8 @@ from typing import Any, Optional, Union
 
 import jinja2
 from fastapi import Request
-from loguru import logger
 
 from aphrodite.config import ModelConfig
-from aphrodite.utils import random_uuid
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.protocol import (AnthropicContentBlockDelta,
                                                  AnthropicContentBlockStart,
@@ -31,7 +29,11 @@ from aphrodite.endpoints.openai.protocol import (AnthropicContentBlockDelta,
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
+from aphrodite.utils import random_uuid
+
+logger = init_logger(__name__)
 
 
 class OpenAIServingMessages(OpenAIServing):
@@ -93,7 +95,7 @@ class OpenAIServingMessages(OpenAIServing):
         if self.default_sampling_params:
             source = self.model_config.generation_config
             source = "model" if source == "auto" else source
-            logger.info("Using default messages sampling params from {}: {}",
+            logger.info("Using default messages sampling params from %s: %s",
                         source, self.default_sampling_params)
 
     async def create_message(

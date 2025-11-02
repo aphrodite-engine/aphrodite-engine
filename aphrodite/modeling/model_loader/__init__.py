@@ -1,9 +1,10 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from torch import nn
 
-from aphrodite.config import LoadConfig, ModelConfig, AphroditeConfig
-from loguru import logger
+from aphrodite.config import AphroditeConfig, ModelConfig
+from aphrodite.config.load import LoadConfig
+from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.bitsandbytes_loader import (
     BitsAndBytesModelLoader)
@@ -15,8 +16,11 @@ from aphrodite.modeling.model_loader.runai_streamer_loader import (
 from aphrodite.modeling.model_loader.sharded_state_loader import (
     ShardedStateLoader)
 from aphrodite.modeling.model_loader.tensorizer_loader import TensorizerLoader
-from aphrodite.modeling.model_loader.utils import (
-    get_architecture_class_name, get_model_architecture, get_model_cls)
+from aphrodite.modeling.model_loader.utils import (get_architecture_class_name,
+                                                   get_model_architecture,
+                                                   get_model_cls)
+
+logger = init_logger(__name__)
 
 # Reminder: Please update docstring in `LoadConfig`
 # if a new load format is added here
@@ -62,8 +66,11 @@ def register_model_loader(load_format: str):
         load_format (str): The model loader format name.
 
     Examples:
-        >>> from aphrodite.config import LoadConfig
-        >>> from aphrodite.modeling.model_loader import get_model_loader, register_model_loader
+        >>> from aphrodite.config.load import LoadConfig
+        >>> from aphrodite.modeling.model_loader import (
+        ...     get_model_loader,
+        ...     register_model_loader,
+        ... )
         >>> from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
         >>>
         >>> @register_model_loader("my_loader")
@@ -82,15 +89,21 @@ def register_model_loader(load_format: str):
     def _wrapper(model_loader_cls):
         if load_format in _LOAD_FORMAT_TO_MODEL_LOADER:
             logger.warning(
-                "Load format `{}` is already registered, and will be "
-                "overwritten by the new loader class `{}`.", load_format,
-                model_loader_cls)
+                "Load format `%s` is already registered, and will be "
+                "overwritten by the new loader class `%s`.",
+                load_format,
+                model_loader_cls,
+            )
         if not issubclass(model_loader_cls, BaseModelLoader):
-            raise ValueError("The model loader must be a subclass of "
-                             "`BaseModelLoader`.")
+            raise ValueError(
+                "The model loader must be a subclass of `BaseModelLoader`."
+            )
         _LOAD_FORMAT_TO_MODEL_LOADER[load_format] = model_loader_cls
-        logger.info("Registered model loader `{}` with load format `{}`",
-                    model_loader_cls, load_format)
+        logger.info(
+            "Registered model loader `%s` with load format `%s`",
+            model_loader_cls,
+            load_format,
+        )
         return model_loader_cls
 
     return _wrapper
@@ -104,14 +117,13 @@ def get_model_loader(load_config: LoadConfig) -> BaseModelLoader:
     return _LOAD_FORMAT_TO_MODEL_LOADER[load_format](load_config)
 
 
-def get_model(*,
-              aphrodite_config: AphroditeConfig,
-              model_config: Optional[ModelConfig] = None) -> nn.Module:
+def get_model(
+    *, aphrodite_config: AphroditeConfig, model_config: ModelConfig | None = None
+) -> nn.Module:
     loader = get_model_loader(aphrodite_config.load_config)
     if model_config is None:
         model_config = aphrodite_config.model_config
-    return loader.load_model(aphrodite_config=aphrodite_config,
-                             model_config=model_config)
+    return loader.load_model(aphrodite_config=aphrodite_config, model_config=model_config)
 
 
 __all__ = [

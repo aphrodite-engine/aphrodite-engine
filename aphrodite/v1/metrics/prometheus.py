@@ -1,18 +1,18 @@
 import os
 import tempfile
-from typing import Optional
 
-from loguru import logger
 from prometheus_client import REGISTRY, CollectorRegistry, multiprocess
 
+from aphrodite.logger import init_logger
+
+logger = init_logger(__name__)
+
 # Global temporary directory for prometheus multiprocessing
-_prometheus_multiproc_dir: Optional[tempfile.TemporaryDirectory] = None
+_prometheus_multiproc_dir: tempfile.TemporaryDirectory | None = None
 
 
 def setup_multiprocess_prometheus():
-    """Set up prometheus multiprocessing directory if not already configured.
-
-    """
+    """Set up prometheus multiprocessing directory if not already configured."""
     global _prometheus_multiproc_dir
 
     if "PROMETHEUS_MULTIPROC_DIR" not in os.environ:
@@ -21,17 +21,20 @@ def setup_multiprocess_prometheus():
         # cleaned up upon exit.
         _prometheus_multiproc_dir = tempfile.TemporaryDirectory()
         os.environ["PROMETHEUS_MULTIPROC_DIR"] = _prometheus_multiproc_dir.name
-        logger.debug("Created PROMETHEUS_MULTIPROC_DIR at {}",
-                     _prometheus_multiproc_dir.name)
+        logger.debug(
+            "Created PROMETHEUS_MULTIPROC_DIR at %s", _prometheus_multiproc_dir.name
+        )
     else:
-        logger.warning("Found PROMETHEUS_MULTIPROC_DIR was set by user. "
-                       "This directory must be wiped between Aphrodite runs or "
-                       "you will find inaccurate metrics. Unset the variable "
-                       "and Aphrodite will properly handle cleanup.")
+        logger.warning(
+            "Found PROMETHEUS_MULTIPROC_DIR was set by user. "
+            "This directory must be wiped between aphrodite runs or "
+            "you will find inaccurate metrics. Unset the variable "
+            "and aphrodite will properly handle cleanup."
+        )
 
 
 def get_prometheus_registry() -> CollectorRegistry:
-    """Get the appropriate prometheus registry based on multiprocessing 
+    """Get the appropriate prometheus registry based on multiprocessing
     configuration.
 
     Returns:
@@ -47,16 +50,16 @@ def get_prometheus_registry() -> CollectorRegistry:
 
 
 def unregister_aphrodite_metrics():
-    """Unregister any existing Aphrodite collectors from the prometheus registry.
+    """Unregister any existing aphrodite collectors from the prometheus registry.
 
     This is useful for testing and CI/CD where metrics may be registered
     multiple times across test runs.
 
-    Also, in case of multiprocess, we need to unregister the metrics from the 
+    Also, in case of multiprocess, we need to unregister the metrics from the
     global registry.
     """
     registry = REGISTRY
-    # Unregister any existing Aphrodite collectors
+    # Unregister any existing aphrodite collectors
     for collector in list(registry._collector_to_names):
         if hasattr(collector, "_name") and "aphrodite" in collector._name:
             registry.unregister(collector)
@@ -71,6 +74,6 @@ def shutdown_prometheus():
     try:
         pid = os.getpid()
         multiprocess.mark_process_dead(pid, path)
-        logger.debug("Marked Prometheus metrics for process {} as dead", pid)
+        logger.debug("Marked Prometheus metrics for process %d as dead", pid)
     except Exception as e:
-        logger.error("Error during metrics cleanup: {}", str(e))
+        logger.error("Error during metrics cleanup: %s", str(e))

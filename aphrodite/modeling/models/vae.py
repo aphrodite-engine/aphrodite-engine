@@ -8,11 +8,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from aphrodite.common.logger import logger
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
+from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.interfaces import SupportsQuant
+
+logger = init_logger(__name__)
 
 
 class Downsample2D(nn.Module):

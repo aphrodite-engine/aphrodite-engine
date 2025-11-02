@@ -17,7 +17,6 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from loguru import logger
 from typing_extensions import assert_never
 
 from aphrodite.endpoints.logger import RequestLogger
@@ -31,13 +30,17 @@ from aphrodite.endpoints.openai.serving_tokenization import (
     OpenAIServingTokenization)
 from aphrodite.endpoints.utils import with_cancellation
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.server import serve_http
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
-from aphrodite.utils import FlexibleArgumentParser, is_valid_ipv6_address
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+from aphrodite.utils.network_utils import is_valid_ipv6_address
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
 router = APIRouter()
+
+logger = init_logger(__name__)
 
 
 class MinimalModelConfig:
@@ -390,8 +393,8 @@ def create_model_config_for_tokenizer(args: Namespace) -> MinimalModelConfig:
 
 async def run_server(args: Namespace) -> None:
     """Run the tokenizer server."""
-    logger.info("Aphrodite Tokenizer Server version {}", APHRODITE_VERSION)
-    logger.info("Starting tokenizer server for model: {}", args.model)
+    logger.info("Aphrodite Tokenizer Server version %s", APHRODITE_VERSION)
+    logger.info("Starting tokenizer server for model: %s", args.model)
 
     sock_addr = (args.host or "0.0.0.0", args.port)
     sock = create_server_socket(sock_addr)
@@ -413,7 +416,7 @@ async def run_server(args: Namespace) -> None:
     port_str = str(args.port)
     base_url = f"http://{host_name}:{port_str}"
 
-    logger.info("Tokenizer server listening on {}", base_url)
+    logger.info("Tokenizer server listening on %s", base_url)
     logger.info(f"Health check:                    {base_url}/health")
     logger.info(f"Tokenization API:                {base_url}/v1/tokenize")
     logger.info(f"Detokenization API:              {base_url}/v1/detokenize")

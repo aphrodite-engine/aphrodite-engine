@@ -1,8 +1,6 @@
 import pytest
 import torch
 
-from aphrodite.utils import set_default_torch_num_threads
-
 from ....conftest import AphroditeRunner
 
 
@@ -18,32 +16,31 @@ def _run_test(
     aphrodite_runner: type[AphroditeRunner],
     model: str,
 ) -> None:
-
     prompt = [
         {
             # This model deals with no text input
             "prompt_token_ids": [1],
             "multi_modal_data": generate_test_mm_data(),
-        } for _ in range(10)
+        }
+        for _ in range(10)
     ]
 
-    with (
-            set_default_torch_num_threads(1),
-            aphrodite_runner(
-                model,
-                runner="pooling",
-                dtype=torch.float16,
-                enforce_eager=True,
-                skip_tokenizer_init=True,
-                # Limit the maximum number of sequences to avoid the
-                # test going OOM during the warmup run
-                max_num_seqs=32,
-            ) as aphrodite_model,
-    ):
-        aphrodite_model.encode(prompt)
+    with aphrodite_runner(
+        model,
+        runner="pooling",
+        dtype="half",
+        enforce_eager=True,
+        skip_tokenizer_init=True,
+        enable_mm_embeds=True,
+        # Limit the maximum number of sequences to avoid the
+        # test going OOM during the warmup run
+        max_num_seqs=32,
+        default_torch_num_threads=1,
+    ) as aphrodite_model:
+        aphrodite_model.llm.encode(prompt, pooling_task="plugin")
 
 
-MODELS = ["christian-pinto/Prithvi-EO-2.0-300M-TL-APHRODITE"]
+MODELS = ["mgazz/Prithvi-EO-2.0-300M-TL-Sen1Floods11"]
 
 
 @pytest.mark.core_model

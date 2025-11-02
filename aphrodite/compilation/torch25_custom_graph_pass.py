@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 import torch
 
@@ -21,7 +21,7 @@ class Torch25CustomGraphPass(ABC):  # noqa (redefinition)
         """
 
     @abstractmethod
-    def uuid(self) -> Optional[Any]:
+    def uuid(self) -> Any | None:
         """
         Return an ID to uniquely identify your custom pass implementation.
         Return None to skip inductor code caching entirely.
@@ -35,6 +35,8 @@ class Torch25CustomGraphPass(ABC):  # noqa (redefinition)
         return self.uuid()
 
     def __setstate__(self, state):
-        raise ValueError("Cannot unpickle CustomGraphPass because pickling"
-                         " is used for cache key uuid. Use torch>=2.6 with"
-                         " native uuid support for custom passes.")
+        raise ValueError(
+            "Cannot unpickle CustomGraphPass because pickling"
+            " is used for cache key uuid. Use torch>=2.6 with"
+            " native uuid support for custom passes."
+        )

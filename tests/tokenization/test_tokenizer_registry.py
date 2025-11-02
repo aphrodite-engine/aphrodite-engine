@@ -1,15 +1,14 @@
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 from aphrodite.transformers_utils.tokenizer_base import (TokenizerBase,
-                                                    TokenizerRegistry)
+                                                         TokenizerRegistry)
 
 if TYPE_CHECKING:
     from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
 
 
 class TestTokenizer(TokenizerBase):
-
     @classmethod
     def from_pretrained(cls, *args, **kwargs) -> "TestTokenizer":
         return TestTokenizer()
@@ -54,13 +53,17 @@ class TestTokenizer(TokenizerBase):
     def max_token_id(self) -> int:
         raise NotImplementedError()
 
+    @property
+    def truncation_side(self) -> str:
+        raise NotImplementedError()
+
     def __call__(
         self,
-        text: Union[str, list[str], list[int]],
-        text_pair: Optional[str] = None,
+        text: str | list[str] | list[int],
+        text_pair: str | None = None,
         add_special_tokens: bool = False,
         truncation: bool = False,
-        max_length: Optional[int] = None,
+        max_length: int | None = None,
     ):
         raise NotImplementedError()
 
@@ -74,27 +77,25 @@ class TestTokenizer(TokenizerBase):
         self,
         text: str,
         truncation: bool = False,
-        max_length: Optional[int] = None,
+        max_length: int | None = None,
     ) -> list[int]:
         raise NotImplementedError()
 
-    def encode(self,
-               text: str,
-               add_special_tokens: Optional[bool] = None) -> list[int]:
+    def encode(self, text: str, add_special_tokens: bool | None = None) -> list[int]:
         raise NotImplementedError()
 
-    def apply_chat_template(self,
-                            messages: list["ChatCompletionMessageParam"],
-                            tools: Optional[list[dict[str, Any]]] = None,
-                            **kwargs) -> list[int]:
+    def apply_chat_template(
+        self,
+        messages: list["ChatCompletionMessageParam"],
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs,
+    ) -> list[int]:
         raise NotImplementedError()
 
     def convert_tokens_to_string(self, tokens: list[str]) -> str:
         raise NotImplementedError()
 
-    def decode(self,
-               ids: Union[list[int], int],
-               skip_special_tokens: bool = True) -> str:
+    def decode(self, ids: list[int] | int, skip_special_tokens: bool = True) -> str:
         raise NotImplementedError()
 
     def convert_ids_to_tokens(
@@ -106,9 +107,9 @@ class TestTokenizer(TokenizerBase):
 
 
 def test_customized_tokenizer():
-    TokenizerRegistry.register("test_tokenizer",
-                               "tests.tokenization.test_tokenizer_registry",
-                               "TestTokenizer")
+    TokenizerRegistry.register(
+        "test_tokenizer", "tests.tokenization.test_tokenizer_registry", "TestTokenizer"
+    )
 
     tokenizer = TokenizerRegistry.get_tokenizer("test_tokenizer")
     assert isinstance(tokenizer, TestTokenizer)

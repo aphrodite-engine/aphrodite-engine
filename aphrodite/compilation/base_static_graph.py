@@ -1,4 +1,5 @@
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
 from aphrodite.config import AphroditeConfig, CUDAGraphMode
 
@@ -9,8 +10,13 @@ class AbstractStaticGraphWrapper(Protocol):
     to be captured as a static graph.
     """
 
-    def __init__(self, runnable: Callable, aphrodite_config: AphroditeConfig,
-                 runtime_mode: CUDAGraphMode, **kwargs):
+    def __init__(
+        self,
+        runnable: Callable[..., Any],
+        aphrodite_config: AphroditeConfig,
+        runtime_mode: CUDAGraphMode,
+        **kwargs: Any,
+    ) -> None:
         """
         Initializes the StaticGraphWrapper class with graph capturing and
         execution-related configurations.
@@ -28,7 +34,7 @@ class AbstractStaticGraphWrapper(Protocol):
         """
         raise NotImplementedError
 
-    def __call__(self, *args, **kwargs) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """
         Executes the wrapped callable.
 

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import ast
 import json
 from dataclasses import dataclass, field
@@ -10,26 +8,29 @@ import torch
 from transformers import PreTrainedTokenizerBase
 
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.utils import LazyLoader
+from aphrodite.utils.import_utils import LazyLoader
 from aphrodite.v1.structured_output.backend_types import (
     StructuredOutputBackend, StructuredOutputGrammar, StructuredOutputOptions)
 
 if TYPE_CHECKING:
     import lmformatenforcer
-    import lmformatenforcer.integrations.vllm as lmfe_aphrodite
+    import lmformatenforcer.integrations.aphrodite as lmfe_aphrodite
 else:
-    lmformatenforcer = LazyLoader("lmformatenforcer", globals(),
-                                  "lmformatenforcer")
-    lmfe_aphrodite = LazyLoader("lmformatenforcer.integrations.vllm", globals(),
-                                "lmformatenforcer.integrations.vllm")
+    lmformatenforcer = LazyLoader("lmformatenforcer", globals(), "lmformatenforcer")
+    lmfe_aphrodite = LazyLoader(
+        "lmformatenforcer.integrations.aphrodite",
+        globals(),
+        "lmformatenforcer.integrations.aphrodite",
+    )
 
 
 @lru_cache
 def _cached_build_aphrodite_token_enforcer_tokenizer_data(
-        tokenizer: PreTrainedTokenizerBase,
-        vocab_size: int) -> lmfe_aphrodite.TokenEnforcerTokenizerData:
+    tokenizer: PreTrainedTokenizerBase, vocab_size: int
+) -> "lmfe_aphrodite.TokenEnforcerTokenizerData":
     return lmfe_aphrodite.build_aphrodite_token_enforcer_tokenizer_data(
-        tokenizer, use_bitmask=True, vocab_size=vocab_size)
+        tokenizer, use_bitmask=True, vocab_size=vocab_size
+    )
 
 
 @dataclass
@@ -41,7 +42,8 @@ class LMFormatEnforcerGrammar(StructuredOutputGrammar):
         original_len = len(self.current_tokens_prefix)
         for token in tokens:
             if not self.token_enforcer.get_allowed_tokens(
-                    self.current_tokens_prefix).is_token_allowed(token):
+                self.current_tokens_prefix
+            ).is_token_allowed(token):
                 # Rollback partial updates to ensure atomicity.
                 del self.current_tokens_prefix[original_len:]
                 return False
@@ -53,8 +55,8 @@ class LMFormatEnforcerGrammar(StructuredOutputGrammar):
             prefix = tokens[:prefix_length]
             next_token = tokens[prefix_length]
             if not self.token_enforcer.get_allowed_tokens(
-                    self.current_tokens_prefix +
-                    prefix).is_token_allowed(next_token):
+                self.current_tokens_prefix + prefix
+            ).is_token_allowed(next_token):
                 break
         else:
             return tokens
@@ -66,14 +68,16 @@ class LMFormatEnforcerGrammar(StructuredOutputGrammar):
 
     def fill_bitmask(self, bitmask: torch.Tensor, batch_index: int) -> None:
         allowed_tokens = self.token_enforcer.get_allowed_tokens(
-            self.current_tokens_prefix)
+            self.current_tokens_prefix
+        )
         bitmask[batch_index] = allowed_tokens.allowed_tokens
 
     def is_terminated(self) -> bool:
         # We are considered terminated if the prefix ends with eos_token_id
-        return_value = len(
-            self.current_tokens_prefix) > 0 and self.current_tokens_prefix[
-                -1] == self.token_enforcer.eos_token_id
+        return_value = (
+            len(self.current_tokens_prefix) > 0
+            and self.current_tokens_prefix[-1] == self.token_enforcer.eos_token_id
+        )
         return return_value
 
     def reset(self):
@@ -82,18 +86,18 @@ class LMFormatEnforcerGrammar(StructuredOutputGrammar):
 
 @dataclass
 class LMFormatEnforcerBackend(StructuredOutputBackend):
-
     def __post_init__(self):
         self.tokenizer_data = _cached_build_aphrodite_token_enforcer_tokenizer_data(
-            self.tokenizer, self.vocab_size)
+            self.tokenizer, self.vocab_size
+        )
 
-    def compile_grammar(self, request_type: StructuredOutputOptions,
-                        grammar_spec: str) -> StructuredOutputGrammar:
+    def compile_grammar(
+        self, request_type: StructuredOutputOptions, grammar_spec: str
+    ) -> StructuredOutputGrammar:
         character_level_parser: lmformatenforcer.CharacterLevelParser
         if request_type == StructuredOutputOptions.JSON:
             spec_dict = json.loads(grammar_spec)
-            character_level_parser = lmformatenforcer.JsonSchemaParser(
-                spec_dict)
+            character_level_parser = lmformatenforcer.JsonSchemaParser(spec_dict)
         elif request_type == StructuredOutputOptions.JSON_OBJECT:
             character_level_parser = lmformatenforcer.JsonSchemaParser(None)
         elif request_type == StructuredOutputOptions.REGEX:
@@ -101,14 +105,17 @@ class LMFormatEnforcerBackend(StructuredOutputBackend):
         elif request_type == StructuredOutputOptions.CHOICE:
             choices = ast.literal_eval(grammar_spec)
             character_level_parser = lmformatenforcer.UnionParser(
-                [lmformatenforcer.StringParser(choice) for choice in choices])
+                [lmformatenforcer.StringParser(choice) for choice in choices]
+            )
         else:
             raise ValueError(
-                "Invalid request type for LM Format Enforcer backend"
-                f"({request_type!s})")
+                f"Invalid request type for LM Format Enforcer backend({request_type!s})"
+            )
         max_rollback_tokens = (
             self.aphrodite_config.speculative_config.num_speculative_tokens
-            if self.aphrodite_config.speculative_config is not None else 0)
+            if self.aphrodite_config.speculative_config is not None
+            else 0
+        )
 
         if max_rollback_tokens > 0:
             raise ValueError(
@@ -133,32 +140,33 @@ class LMFormatEnforcerBackend(StructuredOutputBackend):
         pass
 
 
-def validate_structured_output_request_lm_format_enforcer(
-        params: SamplingParams):
-    if params.guided_decoding is None:
+def validate_structured_output_request_lm_format_enforcer(params: SamplingParams):
+    if params.structured_outputs is None:
         return
 
-    gd_params = params.guided_decoding
+    so_params = params.structured_outputs
 
-    if gd_params.regex:
+    if so_params.regex:
         return
-    elif gd_params.json:
-        if isinstance(gd_params.json, str):
+    elif so_params.json:
+        if isinstance(so_params.json, str):
             try:
                 # make sure schema is valid json
-                json.loads(gd_params.json)
+                json.loads(so_params.json)
             except json.JSONDecodeError as e:
                 raise ValueError("Invalid JSON grammar specification.") from e
         else:
             try:
-                json.dumps(gd_params.json)
+                json.dumps(so_params.json)
             except Exception as e:
                 raise ValueError(
-                    f"Error serializing guided decoding jsonschema: {e}"
+                    f"Error serializing structured outputs jsonschema: {e}"
                 ) from e
         return
-    elif gd_params.choice:
+    elif so_params.choice:
         return
-    elif gd_params.grammar:
-        raise ValueError("LM Format Enforcer guided decoding backend "
-                         "does not support grammar specifications")
+    elif so_params.grammar:
+        raise ValueError(
+            "LM Format Enforcer structured outputs backend "
+            "does not support grammar specifications"
+        )

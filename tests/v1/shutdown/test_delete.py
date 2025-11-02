@@ -2,16 +2,16 @@
 
 import pytest
 
+from aphrodite import LLM, SamplingParams
+from aphrodite.common.sampling_params import RequestOutputKind
+from aphrodite.engine.args_tools import AsyncEngineArgs
+from aphrodite.utils.torch_utils import cuda_device_count_stateless
+from aphrodite.v1.engine.async_llm import AsyncLLM
 from tests.utils import wait_for_gpu_memory_to_clear
 from tests.v1.shutdown.utils import (SHUTDOWN_TEST_THRESHOLD_BYTES,
                                      SHUTDOWN_TEST_TIMEOUT_SEC)
-from aphrodite import LLM, SamplingParams
-from aphrodite.engine.args_tools import AsyncEngineArgs
-from aphrodite.common.sampling_params import RequestOutputKind
-from aphrodite.utils import cuda_device_count_stateless
-from aphrodite.v1.engine.async_llm import AsyncLLM
 
-MODELS = ["meta-llama/Llama-3.2-1B"]
+MODELS = ["hmellor/tiny-random-LlamaForCausalLM"]
 
 
 @pytest.mark.asyncio
@@ -19,8 +19,9 @@ MODELS = ["meta-llama/Llama-3.2-1B"]
 @pytest.mark.parametrize("model", MODELS)
 @pytest.mark.parametrize("tensor_parallel_size", [2, 1])
 @pytest.mark.parametrize("send_one_request", [False, True])
-async def test_async_llm_delete(model: str, tensor_parallel_size: int,
-                                send_one_request: bool) -> None:
+async def test_async_llm_delete(
+    model: str, tensor_parallel_size: int, send_one_request: bool
+) -> None:
     """Test that AsyncLLM frees GPU memory upon deletion.
     AsyncLLM always uses an MP client.
 
@@ -32,19 +33,21 @@ async def test_async_llm_delete(model: str, tensor_parallel_size: int,
     if cuda_device_count_stateless() < tensor_parallel_size:
         pytest.skip(reason="Not enough CUDA devices")
 
-    engine_args = AsyncEngineArgs(model=model,
-                                  enforce_eager=True,
-                                  tensor_parallel_size=tensor_parallel_size)
+    engine_args = AsyncEngineArgs(
+        model=model, enforce_eager=True, tensor_parallel_size=tensor_parallel_size
+    )
 
     # Instantiate AsyncLLM; make request to complete any deferred
     # initialization; then delete instance
     async_llm = AsyncLLM.from_engine_args(engine_args)
     if send_one_request:
         async for _ in async_llm.generate(
-                "Hello my name is",
-                request_id="abc",
-                sampling_params=SamplingParams(
-                    max_tokens=1, output_kind=RequestOutputKind.DELTA)):
+            "Hello my name is",
+            request_id="abc",
+            sampling_params=SamplingParams(
+                max_tokens=1, output_kind=RequestOutputKind.DELTA
+            ),
+        ):
             pass
     del async_llm
 
@@ -60,9 +63,13 @@ async def test_async_llm_delete(model: str, tensor_parallel_size: int,
 @pytest.mark.parametrize("tensor_parallel_size", [2, 1])
 @pytest.mark.parametrize("enable_multiprocessing", [True])
 @pytest.mark.parametrize("send_one_request", [False, True])
-def test_llm_delete(monkeypatch, model: str, tensor_parallel_size: int,
-                    enable_multiprocessing: bool,
-                    send_one_request: bool) -> None:
+def test_llm_delete(
+    monkeypatch,
+    model: str,
+    tensor_parallel_size: int,
+    enable_multiprocessing: bool,
+    send_one_request: bool,
+) -> None:
     """Test that LLM frees GPU memory upon deletion.
     TODO(andy) - LLM without multiprocessing.
 
@@ -81,12 +88,13 @@ def test_llm_delete(monkeypatch, model: str, tensor_parallel_size: int,
 
         # Instantiate LLM; make request to complete any deferred
         # initialization; then delete instance
-        llm = LLM(model=model,
-                  enforce_eager=True,
-                  tensor_parallel_size=tensor_parallel_size)
+        llm = LLM(
+            model=model, enforce_eager=True, tensor_parallel_size=tensor_parallel_size
+        )
         if send_one_request:
-            llm.generate("Hello my name is",
-                         sampling_params=SamplingParams(max_tokens=1))
+            llm.generate(
+                "Hello my name is", sampling_params=SamplingParams(max_tokens=1)
+            )
         del llm
 
         # Confirm all the processes are cleaned up.

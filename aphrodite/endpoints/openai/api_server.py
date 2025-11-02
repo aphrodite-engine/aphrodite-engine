@@ -1,34 +1,35 @@
 import asyncio
-import atexit
 import gc
+import hashlib
 import importlib
 import inspect
 import json
+import logging
 import multiprocessing
 import multiprocessing.forkserver as forkserver
 import os
+import secrets
 import signal
 import socket
 import tempfile
 import uuid
 from argparse import Namespace
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from distutils.util import strtobool
-from functools import partial
 from http import HTTPStatus
-from typing import Annotated, Any, Callable, Optional, Union
+from typing import Annotated, Any, Literal
 
 import prometheus_client
 import pydantic
 import regex as re
 import uvloop
-from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
+from fastapi import (APIRouter, Depends, FastAPI, Form, HTTPException, Query,
+                     Request)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (HTMLResponse, JSONResponse, Response,
                                StreamingResponse)
-from loguru import logger
 from prometheus_client import make_asgi_app
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.concurrency import iterate_in_threadpool
@@ -37,12 +38,8 @@ from starlette.routing import Mount
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from typing_extensions import assert_never
 
-import aphrodite.common.envs as envs
-from aphrodite.common.logger import log_once
+import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
-from aphrodite.endpoints.chat_utils import (load_chat_template,
-                                            resolve_hf_chat_template,
-                                            resolve_mistral_chat_template)
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.args import (make_arg_parser,
                                              validate_parsed_serve_args)
@@ -62,12 +59,14 @@ from aphrodite.endpoints.openai.protocol import (AnthropicMessagesRequest,
                                                  IOProcessorResponse,
                                                  KAIGenerationInputSchema,
                                                  LoadLoRAAdapterRequest,
+                                                 PoolingBytesResponse,
                                                  PoolingRequest,
                                                  PoolingResponse,
                                                  RerankRequest, RerankResponse,
                                                  ResponsesRequest,
                                                  ResponsesResponse,
                                                  ScoreRequest, ScoreResponse,
+                                                 StreamingResponsesResponse,
                                                  TokenizeRequest,
                                                  TokenizeResponse,
                                                  TranscriptionRequest,
@@ -85,7 +84,6 @@ from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_kobold import OpenAIServingKobold
 from aphrodite.endpoints.openai.serving_messages import OpenAIServingMessages
 from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
-                                                       LoRAModulePath,
                                                        OpenAIServingModels)
 from aphrodite.endpoints.openai.serving_pooling import OpenAIServingPooling
 from aphrodite.endpoints.openai.serving_responses import OpenAIServingResponses
@@ -98,21 +96,20 @@ from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
 from aphrodite.endpoints.tool_server import (DemoToolServer, MCPToolServer,
                                              ToolServer)
 from aphrodite.endpoints.utils import (cli_env_setup, load_aware_call,
-                                       log_non_default_args, with_cancellation)
+                                       log_non_default_args,
+                                       process_chat_template,
+                                       process_lora_modules, with_cancellation)
 from aphrodite.engine.args_tools import AsyncEngineArgs
-from aphrodite.engine.async_aphrodite import AsyncAphrodite
-from aphrodite.engine.multiprocessing.client import MQAphroditeEngineClient
-from aphrodite.engine.multiprocessing.engine import run_mp_engine
-from aphrodite.engine.protocol import EngineClient
+from aphrodite.engine.protocol import Device, EngineClient
+from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.server import serve_http
-from aphrodite.transformers_utils.config import (
-    maybe_register_config_serialize_by_value)
-from aphrodite.transformers_utils.tokenizer import MistralTokenizer
+from aphrodite.tasks import POOLING_TASKS
 from aphrodite.usage.usage_lib import UsageContext
-from aphrodite.utils import (Device, FlexibleArgumentParser, decorate_logs,
-                             get_open_zmq_ipc_path, is_valid_ipv6_address,
-                             set_ulimit)
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+from aphrodite.utils.network_utils import is_valid_ipv6_address
+from aphrodite.utils.system_utils import decorate_logs, set_ulimit
+from aphrodite.v1.engine.exceptions import EngineDeadError
 from aphrodite.v1.metrics.prometheus import get_prometheus_registry
 from aphrodite.version import __version__ as APHRODITE_VERSION
 
@@ -124,6 +121,8 @@ extra_api = APIRouter()
 kobold_lite_ui = ""
 sampler_json = ""
 prometheus_multiproc_dir: tempfile.TemporaryDirectory
+
+logger = init_logger("aphrodite.endpoints.openai.api_server")
 
 _running_tasks: set[asyncio.Task] = set()
 
@@ -164,8 +163,8 @@ async def build_async_engine_client(
     args: Namespace,
     *,
     usage_context: UsageContext = UsageContext.OPENAI_API_SERVER,
-    disable_frontend_multiprocessing: Optional[bool] = None,
-    client_config: Optional[dict[str, Any]] = None,
+    disable_frontend_multiprocessing: bool | None = None,
+    client_config: dict[str, Any] | None = None,
 ) -> AsyncIterator[EngineClient]:
 
     if os.getenv("APHRODITE_WORKER_MULTIPROC_METHOD") == "forkserver":
@@ -180,6 +179,10 @@ async def build_async_engine_client(
     # Context manager to handle engine_client lifecycle
     # Ensures everything is shutdown and cleaned up on error/exit
     engine_args = AsyncEngineArgs.from_cli_args(args)
+
+    if client_config:
+        engine_args._api_process_count = client_config.get("client_count", 1)
+        engine_args._api_process_rank = client_config.get("client_index", 0)
 
     if disable_frontend_multiprocessing is None:
         disable_frontend_multiprocessing = bool(
@@ -200,7 +203,7 @@ async def build_async_engine_client_from_engine_args(
     *,
     usage_context: UsageContext = UsageContext.OPENAI_API_SERVER,
     disable_frontend_multiprocessing: bool = False,
-    client_config: Optional[dict[str, Any]] = None,
+    client_config: dict[str, Any] | None = None,
 ) -> AsyncIterator[EngineClient]:
     """
     Create EngineClient, either:
@@ -215,140 +218,42 @@ async def build_async_engine_client_from_engine_args(
         usage_context=usage_context)
 
     # V1 AsyncLLM.
-    if envs.APHRODITE_USE_V1:
-        if disable_frontend_multiprocessing:
-            logger.warning(
-                "V1 is enabled, but got --disable-frontend-multiprocessing. "
-                "To disable frontend multiprocessing, set APHRODITE_USE_V1=0.")
+    assert envs.APHRODITE_USE_V1
 
-        from aphrodite.v1.engine.async_llm import AsyncLLM
-        async_llm: Optional[AsyncLLM] = None
-        client_count = client_config.pop(
-            "client_count") if client_config else 1
-        client_index = client_config.pop(
-            "client_index") if client_config else 0
-        try:
-            async_llm = AsyncLLM.from_aphrodite_config(
-                aphrodite_config=aphrodite_config,
-                usage_context=usage_context,
-                enable_log_requests=engine_args.enable_log_requests,
-                disable_log_stats=engine_args.disable_log_stats,
-                client_addresses=client_config,
-                client_count=client_count,
-                client_index=client_index)
+    if disable_frontend_multiprocessing:
+        logger.warning(
+            "V1 is enabled, but got --disable-frontend-multiprocessing. "
+            "To disable frontend multiprocessing, set APHRODITE_USE_V1=0."
+        )
 
-            # Don't keep the dummy data in memory
-            await async_llm.reset_mm_cache()
-            yield async_llm
-        finally:
-            if async_llm:
-                async_llm.shutdown()
+    from aphrodite.v1.engine.async_llm import AsyncLLM
 
-    # V0 AsyncLLM.
-    elif (MQAphroditeEngineClient.is_unsupported_config(aphrodite_config)
-          or disable_frontend_multiprocessing):
+    async_llm: AsyncLLM | None = None
 
-        engine_client: Optional[EngineClient] = None
-        try:
-            engine_client = AsyncAphrodite.from_aphrodite_config(
-                aphrodite_config=aphrodite_config,
-                usage_context=usage_context,
-                enable_log_requests=engine_args.enable_log_requests,
-                disable_log_stats=engine_args.disable_log_stats)
-            yield engine_client
-        finally:
-            if engine_client and hasattr(engine_client, "shutdown"):
-                engine_client.shutdown()
+    # Don't mutate the input client_config
+    client_config = dict(client_config) if client_config else {}
+    client_count = client_config.pop("client_count", 1)
+    client_index = client_config.pop("client_index", 0)
 
-    # V0MQLLMEngine.
-    else:
-        if "PROMETHEUS_MULTIPROC_DIR" not in os.environ:
-            # Make TemporaryDirectory for prometheus multiprocessing
-            # Note: global TemporaryDirectory will be automatically
-            #   cleaned up upon exit.
-            global prometheus_multiproc_dir
-            prometheus_multiproc_dir = tempfile.TemporaryDirectory()
-            os.environ[
-                "PROMETHEUS_MULTIPROC_DIR"] = prometheus_multiproc_dir.name
-        else:
-            logger.warning(
-                "Found PROMETHEUS_MULTIPROC_DIR was set by user. "
-                "This directory must be wiped between Aphrodite runs or "
-                "you will find inaccurate metrics. Unset the variable "
-                "and Aphrodite will properly handle cleanup.")
+    try:
+        async_llm = AsyncLLM.from_aphrodite_config(
+            aphrodite_config=aphrodite_config,
+            usage_context=usage_context,
+            enable_log_requests=engine_args.enable_log_requests,
+            aggregate_engine_logging=engine_args.aggregate_engine_logging,
+            disable_log_stats=engine_args.disable_log_stats,
+            client_addresses=client_config,
+            client_count=client_count,
+            client_index=client_index,
+        )
 
-        # Select random path for IPC.
-        ipc_path = get_open_zmq_ipc_path()
-        logger.debug("Multiprocessing frontend to use {} for IPC Path.",
-                     ipc_path)
+        # Don't keep the dummy data in memory
+        await async_llm.reset_mm_cache()
 
-        # Start RPCServer in separate process (holds the LLMEngine).
-        # the current process might have CUDA context,
-        # so we need to spawn a new process
-        context = multiprocessing.get_context("spawn")
-
-        # Ensure we can serialize transformer config before spawning
-        maybe_register_config_serialize_by_value()
-
-        # The Process can raise an exception during startup, which may
-        # not actually result in an exitcode being reported. As a result
-        # we use a shared variable to communicate the information.
-        engine_alive = multiprocessing.Value('b', True, lock=False)
-        engine_process = context.Process(
-            target=run_mp_engine,
-            args=(aphrodite_config, UsageContext.OPENAI_API_SERVER, ipc_path,
-                  engine_args.disable_log_stats,
-                  engine_args.enable_log_requests, engine_alive))
-        engine_process.start()
-        engine_pid = engine_process.pid
-        assert engine_pid is not None, "Engine process failed to start."
-        logger.info("Started engine process with PID {}", engine_pid)
-
-        def _cleanup_ipc_path():
-            socket_path = ipc_path.replace("ipc://", "")
-            if os.path.exists(socket_path):
-                os.remove(socket_path)
-
-        # Ensure we clean up the local IPC socket file on exit.
-        atexit.register(_cleanup_ipc_path)
-
-        # Build RPCClient, which conforms to EngineClient Protocol.
-        build_client = partial(MQAphroditeEngineClient, ipc_path,
-                               aphrodite_config, engine_pid)
-        mq_engine_client = await asyncio.get_running_loop().run_in_executor(
-            None, build_client)
-        try:
-            while True:
-                try:
-                    await mq_engine_client.setup()
-                    break
-                except TimeoutError:
-                    if (not engine_process.is_alive()
-                            or not engine_alive.value):
-                        raise RuntimeError(
-                            "Engine process failed to start. See stack "
-                            "trace for the root cause.") from None
-
-            yield mq_engine_client  # type: ignore[misc]
-        finally:
-            # Ensure rpc server process was terminated
-            engine_process.terminate()
-
-            # Close all open connections to the backend
-            mq_engine_client.close()
-
-            # Wait for engine process to join
-            engine_process.join(4)
-            if engine_process.exitcode is None:
-                # Kill if taking longer than 5 seconds to stop
-                engine_process.kill()
-
-            # Lazy import for prometheus multiprocessing.
-            # We need to set PROMETHEUS_MULTIPROC_DIR environment variable
-            # before prometheus_client is imported.
-            # See https://prometheus.github.io/client_python/multiprocess/
-            from prometheus_client import multiprocess
-            multiprocess.mark_process_dead(engine_process.pid)
+        yield async_llm
+    finally:
+        if async_llm:
+            async_llm.shutdown()
 
 
 async def validate_json_request(raw_request: Request):
@@ -403,39 +308,39 @@ def models(request: Request) -> OpenAIServingModels:
     return request.app.state.openai_serving_models
 
 
-def responses(request: Request) -> Optional[OpenAIServingResponses]:
+def responses(request: Request) -> OpenAIServingResponses | None:
     return request.app.state.openai_serving_responses
 
 
-def chat(request: Request) -> Optional[OpenAIServingChat]:
-    return request.app.state.openai_serving_chat
-
-
-def messages(request: Request) -> Optional[OpenAIServingMessages]:
-    return request.app.state.openai_serving_messages
-
-
-def completion(request: Request) -> Optional[OpenAIServingCompletion]:
+def completion(request: Request) -> OpenAIServingCompletion | None:
     return request.app.state.openai_serving_completion
 
 
-def pooling(request: Request) -> Optional[OpenAIServingPooling]:
+def messages(request: Request) -> OpenAIServingMessages | None:
+    return request.app.state.openai_serving_messages
+
+
+def chat(request: Request) -> OpenAIServingChat | None:
+    return request.app.state.openai_serving_chat
+
+
+def pooling(request: Request) -> OpenAIServingPooling | None:
     return request.app.state.openai_serving_pooling
 
 
-def embedding(request: Request) -> Optional[OpenAIServingEmbedding]:
+def embedding(request: Request) -> OpenAIServingEmbedding | None:
     return request.app.state.openai_serving_embedding
 
 
-def score(request: Request) -> Optional[ServingScores]:
+def score(request: Request) -> ServingScores | None:
     return request.app.state.openai_serving_scores
 
 
-def classify(request: Request) -> Optional[ServingClassification]:
+def classify(request: Request) -> ServingClassification | None:
     return request.app.state.openai_serving_classification
 
 
-def rerank(request: Request) -> Optional[ServingScores]:
+def rerank(request: Request) -> ServingScores | None:
     return request.app.state.openai_serving_scores
 
 
@@ -451,7 +356,7 @@ def translation(request: Request) -> OpenAIServingTranslation:
     return request.app.state.openai_serving_translation
 
 
-def kobold(request: Request) -> Optional[OpenAIServingKobold]:
+def kobold(request: Request) -> OpenAIServingKobold | None:
     return request.app.state.openai_serving_kobold
 
 
@@ -462,8 +367,11 @@ def engine_client(request: Request) -> EngineClient:
 @router.get("/health", response_class=Response)
 async def health(raw_request: Request) -> Response:
     """Health check."""
-    await engine_client(raw_request).check_health()
-    return Response(status_code=200)
+    try:
+        await engine_client(raw_request).check_health()
+        return Response(status_code=200)
+    except EngineDeadError:
+        return Response(status_code=503)
 
 
 @router.get("/load")
@@ -493,22 +401,16 @@ async def ping(raw_request: Request) -> Response:
     return await health(raw_request)
 
 
-@router.post("/v1/tokenize",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.NOT_FOUND.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.NOT_IMPLEMENTED.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v1/tokenize",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_IMPLEMENTED.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 async def tokenize(request: TokenizeRequest, raw_request: Request):
     handler = tokenization(raw_request)
@@ -531,19 +433,15 @@ async def tokenize(request: TokenizeRequest, raw_request: Request):
     assert_never(generator)
 
 
-@router.post("/v1/detokenize",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.NOT_FOUND.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v1/detokenize",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 async def detokenize(request: DetokenizeRequest, raw_request: Request):
     handler = tokenization(raw_request)
@@ -625,24 +523,29 @@ async def serviceinfo():
         })
 
 
-@router.post("/v1/responses",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.OK.value: {
-                     "content": {
-                         "text/event-stream": {}
-                     }
-                 },
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.NOT_FOUND.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+async def _convert_stream_to_sse_events(
+    generator: AsyncGenerator[StreamingResponsesResponse, None],
+) -> AsyncGenerator[str, None]:
+    """Convert the generator to a stream of events in SSE format"""
+    async for event in generator:
+        event_type = getattr(event, "type", "unknown")
+        # https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#event_stream_format
+        event_data = (
+            f"event: {event_type}\ndata: {event.model_dump_json(indent=None)}\n\n"
+        )
+        yield event_data
+
+
+@router.post(
+    "/v1/responses",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.OK.value: {"content": {"text/event-stream": {}}},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 async def create_responses(request: ResponsesRequest, raw_request: Request):
     handler = responses(raw_request)
@@ -665,22 +568,36 @@ async def create_responses(request: ResponsesRequest, raw_request: Request):
 
 
 @router.get("/v1/responses/{response_id}")
-async def retrieve_responses(response_id: str, raw_request: Request):
+async def retrieve_responses(
+    response_id: str,
+    raw_request: Request,
+    starting_after: int | None = None,
+    stream: bool | None = False,
+):
     handler = responses(raw_request)
     if handler is None:
         return base(raw_request).create_error_response(
             message="The model does not support Responses API")
 
     try:
-        response = await handler.retrieve_responses(response_id)
+        response = await handler.retrieve_responses(
+            response_id,
+            starting_after=starting_after,
+            stream=stream,
+        )
     except Exception as e:
         raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
                             detail=str(e)) from e
 
     if isinstance(response, ErrorResponse):
-        return JSONResponse(content=response.model_dump(),
-                            status_code=response.code)
-    return JSONResponse(content=response.model_dump())
+        return JSONResponse(
+            content=response.model_dump(), status_code=response.error.code
+        )
+    elif isinstance(response, ResponsesResponse):
+        return JSONResponse(content=response.model_dump())
+    return StreamingResponse(
+        content=_convert_stream_to_sse_events(response), media_type="text/event-stream"
+    )
 
 
 @router.post("/v1/responses/{response_id}/cancel")
@@ -702,24 +619,16 @@ async def cancel_responses(response_id: str, raw_request: Request):
     return JSONResponse(content=response.model_dump())
 
 
-@router.post("/v1/chat/completions",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.OK.value: {
-                     "content": {
-                         "text/event-stream": {}
-                     }
-                 },
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.NOT_FOUND.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 }
-             })
+@router.post(
+    "/v1/chat/completions",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.OK.value: {"content": {"text/event-stream": {}}},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def create_chat_completion(request: ChatCompletionRequest,
@@ -745,63 +654,16 @@ async def create_chat_completion(request: ChatCompletionRequest,
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
 
-@router.post("/v1/messages",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.OK.value: {
-                     "content": {
-                         "text/event-stream": {}
-                     }
-                 },
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.NOT_FOUND.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 }
-             })
-@with_cancellation
-@load_aware_call
-async def create_messages(request: AnthropicMessagesRequest,
-                          raw_request: Request):
-    handler = messages(raw_request)
-    if handler is None:
-        return base(raw_request).create_error_response(
-            message="The model does not support Anthropic Messages API")
-
-    generator = await handler.create_message(request, raw_request)
-
-    if isinstance(generator, ErrorResponse):
-        return JSONResponse(content=generator.model_dump(),
-                            status_code=generator.error.code)
-
-    elif isinstance(generator, AnthropicMessagesResponse):
-        return JSONResponse(content=generator.model_dump())
-
-    return StreamingResponse(content=generator, media_type="text/event-stream")
-
-
-@router.post("/v1/completions",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.OK.value: {
-                     "content": {
-                         "text/event-stream": {}
-                     }
-                 },
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.NOT_FOUND.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v1/completions",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.OK.value: {"content": {"text/event-stream": {}}},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def create_completion(request: CompletionRequest, raw_request: Request):
@@ -828,16 +690,14 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
 
-@router.post("/v1/embeddings",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v1/embeddings",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def create_embedding(request: EmbeddingRequest, raw_request: Request):
@@ -861,16 +721,14 @@ async def create_embedding(request: EmbeddingRequest, raw_request: Request):
     assert_never(generator)
 
 
-@router.post("/pooling",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/pooling",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def create_pooling(request: PoolingRequest, raw_request: Request):
@@ -890,6 +748,12 @@ async def create_pooling(request: PoolingRequest, raw_request: Request):
                             status_code=generator.error.code)
     elif isinstance(generator, (PoolingResponse, IOProcessorResponse)):
         return JSONResponse(content=generator.model_dump())
+    elif isinstance(generator, PoolingBytesResponse):
+        return StreamingResponse(
+            content=generator.body,
+            headers={"metadata": generator.metadata},
+            media_type=generator.media_type,
+        )
 
     assert_never(generator)
 
@@ -920,16 +784,14 @@ async def create_classify(request: ClassificationRequest,
     assert_never(generator)
 
 
-@router.post("/score",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/score",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def create_score(request: ScoreRequest, raw_request: Request):
@@ -953,16 +815,14 @@ async def create_score(request: ScoreRequest, raw_request: Request):
     assert_never(generator)
 
 
-@router.post("/v1/score",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v1/score",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def create_score_v1(request: ScoreRequest, raw_request: Request):
@@ -973,23 +833,15 @@ async def create_score_v1(request: ScoreRequest, raw_request: Request):
     return await create_score(request, raw_request)
 
 
-@router.post("/v1/audio/transcriptions",
-             responses={
-                 HTTPStatus.OK.value: {
-                     "content": {
-                         "text/event-stream": {}
-                     }
-                 },
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.UNPROCESSABLE_ENTITY.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v1/audio/transcriptions",
+    responses={
+        HTTPStatus.OK.value: {"content": {"text/event-stream": {}}},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.UNPROCESSABLE_ENTITY.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def create_transcriptions(raw_request: Request,
@@ -1019,23 +871,15 @@ async def create_transcriptions(raw_request: Request,
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
 
-@router.post("/v1/audio/translations",
-             responses={
-                 HTTPStatus.OK.value: {
-                     "content": {
-                         "text/event-stream": {}
-                     }
-                 },
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.UNPROCESSABLE_ENTITY.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v1/audio/translations",
+    responses={
+        HTTPStatus.OK.value: {"content": {"text/event-stream": {}}},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.UNPROCESSABLE_ENTITY.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def create_translations(request: Annotated[TranslationRequest,
@@ -1065,16 +909,14 @@ async def create_translations(request: Annotated[TranslationRequest,
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
 
-@router.post("/rerank",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/rerank",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 @load_aware_call
 async def do_rerank(request: RerankRequest, raw_request: Request):
@@ -1098,20 +940,17 @@ async def do_rerank(request: RerankRequest, raw_request: Request):
     assert_never(generator)
 
 
-@router.post("/v1/rerank",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v1/rerank",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 async def do_rerank_v1(request: RerankRequest, raw_request: Request):
-    log_once(
-        "warning",
+    logger.warning_once(
         "To indicate that the rerank API is not part of the standard OpenAI"
         " API, we have located it at `/rerank`. Please update your client "
         "accordingly. (Note: Conforms to JinaAI rerank API)",
@@ -1120,29 +959,38 @@ async def do_rerank_v1(request: RerankRequest, raw_request: Request):
     return await do_rerank(request, raw_request)
 
 
-@router.post("/v2/rerank",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/v2/rerank",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @with_cancellation
 async def do_rerank_v2(request: RerankRequest, raw_request: Request):
     return await do_rerank(request, raw_request)
 
 
 if envs.APHRODITE_SERVER_DEV_MODE:
-    logger.warning("SECURITY WARNING: Development endpoints are enabled! "
-                   "This should NOT be used in production!")
+    logger.warning(
+        "SECURITY WARNING: Development endpoints are enabled! "
+        "This should NOT be used in production!"
+    )
+
+    PydanticAphroditConfig = pydantic.TypeAdapter(AphroditeConfig)
 
     @router.get("/server_info")
-    async def show_server_info(raw_request: Request):
+    async def show_server_info(
+        raw_request: Request,
+        config_format: Annotated[Literal["text", "json"], Query()] = "text",
+    ):
+        aphrodite_config: pydantic.BaseModel = raw_request.app.state.aphrodite_config
         server_info = {
-            "aphrodite_config": str(raw_request.app.state.aphrodite_config)
+            "aphrodite_config": str(aphrodite_config)
+            if config_format == "text"
+            else aphrodite_config.model_dump_json(mode="json", fallback=str)
+            # fallback=str is needed to handle e.g. torch.dtype
         }
         return JSONResponse(content=server_info)
 
@@ -1156,8 +1004,18 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         device_str = raw_request.query_params.get("device")
         if device_str is not None:
             device = Device[device_str.upper()]
-        logger.info("Resetting prefix cache with specific {}...", str(device))
+        logger.info("Resetting prefix cache with specific %s...", str(device))
         await engine_client(raw_request).reset_prefix_cache(device)
+        return Response(status_code=200)
+
+    @router.post("/reset_mm_cache")
+    async def reset_mm_cache(raw_request: Request):
+        """
+        Reset the multi-modal cache. Note that we currently do not check if the
+        multi-modal cache is successfully reset in the API server.
+        """
+        logger.info("Resetting multi-modal cache...")
+        await engine_client(raw_request).reset_mm_cache()
         return Response(status_code=200)
 
     @router.post("/sleep")
@@ -1175,7 +1033,7 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         if tags == []:
             # set to None to wake up all tags if no tags are provided
             tags = None
-        logger.info("wake up the engine with tags: {}", tags)
+        logger.info("wake up the engine with tags: %s", tags)
         await engine_client(raw_request).wake_up(tags)
         # FIXME: in v0 with frontend multiprocessing, the wake-up command
         # is sent but does not finish yet when we return a response.
@@ -1202,7 +1060,7 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         # User-defined `method` is responsible for deserialization if needed.
         args: list[str] = body.get("args", [])
         kwargs: dict[str, str] = body.get("kwargs", {})
-        timeout: Optional[float] = body.get("timeout")
+        timeout: float | None = body.get("timeout")
         results = await engine_client(raw_request).collective_rpc(
             method=method, timeout=timeout, args=tuple(args), kwargs=kwargs)
         if results is None:
@@ -1216,22 +1074,16 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         return JSONResponse(content={"results": response})
 
 
-@router.post("/scale_elastic_ep",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.OK.value: {
-                     "model": dict
-                 },
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.REQUEST_TIMEOUT.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/scale_elastic_ep",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.OK.value: {"model": dict},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.REQUEST_TIMEOUT.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 async def scale_elastic_ep(raw_request: Request):
     try:
         body = await raw_request.json()
@@ -1272,7 +1124,7 @@ async def scale_elastic_ep(raw_request: Request):
                             detail="Scale failed due to request drain timeout "
                             f"after {drain_timeout} seconds") from e
     except Exception as e:
-        logger.error("Scale failed: {}", e)
+        logger.error("Scale failed: %s", e)
         raise HTTPException(status_code=500, detail="Scale failed") from e
     finally:
         _scaling_elastic_ep = False
@@ -1286,7 +1138,7 @@ async def is_scaling_elastic_ep(raw_request: Request):
 # TODO: RequestType = TypeForm[BaseModel] when recognized by type checkers
 # (requires typing_extensions >= 4.13)
 RequestType = Any
-GetHandlerFn = Callable[[Request], Optional[OpenAIServing]]
+GetHandlerFn = Callable[[Request], OpenAIServing | None]
 EndpointFn = Callable[[RequestType, Request], Awaitable[Any]]
 
 # NOTE: Items defined earlier take higher priority
@@ -1307,19 +1159,15 @@ INVOCATION_VALIDATORS = [
 ]
 
 
-@router.post("/invocations",
-             dependencies=[Depends(validate_json_request)],
-             responses={
-                 HTTPStatus.BAD_REQUEST.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value: {
-                     "model": ErrorResponse
-                 },
-                 HTTPStatus.INTERNAL_SERVER_ERROR.value: {
-                     "model": ErrorResponse
-                 },
-             })
+@router.post(
+    "/invocations",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 async def invocations(raw_request: Request):
     """For SageMaker, routes requests based on the request type."""
     try:
@@ -1552,23 +1400,148 @@ async def get_kobold_lite_ui():
             with open(klitepath, "r", encoding="utf-8") as f:
                 kobold_lite_ui = f.read()
         else:
-            logger.error("Kobold Lite UI not found at " + klitepath)
+            logger.error("Kobold Lite UI not found at %s", klitepath)
     return HTMLResponse(content=kobold_lite_ui)
 
 
 # ============ KoboldAI API ============ #
 
 
-def load_log_config(log_config_file: Optional[str]) -> Optional[dict]:
+def load_log_config(log_config_file: str | None) -> dict | None:
     if not log_config_file:
         return None
     try:
         with open(log_config_file) as f:
             return json.load(f)
     except Exception as e:
-        logger.warning("Failed to load log config from file {}: error {}",
+        logger.warning("Failed to load log config from file %s: error %s",
                        log_config_file, e)
         return None
+
+
+class UvicornFormatter(logging.Formatter):
+    """Custom formatter for uvicorn that matches Aphrodite's styling with colors."""
+
+    def __init__(self, fmt, datefmt=None, style="%"):
+        super().__init__(fmt, datefmt, style)
+        from aphrodite.logging_utils.formatter import _supports_color, Colors
+
+        self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
+        self.use_color = _supports_color() and os.environ.get('APHRODITE_LOGGING_COLOR', '1') in ('1', 'true', 'True')
+        self.level_colors = {
+            'DEBUG': Colors.DEBUG,
+            'INFO': Colors.INFO,
+            'WARNING': Colors.WARNING,
+            'ERROR': Colors.ERROR,
+            'CRITICAL': Colors.CRITICAL,
+        }
+        self.path_color = Colors.PATH
+        self.time_color = Colors.TIME
+        self.reset_color = Colors.RESET
+    
+    def format(self, record):
+        if not self.verbose_logging:
+            original_datefmt = self.datefmt
+            self.datefmt = "%H:%M:%S"
+
+        msg = super().format(record)
+
+        if not self.verbose_logging:
+            self.datefmt = original_datefmt
+
+        if 'WARNING' in msg:
+            msg = msg.replace('WARNING', 'WARN', 1)
+
+        if self.use_color:
+            level_color = self.level_colors.get(record.levelname, '')
+            level_str = 'WARN' if record.levelname == 'WARNING' else record.levelname
+
+            if level_str in msg:
+                msg = msg.replace(level_str, f"{level_color}{level_str}{self.reset_color}", 1)
+
+            asctime = self.formatTime(record, self.datefmt if not self.verbose_logging else "%m-%d %H:%M:%S")
+            if asctime in msg:
+                msg = msg.replace(asctime, f"{self.time_color}{asctime}{self.reset_color}", 1)
+
+            if self.verbose_logging:
+                name_with_lineno = f"[{record.name:<15}:{record.lineno:>4}]"
+                if name_with_lineno in msg:
+                    msg = msg.replace(name_with_lineno, f"{self.path_color}{name_with_lineno}{self.reset_color}", 1)
+
+        if record.message != "":
+            parts = msg.split(record.message)
+            msg = msg.replace("\n", "\r\n" + parts[0])
+
+        return msg
+
+
+def create_uvicorn_log_config() -> dict:
+    """Create uvicorn log config that matches Aphrodite's log format."""
+
+    if envs.APHRODITE_LOGGING_VERBOSE:
+        date_format = "%m-%d %H:%M:%S"
+        default_format = (
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
+            "[%(name)-15s:%(lineno)4d] %(message)s"
+        )
+        access_format = (
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
+            "[%(name)-15s:%(lineno)4d] %(message)s"
+        )
+    else:
+        date_format = "%H:%M:%S"
+        default_format = (
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
+        )
+        access_format = (
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
+        )
+
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "()": "aphrodite.endpoints.openai.api_server.UvicornFormatter",
+                "datefmt": date_format,
+                "format": default_format,
+            },
+            "access": {
+                "()": "aphrodite.endpoints.openai.api_server.UvicornFormatter",
+                "datefmt": date_format,
+                "format": access_format,
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": envs.APHRODITE_LOGGING_STREAM,
+            },
+            "access": {
+                "formatter": "access",
+                "class": "logging.StreamHandler",
+                "stream": envs.APHRODITE_LOGGING_STREAM,
+            },
+        },
+        "loggers": {
+            "uvicorn": {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "handlers": ["access"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }
 
 
 class AuthenticationMiddleware:
@@ -1584,12 +1557,27 @@ class AuthenticationMiddleware:
 
     def __init__(self, app: ASGIApp, tokens: list[str]) -> None:
         self.app = app
-        self.api_tokens = {f"Bearer {token}" for token in tokens}
+        self.api_tokens = [hashlib.sha256(t.encode("utf-8")).digest() for t in tokens]
 
-    def __call__(self, scope: Scope, receive: Receive,
-                 send: Send) -> Awaitable[None]:
-        if scope["type"] not in ("http",
-                                 "websocket") or scope["method"] == "OPTIONS":
+    def verify_token(self, headers: Headers) -> bool:
+        authorization_header_value = headers.get("Authorization")
+        if not authorization_header_value:
+            return False
+
+        scheme, _, param = authorization_header_value.partition(" ")
+        if scheme.lower() != "bearer":
+            return False
+
+        param_hash = hashlib.sha256(param.encode("utf-8")).digest()
+
+        token_match = False
+        for token_hash in self.api_tokens:
+            token_match |= secrets.compare_digest(param_hash, token_hash)
+
+        return token_match
+
+    def __call__(self, scope: Scope, receive: Receive, send: Send) -> Awaitable[None]:
+        if scope["type"] not in ("http", "websocket") or scope["method"] == "OPTIONS":
             # scope["type"] can be "lifespan" or "startup" for example,
             # in which case we don't need to do anything
             return self.app(scope, receive, send)
@@ -1597,10 +1585,8 @@ class AuthenticationMiddleware:
         url_path = URL(scope=scope).path.removeprefix(root_path)
         headers = Headers(scope=scope)
         # Type narrow to satisfy mypy.
-        if url_path.startswith("/v1") and headers.get(
-                "Authorization") not in self.api_tokens:
-            response = JSONResponse(content={"error": "Unauthorized"},
-                                    status_code=401)
+        if url_path.startswith("/v1") and not self.verify_token(headers):
+            response = JSONResponse(content={"error": "Unauthorized"}, status_code=401)
             return response(scope, receive, send)
         return self.app(scope, receive, send)
 
@@ -1795,7 +1781,7 @@ def _log_streaming_response(response, response_body: list) -> None:
                     return
 
     response.body_iterator = iterate_in_threadpool(buffered_iterator())
-    logger.info("response_body={streaming_started: chunks={}}",
+    logger.info("response_body={streaming_started: chunks=%s}",
                 len(response_body))
 
 
@@ -1803,7 +1789,7 @@ def _log_non_streaming_response(response_body: list) -> None:
     """Log non-streaming response."""
     try:
         decoded_body = response_body[0].decode()
-        logger.info("response_body={{}}", decoded_body)
+        logger.info("response_body=%s", decoded_body)
     except UnicodeDecodeError:
         logger.info("response_body={<binary_data>}")
 
@@ -1912,10 +1898,11 @@ def build_app(args: Namespace) -> FastAPI:
 
 async def init_app_state(
     engine_client: EngineClient,
-    aphrodite_config: AphroditeConfig,
     state: State,
     args: Namespace,
 ) -> None:
+    aphrodite_config = engine_client.aphrodite_config
+
     if args.served_model_name is not None:
         served_model_names = args.served_model_name
     else:
@@ -1935,42 +1922,18 @@ async def init_app_state(
     state.engine_client = engine_client
     state.log_stats = not args.disable_log_stats
     state.aphrodite_config = aphrodite_config
-    model_config = aphrodite_config.model_config
+    supported_tasks = await engine_client.get_supported_tasks()
 
-    if envs.APHRODITE_USE_V1:
-        supported_tasks = await engine_client \
-            .get_supported_tasks()  # type: ignore
-    else:
-        supported_tasks = model_config.supported_tasks
+    logger.info("Supported tasks: %s", supported_tasks)
 
-    logger.info("Supported_tasks: {}", supported_tasks)
-
-    resolved_chat_template = load_chat_template(args.chat_template)
-    if resolved_chat_template is not None:
-        # Get the tokenizer to check official template
-        tokenizer = await engine_client.get_tokenizer()
-
-        if isinstance(tokenizer, MistralTokenizer):
-            # The warning is logged in resolve_mistral_chat_template.
-            resolved_chat_template = resolve_mistral_chat_template(
-                chat_template=resolved_chat_template)
-        else:
-            hf_chat_template = resolve_hf_chat_template(
-                tokenizer=tokenizer,
-                chat_template=None,
-                tools=None,
-                model_config=aphrodite_config.model_config,
-            )
-
-            if hf_chat_template != resolved_chat_template:
-                logger.warning(
-                    "Using supplied chat template: {}\n"
-                    "It is different from official chat template '{}'. "
-                    "This discrepancy may lead to performance degradation.",
-                    resolved_chat_template, args.model)
+    resolved_chat_template = await process_chat_template(
+        args.chat_template, engine_client, aphrodite_config.model_config
+    )
 
     if args.tool_server == "demo":
-        tool_server: Optional[ToolServer] = DemoToolServer()
+        tool_server: ToolServer | None = DemoToolServer()
+        assert isinstance(tool_server, DemoToolServer)
+        await tool_server.init_and_validate()
     elif args.tool_server:
         tool_server = MCPToolServer()
         await tool_server.add_tool_server(args.tool_server)
@@ -1978,152 +1941,170 @@ async def init_app_state(
         tool_server = None
 
     # Merge default_mm_loras into the static lora_modules
-    default_mm_loras = (aphrodite_config.lora_config.default_mm_loras
-                        if aphrodite_config.lora_config is not None else {})
+    default_mm_loras = (
+        aphrodite_config.lora_config.default_mm_loras
+        if aphrodite_config.lora_config is not None
+        else {}
+    )
 
-    lora_modules = args.lora_modules
-    if default_mm_loras:
-        default_mm_lora_paths = [
-            LoRAModulePath(
-                name=modality,
-                path=lora_path,
-            ) for modality, lora_path in default_mm_loras.items()
-        ]
-        if args.lora_modules is None:
-            lora_modules = default_mm_lora_paths
-        else:
-            lora_modules += default_mm_lora_paths
+    default_mm_loras = (
+        aphrodite_config.lora_config.default_mm_loras
+        if aphrodite_config.lora_config is not None
+        else {}
+    )
+    lora_modules = process_lora_modules(args.lora_modules, default_mm_loras)
 
     state.openai_serving_models = OpenAIServingModels(
         engine_client=engine_client,
-        model_config=model_config,
         base_model_paths=base_model_paths,
         lora_modules=lora_modules,
     )
     await state.openai_serving_models.init_static_loras()
-    state.openai_serving_responses = OpenAIServingResponses(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        chat_template=resolved_chat_template,
-        chat_template_content_format=args.chat_template_content_format,
-        return_tokens_as_token_ids=args.return_tokens_as_token_ids,
-        enable_auto_tools=args.enable_auto_tool_choice,
-        tool_parser=args.tool_call_parser,
-        tool_server=tool_server,
-        reasoning_parser=args.reasoning_parser,
-        enable_prompt_tokens_details=args.enable_prompt_tokens_details,
-        enable_force_include_usage=args.enable_force_include_usage,
-        enable_log_outputs=args.enable_log_outputs,
-        log_error_stack=args.log_error_stack,
-    ) if "generate" in supported_tasks else None
-    state.openai_serving_chat = OpenAIServingChat(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        args.response_role,
-        request_logger=request_logger,
-        chat_template=resolved_chat_template,
-        chat_template_content_format=args.chat_template_content_format,
-        return_tokens_as_token_ids=args.return_tokens_as_token_ids,
-        enable_auto_tools=args.enable_auto_tool_choice,
-        exclude_tools_when_tool_choice_none=args.
-        exclude_tools_when_tool_choice_none,
-        tool_parser=args.tool_call_parser,
-        reasoning_parser=args.reasoning_parser,
-        enable_prompt_tokens_details=args.enable_prompt_tokens_details,
-        enable_force_include_usage=args.enable_force_include_usage,
-        enable_log_outputs=args.enable_log_outputs,
-        log_error_stack=args.log_error_stack,
-    ) if "generate" in supported_tasks else None
-    state.openai_serving_messages = OpenAIServingMessages(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        args.response_role,
-        request_logger=request_logger,
-        chat_template=resolved_chat_template,
-        return_tokens_as_token_ids=args.return_tokens_as_token_ids,
-        reasoning_parser=args.reasoning_parser,
-        enable_auto_tools=args.enable_auto_tool_choice,
-        tool_parser=args.tool_call_parser,
-        log_error_stack=args.log_error_stack,
-    ) if "generate" in supported_tasks else None
-    state.openai_serving_completion = OpenAIServingCompletion(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        return_tokens_as_token_ids=args.return_tokens_as_token_ids,
-        enable_prompt_tokens_details=args.enable_prompt_tokens_details,
-        enable_force_include_usage=args.enable_force_include_usage,
-        log_error_stack=args.log_error_stack,
-    ) if "generate" in supported_tasks else None
-    state.openai_serving_pooling = OpenAIServingPooling(
-        engine_client,
-        aphrodite_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        chat_template=resolved_chat_template,
-        chat_template_content_format=args.chat_template_content_format,
-        log_error_stack=args.log_error_stack,
-    ) if "encode" in supported_tasks else None
-    state.openai_serving_embedding = OpenAIServingEmbedding(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        chat_template=resolved_chat_template,
-        chat_template_content_format=args.chat_template_content_format,
-        log_error_stack=args.log_error_stack,
-    ) if "embed" in supported_tasks else None
-    state.openai_serving_classification = ServingClassification(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        enable_log_outputs=args.enable_log_outputs,
-    ) if "classify" in supported_tasks else None
-
-    state.openai_serving_scores = ServingScores(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        log_error_stack=args.log_error_stack,
-    ) if ("embed" in supported_tasks or "score" in supported_tasks) else None
-
+    state.openai_serving_responses = (
+        OpenAIServingResponses(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
+            chat_template=resolved_chat_template,
+            chat_template_content_format=args.chat_template_content_format,
+            return_tokens_as_token_ids=args.return_tokens_as_token_ids,
+            enable_auto_tools=args.enable_auto_tool_choice,
+            tool_parser=args.tool_call_parser,
+            tool_server=tool_server,
+            reasoning_parser=args.structured_outputs_config.reasoning_parser,
+            enable_prompt_tokens_details=args.enable_prompt_tokens_details,
+            enable_force_include_usage=args.enable_force_include_usage,
+            enable_log_outputs=args.enable_log_outputs,
+            log_error_stack=args.log_error_stack,
+        )
+        if "generate" in supported_tasks
+        else None
+    )
+    state.openai_serving_chat = (
+        OpenAIServingChat(
+            engine_client,
+            state.openai_serving_models,
+            args.response_role,
+            request_logger=request_logger,
+            chat_template=resolved_chat_template,
+            chat_template_content_format=args.chat_template_content_format,
+            trust_request_chat_template=args.trust_request_chat_template,
+            return_tokens_as_token_ids=args.return_tokens_as_token_ids,
+            enable_auto_tools=args.enable_auto_tool_choice,
+            exclude_tools_when_tool_choice_none=args.exclude_tools_when_tool_choice_none,
+            tool_parser=args.tool_call_parser,
+            reasoning_parser=args.structured_outputs_config.reasoning_parser,
+            enable_prompt_tokens_details=args.enable_prompt_tokens_details,
+            enable_force_include_usage=args.enable_force_include_usage,
+            enable_log_outputs=args.enable_log_outputs,
+            log_error_stack=args.log_error_stack,
+        )
+        if "generate" in supported_tasks
+        else None
+    )
+    state.openai_serving_completion = (
+        OpenAIServingCompletion(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
+            return_tokens_as_token_ids=args.return_tokens_as_token_ids,
+            enable_prompt_tokens_details=args.enable_prompt_tokens_details,
+            enable_force_include_usage=args.enable_force_include_usage,
+            log_error_stack=args.log_error_stack,
+        )
+        if "generate" in supported_tasks
+        else None
+    )
+    state.openai_serving_pooling = (
+        (
+            OpenAIServingPooling(
+                engine_client,
+                state.openai_serving_models,
+                supported_tasks=supported_tasks,
+                request_logger=request_logger,
+                chat_template=resolved_chat_template,
+                chat_template_content_format=args.chat_template_content_format,
+                trust_request_chat_template=args.trust_request_chat_template,
+                log_error_stack=args.log_error_stack,
+            )
+        )
+        if any(task in POOLING_TASKS for task in supported_tasks)
+        else None
+    )
+    state.openai_serving_embedding = (
+        OpenAIServingEmbedding(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
+            chat_template=resolved_chat_template,
+            chat_template_content_format=args.chat_template_content_format,
+            trust_request_chat_template=args.trust_request_chat_template,
+            log_error_stack=args.log_error_stack,
+        )
+        if "embed" in supported_tasks
+        else None
+    )
+    state.openai_serving_classification = (
+        ServingClassification(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
+            log_error_stack=args.log_error_stack,
+        )
+        if "classify" in supported_tasks
+        else None
+    )
+    state.openai_serving_scores = (
+        ServingScores(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
+            log_error_stack=args.log_error_stack,
+        )
+        if ("embed" in supported_tasks or "score" in supported_tasks)
+        else None
+    )
     state.openai_serving_tokenization = OpenAIServingTokenization(
         engine_client,
-        model_config,
         state.openai_serving_models,
         request_logger=request_logger,
         chat_template=resolved_chat_template,
         chat_template_content_format=args.chat_template_content_format,
+        trust_request_chat_template=args.trust_request_chat_template,
         log_error_stack=args.log_error_stack,
     )
-    state.openai_serving_transcription = OpenAIServingTranscription(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        log_error_stack=args.log_error_stack,
-    ) if "transcription" in supported_tasks else None
-    state.openai_serving_translation = OpenAIServingTranslation(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        log_error_stack=args.log_error_stack,
-    ) if "transcription" in supported_tasks else None
-    state.openai_serving_kobold = OpenAIServingKobold(
-        engine_client,
-        model_config,
-        state.openai_serving_models,
-        request_logger=request_logger,
-        log_error_stack=args.log_error_stack,
-    ) if "generate" in supported_tasks else None
+    state.openai_serving_transcription = (
+        OpenAIServingTranscription(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
+            log_error_stack=args.log_error_stack,
+            enable_force_include_usage=args.enable_force_include_usage,
+        )
+        if "transcription" in supported_tasks
+        else None
+    )
+    state.openai_serving_translation = (
+        OpenAIServingTranslation(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
+            log_error_stack=args.log_error_stack,
+            enable_force_include_usage=args.enable_force_include_usage,
+        )
+        if "transcription" in supported_tasks
+        else None
+    )
+    state.openai_serving_kobold = (
+        OpenAIServingKobold(
+            engine_client,
+            state.openai_serving_models,
+            request_logger=request_logger,
+            log_error_stack=args.log_error_stack,
+        )
+        if "generate" in supported_tasks
+        else None
+    )
 
     state.enable_server_load_tracking = args.enable_server_load_tracking
     state.server_load_metrics = 0
@@ -2168,7 +2149,7 @@ def setup_server(args):
     """Validate API server args, set up signal handler, create socket
     ready to serve."""
 
-    logger.info("Aphrodite API server version {}", APHRODITE_VERSION)
+    logger.info("Aphrodite API server version %s", APHRODITE_VERSION)
     log_non_default_args(args)
 
     if args.tool_parser_plugin and len(args.tool_parser_plugin) > 3:
@@ -2228,12 +2209,11 @@ async def run_server_worker(listen_address,
     if args.tool_parser_plugin and len(args.tool_parser_plugin) > 3:
         ToolParserManager.import_tool_parser(args.tool_parser_plugin)
 
-    server_index = client_config.get("client_index", 0) if client_config else 0
-
-    # Load logging config for uvicorn if specified
     log_config = load_log_config(args.log_config_file)
     if log_config is not None:
         uvicorn_kwargs['log_config'] = log_config
+    else:
+        uvicorn_kwargs['log_config'] = create_uvicorn_log_config()
 
     async with build_async_engine_client(
             args,
@@ -2242,79 +2222,38 @@ async def run_server_worker(listen_address,
         maybe_register_tokenizer_info_endpoint(args)
         app = build_app(args)
 
-        aphrodite_config = await engine_client.get_aphrodite_config()
-        await init_app_state(engine_client, aphrodite_config, app.state, args)
+        await init_app_state(engine_client, app.state, args)
 
-        logger.info("Starting Aphrodite API server {} on {}", server_index,
-                    listen_address)
+        logger.info(
+            "Starting Aphrodite API server %d on %s",
+            engine_client.aphrodite_config.parallel_config._api_process_rank,
+            listen_address,
+        )
 
-        protocol = "https" if args.ssl_certfile else "http"
-        root_path = args.root_path.rstrip("/") if args.root_path else ""
-        host_name = args.host if args.host else "localhost"
-        port_str = str(args.port)
+        url_prefix = listen_address.rstrip("/")
 
         if SERVE_KOBOLD_LITE_UI:
-            ui_url = f"{protocol}://{host_name}:{port_str}{root_path}/"
-            logger.info(f"Kobold Lite UI:                  {ui_url}")
+            logger.info(f"Kobold Lite UI:         {url_prefix}/")
 
         if not args.disable_fastapi_docs:
-            logger.info(
-                f"Documentation:                   {protocol}://{host_name}:{port_str}{root_path}/redoc"
-            )  # noqa: E501
-        logger.info(
-            f"Completions API:                 {protocol}://{host_name}:{port_str}{root_path}/v1/completions"
-        )  # noqa: E501
-        logger.info(
-            f"Chat API:                        {protocol}://{host_name}:{port_str}{root_path}/v1/chat/completions"
-        )  # noqa: E501
-        logger.info(
-            f"Responses API:                   {protocol}://{host_name}:{port_str}{root_path}/v1/responses"
-        )  # noqa: E501
-        logger.info(
-            f"Anthropic Messages API:          {protocol}://{host_name}:{port_str}{root_path}/v1/messages"
-        )  # noqa: E501
-        logger.info(
-            f"Embeddings API:                  {protocol}://{host_name}:{port_str}{root_path}/v1/embeddings"
-        )  # noqa: E501
-        logger.info(
-            f"Pooling API:                     {protocol}://{host_name}:{port_str}{root_path}/pooling"
-        )  # noqa: E501
-        logger.info(
-            f"Score API:                       {protocol}://{host_name}:{port_str}{root_path}/score"
-        )  # noqa: E501
-        logger.info(
-            f"Rerank API:                      {protocol}://{host_name}:{port_str}{root_path}/rerank"
-        )  # noqa: E501
-        logger.info(
-            f"Rerank API v1:                   {protocol}://{host_name}:{port_str}{root_path}/v1/rerank"
-        )  # noqa: E501
-        logger.info(
-            f"Rerank API v2:                   {protocol}://{host_name}:{port_str}{root_path}/v2/rerank"
-        )  # noqa: E501
-        logger.info(
-            f"Transcription API:               {protocol}://{host_name}:{port_str}{root_path}/v1/audio/transcriptions"
-        )  # noqa: E501
-        logger.info(
-            f"Translation API:                 {protocol}://{host_name}:{port_str}{root_path}/v1/audio/translations"
-        )  # noqa: E501
-        logger.info(
-            f"Classification API:              {protocol}://{host_name}:{port_str}{root_path}/classify"
-        )  # noqa: E501
-        logger.info(
-            f"Detokenization API:              {protocol}://{host_name}:{port_str}{root_path}/v1/detokenize"
-        )  # noqa: E501
-        logger.info(
-            f"Tokenizer Info API:              {protocol}://{host_name}:{port_str}{root_path}/tokenizer_info"
-        )  # noqa: E501
-        logger.info(
-            f"Tokenization API:                {protocol}://{host_name}:{port_str}{root_path}/v1/tokenize"
-        )  # noqa: E501
-        logger.info(
-            f"KoboldAI API:                    {protocol}://{host_name}:{port_str}{root_path}/api/v1"
-        )  # noqa: E501
-        logger.info(
-            f"KoboldAI Extra:                  {protocol}://{host_name}:{port_str}{root_path}/api/extra"
-        )  # noqa: E501
+            logger.info(f"Documentation:          {url_prefix}/redoc")
+        logger.info(f"Completions API:        {url_prefix}/v1/completions")
+        logger.info(f"Chat API:               {url_prefix}/v1/chat/completions")
+        logger.info(f"Responses API:          {url_prefix}/v1/responses")
+        logger.info(f"Embeddings API:         {url_prefix}/v1/embeddings")
+        logger.info(f"Pooling API:            {url_prefix}/pooling")
+        logger.info(f"Score API:              {url_prefix}/score")
+        logger.info(f"Rerank API:             {url_prefix}/rerank")
+        logger.info(f"Rerank API v1:          {url_prefix}/v1/rerank")
+        logger.info(f"Rerank API v2:          {url_prefix}/v2/rerank")
+        logger.info(f"Transcription API:      {url_prefix}/v1/audio/transcriptions")
+        logger.info(f"Translation API:        {url_prefix}/v1/audio/translations")
+        logger.info(f"Classification API:     {url_prefix}/classify")
+        logger.info(f"Detokenization API:     {url_prefix}/v1/detokenize")
+        logger.info(f"Tokenizer Info API:     {url_prefix}/tokenizer_info")
+        logger.info(f"Tokenization API:       {url_prefix}/v1/tokenize")
+        logger.info(f"KoboldAI API:           {url_prefix}/api/v1")
+        logger.info(f"KoboldAI Extra:         {url_prefix}/api/extra")
 
         shutdown_task = await serve_http(
             app,

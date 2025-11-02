@@ -1,12 +1,10 @@
-from typing import Union
-
 import pytest
 from transformers import AutoModel
 
 from aphrodite.endpoints.chat_utils import ChatCompletionContentPartImageParam
 from aphrodite.endpoints.score_utils import ScoreMultiModalParam
 
-from ....conftest import HfRunner, AphroditeRunner
+from ....conftest import AphroditeRunner, HfRunner
 
 model_name = "jinaai/jina-reranker-m0"
 
@@ -27,32 +25,33 @@ def aphrodite_reranker(
     query_type: str = "text",
     doc_type: str = "text",
 ):
-
     def create_image_param(url: str) -> ChatCompletionContentPartImageParam:
         return {"type": "image_url", "image_url": {"url": f"{url}"}}
 
-    query: Union[list[str], ScoreMultiModalParam]
+    query: list[str] | ScoreMultiModalParam
     if query_type == "text":
         query = query_strs
     elif query_type == "image":
         query = ScoreMultiModalParam(
-            content=[create_image_param(url) for url in query_strs])
+            content=[create_image_param(url) for url in query_strs]
+        )
 
-    documents: Union[list[str], ScoreMultiModalParam]
+    documents: list[str] | ScoreMultiModalParam
     if doc_type == "text":
         documents = document_strs
     elif doc_type == "image":
         documents = ScoreMultiModalParam(
-            content=[create_image_param(url) for url in document_strs])
+            content=[create_image_param(url) for url in document_strs]
+        )
 
     with aphrodite_runner(
-            model_name,
-            runner="pooling",
-            dtype=dtype,
-            max_num_seqs=2,
-            max_model_len=2048,
-            mm_processor_kwargs=mm_processor_kwargs,
-            limit_mm_per_prompt=limit_mm_per_prompt,
+        model_name,
+        runner="pooling",
+        dtype=dtype,
+        max_num_seqs=2,
+        max_model_len=2048,
+        mm_processor_kwargs=mm_processor_kwargs,
+        limit_mm_per_prompt=limit_mm_per_prompt,
     ) as aphrodite_model:
         outputs = aphrodite_model.llm.score(query, documents)
 
@@ -76,16 +75,15 @@ def hf_reranker(
     data_pairs = [[query_strs[0], d] for d in document_strs]
 
     with hf_runner(
-            model_name,
-            dtype=dtype,
-            trust_remote_code=True,
-            auto_cls=AutoModel,
-            model_kwargs={"key_mapping": checkpoint_to_hf_mapper},
+        model_name,
+        dtype=dtype,
+        trust_remote_code=True,
+        auto_cls=AutoModel,
+        model_kwargs={"key_mapping": checkpoint_to_hf_mapper},
     ) as hf_model:
-        return hf_model.model.compute_score(data_pairs,
-                                            max_length=2048,
-                                            query_type=query_type,
-                                            doc_type=doc_type)
+        return hf_model.model.compute_score(
+            data_pairs, max_length=2048, query_type=query_type, doc_type=doc_type
+        )
 
 
 # Visual Documents Reranking
@@ -98,10 +96,12 @@ def test_model_text_image(hf_runner, aphrodite_runner, model_name, dtype):
         "https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/paper-11.png",
     ]
 
-    hf_outputs = hf_reranker(hf_runner, model_name, dtype, query, documents,
-                             "text", "image")
-    aphrodite_outputs = aphrodite_reranker(aphrodite_runner, model_name, dtype, query,
-                                 documents, "text", "image")
+    hf_outputs = hf_reranker(
+        hf_runner, model_name, dtype, query, documents, "text", "image"
+    )
+    aphrodite_outputs = aphrodite_reranker(
+        aphrodite_runner, model_name, dtype, query, documents, "text", "image"
+    )
 
     assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.02)
     assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.02)
@@ -125,10 +125,12 @@ def test_model_text_text(hf_runner, aphrodite_runner, model_name, dtype):
         lower computational requirements.""",  # noqa: E501
         "数据提取么？为什么不用正则啊，你用正则不就全解决了么？",
     ]
-    hf_outputs = hf_reranker(hf_runner, model_name, dtype, query, documents,
-                             "text", "text")
-    aphrodite_outputs = aphrodite_reranker(aphrodite_runner, model_name, dtype, query,
-                                 documents, "text", "text")
+    hf_outputs = hf_reranker(
+        hf_runner, model_name, dtype, query, documents, "text", "text"
+    )
+    aphrodite_outputs = aphrodite_reranker(
+        aphrodite_runner, model_name, dtype, query, documents, "text", "text"
+    )
 
     assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.02)
     assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.02)
@@ -155,10 +157,12 @@ def test_model_image_text(hf_runner, aphrodite_runner, model_name, dtype):
         "数据提取么？为什么不用正则啊，你用正则不就全解决了么？",
     ]
 
-    hf_outputs = hf_reranker(hf_runner, model_name, dtype, query, documents,
-                             "image", "text")
-    aphrodite_outputs = aphrodite_reranker(aphrodite_runner, model_name, dtype, query,
-                                 documents, "image", "text")
+    hf_outputs = hf_reranker(
+        hf_runner, model_name, dtype, query, documents, "image", "text"
+    )
+    aphrodite_outputs = aphrodite_reranker(
+        aphrodite_runner, model_name, dtype, query, documents, "image", "text"
+    )
 
     assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.02)
     assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.02)
@@ -176,10 +180,12 @@ def test_model_image_image(hf_runner, aphrodite_runner, model_name, dtype):
         "https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/paper-11.png",
     ]
 
-    hf_outputs = hf_reranker(hf_runner, model_name, dtype, query, documents,
-                             "image", "image")
-    aphrodite_outputs = aphrodite_reranker(aphrodite_runner, model_name, dtype, query,
-                                 documents, "image", "image")
+    hf_outputs = hf_reranker(
+        hf_runner, model_name, dtype, query, documents, "image", "image"
+    )
+    aphrodite_outputs = aphrodite_reranker(
+        aphrodite_runner, model_name, dtype, query, documents, "image", "image"
+    )
 
     assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.02)
     assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.02)

@@ -1,10 +1,14 @@
-'''The CLI endpoint of Aphrodite
+"""The CLI endpoint of Aphrodite
 
 Note that all future modules must be lazily loaded within main
-to avoid certain eager import breakage.'''
-from __future__ import annotations
+to avoid certain eager import breakage."""
 
 import importlib.metadata
+import sys
+
+from aphrodite.logger import init_logger
+
+logger = init_logger(__name__)
 
 
 def main():
@@ -16,7 +20,7 @@ def main():
     import aphrodite.endpoints.cli.tokenizer
     from aphrodite.endpoints.utils import (APHRODITE_SUBCMD_PARSER_EPILOG,
                                            cli_env_setup)
-    from aphrodite.utils import FlexibleArgumentParser
+    from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
     CMD_MODULES = [
         aphrodite.endpoints.cli.openai,
@@ -29,9 +33,25 @@ def main():
 
     cli_env_setup()
 
+    # For 'aphrodite bench *': use CPU instead of UnspecifiedPlatform by default
+    if len(sys.argv) > 1 and sys.argv[1] == "bench":
+        logger.debug(
+            "Bench command detected, must ensure current platform is not "
+            "UnspecifiedPlatform to avoid device type inference error"
+        )
+        from aphrodite import platforms
+
+        if platforms.current_platform.is_unspecified():
+            from aphrodite.platforms.cpu import CpuPlatform
+
+            platforms.current_platform = CpuPlatform()
+            logger.info(
+                "Unspecified platform detected, switching to CPU Platform instead."
+            )
+
     parser = FlexibleArgumentParser(
         description="Aphrodite CLI",
-        epilog=APHRODITE_SUBCMD_PARSER_EPILOG,
+        epilog=APHRODITE_SUBCMD_PARSER_EPILOG.format(subcmd="[subcommand]"),
     )
     parser.add_argument(
         '-v',

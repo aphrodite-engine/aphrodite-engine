@@ -4,7 +4,7 @@ from aphrodite.endpoints.cli.types import CLISubcommand
 
 
 class BenchmarkSubcommandBase(CLISubcommand):
-    """ The base class of subcommands for aphrodite bench. """
+    """The base class of subcommands for `aphrodite bench`."""
 
     help: str
 

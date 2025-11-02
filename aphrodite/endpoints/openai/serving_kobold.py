@@ -3,7 +3,6 @@ from collections.abc import AsyncGenerator
 from typing import Optional
 
 from fastapi import Request
-from loguru import logger
 
 from aphrodite.common.sampling_params import _SAMPLING_EPS, SamplingParams
 from aphrodite.endpoints.logger import RequestLogger
@@ -11,8 +10,11 @@ from aphrodite.endpoints.openai.protocol import KAIGenerationInputSchema
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
+from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 from aphrodite.utils import random_uuid
+
+logger = init_logger(__name__)
 
 # Global cache for generation tracking
 gen_cache: dict = {}
@@ -23,7 +25,6 @@ class OpenAIServingKobold(OpenAIServing):
     def __init__(
         self,
         engine_client: EngineClient,
-        model_config,
         models: OpenAIServingModels,
         *,
         request_logger: Optional[RequestLogger] = None,
@@ -31,7 +32,6 @@ class OpenAIServingKobold(OpenAIServing):
     ) -> None:
         super().__init__(
             engine_client=engine_client,
-            model_config=model_config,
             models=models,
             request_logger=request_logger,
             **kwargs

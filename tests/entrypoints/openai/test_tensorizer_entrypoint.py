@@ -7,9 +7,9 @@ import pytest
 import pytest_asyncio
 import torch.cuda
 
-from aphrodite.engine.arg_utils import EngineArgs
+from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.model_loader.tensorizer import (
-    TensorizerConfig, tensorize_lora_adapter, tensorize_aphrodite_model)
+    TensorizerConfig, tensorize_aphrodite_model, tensorize_lora_adapter)
 
 from ...utils import RemoteOpenAIServer
 
@@ -27,22 +27,21 @@ def cleanup():
     _cleanup()
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def tmp_dir():
     with tempfile.TemporaryDirectory() as path:
         yield path
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def model_uri(tmp_dir):
     yield f"{tmp_dir}/model.tensors"
 
 
 @pytest.fixture(scope="module")
 def tensorize_model_and_lora(tmp_dir, model_uri):
-    tensorizer_config = TensorizerConfig(tensorizer_uri=model_uri,
-                                         lora_dir=tmp_dir)
-    args = EngineArgs(model=MODEL_NAME, device="cuda")
+    tensorizer_config = TensorizerConfig(tensorizer_uri=model_uri, lora_dir=tmp_dir)
+    args = EngineArgs(model=MODEL_NAME)
 
     tensorize_lora_adapter(LORA_PATH, tensorizer_config)
     tensorize_aphrodite_model(args, tensorizer_config)
@@ -64,8 +63,11 @@ def server(model_uri, tensorize_model_and_lora):
 
     ## Start OpenAI API server
     args = [
-        "--load-format", "tensorizer", "--served-model-name", MODEL_NAME,
-        "--enable-lora"
+        "--load-format",
+        "tensorizer",
+        "--served-model-name",
+        MODEL_NAME,
+        "--enable-lora",
     ]
 
     model_dir = os.path.dirname(model_uri)
@@ -83,10 +85,9 @@ async def client(server):
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
 async def test_single_completion(client: openai.AsyncOpenAI, model_name: str):
     _cleanup()
-    completion = await client.completions.create(model=model_name,
-                                                 prompt="Hello, my name is",
-                                                 max_tokens=5,
-                                                 temperature=0.0)
+    completion = await client.completions.create(
+        model=model_name, prompt="Hello, my name is", max_tokens=5, temperature=0.0
+    )
 
     assert completion.id is not None
     assert completion.choices is not None and len(completion.choices) == 1
@@ -95,4 +96,5 @@ async def test_single_completion(client: openai.AsyncOpenAI, model_name: str):
     assert len(completion.choices[0].text) >= 5
     assert completion.choices[0].finish_reason == "length"
     assert completion.usage == openai.types.CompletionUsage(
-        completion_tokens=5, prompt_tokens=6, total_tokens=11)
+        completion_tokens=5, prompt_tokens=6, total_tokens=11
+    )

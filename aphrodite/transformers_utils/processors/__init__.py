@@ -3,7 +3,7 @@ Multi-modal processors may be defined in this directory for the following
 reasons:
 
 - There is no processing file defined by HF Hub or Transformers library.
-- There is a need to override the existing processor to support vLLM.
+- There is a need to override the existing processor to support Aphrodite.
 """
 
 from aphrodite.transformers_utils.processors.deepseek_vl2 import (

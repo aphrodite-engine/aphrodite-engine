@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 
@@ -12,7 +11,6 @@ from aphrodite.v1.attention.backends.utils import (CommonAttentionMetadata,
 
 
 class Mamba1AttentionBackend(AttentionBackend):
-
     @staticmethod
     def get_builder_cls() -> type["Mamba1AttentionMetadataBuilder"]:
         return Mamba1AttentionMetadataBuilder
@@ -23,7 +21,7 @@ class Mamba1AttentionMetadata:
     query_start_loc: torch.Tensor
     context_lens_tensor: torch.Tensor
     state_indices_tensor: torch.Tensor
-    has_initial_states: Optional[torch.Tensor]
+    has_initial_states: torch.Tensor | None
     num_prefills: int
     num_prefill_tokens: int
     num_decodes: int
@@ -32,8 +30,8 @@ class Mamba1AttentionMetadata:
 
 
 class Mamba1AttentionMetadataBuilder(
-        BaseMambaAttentionMetadataBuilder[Mamba1AttentionMetadata]):
-
+    BaseMambaAttentionMetadataBuilder[Mamba1AttentionMetadata]
+):
     def build(
         self,
         common_prefix_len: int,
@@ -44,24 +42,30 @@ class Mamba1AttentionMetadataBuilder(
 
         state_indices_tensor = common_attn_metadata.block_table_tensor[:, 0]
         context_lens_tensor = common_attn_metadata.num_computed_tokens_cpu.to(
-            query_start_loc.device)
+            query_start_loc.device
+        )
 
         num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
             split_decodes_and_prefills(
-                common_attn_metadata,
-                decode_threshold=self.reorder_batch_threshold))
+                common_attn_metadata, decode_threshold=self.reorder_batch_threshold
+            )
+        )
 
         has_initial_states = None
         padded_decodes = num_decodes
 
         if num_prefills > 0:
             has_initial_states = context_lens_tensor > 0
-        elif (num_decodes > 0 and num_decodes <= self.decode_cudagraph_max_bs
-              and self.compilation_config.full_cuda_graph):
+        elif (
+            num_decodes > 0
+            and num_decodes <= self.decode_cudagraph_max_bs
+            and self.compilation_config.full_cuda_graph
+        ):
             state_indices_for_decode = state_indices_tensor[:num_decodes]
             padded_decodes = self.aphrodite_config.pad_for_cudagraph(num_decodes)
             self.state_indices_tensor[:num_decodes].copy_(
-                state_indices_for_decode, non_blocking=True)
+                state_indices_for_decode, non_blocking=True
+            )
             state_indices_tensor = self.state_indices_tensor[:padded_decodes]
             state_indices_tensor[num_decodes:] = PAD_SLOT_ID
 

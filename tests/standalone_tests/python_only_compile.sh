@@ -10,7 +10,7 @@ cd /aphrodite-workspace/
 # uninstall aphrodite
 pip3 uninstall -y aphrodite
 # restore the original files
-mv test_docs/aphrodite ./aphrodite
+mv src/aphrodite ./aphrodite
 
 # remove all compilers
 apt remove --purge build-essential -y

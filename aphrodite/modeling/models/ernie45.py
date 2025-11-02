@@ -19,6 +19,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only Erine model compatible with HuggingFace weights."""
+
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 
@@ -26,7 +27,6 @@ from .utils import PPMissingLayer
 
 
 class Ernie4_5ForCausalLM(LlamaForCausalLM):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)
         # Hack Llama model to fit HF format Ernie4.5 dense implementation

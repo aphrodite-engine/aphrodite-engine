@@ -15,9 +15,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only GPT-J model compatible with HuggingFace weights."""
+
 from collections.abc import Iterable
 from itertools import islice
-from typing import Optional, Union
 
 import torch
 from torch import nn
@@ -39,7 +39,6 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import (
     default_weight_loader, maybe_remap_kv_scale_name)
-from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsPP
@@ -49,12 +48,11 @@ from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
 
 
 class GPTJAttention(nn.Module):
-
     def __init__(
         self,
         config: GPTJConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -84,8 +82,7 @@ class GPTJAttention(nn.Module):
         assert getattr(config, "rotary", True)
         assert config.rotary_dim % 2 == 0
         rope_theta = getattr(config, "rope_theta", 10000)
-        max_position_embeddings = getattr(config, "max_position_embeddings",
-                                          8192)
+        max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         self.rotary_emb = get_rope(
             self.head_size,
             rotary_dim=config.rotary_dim,
@@ -93,12 +90,14 @@ class GPTJAttention(nn.Module):
             base=rope_theta,
             is_neox_style=False,
         )
-        self.attn = Attention(self.num_heads,
-                              self.head_size,
-                              scaling,
-                              cache_config=cache_config,
-                              quant_config=quant_config,
-                              prefix=f"{prefix}.attn")
+        self.attn = Attention(
+            self.num_heads,
+            self.head_size,
+            scaling,
+            cache_config=cache_config,
+            quant_config=quant_config,
+            prefix=f"{prefix}.attn",
+        )
 
     def forward(
         self,
@@ -114,12 +113,11 @@ class GPTJAttention(nn.Module):
 
 
 class GPTJMLP(nn.Module):
-
     def __init__(
         self,
         intermediate_size: int,
         config: GPTJConfig,
-        quant_config: Optional[QuantizationConfig] = None,
+        quant_config: QuantizationConfig | None = None,
     ):
         super().__init__()
         hidden_size = config.n_embd
@@ -143,22 +141,19 @@ class GPTJMLP(nn.Module):
 
 
 class GPTJBlock(nn.Module):
-
     def __init__(
         self,
         config: GPTJConfig,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
-        inner_dim = (4 * config.n_embd
-                     if config.n_inner is None else config.n_inner)
+        inner_dim = 4 * config.n_embd if config.n_inner is None else config.n_inner
         self.ln_1 = nn.LayerNorm(config.n_embd, eps=config.layer_norm_epsilon)
-        self.attn = GPTJAttention(config,
-                                  cache_config,
-                                  quant_config,
-                                  prefix=f"{prefix}.attn")
+        self.attn = GPTJAttention(
+            config, cache_config, quant_config, prefix=f"{prefix}.attn"
+        )
         self.mlp = GPTJMLP(inner_dim, config, quant_config)
 
     def forward(
@@ -179,7 +174,6 @@ class GPTJBlock(nn.Module):
 
 @support_torch_compile
 class GPTJModel(nn.Module):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
 
@@ -196,14 +190,13 @@ class GPTJModel(nn.Module):
         )
         self.start_layer, self.end_layer, self.h = make_layers(
             config.n_layer,
-            lambda prefix: GPTJBlock(
-                config, cache_config, quant_config, prefix=prefix),
+            lambda prefix: GPTJBlock(config, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.h",
         )
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
-        self.make_empty_intermediate_tensors = (
-            make_empty_intermediate_tensors_factory(["hidden_states"],
-                                                    config.n_embd))
+        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
+            ["hidden_states"], config.n_embd
+        )
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.wte(input_ids)
@@ -212,9 +205,9 @@ class GPTJModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         position_ids: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors],
-        inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, IntermediateTensors]:
+        intermediate_tensors: IntermediateTensors | None,
+        inputs_embeds: torch.Tensor | None = None,
+    ) -> torch.Tensor | IntermediateTensors:
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -229,8 +222,7 @@ class GPTJModel(nn.Module):
         hidden_states = self.ln_f(hidden_states)
         return hidden_states
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
@@ -245,19 +237,20 @@ class GPTJModel(nn.Module):
             if "attn.bias" in name or "attn.masked_bias" in name:
                 continue
 
-            if (self.quant_config is not None and
-                (scale_name := self.quant_config.get_cache_scale(name))):
+            if self.quant_config is not None and (
+                scale_name := self.quant_config.get_cache_scale(name)
+            ):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
-                loaded_weight = (loaded_weight if loaded_weight.dim() == 0 else
-                                 loaded_weight[0])
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
+                loaded_weight = (
+                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
+                )
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
 
-            for (param_name, weight_name, shard_id) in stacked_params_mapping:
+            for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
@@ -280,15 +273,13 @@ class GPTJModel(nn.Module):
                 if is_pp_missing_parameter(name, self):
                     continue
                 param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
 
 
 class GPTJForCausalLM(nn.Module, SupportsPP):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
@@ -296,18 +287,20 @@ class GPTJForCausalLM(nn.Module, SupportsPP):
         self.config = config
         self.quant_config = quant_config
         assert not config.tie_word_embeddings
-        self.transformer = GPTJModel(aphrodite_config=aphrodite_config,
-                                     prefix=maybe_prefix(
-                                         prefix, "transformer"))
+        self.transformer = GPTJModel(
+            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "transformer")
+        )
         self.lm_head = ParallelLMHead(
             config.vocab_size,
             config.n_embd,
             bias=True,
             quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "lm_head"),
         )
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.make_empty_intermediate_tensors = (
-            self.transformer.make_empty_intermediate_tensors)
+            self.transformer.make_empty_intermediate_tensors
+        )
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.transformer.get_input_embeddings(input_ids)
@@ -316,23 +309,21 @@ class GPTJForCausalLM(nn.Module, SupportsPP):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-    ) -> Union[torch.Tensor, IntermediateTensors]:
-        hidden_states = self.transformer(input_ids, positions,
-                                         intermediate_tensors, inputs_embeds)
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+    ) -> torch.Tensor | IntermediateTensors:
+        hidden_states = self.transformer(
+            input_ids, positions, intermediate_tensors, inputs_embeds
+        )
         return hidden_states
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
-        sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
-        logits = self.logits_processor(self.lm_head, hidden_states,
-                                       sampling_metadata, self.lm_head.bias)
+    ) -> torch.Tensor | None:
+        logits = self.logits_processor(self.lm_head, hidden_states, self.lm_head.bias)
         return logits
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

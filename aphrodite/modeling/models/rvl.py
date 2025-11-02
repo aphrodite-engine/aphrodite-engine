@@ -5,6 +5,7 @@ import torch.nn as nn
 from transformers.activations import GELUActivation
 
 from aphrodite.config import AphroditeConfig
+from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import MultiModalDataDict
 
@@ -15,7 +16,6 @@ from .utils import WeightsMapper
 
 
 class RVLProcessingInfo(LlavaNextProcessingInfo):
-
     def get_hf_config(self):
         return self.ctx.get_hf_config()
 
@@ -24,7 +24,6 @@ class RVLProcessingInfo(LlavaNextProcessingInfo):
 
 
 class RVLDummyInputsBuilder(LlavaDummyInputsBuilder[RVLProcessingInfo]):
-
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         num_images = mm_counts.get("image", 0)
         image_token = "<image>"
@@ -35,26 +34,28 @@ class RVLDummyInputsBuilder(LlavaDummyInputsBuilder[RVLProcessingInfo]):
         self,
         seq_len: int,
         mm_counts: Mapping[str, int],
+        mm_options: Mapping[str, BaseDummyOptions] | None = None,
     ) -> MultiModalDataDict:
         num_images = mm_counts.get("image", 0)
 
-        target_width, target_height = (
-            self.info.get_image_size_with_most_features())
+        target_width, target_height = self.info.get_image_size_with_most_features()
+
+        image_overrides = mm_options.get("image") if mm_options else None
 
         return {
-            "image":
-            self._get_dummy_images(width=target_width,
-                                   height=target_height,
-                                   num_images=num_images),
+            "image": self._get_dummy_images(
+                width=target_width,
+                height=target_height,
+                num_images=num_images,
+                overrides=image_overrides,
+            ),
         }
 
 
 class RVLMultiModalProjector(nn.Module):
-
     def __init__(self, config):
         super().__init__()
-        self.pre_norm = nn.LayerNorm(config.vision_config.hidden_size,
-                                     eps=1e-06)
+        self.pre_norm = nn.LayerNorm(config.vision_config.hidden_size, eps=1e-06)
         self.linear_1 = nn.Linear(
             config.vision_config.hidden_size,
             config.text_config.hidden_size,
@@ -82,7 +83,6 @@ class RVLMultiModalProjector(nn.Module):
     dummy_inputs=RVLDummyInputsBuilder,
 )
 class RForConditionalGeneration(LlavaOnevisionForConditionalGeneration):
-
     hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_prefix={
             # mapping for new names in checkpoint saved after transformers
@@ -92,7 +92,8 @@ class RForConditionalGeneration(LlavaOnevisionForConditionalGeneration):
             "model.multi_modal_projector.": "multi_modal_projector.",
             "model.image_newline": "image_newline",
             "lm_head.": "language_model.lm_head.",
-        })
+        }
+    )
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "") -> None:
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)

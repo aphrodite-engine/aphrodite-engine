@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from typing import Optional
 
 import pytest
 
@@ -12,7 +11,7 @@ def run_embedding_correctness_test(
     hf_model: "HfRunner",
     inputs: list[str],
     aphrodite_outputs: Sequence[list[float]],
-    dimensions: Optional[int] = None,
+    dimensions: int | None = None,
 ):
     hf_outputs = hf_model.encode(inputs)
     if dimensions:
@@ -27,16 +26,15 @@ def run_embedding_correctness_test(
     )
 
 
-def correctness_test_embed_models(hf_runner,
-                                  aphrodite_runner,
-                                  model_info: EmbedModelInfo,
-                                  example_prompts,
-                                  aphrodite_extra_kwargs=None,
-                                  hf_model_callback=None):
-    if not model_info.enable_test:
-        # A model family has many models with the same architecture,
-        # and we don't need to test each one.
-        pytest.skip("Skipping test.")
+def correctness_test_embed_models(
+    hf_runner,
+    aphrodite_runner,
+    model_info: EmbedModelInfo,
+    example_prompts,
+    aphrodite_extra_kwargs=None,
+    hf_model_callback=None,
+):
+    pytest.skip("Debug only, ci prefers to use mteb test.")
 
     # The example_prompts has ending "\n", for example:
     # "Write a short story about a robot that dreams for the first time.\n"
@@ -49,18 +47,19 @@ def correctness_test_embed_models(hf_runner,
     aphrodite_extra_kwargs = aphrodite_extra_kwargs or {}
     aphrodite_extra_kwargs["dtype"] = model_info.dtype
 
-    with aphrodite_runner(model_info.name,
-                     runner="pooling",
-                     max_model_len=None,
-                     **aphrodite_extra_kwargs) as aphrodite_model:
+    if model_info.hf_overrides is not None:
+        aphrodite_extra_kwargs["hf_overrides"] = model_info.hf_overrides
+
+    with aphrodite_runner(
+        model_info.name, runner="pooling", max_model_len=None, **aphrodite_extra_kwargs
+    ) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.embed(example_prompts)
 
     with hf_runner(
-            model_info.name,
-            dtype="float32",
-            is_sentence_transformer=True,
+        model_info.name,
+        dtype=model_info.hf_dtype,
+        is_sentence_transformer=True,
     ) as hf_model:
-
         if hf_model_callback is not None:
             hf_model_callback(hf_model)
 

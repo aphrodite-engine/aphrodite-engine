@@ -5,7 +5,7 @@ from aphrodite.endpoints.cli.benchmark.base import BenchmarkSubcommandBase
 
 
 class BenchmarkLatencySubcommand(BenchmarkSubcommandBase):
-    """ The `latency` subcommand for aphrodite bench. """
+    """The `latency` subcommand for `aphrodite bench`."""
 
     name = "latency"
     help = "Benchmark the latency of a single batch of requests."

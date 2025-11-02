@@ -16,20 +16,19 @@ from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 from aphrodite import initialize_ray_cluster
 from aphrodite.config import ParallelConfig
-from aphrodite.executor.ray_utils import _wait_until_pg_removed
-from aphrodite.utils import get_ip
+from aphrodite.utils.network_utils import get_ip
+from aphrodite.v1.executor.ray_utils import _wait_until_pg_removed
 
 APHRODITE_MULTI_NODE = os.getenv("APHRODITE_MULTI_NODE", "0") == "1"
 
 
-@pytest.mark.skipif(not APHRODITE_MULTI_NODE,
-                    reason="Need at least 2 nodes to run the test.")
+@pytest.mark.skipif(
+    not APHRODITE_MULTI_NODE, reason="Need at least 2 nodes to run the test."
+)
 def test_multi_node_assignment() -> None:
-
     # NOTE: important to keep this class definition here
     # to let ray use cloudpickle to serialize it.
     class Actor:
-
         def get_ip(self):
             return get_ip()
 
@@ -39,8 +38,7 @@ def test_multi_node_assignment() -> None:
 
         current_ip = get_ip()
         workers = []
-        for bundle_id, bundle in enumerate(
-                config.placement_group.bundle_specs):
+        for bundle_id, bundle in enumerate(config.placement_group.bundle_specs):
             if not bundle.get("GPU", 0):
                 continue
             scheduling_strategy = PlacementGroupSchedulingStrategy(

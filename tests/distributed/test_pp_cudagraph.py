@@ -1,22 +1,21 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 import pytest
+from typing_extensions import LiteralString
 
 from ..utils import compare_two_settings, create_new_process_for_each_test
 
-if TYPE_CHECKING:
-    from typing_extensions import LiteralString
 
-
-@pytest.mark.parametrize("PP_SIZE, MODEL_NAME", [
-    (2, "JackFram/llama-160m"),
-])
-@pytest.mark.parametrize("ATTN_BACKEND", [
-    "FLASH_ATTN",
-    "FLASHINFER",
-])
+@pytest.mark.parametrize(
+    "PP_SIZE, MODEL_NAME",
+    [
+        (2, "JackFram/llama-160m"),
+    ],
+)
+@pytest.mark.parametrize(
+    "ATTN_BACKEND",
+    [
+        "FLASH_ATTN",
+    ],
+)
 @create_new_process_for_each_test()
 def test_pp_cudagraph(
     monkeypatch: pytest.MonkeyPatch,

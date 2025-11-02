@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import argparse
 import typing
 
@@ -7,11 +5,13 @@ from aphrodite.collect_env import main as collect_env_main
 from aphrodite.endpoints.cli.types import CLISubcommand
 
 if typing.TYPE_CHECKING:
-    from aphrodite.utils import FlexibleArgumentParser
+    from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+else:
+    FlexibleArgumentParser = argparse.ArgumentParser
 
 
 class CollectEnvSubcommand(CLISubcommand):
-    """The `collect-env` subcommand for the vLLM CLI. """
+    """The `collect-env` subcommand for the Aphrodite CLI. """
     name = "collect-env"
 
     @staticmethod
@@ -20,8 +20,8 @@ class CollectEnvSubcommand(CLISubcommand):
         collect_env_main()
 
     def subparser_init(
-            self,
-            subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
+        self, subparsers: argparse._SubParsersAction
+    ) -> FlexibleArgumentParser:
         return subparsers.add_parser(
             "collect-env",
             help="Start collecting environment information.",

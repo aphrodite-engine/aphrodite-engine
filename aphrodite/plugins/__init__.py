@@ -1,54 +1,60 @@
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-import aphrodite.common.envs as envs
+import aphrodite.envs as envs
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PLUGINS_GROUP = 'aphrodite.general_plugins'
+# Default plugins group will be loaded in all processes(process0, engine core
+# process and worker processes)
+DEFAULT_PLUGINS_GROUP = "aphrodite.general_plugins"
+# IO processor plugins group will be loaded in process0 only
+IO_PROCESSOR_PLUGINS_GROUP = "aphrodite.io_processor_plugins"
+# Platform plugins group will be loaded in all processes when
+# `aphrodite.platforms.current_platform` is called and the value not initialized,
+PLATFORM_PLUGINS_GROUP = "aphrodite.platform_plugins"
 
 # make sure one process only loads plugins once
 plugins_loaded = False
 
 
 def load_plugins_by_group(group: str) -> dict[str, Callable[[], Any]]:
-    import sys
-    if sys.version_info < (3, 10):
-        from importlib_metadata import entry_points
-    else:
-        from importlib.metadata import entry_points
+    from importlib.metadata import entry_points
 
     allowed_plugins = envs.APHRODITE_PLUGINS
 
     discovered_plugins = entry_points(group=group)
     if len(discovered_plugins) == 0:
-        logger.debug("No plugins for group {} found.", group)
+        logger.debug("No plugins for group %s found.", group)
         return {}
 
     # Check if the only discovered plugin is the default one
-    is_default_group = (group == DEFAULT_PLUGINS_GROUP)
+    is_default_group = group == DEFAULT_PLUGINS_GROUP
     # Use INFO for non-default groups and DEBUG for the default group
     log_level = logger.debug if is_default_group else logger.info
 
-    log_level("Available plugins for group {}:", group)
+    log_level("Available plugins for group %s:", group)
     for plugin in discovered_plugins:
-        log_level("- {} -> {}", plugin.name, plugin.value)
+        log_level("- %s -> %s", plugin.name, plugin.value)
 
     if allowed_plugins is None:
-        log_level("All plugins in this group will be loaded. "
-                  "Set `APHRODITE_PLUGINS` to control which plugins to load.")
+        log_level(
+            "All plugins in this group will be loaded. "
+            "Set `APHRODITE_PLUGINS` to control which plugins to load."
+        )
 
     plugins = dict[str, Callable[[], Any]]()
     for plugin in discovered_plugins:
         if allowed_plugins is None or plugin.name in allowed_plugins:
             if allowed_plugins is not None:
-                log_level("Loading plugin {}", plugin.name)
+                log_level("Loading plugin %s", plugin.name)
 
             try:
                 func = plugin.load()
                 plugins[plugin.name] = func
             except Exception:
-                logger.exception("Failed to load plugin {}", plugin.name)
+                logger.exception("Failed to load plugin %s", plugin.name)
 
     return plugins
 

@@ -30,7 +30,6 @@ from aphrodite.modeling.models.llama import (LlamaDecoderLayer,
 
 
 class TeleFLMModel(LlamaModel):
-
     def __init__(
         self,
         *,
@@ -38,9 +37,7 @@ class TeleFLMModel(LlamaModel):
         prefix: str = "",
         layer_type: type[nn.Module] = LlamaDecoderLayer,
     ):
-        super().__init__(aphrodite_config=aphrodite_config,
-                         prefix=prefix,
-                         layer_type=layer_type)
+        super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, layer_type=layer_type)
         """
         This implementation is based on the µScaling paper presented at  
         the ICLR 2025 Workshop:  
@@ -62,7 +59,6 @@ class TeleFLMModel(LlamaModel):
 
 
 class TeleFLMForCausalLM(LlamaForCausalLM):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)
         # mup
@@ -71,6 +67,6 @@ class TeleFLMForCausalLM(LlamaForCausalLM):
             self.mup_scale_factor = self.config.mup_scale_factor
             self.output_mult = self.config.output_mult / self.mup_scale_factor
             logit_scale = self.output_mult
-            self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
-                                                    self.config.vocab_size,
-                                                    logit_scale)
+            self.logits_processor = LogitsProcessor(
+                self.unpadded_vocab_size, self.config.vocab_size, logit_scale
+            )

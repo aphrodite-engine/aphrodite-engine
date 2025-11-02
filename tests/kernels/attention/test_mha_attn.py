@@ -3,13 +3,15 @@ Test:
 
 * Tests for MultiHeadAttention layer
 """
+
 from unittest.mock import patch
 
 import pytest
 import torch
 
+from aphrodite.attention.backends.registry import _Backend
 from aphrodite.attention.layer import MultiHeadAttention
-from aphrodite.attention.selector import _Backend, _cached_get_attn_backend
+from aphrodite.attention.selector import _cached_get_attn_backend
 from aphrodite.platforms import current_platform
 from aphrodite.platforms.cpu import CpuPlatform
 from aphrodite.platforms.cuda import CudaPlatform
@@ -18,9 +20,12 @@ from aphrodite.platforms.rocm import RocmPlatform
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-    """Clear lru cache to ensure each test case runs without caching.
-    """
+    """Clear lru cache to ensure each test case runs without caching."""
     _cached_get_attn_backend.cache_clear()
+    # Clear xformers availability cache
+    import aphrodite.attention.layer as layer_module
+
+    layer_module.USE_XFORMERS_OPS = None
 
 
 @pytest.mark.parametrize("device", ["cpu", "hip", "cuda"])
@@ -31,21 +36,65 @@ def test_mha_attn_platform(device: str):
     torch.set_default_dtype(torch.float16)
 
     if device == "cpu":
-        with patch("aphrodite.attention.selector.current_platform", CpuPlatform()):
+        with (
+            patch("aphrodite.attention.layer.current_platform", CpuPlatform()),
+            patch("aphrodite.modeling.models.vision.current_platform", CpuPlatform()),
+        ):
             attn = MultiHeadAttention(16, 64, scale=1)
             assert attn.attn_backend == _Backend.TORCH_SDPA
     elif device == "hip":
-        with patch("aphrodite.attention.selector.current_platform", RocmPlatform()):
+        with (
+            patch("aphrodite.attention.layer.current_platform", RocmPlatform()),
+            patch("aphrodite.modeling.models.vision.current_platform", RocmPlatform()),
+        ):
             attn = MultiHeadAttention(16, 64, scale=1)
             assert attn.attn_backend == _Backend.TORCH_SDPA
     else:
-        with patch("aphrodite.attention.selector.current_platform", CudaPlatform()):
+        # Test CUDA with head_size=64 (divisible by 32)
+        # - should use Aphrodite's FlashAttention
+        with (
+            patch("aphrodite.attention.layer.current_platform", CudaPlatform()),
+            patch("aphrodite.modeling.models.vision.current_platform", CudaPlatform()),
+        ):
             attn = MultiHeadAttention(16, 64, scale=1)
-            assert attn.attn_backend == _Backend.XFORMERS
+            assert attn.attn_backend == _Backend.FLASH_ATTN
 
-        with patch("aphrodite.attention.selector.current_platform", CudaPlatform()):
+        # Test CUDA with head_size=72 (not divisible by 32)
+        # - with upstream FA not available
+        # - should use xformers
+        with (
+            patch("aphrodite.attention.layer.current_platform", CudaPlatform()),
+            patch("aphrodite.modeling.models.vision.current_platform", CudaPlatform()),
+            patch(
+                "aphrodite.attention.layer.check_upstream_fa_availability",
+                return_value=False,
+            ),
+        ):
             attn = MultiHeadAttention(16, 72, scale=1)
             assert attn.attn_backend == _Backend.XFORMERS
+
+        # Test CUDA with head_size=72 (not divisible by 32)
+        # - with upstream FA available
+        # - should use upstream FA
+        with (
+            patch("aphrodite.attention.layer.current_platform", CudaPlatform()),
+            patch("aphrodite.modeling.models.vision.current_platform", CudaPlatform()),
+            patch(
+                "aphrodite.attention.layer.check_upstream_fa_availability", return_value=True
+            ),
+            patch.dict(
+                "sys.modules",
+                {
+                    "flash_attn": type(
+                        "MockFlashAttn",
+                        (),
+                        {"flash_attn_varlen_func": lambda *args, **kwargs: None},
+                    )()
+                },
+            ),
+        ):
+            attn = MultiHeadAttention(16, 72, scale=1)
+            assert attn.attn_backend == _Backend.FLASH_ATTN
 
 
 def ref_attention(
@@ -72,9 +121,11 @@ NUM_HEADS = [1, 16]
 NUM_KV_HEADS = [1]
 HEAD_SIZES = [64, 80]
 # flshattF and tritonflashattF supported: {torch.float16, torch.bfloat16}
-DTYPES = [
-    torch.half, torch.bfloat16, torch.float
-] if not current_platform.is_rocm() else [torch.half, torch.bfloat16]
+DTYPES = (
+    [torch.half, torch.bfloat16, torch.float]
+    if not current_platform.is_rocm()
+    else [torch.half, torch.bfloat16]
+)
 CUDA_DEVICES = ["cuda"]
 
 
@@ -102,10 +153,9 @@ def test_mha_attn_forward(
     k = torch.randn(batch_size, seq_len, num_kv_heads * head_size)
     v = torch.randn(batch_size, seq_len, num_kv_heads * head_size)
     scale = 1.0 / head_size**0.5
-    attn = MultiHeadAttention(num_heads,
-                              head_size,
-                              scale=scale,
-                              num_kv_heads=num_kv_heads)
+    attn = MultiHeadAttention(
+        num_heads, head_size, scale=scale, num_kv_heads=num_kv_heads
+    )
     output = attn(q, k, v)
 
     assert num_heads % num_kv_heads == 0

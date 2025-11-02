@@ -1,23 +1,20 @@
 import hashlib
-from dataclasses import field
-from typing import TYPE_CHECKING, Any, Literal, Optional, Union
+from dataclasses import InitVar, field
+from typing import Any, Literal
 
-from loguru import logger
 from pydantic import SkipValidation, model_validator
 from pydantic.dataclasses import dataclass
 from typing_extensions import Self
 
 from aphrodite.config.utils import config
+from aphrodite.logger import init_logger
 from aphrodite.utils import (DEFAULT_MAX_NUM_BATCHED_TOKENS,
                              MULTIMODAL_MODEL_MAX_NUM_BATCHED_TOKENS,
                              POOLING_MODEL_MAX_NUM_BATCHED_TOKENS)
 
-if TYPE_CHECKING:
-    from aphrodite.config import RunnerType
-else:
-    RunnerType = Any
+logger = init_logger(__name__)
 
-PreemptionMode = Literal["swap", "recompute"]
+RunnerType = Literal["generate", "pooling", "draft"]
 SchedulerPolicy = Literal["fcfs", "priority"]
 
 
@@ -69,24 +66,19 @@ class SchedulerConfig:
     NOTE: This will be replaced by speculative config in the future; it is
     present to enable correctness tests until then."""
 
-    cuda_graph_sizes: list[int] = field(default_factory=list)
-    """Cuda graph capture sizes
-    1. if none provided, then default set to [min(max_num_seqs * 2, 512)]
-    2. if one value is provided, then the capture list would follow the
-    pattern: [1, 2, 4] + [i for i in range(8, cuda_graph_sizes + 1, 8)]
-    3. more than one value (e.g. 1 2 128) is provided, then the capture list
-    will follow the provided list."""
-
-    delay_factor: float = 0.0
-    """Apply a delay (of delay factor multiplied by previous
-    prompt latency) before scheduling next prompt."""
-
     enable_chunked_prefill: SkipValidation[bool] = None  # type: ignore
     """If True, prefill requests can be chunked based
     on the remaining max_num_batched_tokens."""
 
     is_multimodal_model: bool = False
     """True if the model is multimodal."""
+
+    is_encoder_decoder: InitVar[bool] = False
+    """True if the model is an encoder-decoder model.
+
+    Note: This is stored in the ModelConfig, and is used only here to
+    disable chunked prefill and prefix caching for encoder-decoder models.
+    """
 
     # TODO (ywang96): Make this configurable.
     max_num_encoder_input_tokens: int = field(init=False)
@@ -101,20 +93,6 @@ class SchedulerConfig:
 
     NOTE: This is not currently configurable. It will be overridden by
     max_num_batched_tokens in case max multimodal embedding size is larger."""
-
-    preemption_mode: Optional[PreemptionMode] = None
-    """Whether to perform preemption by swapping or
-    recomputation. If not specified, we determine the mode as follows:
-    We use recomputation by default since it incurs lower overhead than
-    swapping. However, when the sequence group has multiple sequences
-    (e.g., beam search), recomputation is not currently supported. In
-    such a case, we use swapping instead."""
-
-    send_delta_data: bool = False
-    """Private API. If used, scheduler sends delta data to
-    workers instead of an entire data. It should be enabled only
-    when SPMD worker architecture is enabled. I.e.,
-    APHRODITE_USE_RAY_SPMD_WORKER=1"""
 
     policy: SchedulerPolicy = "fcfs"
     """The scheduling policy to use:\n
@@ -134,16 +112,12 @@ class SchedulerConfig:
     some image tokens can be scheduled (like TTTTIIIII, leaving IIIII),
     it will be scheduled as TTTT in one step and IIIIIIIIII in the next."""
 
-    # scheduler class or path. "aphrodite.processing.scheduler.Scheduler" (default)
-    # or "mod.custom_class".
-    scheduler_cls: Union[str, type[object]] = "aphrodite.processing.scheduler.Scheduler"
-    """The scheduler class to use. "aphrodite.processing.scheduler.Scheduler" is the
-    default scheduler. Can be a class directly or the path to a class of form
-    "mod.custom_class"."""
-
-    single_user_mode: bool = False
-    """If True, the scheduler will process one sequence at a time,
-    and only enough KV cache memory for one sequence will be allocated."""
+    # scheduler class or path. "aphrodite.v1.core.sched.scheduler.Scheduler"
+    # (default) or "mod.custom_class".
+    scheduler_cls: str | type[object] = "aphrodite.v1.core.sched.scheduler.Scheduler"
+    """The scheduler class to use. "aphrodite.v1.core.sched.scheduler.Scheduler" is
+    the default scheduler. Can be a class directly or the path to a class of
+    form "mod.custom_class"."""
 
     disable_hybrid_kv_cache_manager: bool = False
     """If set to True, KV cache manager will allocate the same size of KV cache
@@ -158,9 +132,11 @@ class SchedulerConfig:
     structured outputs, speculative decoding, and pipeline parallelism.
     """
 
+    single_user_mode: bool = False
+    """If set to True, only allocate enough memory for one sequence."""
+
     num_iterp: int = 8
-    """Number of iterations to process waiting prefill tokens
-    (Token Throttling)
+    """Number of iterations to process waiting prefill tokens (Token Throttling)
     """
 
     kv_thresh: float = 0.1
@@ -186,35 +162,36 @@ class SchedulerConfig:
         # no factors to consider.
         # this config will not affect the computation graph.
         factors: list[Any] = []
-        hash_str = hashlib.md5(str(factors).encode(),
-                               usedforsecurity=False).hexdigest()
+        hash_str = hashlib.md5(str(factors).encode(), usedforsecurity=False).hexdigest()
         return hash_str
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, is_encoder_decoder: bool) -> None:
         if self.max_model_len is None:
             self.max_model_len = 8192
 
         if self.max_num_seqs is None:
             self.max_num_seqs = 128
 
-        if self.single_user_mode:
+        if self.single_user_mode and self.max_num_seqs != 1:
             # In single user mode, we only need to support one sequence at a
-            # time.
-            original_max_num_seqs = self.max_num_seqs
-            original_cuda_graph_sizes = self.cuda_graph_sizes.copy()
+            # time. max_num_seqs will be set to 1 here, and cuda_graph_sizes
+            # will be set to [2] in AphroditeConfig.__post_init__.
+            logger.info(
+                "Single user mode enabled. Setting max_num_seqs from %d to 1.",
+                self.max_num_seqs
+            )
+            self.max_num_seqs = 1
 
-            if self.max_num_seqs != 1:
-                self.max_num_seqs = 1
-
-            # In single user mode, we only need CUDA graphs for batch size 1
-            if self.cuda_graph_sizes != [2]:
-                self.cuda_graph_sizes = [2]
-
-            if original_max_num_seqs != 1 or original_cuda_graph_sizes != [2]:
-                logger.info(
-                    "Single user mode enabled. Setting max_num_seqs from {} to"
-                    " 1, and cuda_graph_sizes from {} to [2].",
-                    original_max_num_seqs, original_cuda_graph_sizes)
+        if is_encoder_decoder:
+            # Chunked prefill should be disabled for encoder-decoder models.
+            self.disable_chunked_mm_input = True
+            self.chunked_prefill_enabled = False
+            self.enable_chunked_prefill = False
+            self.long_prefill_token_threshold = 0
+            logger.info(
+                "Encoder-decoder models do not support chunked prefill nor"
+                " prefix caching; disabling both."
+            )
 
         if self.max_num_batched_tokens is None:
             if self.enable_chunked_prefill:
@@ -224,7 +201,8 @@ class SchedulerConfig:
                 # DEFAULT_MAX_NUM_BATCHED_TOKENS as the default value
                 # for higher throughput.
                 self.max_num_batched_tokens = max(
-                    self.max_model_len, DEFAULT_MAX_NUM_BATCHED_TOKENS)
+                    self.max_model_len, DEFAULT_MAX_NUM_BATCHED_TOKENS
+                )
 
             if self.runner_type == "pooling":
                 # Choose specific value for higher throughput
@@ -243,93 +221,98 @@ class SchedulerConfig:
             # Ensure max_num_batched_tokens does not exceed model limit.
             # Some models (e.g., Whisper) have embeddings tied to max length.
             self.max_num_batched_tokens = min(
-                self.max_num_seqs * self.max_model_len,
-                self.max_num_batched_tokens)
+                self.max_num_seqs * self.max_model_len, self.max_num_batched_tokens
+            )
 
         self.max_num_encoder_input_tokens = self.max_num_batched_tokens
         self.encoder_cache_size = self.max_num_batched_tokens
 
         if self.enable_chunked_prefill:
             logger.info(
-                "Chunked prefill is enabled with max_num_batched_tokens={}.",
-                self.max_num_batched_tokens)
+                "Chunked prefill is enabled with max_num_batched_tokens=%d.",
+                self.max_num_batched_tokens,
+            )
 
         self.chunked_prefill_enabled = self.enable_chunked_prefill
         if self.max_num_partial_prefills > 1:
             if self.long_prefill_token_threshold == 0:
-                self.long_prefill_token_threshold = int(self.max_model_len *
-                                                        0.04)
+                self.long_prefill_token_threshold = int(self.max_model_len * 0.04)
 
             logger.info(
                 "Concurrent partial prefills enabled with "
-                "max_num_partial_prefills={}, max_long_partial_prefills={}, "
-                "long_prefill_token_threshold={}",
-                self.max_num_partial_prefills, self.max_long_partial_prefills,
-                self.long_prefill_token_threshold)
-
-        # NOTE: Default set cuda_graph_sizes to [min(max_num_seqs * 2, 512)].
-        # This avoids OOM in tight memory scenarios with small max_num_seqs,
-        # and prevents capture of many large graphs (>512) that would greatly
-        # increase startup time with limited performance benefit.
-        if not self.cuda_graph_sizes:
-            self.cuda_graph_sizes = [min(self.max_num_seqs * 2, 512)]
+                "max_num_partial_prefills=%d, max_long_partial_prefills=%d, "
+                "long_prefill_token_threshold=%d",
+                self.max_num_partial_prefills,
+                self.max_long_partial_prefills,
+                self.long_prefill_token_threshold,
+            )
 
         if self.async_scheduling:
-            self.scheduler_cls = (
-                "aphrodite.v1.core.sched.async_scheduler.AsyncScheduler")
+            self.scheduler_cls = "aphrodite.v1.core.sched.async_scheduler.AsyncScheduler"
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def _verify_args(self) -> Self:
-        if (self.max_num_batched_tokens < self.max_model_len
-                and not self.chunked_prefill_enabled):
+        if (
+            self.max_num_batched_tokens < self.max_model_len
+            and not self.chunked_prefill_enabled
+        ):
             raise ValueError(
                 f"max_num_batched_tokens ({self.max_num_batched_tokens}) is "
                 f"smaller than max_model_len ({self.max_model_len}). "
                 "This effectively limits the maximum sequence length to "
                 "max_num_batched_tokens and makes Aphrodite reject longer "
                 "sequences. Please increase max_num_batched_tokens or "
-                "decrease max_model_len.")
+                "decrease max_model_len."
+            )
 
         if self.max_num_batched_tokens < self.max_num_seqs:
             raise ValueError(
                 f"max_num_batched_tokens ({self.max_num_batched_tokens}) must "
                 "be greater than or equal to max_num_seqs "
-                f"({self.max_num_seqs}).")
+                f"({self.max_num_seqs})."
+            )
 
         if self.max_num_batched_tokens > self.max_num_seqs * self.max_model_len:
             logger.warning(
-                "max_num_batched_tokens ({}) exceeds max_num_seqs "
-                "* max_model_len ({}). This may lead to unexpected behavior.",
+                "max_num_batched_tokens (%d) exceeds max_num_seqs "
+                "* max_model_len (%d). This may lead to unexpected behavior.",
                 self.max_num_batched_tokens,
-                self.max_num_seqs * self.max_model_len)
+                self.max_num_seqs * self.max_model_len,
+            )
 
         if self.num_lookahead_slots < 0:
             raise ValueError(
                 "num_lookahead_slots "
                 f"({self.num_lookahead_slots}) must be greater than or "
-                "equal to 0.")
+                "equal to 0."
+            )
 
         if self.max_num_partial_prefills < 1:
             raise ValueError(
                 f"max_num_partial_prefills ({self.max_num_partial_prefills}) "
-                "must be greater than or equal to 1.")
+                "must be greater than or equal to 1."
+            )
         elif self.max_num_partial_prefills > 1:
             if not self.chunked_prefill_enabled:
-                raise ValueError("Chunked prefill must be enabled to set "
-                                 "max_num_partial_prefills > 1.")
+                raise ValueError(
+                    "Chunked prefill must be enabled to set "
+                    "max_num_partial_prefills > 1."
+                )
 
             if self.long_prefill_token_threshold > self.max_model_len:
                 raise ValueError(
                     "long_prefill_token_threshold "
                     f"({self.long_prefill_token_threshold}) cannot be greater "
-                    f"than the max_model_len ({self.max_model_len}).")
+                    f"than the max_model_len ({self.max_model_len})."
+                )
 
-        if (self.max_long_partial_prefills
-                < 1) or (self.max_long_partial_prefills
-                         > self.max_num_partial_prefills):
+        if (self.max_long_partial_prefills < 1) or (
+            self.max_long_partial_prefills > self.max_num_partial_prefills
+        ):
             raise ValueError(
                 f"max_long_partial_prefills ({self.max_long_partial_prefills}) "
                 "must be greater than or equal to 1 and less than or equal to "
-                f"max_num_partial_prefills ({self.max_num_partial_prefills}).")
+                f"max_num_partial_prefills ({self.max_num_partial_prefills})."
+            )
 
         return self

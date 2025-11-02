@@ -3,8 +3,9 @@ import json
 import pytest
 import pytest_asyncio
 from mistral_common.audio import Audio
-from mistral_common.protocol.instruct.messages import (AudioChunk, RawAudio,
-                                                       TextChunk, UserMessage)
+from mistral_common.protocol.instruct.chunk import (AudioChunk, RawAudio,
+                                                    TextChunk)
+from mistral_common.protocol.instruct.messages import UserMessage
 
 from aphrodite.transformers_utils.tokenizer import MistralTokenizer
 
@@ -14,8 +15,12 @@ from .test_ultravox import MULTI_AUDIO_PROMPT, run_multi_audio_test
 
 MODEL_NAME = "mistralai/Voxtral-Mini-3B-2507"
 MISTRAL_FORMAT_ARGS = [
-    "--tokenizer_mode", "mistral", "--config_format", "mistral",
-    "--load_format", "mistral"
+    "--tokenizer_mode",
+    "mistral",
+    "--config_format",
+    "mistral",
+    "--load_format",
+    "mistral",
 ]
 
 
@@ -27,10 +32,9 @@ def server(request, audio_assets: AudioTestAssets):
         json.dumps({"audio": len(audio_assets)}),
     ] + MISTRAL_FORMAT_ARGS
 
-    with RemoteOpenAIServer(MODEL_NAME,
-                            args,
-                            env_dict={"APHRODITE_AUDIO_FETCH_TIMEOUT":
-                                      "30"}) as remote_server:
+    with RemoteOpenAIServer(
+        MODEL_NAME, args, env_dict={"APHRODITE_AUDIO_FETCH_TIMEOUT": "30"}
+    ) as remote_server:
         yield remote_server
 
 
@@ -61,15 +65,17 @@ def _get_prompt(audio_assets, question):
 @pytest.mark.parametrize("dtype", ["half"])
 @pytest.mark.parametrize("max_tokens", [128])
 @pytest.mark.parametrize("num_logprobs", [5])
-def test_models_with_multiple_audios(aphrodite_runner,
-                                     audio_assets: AudioTestAssets, dtype: str,
-                                     max_tokens: int,
-                                     num_logprobs: int) -> None:
+def test_models_with_multiple_audios(
+    aphrodite_runner,
+    audio_assets: AudioTestAssets,
+    dtype: str,
+    max_tokens: int,
+    num_logprobs: int,
+) -> None:
     aphrodite_prompt = _get_prompt(audio_assets, MULTI_AUDIO_PROMPT)
     run_multi_audio_test(
         aphrodite_runner,
-        [(aphrodite_prompt, [audio.audio_and_sample_rate
-                        for audio in audio_assets])],
+        [(aphrodite_prompt, [audio.audio_and_sample_rate for audio in audio_assets])],
         MODEL_NAME,
         dtype=dtype,
         max_tokens=max_tokens,
@@ -89,23 +95,17 @@ async def test_online_serving(client, audio_assets: AudioTestAssets):
         return audio_dict
 
     audio_chunks = [asset_to_chunk(asset) for asset in audio_assets]
-    messages = [{
-        "role":
-        "user",
-        "content": [
-            *audio_chunks,
-            {
-                "type":
-                "text",
-                "text":
-                f"What's happening in these {len(audio_assets)} audio clips?"
-            },
-        ],
-    }]
+    text = f"What's happening in these {len(audio_assets)} audio clips?"
+    messages = [
+        {
+            "role": "user",
+            "content": [*audio_chunks, {"type": "text", "text": text}],
+        }
+    ]
 
-    chat_completion = await client.chat.completions.create(model=MODEL_NAME,
-                                                           messages=messages,
-                                                           max_tokens=10)
+    chat_completion = await client.chat.completions.create(
+        model=MODEL_NAME, messages=messages, max_tokens=10
+    )
 
     assert len(chat_completion.choices) == 1
     choice = chat_completion.choices[0]

@@ -5,7 +5,6 @@ from aphrodite.modeling.models.llama import LlamaForCausalLM
 
 
 class Phi3ForCausalLM(LlamaForCausalLM):
-
     packed_modules_mapping = {
         "qkv_proj": [
             "qkv_proj",

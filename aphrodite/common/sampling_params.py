@@ -1,23 +1,23 @@
 """Sampling parameters for text generation."""
 import copy
-from dataclasses import dataclass
+import warnings
+from dataclasses import field
 from enum import Enum, IntEnum
 from functools import cached_property
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any
 
 import msgspec
-from loguru import logger
-from pydantic import BaseModel
+from pydantic.dataclasses import dataclass
 from typing_extensions import Annotated
 
-import aphrodite.common.envs as envs
 from aphrodite.config import SchedulerConfig
+from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+
+logger = init_logger(__name__)
 
 _SAMPLING_EPS = 1e-5
 _MAX_TEMP = 1e-2
-
-APHRODITE_NO_DEPRECATION_WARNING = envs.APHRODITE_NO_DEPRECATION_WARNING
 
 
 class SamplingType(IntEnum):
@@ -29,81 +29,86 @@ class SamplingType(IntEnum):
 
 # maybe make msgspec?
 @dataclass
-class GuidedDecodingParams:
-    """One of these fields will be used to build a logit processor."""
-    json: Optional[Union[str, dict]] = None
-    regex: Optional[str] = None
-    choice: Optional[list[str]] = None
-    grammar: Optional[str] = None
-    json_object: Optional[bool] = None
-    """These are other options that can be set"""
-    backend: Optional[str] = None
-    backend_was_auto: bool = False
+class StructuredOutputsParams:
+    # One of these fields will be used to build a logit processor.
+    json: str | dict | None = None
+    regex: str | None = None
+    choice: list[str] | None = None
+    grammar: str | None = None
+    json_object: bool | None = None
+    # These are other options that can be set.
     disable_fallback: bool = False
     disable_any_whitespace: bool = False
     disable_additional_properties: bool = False
-    whitespace_pattern: Optional[str] = None
-    structural_tag: Optional[str] = None
+    whitespace_pattern: str | None = None
+    structural_tag: str | None = None
 
-    @staticmethod
-    def from_optional(
-        json: Optional[Union[dict, BaseModel, str]] = None,
-        regex: Optional[str] = None,
-        choice: Optional[list[str]] = None,
-        grammar: Optional[str] = None,
-        json_object: Optional[bool] = None,
-        backend: Optional[str] = None,
-        whitespace_pattern: Optional[str] = None,
-        structural_tag: Optional[str] = None,
-    ) -> Optional["GuidedDecodingParams"]:
-        # Helper function to check if a value is effectively None
-        def is_effectively_none(value):
-            if value is None:
-                return True
-            if isinstance(value, str) and value.strip() == "":
-                return True
-            return bool(isinstance(value, dict) and len(value) == 0)
-
-        if all(is_effectively_none(arg) for arg in (json, regex, choice,
-                                                   grammar, json_object,
-                                                   structural_tag)):
-            return None
-        # Extract json schemas from pydantic models
-        if isinstance(json, (BaseModel, type(BaseModel))):
-            json = json.model_json_schema()
-        return GuidedDecodingParams(
-            json=json,
-            regex=regex,
-            choice=choice,
-            grammar=grammar,
-            json_object=json_object,
-            backend=backend,
-            whitespace_pattern=whitespace_pattern,
-            structural_tag=structural_tag,
-        )
+    _backend: str | None = field(default=None, init=False)
+    """CAUTION: Should only be set by Processor._validate_structured_output"""
+    _backend_was_auto: bool = field(default=False, init=False)
+    """CAUTION: Should only be set by Processor._validate_structured_output"""
 
     def __post_init__(self):
         """Validate that some fields are mutually exclusive."""
-        # Helper function to check if a value is effectively None
-        def is_effectively_none(value):
-            if value is None:
-                return True
-            if isinstance(value, str) and value.strip() == "":
-                return True
-            return bool(isinstance(value, dict) and len(value) == 0)
-
-        guide_count = sum([
-            not is_effectively_none(self.json),
-            not is_effectively_none(self.regex),
-            not is_effectively_none(self.choice),
-            not is_effectively_none(self.grammar),
-            not is_effectively_none(self.json_object),
-            not is_effectively_none(self.structural_tag)
-        ])
-        if guide_count > 1:
+        count = sum(
+            [
+                bool(self.json),
+                bool(self.regex),
+                bool(self.choice),
+                bool(self.grammar),
+                self.json_object is not None,
+                bool(self.structural_tag),
+            ]
+        )
+        if count > 1:
             raise ValueError(
-                "You can only use one kind of guided decoding but multiple are "
-                f"specified: {self.__dict__}")
+                "You can only use one kind of structured outputs constraint "
+                f"but multiple are specified: {self.__dict__}"
+            )
+
+    def all_constraints_none(self) -> bool:
+        """
+        Returns True if all structured-output constraint fields are None.
+        """
+        return all(
+            getattr(self, field) is None
+            for field in (
+                "json",
+                "regex",
+                "choice",
+                "grammar",
+                "json_object",
+                "structural_tag",
+            )
+        )
+
+    def all_non_structural_tag_constraints_none(self) -> bool:
+        """
+        Returns True if all structured-output constraint fields are None.
+        """
+        return all(
+            getattr(self, field) is None
+            for field in (
+                "json",
+                "regex",
+                "choice",
+                "grammar",
+                "json_object",
+            )
+        )
+
+
+@dataclass
+class GuidedDecodingParams(StructuredOutputsParams):
+    def __post_init__(self):
+        warnings.warn(
+            "GuidedDecodingParams is deprecated. This will be removed in "
+            "v0.12.0 or v1.0.0, which ever is soonest. Please use "
+            "StructuredOutputsParams instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return super().__post_init__()
 
 
 class RequestOutputKind(Enum):
@@ -134,7 +139,7 @@ class SamplerID(IntEnum):
     XTC = 13
 
     @classmethod
-    def from_str(cls, value: Union[str, int]) -> "SamplerID":
+    def from_str(cls, value: str | int) -> "SamplerID":
         """Convert string or int to SamplerID enum.
 
         Args:
@@ -160,8 +165,10 @@ class SamplerID(IntEnum):
 
 class SamplingParams(
     msgspec.Struct,
-    omit_defaults=True,
-    dict=True):
+    omit_defaults=True,  # type: ignore[call-arg]
+    # required for @cached_property.
+    dict=True,
+):  # type: ignore[call-arg]
     """Sampling parameters for text generation.
 
     Overall, we follow the sampling parameters from the OpenAI text completion
@@ -171,15 +178,20 @@ class SamplingParams(
     """
 
     n: int = 1
-    """Number of output sequences to return for the given prompt."""
-    best_of: Optional[int] = None
+    """Number of outputs to return for the given prompt request.
+    NOTE:
+        `AsyncLLM` streams outputs by default. When `n > 1`, all `n` outputs
+        are generated and streamed cumulatively per request. To see all `n`
+        outputs upon completion, use `output_kind=RequestOutputKind.FINAL_ONLY`
+        in `SamplingParams`."""
+    best_of: int | None = None
     """
     Number of output sequences that are generated from the prompt.
     From these `best_of` sequences, the top `n` sequences are returned.
     `best_of` must be greater than or equal to `n`. By default,
     `best_of` is set to `n`.
     """
-    _real_n: Optional[int] = None
+    _real_n: int | None = None
     presence_penalty: float = 0.0
     """
     Float that penalizes new tokens based on whether they
@@ -200,7 +212,7 @@ class SamplingParams(
     frequency in the generated text so far.
     freq_pen is applied additively while
     rep_pen is applied multiplicatively.
-    Must be in [1, inf). Set to 1 to disable the effect.
+    Must be in [1, inf). set to 1 to disable the effect.
     """
     no_repeat_ngram_size: int = 0
     """
@@ -234,11 +246,11 @@ class SamplingParams(
     top_p: float = 1.0
     """
     Float that controls the cumulative probability of the top tokens
-    to consider. Must be in (0, 1]. Set to 1 to consider all tokens.
+    to consider. Must be in (0, 1]. set to 1 to consider all tokens.
     """
     top_k: int = 0
     """
-    Integer that controls the number of top tokens to consider. Set
+    Integer that controls the number of top tokens to consider. set
     to 0 (or -1) to consider all tokens.
     """
     top_a: float = 0.0
@@ -255,32 +267,32 @@ class SamplingParams(
     """
     Float that controls the cumulative approximate curvature of the
     distribution to retain for Tail Free Sampling.
-    Must be in (0, 1]. Set to 1 to disable
+    Must be in (0, 1]. set to 1 to disable
     """
     eta_cutoff: float = 0.0
     """
     Float that controls the cutoff threshold for Eta sampling
     (a form of entropy adaptive truncation sampling)
     threshold is computed as min(eta, sqrt(eta)*entropy(probs)).
-    Specified in units of 1e-4. Set to 0 to disable
+    Specified in units of 1e-4. set to 0 to disable
     """
     epsilon_cutoff: float = 0.0
     """
     Float that controls the cutoff threshold for
     Epsilon sampling (simple probability threshold truncation).
-    Specified in units of 1e-4. Set to 0 to disable.
+    Specified in units of 1e-4. set to 0 to disable.
     """
     typical_p: float = 1.0
     """
     Float that controls the cumulative probability of tokens
     closest in surprise to the expected surprise to consider.
-    Must be in (0, 1]. Set to 1 to disable.
+    Must be in (0, 1]. set to 1 to disable.
     """
     smoothing_factor: float = 0.0
     """Smoothing factor for Quadratic Sampling."""
     smoothing_curve: float = 1.0
     """Smoothing curve for Quadratic (Cubic) Sampling."""
-    seed: Optional[int] = None
+    seed: int | None = None
     """Random seed to use for the generation."""
     use_beam_search: bool = False
     """Whether to use beam search instead of sampling."""
@@ -288,7 +300,7 @@ class SamplingParams(
     """Float that penalizes sequences based on their length.
     Used in beam search.
     """
-    early_stopping: Union[bool, str] = False
+    early_stopping: bool | str = False
     """
     Controls the stopping condition for beam search. It
     accepts the following values: `True`, where the generation stops as
@@ -298,14 +310,14 @@ class SamplingParams(
     procedure only stops when there cannot be better candidates
     (canonical beam search algorithm).
     """
-    stop: Union[None, str, List[str]] = None
+    stop: None | str | list[str] = None
     """
-    List of strings that stop the generation when they are generated.
+    list of strings that stop the generation when they are generated.
     The returned output will not contain the stop strings.
     """
-    stop_token_ids: Optional[List[int]] = None
+    stop_token_ids: list[int] | None = None
     """
-    List of tokens that stop the generation when they are
+    list of tokens that stop the generation when they are
     generated. The returned output will contain the stop tokens unless
     the stop tokens are special tokens.
     """
@@ -319,7 +331,7 @@ class SamplingParams(
     Whether to ignore the EOS token and continue generating
     tokens after the EOS token is generated.
     """
-    max_tokens: Optional[int] = 16
+    max_tokens: int | None = 16
     """
     Maximum number of tokens to generate per output sequence.
     """
@@ -328,7 +340,7 @@ class SamplingParams(
     Minimum number of tokens to generate per output sequence
     before EOS or stop tokens are generated.
     """
-    logprobs: Optional[int] = None
+    logprobs: int | None = None
     """
     Number of log probabilities to return per output token.
     When set to None, no probability is returned. If set to a non-None
@@ -339,7 +351,7 @@ class SamplingParams(
     may be up to `logprobs+1` elements in the response.
     When set to -1, return all `vocab_size` log probabilities.
     """
-    prompt_logprobs: Optional[int] = None
+    prompt_logprobs: int | None = None
     """
     Number of log probabilities to return per prompt token.
     """
@@ -347,13 +359,13 @@ class SamplingParams(
     """
     Whether to detokenize the output. Defaults to True.
     """
-    custom_token_bans: Optional[List[int]] = None
+    custom_token_bans: list[int] | None = None
     """
-    List of token IDs to ban from generating
+    list of token IDs to ban from generating
     """
-    token_ban_ranges: Optional[List[Tuple[List[int], int, int]]] = None
+    token_ban_ranges: list[tuple[list[int], int, int]] | None = None
     """
-    List of tuples (tokens, start, length) to ban from
+    list of tuples (tokens, start, length) to ban from
     generating. start=0 means start from first output token.
     """
     skip_special_tokens: bool = True
@@ -366,17 +378,16 @@ class SamplingParams(
     Whether to add spaces between special
     tokens in the output. Defaults to True.
     """
-    # Optional[List[LogitsProcessor]] type.
+    # Optional[list[LogitsProcessor]] type.
     # We use Any here because the type above
     # is not supported by msgspec.
-    logits_processors: Optional[Any] = None
+    logits_processors: Any | None = None
     """
-    List of functions that modify logits based on
+    list of functions that modify logits based on
     previously generated tokens, and optionally prompt tokens as
     a first argument.
     """
-    truncate_prompt_tokens: Optional[Annotated[int,
-                                               msgspec.Meta(ge=-1)]] = None
+    truncate_prompt_tokens: Annotated[int, msgspec.Meta(ge=-1)] | None = None
     """
     If set to an integer k, will use only the last
     k tokens from the prompt (i.e. left-truncation). Defaults to None
@@ -435,9 +446,9 @@ class SamplingParams(
     this will be penalized exponentially. Must be at least 1.
     Defaults to 2.
     """
-    dry_sequence_breaker_ids: List[int] = []
+    dry_sequence_breaker_ids: list[int] = []
     """
-    List of token IDs that stop
+    list of token IDs that stop
     the matching of repeated content. These tokens will break up the
     input into sections where repetition is evaluated separately.
     Common examples are newlines, quotes, and other structural tokens.
@@ -466,7 +477,7 @@ class SamplingParams(
     Bias the token selection towards higher or lower probability
     tokens. Defaults to 0 (disabled).
     """
-    sampler_priority: Optional[List[int]] = []
+    sampler_priority: list[int] | None = None
     """
     A list of integers to control the order in which
     samplers are applied.
@@ -482,42 +493,44 @@ class SamplingParams(
     # The below fields are not supposed to be used as an input.
     # They are set in post_init.
     output_text_buffer_length: int = 0
-    _all_stop_token_ids: Set[int] = msgspec.field(default_factory=set)
-    _bad_words_token_ids: Optional[list[list[int]]] = None
+    _all_stop_token_ids: set[int] = msgspec.field(default_factory=set)
+    _bad_words_token_ids: list[list[int]] | None = None
 
     # Fields used to construct logits processors
-    guided_decoding: Optional[GuidedDecodingParams] = None
+    structured_outputs: StructuredOutputsParams | None = None
+    """Parameters for configuring structured outputs."""
+    guided_decoding: GuidedDecodingParams | None = None
     """
     If provided, the engine will construct a guided
     decoding logits processor from these parameters. Defaults to None.
     """
-    logit_bias: Optional[Dict[int, float]] = None
+    logit_bias: dict[int, float] | None = None
     """
     If provided, the engine will construct a logits processor
     that applies these logit biases. Defaults to None.
     """
-    allowed_token_ids: Optional[List[int]] = None
+    allowed_token_ids: list[int] | None = None
     """
     If provided, the engine will construct a logits
     processor which only retains scores for the given token ids.
     Defaults to None.
     """
-    extra_args: Optional[dict[str, Any]] = None
+    extra_args: dict[str, Any] | None = None
     """
     Extra arguments to pass to the engine. Defaults to None.
     """
-    bad_words: Optional[List[str]] = None
+    bad_words: list[str] | None = None
     """
-    List of words that are not allowed to be generated.
+    list of words that are not allowed to be generated.
     More precisely, only the last token of a corresponding
     token sequence is not allowed when the next generated token
     can complete the sequence.
     """
-    banned_phrases_token_ids: Optional[List[List[int]]] = None
+    banned_phrases_token_ids: list[list[int]] | None = None
     """
-    List of token sequences that are not allowed to be generated.
+    list of token sequences that are not allowed to be generated.
     """
-    enable_deepconf: Optional[bool] = False
+    enable_deepconf: bool | None = False
     """
     Enable DeepConf (Deep Think with Confidence) for confidence-based early
     stopping. When enabled, the model will automatically stop generation when
@@ -528,7 +541,7 @@ class SamplingParams(
     non-sampled candidate tokens, where higher confidence indicates the model
     was more certain about its token choice.
     """
-    deepconf_window_size: Optional[int] = 2048
+    deepconf_window_size: int | None = 2048
     """
     Size of the sliding window for confidence calculation in DeepConf.
     This parameter controls how many recent tokens are considered when
@@ -541,7 +554,7 @@ class SamplingParams(
     efficiently compute the moving average without storing all historical
     values. Default: 2048 tokens.
     """
-    deepconf_threshold: Optional[float] = 17
+    deepconf_threshold: float | None = 17
     """
     Confidence threshold for early stopping in DeepConf.
     When the moving average confidence over the sliding window drops below this
@@ -559,72 +572,73 @@ class SamplingParams(
 
     @staticmethod
     def from_optional(
-        n: Optional[int] = None,
-        best_of: Optional[int] = None,
-        presence_penalty: Optional[float] = None,
-        frequency_penalty: Optional[float] = None,
-        repetition_penalty: Optional[float] = None,
-        no_repeat_ngram_size: Optional[int] = None,
-        temperature: Optional[float] = None,
-        dynatemp_min: Optional[float] = None,
-        dynatemp_max: Optional[float] = None,
-        dynatemp_exponent: Optional[float] = None,
-        temperature_last: Optional[bool] = None,
-        top_p: Optional[float] = None,
-        top_k: Optional[int] = None,
-        top_a: Optional[float] = None,
-        min_p: Optional[float] = None,
-        tfs: Optional[float] = None,
-        eta_cutoff: Optional[float] = None,
-        epsilon_cutoff: Optional[float] = None,
-        typical_p: Optional[float] = None,
-        smoothing_factor: Optional[float] = None,
-        smoothing_curve: Optional[float] = None,
-        seed: Optional[int] = None,
-        use_beam_search: Optional[bool] = None,
-        length_penalty: Optional[float] = None,
-        early_stopping: Optional[Union[bool, str]] = None,
-        stop: Optional[Union[None, str, List[str]]] = None,
-        stop_token_ids: Optional[List[int]] = None,
-        include_stop_str_in_output: Optional[bool] = None,
-        ignore_eos: Optional[bool] = None,
-        max_tokens: Optional[int] = None,
-        min_tokens: Optional[int] = None,
-        logprobs: Optional[int] = None,
-        prompt_logprobs: Optional[int] = None,
-        detokenize: Optional[bool] = None,
-        custom_token_bans: Optional[List[int]] = None,
-        token_ban_ranges: Optional[List[Tuple[List[int], int, int]]] = None,
-        skip_special_tokens: Optional[bool] = None,
-        spaces_between_special_tokens: Optional[bool] = None,
-        logits_processors: Optional[Any] = None,
-        truncate_prompt_tokens: Optional[int] = None,
-        xtc_threshold: Optional[float] = None,
-        xtc_probability: Optional[float] = None,
-        nsigma: Optional[float] = None,
-        mirostat_mode: Optional[int] = None,
-        mirostat_tau: Optional[float] = None,
-        mirostat_eta: Optional[float] = None,
-        dry_multiplier: Optional[float] = None,
-        dry_base: Optional[float] = None,
-        dry_allowed_length: Optional[int] = None,
-        dry_sequence_breaker_ids: Optional[List[int]] = None,
-        dry_range: Optional[int] = None,
-        dry_max_ngram: Optional[int] = None,
-        dry_max_occurrences: Optional[int] = None,
-        dry_early_exit_match_len: Optional[int] = None,
-        skew: Optional[float] = None,
-        sampler_priority: Optional[List[int]] = None,
-        output_kind: Optional[RequestOutputKind] = None,
-        guided_decoding: Optional[GuidedDecodingParams] = None,
-        logit_bias: Optional[Dict[int, float]] = None,
-        allowed_token_ids: Optional[List[int]] = None,
-        extra_args: Optional[dict[str, Any]] = None,
-        bad_words: Optional[List[str]] = None,
-        banned_phrases_token_ids: Optional[List[List[int]]] = None,
-        enable_deepconf: Optional[bool]= False,
-        deepconf_window_size: Optional[int] = 2048,
-        deepconf_threshold: Optional[float] = 17,
+        n: int | None = None,
+        best_of: int | None = None,
+        presence_penalty: float | None = None,
+        frequency_penalty: float | None = None,
+        repetition_penalty: float | None = None,
+        no_repeat_ngram_size: int | None = None,
+        temperature: float | None = None,
+        dynatemp_min: float | None = None,
+        dynatemp_max: float | None = None,
+        dynatemp_exponent: float | None = None,
+        temperature_last: bool | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
+        top_a: float | None = None,
+        min_p: float | None = None,
+        tfs: float | None = None,
+        eta_cutoff: float | None = None,
+        epsilon_cutoff: float | None = None,
+        typical_p: float | None = None,
+        smoothing_factor: float | None = None,
+        smoothing_curve: float | None = None,
+        seed: int | None = None,
+        use_beam_search: bool | None = None,
+        length_penalty: float | None = None,
+        early_stopping: bool | str | None = None,
+        stop: None | str | list[str] = None,
+        stop_token_ids: list[int] | None = None,
+        include_stop_str_in_output: bool | None = None,
+        ignore_eos: bool | None = None,
+        max_tokens: int | None = None,
+        min_tokens: int | None = None,
+        logprobs: int | None = None,
+        prompt_logprobs: int | None = None,
+        detokenize: bool | None = None,
+        custom_token_bans: list[int] | None = None,
+        token_ban_ranges: list[tuple[list[int], int, int]] | None = None,
+        skip_special_tokens: bool | None = None,
+        spaces_between_special_tokens: bool | None = None,
+        logits_processors: Any | None = None,
+        truncate_prompt_tokens: int | None = None,
+        xtc_threshold: float | None = None,
+        xtc_probability: float | None = None,
+        nsigma: float | None = None,
+        mirostat_mode: int | None = None,
+        mirostat_tau: float | None = None,
+        mirostat_eta: float | None = None,
+        dry_multiplier: float | None = None,
+        dry_base: float | None = None,
+        dry_allowed_length: int | None = None,
+        dry_sequence_breaker_ids: list[int] | None = None,
+        dry_range: int | None = None,
+        dry_max_ngram: int | None = None,
+        dry_max_occurrences: int | None = None,
+        dry_early_exit_match_len: int | None = None,
+        skew: float | None = None,
+        sampler_priority: list[int] | None = None,
+        output_kind: RequestOutputKind | None = None,
+        structured_outputs: StructuredOutputsParams | None = None,
+        guided_decoding: GuidedDecodingParams | None = None,
+        logit_bias: dict[int, float] | None = None,
+        allowed_token_ids: list[int] | None = None,
+        extra_args: dict[str, Any] | None = None,
+        bad_words: list[str] | None = None,
+        banned_phrases_token_ids: list[list[int]] | None = None,
+        enable_deepconf: bool | None = False,
+        deepconf_window_size: int | None = 2048,
+        deepconf_threshold: float | None = 17,
     ) -> "SamplingParams":
         if logit_bias is not None:
             # Convert token_id to integer
@@ -633,6 +647,16 @@ class SamplingParams(
                 int(token): min(100.0, max(-100.0, bias))
                 for token, bias in logit_bias.items()
             }
+        if guided_decoding is not None:
+            warnings.warn(
+                "guided_decoding is deprecated. This will be removed in "
+                "v0.12.0 or v1.0.0, which ever is soonest. Please use "
+                "structured_outputs instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            structured_outputs = guided_decoding
+            guided_decoding = None
 
         return SamplingParams(
             n=1 if n is None else n,
@@ -715,7 +739,7 @@ class SamplingParams(
             output_kind=
             (RequestOutputKind.CUMULATIVE if output_kind is None else
              output_kind),
-            guided_decoding=guided_decoding,
+            structured_outputs=structured_outputs,
             logit_bias=logit_bias,
             allowed_token_ids=allowed_token_ids,
             extra_args=extra_args,
@@ -847,12 +871,6 @@ class SamplingParams(
 
         self._verify_args()
         if self.use_beam_search:
-            if not APHRODITE_NO_DEPRECATION_WARNING:
-                logger.warning(
-                    "[IMPORTANT] We plan to discontinue the support for beam "
-                    "search in the next major release. Set "
-                    "APHRODITE_NO_DEPRECATION_WARNING=1 to "
-                    "suppress this warning.")
             self._verify_beam_search()
         else:
             self._verify_non_beam_search()
@@ -865,6 +883,17 @@ class SamplingParams(
                 self._verify_greedy_sampling()
         # eos_token_id is added to this by the engine
         self._all_stop_token_ids = set(self.stop_token_ids)
+
+        if self.guided_decoding is not None:
+            warnings.warn(
+                "guided_decoding is deprecated. This will be removed in "
+                "v0.12.0 or v1.0.0, which ever is soonest. Please use "
+                "structured_outputs instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.structured_outputs = self.guided_decoding
+            self.guided_decoding = None
 
     def _verify_args(self) -> None:
         if not isinstance(self.n, int):
@@ -926,17 +955,24 @@ class SamplingParams(
         if self.max_tokens is not None and self.min_tokens > self.max_tokens:
             raise ValueError(
                 f"min_tokens must be less than or equal to "
-                f"max_tokens={self.max_tokens}, got {self.min_tokens}.")
-        if (self.logprobs is not None and self.logprobs != -1
-                and self.logprobs < 0):
+                f"max_tokens={self.max_tokens}, got {self.min_tokens}."
+            )
+        if self.logprobs is not None and self.logprobs != -1 and self.logprobs < 0:
             raise ValueError(
-                f"logprobs must be non-negative or -1, got {self.logprobs}.")
-        if self.prompt_logprobs is not None and self.prompt_logprobs < 0:
-            raise ValueError("prompt_logprobs must be non-negative, got "
-                             f"{self.prompt_logprobs}.")
-        if (self.truncate_prompt_tokens is not None
-                and (self.truncate_prompt_tokens == 0
-                     or self.truncate_prompt_tokens < -1)):
+                f"logprobs must be non-negative or -1, got {self.logprobs}."
+            )
+        if (
+            self.prompt_logprobs is not None
+            and self.prompt_logprobs != -1
+            and self.prompt_logprobs < 0
+        ):
+            raise ValueError(
+                f"prompt_logprobs must be non-negative or -1, got "
+                f"{self.prompt_logprobs}."
+            )
+        if self.truncate_prompt_tokens is not None and (
+            self.truncate_prompt_tokens == 0 or self.truncate_prompt_tokens < -1
+        ):
             raise ValueError(
                 f"truncate_prompt_tokens must be an integer >= 1 or -1, "
                 f"got {self.truncate_prompt_tokens}")
@@ -946,7 +982,7 @@ class SamplingParams(
         if self.stop and not self.detokenize:
             raise ValueError(
                 "stop strings are only supported when detokenize is True. "
-                "Set detokenize=True to use stop.")
+                "set detokenize=True to use stop.")
         if self.xtc_threshold < 0.0:
             raise ValueError(
                 "xtc_threshold must be non-negative, got "
@@ -1099,8 +1135,8 @@ class SamplingParams(
 
     def update_from_generation_config(
             self,
-            generation_config: Dict[str, Any],
-            model_eos_token_id: Optional[int] = None) -> None:
+            generation_config: dict[str, Any],
+            model_eos_token_id: int | None = None) -> None:
         """Update if there are non-default values from generation_config"""
 
         if model_eos_token_id is not None:
@@ -1141,10 +1177,10 @@ class SamplingParams(
                 # If no space at the beginning
                 # or if prefix space produces a new word token
                 if (not add_prefix_space) or (
-                        add_prefix_space and prompt_token_ids[0]
-                        != self._bad_words_token_ids[-1][0]
-                        and len(prompt_token_ids) == len(
-                            self._bad_words_token_ids[-1])):
+                    add_prefix_space
+                    and prompt_token_ids[0] != self._bad_words_token_ids[-1][0]
+                    and len(prompt_token_ids) == len(self._bad_words_token_ids[-1])
+                ):
                     self._bad_words_token_ids.append(prompt_token_ids)
 
         invalid_token_ids = [
@@ -1171,11 +1207,11 @@ class SamplingParams(
         return SamplingType.RANDOM
 
     @property
-    def all_stop_token_ids(self) -> Set[int]:
+    def all_stop_token_ids(self) -> set[int]:
         return self._all_stop_token_ids
 
     @property
-    def bad_words_token_ids(self) -> Optional[list[list[int]]]:
+    def bad_words_token_ids(self) -> list[list[int]] | None:
         # For internal use only. Backward compatibility not guaranteed
         return self._bad_words_token_ids
 
@@ -1186,10 +1222,14 @@ class SamplingParams(
         needs to support parallel decoding for multiple sequences
         """
 
-        logit_processor_refs = None if self.logits_processors is None else {
-            id(lp): lp.clone() if hasattr(lp, 'clone') else lp
-            for lp in self.logits_processors
-        }
+        logit_processor_refs = (
+            None
+            if self.logits_processors is None
+            else {
+                id(lp): lp.clone() if hasattr(lp, "clone") else lp
+                for lp in self.logits_processors
+            }
+        )
         return copy.deepcopy(self, memo=logit_processor_refs)
 
     def __repr__(self) -> str:
@@ -1208,10 +1248,11 @@ class SamplingParams(
 
 
 class BeamSearchParams(
-        msgspec.Struct,
-        omit_defaults=True,  # type: ignore[call-arg]
-        # required for @cached_property.
-        dict=True):  # type: ignore[call-arg]
+    msgspec.Struct,
+    omit_defaults=True,  # type: ignore[call-arg]
+    # required for @cached_property.
+    dict=True,
+):  # type: ignore[call-arg]
     """Beam search parameters for text generation."""
     beam_width: int
     max_tokens: int

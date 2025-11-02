@@ -1,7 +1,7 @@
 import torch
 
-from aphrodite.utils import (is_pin_memory_available,
-                                    make_tensor_with_pad)
+from aphrodite.utils.platform_utils import is_pin_memory_available
+from aphrodite.utils.torch_utils import make_tensor_with_pad
 from aphrodite.v1.sample.metadata import SamplingMetadata
 
 

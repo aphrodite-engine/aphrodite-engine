@@ -1,7 +1,7 @@
 import pytest
 
-from aphrodite.endpoints.llm import LLM
 from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.endpoints.llm import LLM
 
 
 @pytest.mark.skip_v1
@@ -14,20 +14,16 @@ def test_computed_prefix_blocks(model: str):
     prompt = (
         "You are a helpful assistant. How do I build a car from cardboard and "
         "paper clips? Is there an easy to follow video tutorial available "
-        "online for free?")
+        "online for free?"
+    )
 
     llm = LLM(model=model)
-    sampling_params = SamplingParams(max_tokens=10,
-                                     temperature=0.0,
-                                     detokenize=False)
+    sampling_params = SamplingParams(max_tokens=10, temperature=0.0, detokenize=False)
 
-    outputs_no_detokenization = llm.generate(prompt,
-                                             sampling_params)[0].outputs[0]
+    outputs_no_detokenization = llm.generate(prompt, sampling_params)[0].outputs[0]
     sampling_params.detokenize = True
-    outputs_with_detokenization = llm.generate(prompt,
-                                               sampling_params)[0].outputs[0]
+    outputs_with_detokenization = llm.generate(prompt, sampling_params)[0].outputs[0]
 
-    assert outputs_no_detokenization.text == ''
-    assert outputs_with_detokenization.text != ''
-    assert outputs_no_detokenization.token_ids == \
-        outputs_with_detokenization.token_ids
+    assert outputs_no_detokenization.text == ""
+    assert outputs_with_detokenization.text != ""
+    assert outputs_no_detokenization.token_ids == outputs_with_detokenization.token_ids

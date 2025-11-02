@@ -18,7 +18,7 @@ def apply_all_dry(
     Apply Don't Repeat Yourself (DRY) sampling to the logits.
 
     Reference: https://github.com/oobabooga/text-generation-webui/pull/5677 and
-    https://github.com/AlpinDale/vllm/pull/1
+    https://github.com/AlpinDale/aphrodite/pull/1
     """
     VOCAB_SIZE = logits.size(-1)
 

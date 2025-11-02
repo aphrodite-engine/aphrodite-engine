@@ -104,8 +104,7 @@ constexpr APHRODITE_INLINE int get_mantissa_bits() {
 /*!
  * \brief Fallback to software fast dequant implementation if hardware
  * dequantization is not available. \note Inspired by Marlin's fast
- * dequantization, but here we don't have to permute weights order. \ref
- * https://github.com/aphrodite-project/aphrodite/blob/6dffa4b0a6120159ef2fe44d695a46817aff65bc/csrc/quantization/fp8/fp8_marlin.cu#L120
+ * dequantization, but here we don't have to permute weights order.
  */
 template <typename fp8_dtype, typename fp16_dtype>
 __device__ void fast_dequant_f8f16x4(uint32_t* input, uint2* output) {

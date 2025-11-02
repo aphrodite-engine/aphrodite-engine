@@ -24,11 +24,13 @@ def test_models(
 ) -> None:
     with hf_runner(model, dtype=dtype) as hf_model:
         hf_outputs = hf_model.generate_greedy_logprobs_limit(
-            example_prompts, max_tokens, num_logprobs)
+            example_prompts, max_tokens, num_logprobs
+        )
 
     with aphrodite_runner(model, dtype=dtype) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.generate_greedy_logprobs(
-            example_prompts, max_tokens, num_logprobs)
+            example_prompts, max_tokens, num_logprobs
+        )
     check_logprobs_close(
         outputs_0_lst=hf_outputs,
         outputs_1_lst=aphrodite_outputs,

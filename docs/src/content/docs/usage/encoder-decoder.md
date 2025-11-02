@@ -171,7 +171,7 @@ Key methods:
 - `ExplicitEncoderDecoderPrompt`: Represents an explicit encoder-decoder prompt pair.
 
 ### RequestOutput
-The `RequestOutput` class in the `aphrodite.common.outputs` module contains the results of a generation request.
+The `RequestOutput` class in the `aphrodite.outputs` module contains the results of a generation request.
 
 Key attributes:
 

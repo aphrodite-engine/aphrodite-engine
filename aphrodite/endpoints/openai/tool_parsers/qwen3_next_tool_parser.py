@@ -1,10 +1,8 @@
 import json
 import uuid
 from collections.abc import Sequence
-from typing import Any, Optional, Union
 
 import regex as re
-from loguru import logger
 
 from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  DeltaFunctionCall,
@@ -13,7 +11,10 @@ from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  FunctionCall, ToolCall)
 from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
     ToolParser, ToolParserManager)
+from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
+
+logger = init_logger(__name__)
 
 
 @ToolParserManager.register_module("qwen3_next")
@@ -35,7 +36,7 @@ class Qwen3NextToolParser(ToolParser):
         self.current_tool_name_sent: bool = False
         self.prev_tool_call_arr: list[dict] = []
         # Override base class type - we use string IDs for tool calls
-        self.current_tool_id: Optional[str] = None  # type: ignore
+        self.current_tool_id: str | None = None  # type: ignore
         self.streamed_args_for_tool: list[str] = []
 
         # Sentinel tokens for streaming mode
@@ -69,7 +70,7 @@ class Qwen3NextToolParser(ToolParser):
                 "Qwen3 Next JSON-XML Tool parser could not locate tool call "
                 "start/end tokens in the tokenizer!")
 
-        logger.info("Successfully imported tool parser {} !",
+        logger.info("Successfully imported tool parser %s !",
                     self.__class__.__name__)
 
     def _generate_tool_call_id(self) -> str:
@@ -91,7 +92,7 @@ class Qwen3NextToolParser(ToolParser):
 
     def _parse_json_function_call(
             self, json_str: str
-    ) -> Optional[ToolCall]:
+    ) -> ToolCall | None:
         """Parse a JSON string into a ToolCall object."""
         try:
             # Clean up the JSON string
@@ -227,7 +228,7 @@ class Qwen3NextToolParser(ToolParser):
         current_token_ids: Sequence[int],
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest,
-    ) -> Union[DeltaMessage, None]:
+    ) -> DeltaMessage | None:
         """Extract tool calls from streaming model output."""
         # Store request for reference
         if not previous_text:

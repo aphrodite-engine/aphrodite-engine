@@ -3,26 +3,27 @@ import glob
 import os
 import time
 from collections.abc import Generator, Iterable
-from contextlib import suppress
-from typing import Optional, cast
+from typing import cast
 
-import huggingface_hub
 import torch
-from loguru import logger
 from torch import nn
 from transformers.utils import SAFE_WEIGHTS_INDEX_NAME
 
-from aphrodite.common import envs
-from aphrodite.config import LoadConfig, ModelConfig
+from aphrodite.config import ModelConfig
+from aphrodite.config.load import LoadConfig
+from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.base_loader import BaseModelLoader
 from aphrodite.modeling.model_loader.weight_utils import (
     download_safetensors_index_file_from_hf, download_weights_from_hf,
     fastsafetensors_weights_iterator, filter_duplicate_safetensors_files,
-    filter_files_not_needed_for_inference, get_lock,
+    filter_files_not_needed_for_inference, maybe_download_from_modelscope,
     multi_thread_pt_weights_iterator,
     multi_thread_safetensors_weights_iterator, np_cache_weights_iterator,
     pt_weights_iterator, safetensors_weights_iterator)
 from aphrodite.platforms import current_platform
+from aphrodite.quantization.torchao import torchao_version_at_least
+
+logger = init_logger(__name__)
 
 
 class DefaultModelLoader(BaseModelLoader):
@@ -38,7 +39,7 @@ class DefaultModelLoader(BaseModelLoader):
         model_or_path: str
         """The model ID or path."""
 
-        revision: Optional[str]
+        revision: str | None
         """The optional model revision."""
 
         prefix: str = ""
@@ -47,7 +48,7 @@ class DefaultModelLoader(BaseModelLoader):
         fall_back_to_pt: bool = True
         """Whether .pt weights can be used."""
 
-        allow_patterns_overrides: Optional[list[str]] = None
+        allow_patterns_overrides: list[str] | None = None
         """If defined, weights will load exclusively using these patterns."""
 
     counter_before_loading_weights: float = 0.0
@@ -67,47 +68,20 @@ class DefaultModelLoader(BaseModelLoader):
                 f"{unexpected_keys}"
             )
 
-    def _maybe_download_from_modelscope(
-            self, model: str, revision: Optional[str]) -> Optional[str]:
-        """Download model from ModelScope hub if APHRODITE_USE_MODELSCOPE is True.
-
-        Returns the path to the downloaded model, or None if the model is not
-        downloaded from ModelScope."""
-        if envs.APHRODITE_USE_MODELSCOPE:
-            # download model from ModelScope hub,
-            # lazy import so that modelscope is not required for normal use.
-            # pylint: disable=C.
-            from modelscope.hub.snapshot_download import snapshot_download
-
-            # Use file lock to prevent multiple processes from
-            # downloading the same model weights at the same time.
-            with get_lock(model, self.load_config.download_dir):
-                if not os.path.exists(model):
-                    model_path = snapshot_download(
-                        model_id=model,
-                        cache_dir=self.load_config.download_dir,
-                        local_files_only=(
-                            huggingface_hub.constants.HF_HUB_OFFLINE),
-                        revision=revision,
-                        ignore_file_pattern=self.load_config.ignore_patterns,
-                    )
-                else:
-                    model_path = model
-            return model_path
-        return None
-
     def _prepare_weights(
         self,
         model_name_or_path: str,
-        revision: Optional[str],
+        revision: str | None,
         fall_back_to_pt: bool,
-        allow_patterns_overrides: Optional[list[str]],
+        allow_patterns_overrides: list[str] | None,
     ) -> tuple[str, list[str], bool]:
         """Prepare weights for the model.
 
         If the model is not local, it will be downloaded."""
-        model_name_or_path = (self._maybe_download_from_modelscope(
-            model_name_or_path, revision) or model_name_or_path)
+        model_name_or_path = (
+            maybe_download_from_modelscope(model_name_or_path, revision)
+            or model_name_or_path
+        )
 
         is_local = os.path.isdir(model_name_or_path)
         load_format = self.load_config.load_format
@@ -116,8 +90,7 @@ class DefaultModelLoader(BaseModelLoader):
         # Some quantized models use .pt files for storing the weights.
         if load_format == "auto":
             allow_patterns = ["*.safetensors", "*.bin"]
-        elif (load_format == "safetensors"
-              or load_format == "fastsafetensors"):
+        elif load_format == "safetensors" or load_format == "fastsafetensors":
             use_safetensors = True
             allow_patterns = ["*.safetensors"]
         elif load_format == "mistral":
@@ -170,14 +143,15 @@ class DefaultModelLoader(BaseModelLoader):
                     revision,
                 )
             hf_weights_files = filter_duplicate_safetensors_files(
-                hf_weights_files, hf_folder, index_file)
+                hf_weights_files, hf_folder, index_file
+            )
         else:
-            hf_weights_files = filter_files_not_needed_for_inference(
-                hf_weights_files)
+            hf_weights_files = filter_files_not_needed_for_inference(hf_weights_files)
 
         if len(hf_weights_files) == 0:
             raise RuntimeError(
-                f"Cannot find any model weights with `{model_name_or_path}`")
+                f"Cannot find any model weights with `{model_name_or_path}`"
+            )
 
         return hf_folder, hf_weights_files, use_safetensors
 
@@ -185,19 +159,19 @@ class DefaultModelLoader(BaseModelLoader):
         self, source: "Source"
     ) -> tuple[Generator[tuple[str, torch.Tensor], None, None], int]:
         """Get an iterator for the model weights and calculate total size."""
-        hf_folder, hf_weights_files, use_safetensors = (
-            self._prepare_weights(
-                source.model_or_path, source.revision, source.fall_back_to_pt,
-                source.allow_patterns_overrides))
-
         extra_config = self.load_config.model_loader_extra_config
-
+        hf_folder, hf_weights_files, use_safetensors = self._prepare_weights(
+            source.model_or_path,
+            source.revision,
+            source.fall_back_to_pt,
+            source.allow_patterns_overrides,
+        )
+        
         # Calculate total size by iterating through files
         total_bytes = 0
         for file_path in hf_weights_files:
             if os.path.exists(file_path):
                 total_bytes += os.path.getsize(file_path)
-
         if self.load_config.load_format == "npcache":
             # Currently np_cache only support *.bin checkpoints
             assert use_safetensors is False
@@ -216,19 +190,18 @@ class DefaultModelLoader(BaseModelLoader):
                 )
             else:
                 if extra_config.get("enable_multithread_load"):
-                    weights_iterator = (
-                        multi_thread_safetensors_weights_iterator(
-                            hf_weights_files,
-                            self.load_config.use_tqdm_on_load,
-                            max_workers=extra_config.get(
-                                "num_threads", self.DEFAULT_NUM_THREADS
-                            ),
-                        )
+                    weights_iterator = multi_thread_safetensors_weights_iterator(
+                        hf_weights_files,
+                        self.load_config.use_tqdm_on_load,
+                        max_workers=extra_config.get(
+                            "num_threads", self.DEFAULT_NUM_THREADS
+                        ),
                     )
                 else:
                     weights_iterator = safetensors_weights_iterator(
                         hf_weights_files,
                         self.load_config.use_tqdm_on_load,
+                        self.load_config.safetensors_load_strategy,
                     )
         else:
             if extra_config.get("enable_multithread_load"):
@@ -248,30 +221,31 @@ class DefaultModelLoader(BaseModelLoader):
                 )
 
         if current_platform.is_tpu():
-            from aphrodite.platforms.tpu import USE_TPU_COMMONS
+            from aphrodite.platforms.tpu import USE_TPU_INFERENCE
 
-            if not USE_TPU_COMMONS:
-                # In PyTorch XLA, we should call `xm.mark_step`
-                # requently so that not too many ops are accumulated
-                # in the XLA program. import torch_xla.core.xla_model
-                # as xm
-                import torch_xla.core.xla_model as xm
+            if not USE_TPU_INFERENCE:
+                # In PyTorch XLA, we should call `torch_xla.sync`
+                # frequently so that not too many ops are accumulated
+                # in the XLA program.
+                import torch_xla
 
                 def _xla_weights_iterator(iterator: Generator):
                     for weights in iterator:
                         yield weights
-                        xm.mark_step()
+                        torch_xla.sync(wait=False)
 
                 weights_iterator = _xla_weights_iterator(weights_iterator)
 
         if self.counter_before_loading_weights == 0.0:
             self.counter_before_loading_weights = time.perf_counter()
         # Apply the prefix.
-        return ((source.prefix + name, tensor)
-                for (name, tensor) in weights_iterator), total_bytes
+        return (
+            ((source.prefix + name, tensor) for (name, tensor) in weights_iterator),
+            total_bytes,
+        )
 
     def _get_weights_iterator(
-            self, source: "Source"
+        self, source: "Source"
     ) -> Generator[tuple[str, torch.Tensor], None, None]:
         """Get an iterator for the model weights based on the load format."""
         iterator, _ = self._get_weights_iterator_with_size(source)
@@ -289,14 +263,13 @@ class DefaultModelLoader(BaseModelLoader):
             model_config.model,
             model_config.revision,
             prefix="",
-            fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load",
-                                    True),
-            allow_patterns_overrides=getattr(model, "allow_patterns_overrides",
-                                             None),
+            fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load", True),
+            allow_patterns_overrides=getattr(model, "allow_patterns_overrides", None),
         )
 
         primary_iterator, primary_bytes = self._get_weights_iterator_with_size(
-            primary_weights)
+            primary_weights
+        )
         total_bytes = primary_bytes
 
         # Collect all weight iterators and their sizes
@@ -313,40 +286,66 @@ class DefaultModelLoader(BaseModelLoader):
 
         # Chain all iterators together
         from itertools import chain
+
         return chain.from_iterable(iterators), total_bytes
 
     def download_model(self, model_config: ModelConfig) -> None:
-        self._prepare_weights(model_config.model,
-                              model_config.revision,
-                              fall_back_to_pt=True,
-                              allow_patterns_overrides=None)
+        self._prepare_weights(
+            model_config.model,
+            model_config.revision,
+            fall_back_to_pt=True,
+            allow_patterns_overrides=None,
+        )
 
-    def load_weights(self, model: nn.Module,
-                     model_config: ModelConfig) -> None:
+    def load_weights(self, model: nn.Module, model_config: ModelConfig) -> None:
+        if model_config.quantization == "torchao" and torchao_version_at_least(
+            "0.14.0"
+        ):
+            self.load_config.safetensors_load_strategy = "torchao"
         weights_to_load = {name for name, _ in model.named_parameters()}
-        weights_iter, total_bytes = self.get_all_weights(
-            model_config, model)
 
-        from aphrodite.utils import tensor_progress_bar
+        # if we don't have `model.weight_metadata_and_attr_saved` defined and
+        # set to True, it means that this is either offline quantization case
+        # or the first run of online quantization
+        # see online_quantization.py for detailed notes
+        offline_quantization_or_first_run_of_online_quantization = not getattr(
+            model, "weight_metadata_and_attr_saved", False
+        )
 
-        loaded_weights = model.load_weights(
-            tensor_progress_bar(weights_iter, total_bytes,
-                                "Loading model weights"))
+        if model_config.quantization is None:
+            # model is not quantized
+            weights_iter, total_bytes = self.get_all_weights(model_config, model)
+            from aphrodite.utils import tensor_progress_bar
+
+            loaded_weights = model.load_weights(
+                tensor_progress_bar(weights_iter, total_bytes, "Loading model weights")
+            )
+        elif offline_quantization_or_first_run_of_online_quantization:
+            # case 1: offline quantized checkpoint
+            # case 2: Step I1 first run of weight loading with
+            # online quantization
+            # see online_quantization.py for detailed notes
+            weights_iter, total_bytes = self.get_all_weights(model_config, model)
+            from aphrodite.utils import tensor_progress_bar
+
+            loaded_weights = model.load_weights(
+                tensor_progress_bar(weights_iter, total_bytes, "Loading model weights")
+            )
+        else:
+            # to avoid circular dependency
+            from aphrodite.modeling.model_loader.online_quantization import (
+                load_weights_and_online_quantize)
+
+            # subsequent runs of weight loading with online
+            # quantization
+            loaded_weights = load_weights_and_online_quantize(self, model, model_config)
+
         self.counter_after_loading_weights = time.perf_counter()
-        logger.debug(
-            "Loading weights took {:.2f} seconds",
-            self.counter_after_loading_weights -
-            self.counter_before_loading_weights)
-
-        with suppress(Exception):
-            # Log the total number of parameters in the model
-            total_params = sum(p.numel() for p in model.parameters())
-            logger.info(f"Model loaded with {total_params:,} parameters")
-
-        with suppress(Exception):
-            # Check if this is an MoE model and log activated parameters
-            self._log_moe_parameters(model, model_config, total_params)
-
+        logger.debug_once(
+            "Loading weights took %.2f seconds",
+            self.counter_after_loading_weights - self.counter_before_loading_weights,
+            scope="local",
+        )
         # We only enable strict check for non-quantized models
         # that have loaded weights tracking currently.
         if model_config.quantization is None and loaded_weights is not None:
@@ -354,80 +353,5 @@ class DefaultModelLoader(BaseModelLoader):
             if weights_not_loaded:
                 raise ValueError(
                     "Following weights were not initialized from "
-                    f"checkpoint: {weights_not_loaded}")
-
-    def _log_moe_parameters(self, model: nn.Module, model_config: ModelConfig,
-                           total_params: int) -> None:
-        """Log MoE-specific parameter information if this is an MoE model."""
-        hf_config = getattr(model_config, 'hf_config', None)
-
-        if hf_config is None:
-            return
-
-        num_experts_per_tok = None
-        num_total_experts = None
-
-        # First try to get from hf_config
-        if hf_config is not None:
-            num_experts_per_tok = getattr(
-                hf_config, 'num_experts_per_tok', None)
-            num_local_experts = getattr(hf_config, 'num_local_experts', None)
-            num_experts = getattr(hf_config, 'num_experts', None)
-            num_total_experts = num_local_experts or num_experts
-
-        # If not found in hf_config, try model_config itself
-        if num_experts_per_tok is None:
-            num_experts_per_tok = getattr(
-                model_config, 'num_experts_per_tok', None)
-        if num_total_experts is None:
-            num_local_experts = getattr(model_config, 'num_local_experts', None)
-            num_experts = getattr(model_config, 'num_experts', None)
-            num_total_experts = num_local_experts or num_experts
-
-        # some other common indicators
-        is_moe_by_name = False
-        if hf_config is not None:
-            architectures = getattr(hf_config, 'architectures', [])
-            if isinstance(architectures, list) and any(
-                'MoE' in arch or 'moe' in arch for arch in architectures):
-                is_moe_by_name = True
-
-        # If we detected MoE by architecture name but don't have expert params,
-        # try to infer them
-        if is_moe_by_name and (
-            num_experts_per_tok is None or num_total_experts is None):
-            logger.debug(
-                f"Detected MoE model by architecture name: {architectures}")
-
-        if num_experts_per_tok is not None and num_total_experts is not None:
-            logger.debug(
-                f"MoE detection: num_experts_per_tok={num_experts_per_tok}, "
-                f"num_total_experts={num_total_experts}"
-            )
-            # activated parameters: gate + fraction of expert
-            gate_params = 0
-            expert_params = 0
-            for name, param in model.named_parameters():
-                if 'gate' in name:
-                    gate_params += param.numel()
-                elif 'experts' in name:
-                    expert_params += param.numel()
-
-            # In most MoE models, only top-k experts are activated per token
-            # So activated parameters = gate_params + (top_k / num_experts) *
-            # expert_params
-            activated_expert_ratio = num_experts_per_tok / num_total_experts
-            activated_params = gate_params + (
-                activated_expert_ratio * expert_params)
-
-            activated_ratio = (activated_params / total_params * 100) \
-                if total_params > 0 else 0
-
-            logger.info(
-                "MoE model detected: {} experts, "
-                "{} experts per token, "
-                "activated params: {} ({:.1f}% of total), "
-                "expert utilization: {:.1%}",
-                num_total_experts, num_experts_per_tok, activated_params,
-                activated_ratio, activated_expert_ratio
-            )
+                    f"checkpoint: {weights_not_loaded}"
+                )

@@ -1,22 +1,23 @@
 import os
-from typing import Optional
 
 import torch
-from loguru import logger
 from torch.distributed import ProcessGroup
 
 from aphrodite.config import get_current_aphrodite_config
+from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.platforms.tpu import USE_TPU_COMMONS
+from aphrodite.platforms.tpu import USE_TPU_INFERENCE
 
 from .base_device_communicator import DeviceCommunicatorBase
 
-USE_RAY = parallel_config = get_current_aphrodite_config(
-).parallel_config.distributed_executor_backend == "ray"
+USE_RAY = parallel_config = (
+    get_current_aphrodite_config().parallel_config.distributed_executor_backend == "ray"
+)
 
+logger = init_logger(__name__)
 
-if not USE_TPU_COMMONS:
-    logger.info("tpu_commons not found, using Aphrodite's TpuCommunicator")
+if not USE_TPU_INFERENCE:
+    logger.info("tpu_inference not found, using Aphrodite's TpuCommunicator")
     if current_platform.is_tpu():
         import torch_xla
         import torch_xla.core.xla_model as xm
@@ -24,20 +25,22 @@ if not USE_TPU_COMMONS:
         from torch_xla._internal import pjrt
         from torch_xla.distributed.xla_multiprocessing import (
             create_optimized_replica_groups)
+
         if USE_RAY:
-            from aphrodite.executor import ray_utils
+            from aphrodite.v1.executor import ray_utils
 
 
 class TpuCommunicator(DeviceCommunicatorBase):
-
-    def __init__(self,
-                 cpu_group: ProcessGroup,
-                 device: Optional[torch.device] = None,
-                 device_group: Optional[ProcessGroup] = None,
-                 unique_name: str = ""):
+    def __init__(
+        self,
+        cpu_group: ProcessGroup,
+        device: torch.device | None = None,
+        device_group: ProcessGroup | None = None,
+        unique_name: str = "",
+    ):
         super().__init__(cpu_group, device, device_group, unique_name)
 
-        # NOTE: When using TP > 1 on TPUs, every TPU on the same node
+        # NOTE(woosuk): When using TP > 1 on TPUs, every TPU on the same node
         # must be used together. Therefore, the local rank and world size can
         # be simply calculated as follows.
         global_rank = self.global_rank
@@ -92,7 +95,8 @@ class TpuCommunicator(DeviceCommunicatorBase):
         return xm.all_gather(input_, dim=dim)
 
 
-if USE_TPU_COMMONS:
-    from tpu_commons.distributed.device_communicators import (
-        TpuCommunicator as TpuCommonsCommunicator)
-    TpuCommunicator = TpuCommonsCommunicator  # type: ignore
+if USE_TPU_INFERENCE:
+    from tpu_inference.distributed.device_communicators import (
+        TpuCommunicator as TpuInferenceCommunicator)
+
+    TpuCommunicator = TpuInferenceCommunicator  # type: ignore

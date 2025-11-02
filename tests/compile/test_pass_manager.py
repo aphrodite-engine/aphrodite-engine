@@ -3,9 +3,10 @@ import copy
 import pytest
 import torch
 
-from aphrodite.compilation.inductor_pass import CallableInductorPass, InductorPass
+from aphrodite.compilation.inductor_pass import (CallableInductorPass,
+                                                 InductorPass)
 from aphrodite.compilation.pass_manager import PostGradPassManager
-from aphrodite.config import AphroditeConfig
+from aphrodite.config import AphroditeConfig, ModelConfig
 
 
 # dummy custom pass that doesn't inherit
@@ -21,12 +22,11 @@ def test_bad_callable():
     pass_manager.configure(config)
 
     with pytest.raises(AssertionError):
-        pass_manager.add(simple_callable)  # noqa, type wrong on purpose
+        pass_manager.add(simple_callable)
 
 
 # Pass that inherits from InductorPass
 class ProperPass(InductorPass):
-
     def __call__(self, graph: torch.fx.graph.Graph) -> None:
         pass
 
@@ -37,12 +37,12 @@ class ProperPass(InductorPass):
         ProperPass(),
         # Can also wrap callables in CallableInductorPass for compliance
         CallableInductorPass(simple_callable),
-        CallableInductorPass(simple_callable,
-                             InductorPass.hash_source(__file__))
+        CallableInductorPass(simple_callable, InductorPass.hash_source(__file__)),
     ],
 )
 def test_pass_manager_uuid(callable):
-    config = AphroditeConfig()
+    # Some passes need dtype to be set
+    config = AphroditeConfig(model_config=ModelConfig(dtype=torch.bfloat16))
 
     pass_manager = PostGradPassManager()
     pass_manager.configure(config)
@@ -63,8 +63,9 @@ def test_pass_manager_uuid(callable):
 
     # UUID should be different due to config change
     config2 = copy.deepcopy(config)
-    config2.compilation_config.pass_config.enable_fusion = not \
-        config2.compilation_config.pass_config.enable_fusion
+    config2.compilation_config.pass_config.enable_fusion = (
+        not config2.compilation_config.pass_config.enable_fusion
+    )
     pass_manager3 = PostGradPassManager()
     pass_manager3.configure(config2)
     pass_manager3.add(callable)

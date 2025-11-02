@@ -9,15 +9,17 @@ import typing
 # The environment variables override should be imported before any other
 # modules to ensure that the environment variables are set before any
 # other modules are imported.
-import aphrodite.common.env_override  # noqa: F401
+import aphrodite.env_override  # noqa: F401
 
 MODULE_ATTRS = {
+    "bc_linter_skip": "._bc_linter:bc_linter_skip",
+    "bc_linter_include": "._bc_linter:bc_linter_include",
     "AsyncEngineArgs": ".engine.args_tools:AsyncEngineArgs",
     "EngineArgs": ".engine.args_tools:EngineArgs",
     "AsyncAphrodite": ".engine.async_aphrodite:AsyncAphrodite",
     "AphroditeEngine": ".engine.aphrodite_engine:AphroditeEngine",
     "LLM": ".endpoints.llm:LLM",
-    "initialize_ray_cluster": ".executor.ray_utils:initialize_ray_cluster",
+    "initialize_ray_cluster": ".v1.executor.ray_utils:initialize_ray_cluster",
     "PromptType": ".inputs:PromptType",
     "TextPrompt": ".inputs:TextPrompt",
     "TokensPrompt": ".inputs:TokensPrompt",
@@ -26,33 +28,34 @@ MODULE_ATTRS = {
     "PoolingParams": ".common.pooling_params:PoolingParams",
     "ClassificationOutput": ".outputs:ClassificationOutput",
     "ClassificationRequestOutput": ".outputs:ClassificationRequestOutput",
-    "CompletionOutput": ".common.outputs:CompletionOutput",
-    "EmbeddingOutput": ".common.outputs:EmbeddingOutput",
-    "EmbeddingRequestOutput": ".common.outputs:EmbeddingRequestOutput",
-    "PoolingOutput": ".common.outputs:PoolingOutput",
-    "PoolingRequestOutput": ".common.outputs:PoolingRequestOutput",
-    "RequestOutput": ".common.outputs:RequestOutput",
-    "ScoringOutput": ".common.outputs:ScoringOutput",
-    "ScoringRequestOutput": ".common.outputs:ScoringRequestOutput",
+    "CompletionOutput": ".outputs:CompletionOutput",
+    "EmbeddingOutput": ".outputs:EmbeddingOutput",
+    "EmbeddingRequestOutput": ".outputs:EmbeddingRequestOutput",
+    "PoolingOutput": ".outputs:PoolingOutput",
+    "PoolingRequestOutput": ".outputs:PoolingRequestOutput",
+    "RequestOutput": ".outputs:RequestOutput",
+    "ScoringOutput": ".outputs:ScoringOutput",
+    "ScoringRequestOutput": ".outputs:ScoringRequestOutput",
 }
 
 if typing.TYPE_CHECKING:
-    from aphrodite.common.outputs import (ClassificationOutput,
-                                          ClassificationRequestOutput,
-                                          CompletionOutput, EmbeddingOutput,
-                                          EmbeddingRequestOutput,
-                                          PoolingOutput, PoolingRequestOutput,
-                                          RequestOutput, ScoringOutput,
-                                          ScoringRequestOutput)
     from aphrodite.common.pooling_params import PoolingParams
     from aphrodite.common.sampling_params import SamplingParams
     from aphrodite.endpoints.llm import LLM
     from aphrodite.engine.aphrodite_engine import AphroditeEngine
     from aphrodite.engine.args_tools import AsyncEngineArgs, EngineArgs
     from aphrodite.engine.async_aphrodite import AsyncAphrodite
-    from aphrodite.executor.ray_utils import initialize_ray_cluster
     from aphrodite.inputs import PromptType, TextPrompt, TokensPrompt
     from aphrodite.modeling.models import ModelRegistry
+    from aphrodite.outputs import (ClassificationOutput,
+                                   ClassificationRequestOutput,
+                                   CompletionOutput, EmbeddingOutput,
+                                   EmbeddingRequestOutput, PoolingOutput,
+                                   PoolingRequestOutput, RequestOutput,
+                                   ScoringOutput, ScoringRequestOutput)
+    from aphrodite.v1.executor.ray_utils import initialize_ray_cluster
+
+    from ._bc_linter import bc_linter_include, bc_linter_skip
 else:
 
     def __getattr__(name: str) -> typing.Any:
@@ -70,6 +73,8 @@ else:
 __all__ = [
     "__version__",
     "__version_tuple__",
+    "bc_linter_skip",
+    "bc_linter_include",
     "LLM",
     "ModelRegistry",
     "PromptType",

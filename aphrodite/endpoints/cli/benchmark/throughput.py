@@ -5,7 +5,7 @@ from aphrodite.endpoints.cli.benchmark.base import BenchmarkSubcommandBase
 
 
 class BenchmarkThroughputSubcommand(BenchmarkSubcommandBase):
-    """ The `throughput` subcommand for aphrodite bench. """
+    """The `throughput` subcommand for `aphrodite bench`."""
 
     name = "throughput"
     help = "Benchmark offline inference throughput."

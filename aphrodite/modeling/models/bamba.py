@@ -1,28 +1,24 @@
 """Inference-only Bamba model."""
+
 # Added by the IBM Team, 2024
 from collections.abc import Iterable
-from typing import Optional
 
 import torch
 from torch import nn
 from transformers import BambaConfig
 
 from aphrodite.attention.layer import Attention
-from aphrodite.common import envs
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
-from aphrodite.forward_context import get_forward_context
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
                                               QKVParallelLinear,
                                               RowParallelLinear)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.mamba.mamba2_metadata import (
-    Mamba2Metadata, prepare_mamba2_metadata)
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
 from aphrodite.modeling.layers.mamba.mamba_utils import (
     MambaStateDtypeCalculator, MambaStateShapeCalculator)
@@ -30,25 +26,20 @@ from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.mamba_cache import (MambaCacheManager,
-                                                   MambaCacheParams)
-from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.quantization import QuantizationConfig
-from aphrodite.utils import LayerBlockType
 
-from .interfaces import (HasInnerState, IsHybrid, SupportsLoRA, SupportsPP,
-                         SupportsQuant)
+from .interfaces import (HasInnerState, IsHybrid, SupportsLoRA,
+                         SupportsMambaPrefixCaching, SupportsPP, SupportsQuant)
 from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
 
 
 class BambaMLP(nn.Module):
-
     def __init__(
         self,
         config: BambaConfig,
-        quant_config: Optional[QuantizationConfig] = None,
+        quant_config: QuantizationConfig | None = None,
         bias: bool = False,
     ) -> None:
         super().__init__()
@@ -65,8 +56,10 @@ class BambaMLP(nn.Module):
             quant_config=quant_config,
         )
         if config.hidden_act != "silu":
-            raise ValueError(f"Unsupported activation: {config.hidden_act}. "
-                             "Only silu is supported for now.")
+            raise ValueError(
+                f"Unsupported activation: {config.hidden_act}. "
+                "Only silu is supported for now."
+            )
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -77,56 +70,53 @@ class BambaMLP(nn.Module):
 
 
 class BambaMixerDecoderLayer(nn.Module):
-
-    def __init__(self,
-                 config: BambaConfig,
-                 layer_idx: int,
-                 model_config: Optional[ModelConfig] = None,
-                 cache_config: Optional[CacheConfig] = None,
-                 quant_config: Optional[QuantizationConfig] = None,
-                 prefix: str = "") -> None:
+    def __init__(
+        self,
+        config: BambaConfig,
+        layer_idx: int,
+        model_config: ModelConfig | None = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
+        prefix: str = "",
+    ) -> None:
         super().__init__()
         self.config = config
-        self.mamba = MambaMixer2(hidden_size= config.hidden_size,
-                                ssm_state_size = config.mamba_d_state,
-                                conv_kernel_size = config.mamba_d_conv,
-                                intermediate_size = config.mamba_expand *\
-                                                    config.hidden_size,
-                                use_conv_bias = config.mamba_conv_bias,
-                                use_bias = config.mamba_proj_bias,
-                                n_groups=config.mamba_n_groups,
-                                num_heads=config.mamba_n_heads,
-                                head_dim=config.mamba_d_head,
-                                rms_norm_eps=config.rms_norm_eps,
-                                activation=config.hidden_act,
-                                model_config=model_config,
-                                cache_config=cache_config,
-                                quant_config=quant_config,
-                                prefix=f"{prefix}.mixer")
+        self.mamba = MambaMixer2(
+            hidden_size=config.hidden_size,
+            ssm_state_size=config.mamba_d_state,
+            conv_kernel_size=config.mamba_d_conv,
+            intermediate_size=config.mamba_expand * config.hidden_size,
+            use_conv_bias=config.mamba_conv_bias,
+            use_bias=config.mamba_proj_bias,
+            n_groups=config.mamba_n_groups,
+            num_heads=config.mamba_n_heads,
+            head_dim=config.mamba_d_head,
+            rms_norm_eps=config.rms_norm_eps,
+            activation=config.hidden_act,
+            model_config=model_config,
+            cache_config=cache_config,
+            quant_config=quant_config,
+            prefix=f"{prefix}.mixer",
+        )
 
         self.feed_forward = BambaMLP(config, quant_config=quant_config)
-        self.input_layernorm = RMSNorm(config.hidden_size,
-                                       eps=config.rms_norm_eps)
-        self.pre_ff_layernorm = RMSNorm(config.hidden_size,
-                                        eps=config.rms_norm_eps)
+        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.pre_ff_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
         hidden_states: torch.Tensor,
-        residual: Optional[torch.Tensor],
-        mamba_cache_params: MambaCacheParams,
-        mamba2_metadata: Mamba2Metadata,
+        residual: torch.Tensor | None,
         **kwargs,
     ):
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
         else:
-            hidden_states, residual = self.input_layernorm(
-                hidden_states, residual)
+            hidden_states, residual = self.input_layernorm(hidden_states, residual)
 
         output = torch.empty_like(hidden_states)
-        self.mamba(hidden_states, output, mamba_cache_params, mamba2_metadata)
+        self.mamba(hidden_states, output)
         # Fully Connected
         hidden_states, residual = self.pre_ff_layernorm(output, residual)
         hidden_states = self.feed_forward(hidden_states)
@@ -134,21 +124,19 @@ class BambaMixerDecoderLayer(nn.Module):
 
 
 class BambaAttentionDecoderLayer(nn.Module):
-
     def __init__(
         self,
         config: BambaConfig,
         layer_idx: int,
-        model_config: Optional[ModelConfig] = None,
-        cache_config: Optional[CacheConfig] = None,
-        quant_config: Optional[QuantizationConfig] = None,
+        model_config: ModelConfig | None = None,
+        cache_config: CacheConfig | None = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
         super().__init__()
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        max_position_embeddings = getattr(config, "max_position_embeddings",
-                                          8192)
+        max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         self.hidden_size = config.hidden_size
         tp_size = get_tensor_model_parallel_world_size()
         self.total_num_heads = config.num_attention_heads
@@ -196,10 +184,12 @@ class BambaAttentionDecoderLayer(nn.Module):
             bias=False,
             quant_config=quant_config,
         )
-        self.o_proj = RowParallelLinear(self.total_num_heads * self.head_dim,
-                                        config.hidden_size,
-                                        bias=False,
-                                        quant_config=quant_config)
+        self.o_proj = RowParallelLinear(
+            self.total_num_heads * self.head_dim,
+            config.hidden_size,
+            bias=False,
+            quant_config=quant_config,
+        )
 
         self.attn = Attention(
             self.num_heads,
@@ -211,10 +201,8 @@ class BambaAttentionDecoderLayer(nn.Module):
         )
 
         self.feed_forward = BambaMLP(config, quant_config=quant_config)
-        self.input_layernorm = RMSNorm(config.hidden_size,
-                                       eps=config.rms_norm_eps)
-        self.pre_ff_layernorm = RMSNorm(config.hidden_size,
-                                        eps=config.rms_norm_eps)
+        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.pre_ff_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def self_attention(
         self,
@@ -234,36 +222,33 @@ class BambaAttentionDecoderLayer(nn.Module):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        residual: Optional[torch.Tensor],
+        residual: torch.Tensor | None,
         **kwargs,
     ):
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
         else:
-            hidden_states, residual = self.input_layernorm(
-                hidden_states, residual)
+            hidden_states, residual = self.input_layernorm(hidden_states, residual)
 
         hidden_states = self.self_attention(
             positions=positions,
             hidden_states=hidden_states,
         )
         # Fully Connected
-        hidden_states, residual = self.pre_ff_layernorm(
-            hidden_states, residual)
+        hidden_states, residual = self.pre_ff_layernorm(hidden_states, residual)
         hidden_states = self.feed_forward(hidden_states)
         return hidden_states, residual
 
 
 ALL_DECODER_LAYER_TYPES = {
     "attention": BambaAttentionDecoderLayer,
-    "mamba": BambaMixerDecoderLayer
+    "mamba": BambaMixerDecoderLayer,
 }
 
 
 @support_torch_compile
 class BambaModel(nn.Module):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
 
@@ -274,8 +259,11 @@ class BambaModel(nn.Module):
         lora_config = aphrodite_config.lora_config
 
         self.config = config
-        lora_vocab = ((lora_config.lora_extra_vocab_size *
-                       (lora_config.max_loras or 1)) if lora_config else 0)
+        lora_vocab = (
+            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
+            if lora_config
+            else 0
+        )
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -287,8 +275,7 @@ class BambaModel(nn.Module):
 
         def get_layer(prefix: str):
             layer_idx = int(prefix.rsplit(".", 1)[1])
-            layer_class = ALL_DECODER_LAYER_TYPES[
-                config.layers_block_type[layer_idx]]
+            layer_class = ALL_DECODER_LAYER_TYPES[config.layers_block_type[layer_idx]]
             return layer_class(
                 config,
                 layer_idx,
@@ -299,13 +286,13 @@ class BambaModel(nn.Module):
             )
 
         self.start_layer, self.end_layer, self.layers = make_layers(
-            config.num_hidden_layers, get_layer, prefix=f"{prefix}.layers")
-        self.make_empty_intermediate_tensors = (
-            make_empty_intermediate_tensors_factory(
-                ["hidden_states", "residual"], config.hidden_size))
+            config.num_hidden_layers, get_layer, prefix=f"{prefix}.layers"
+        )
+        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
+            ["hidden_states", "residual"], config.hidden_size
+        )
 
-        self.final_layernorm = RMSNorm(config.hidden_size,
-                                       eps=config.rms_norm_eps)
+        self.final_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -314,22 +301,9 @@ class BambaModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         positions: torch.Tensor,
-        mamba_cache_params: MambaCacheParams,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
-
-        attn_metadata = get_forward_context().attn_metadata
-
-        if not envs.APHRODITE_USE_V1:
-            mamba2_metadata = prepare_mamba2_metadata(
-                chunk_size=self.config.mamba_chunk_size,
-                attn_metadata=attn_metadata,
-            )
-        else:
-            # v1 get mamba2_metadata from forward_context
-            mamba2_metadata = None
-
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
                 hidden_states = inputs_embeds
@@ -342,35 +316,21 @@ class BambaModel(nn.Module):
             residual = intermediate_tensors["residual"]
 
         residual = None
-        num_attn = 0
         for i, layer in enumerate(self.layers):
-            if isinstance(layer, BambaAttentionDecoderLayer):
-                num_attn += 1
-
-            layer_mamba_cache_params = None
-            if isinstance(layer,
-                          BambaMixerDecoderLayer) and mamba_cache_params:
-                layer_mamba_cache_params = mamba_cache_params.at_layer_idx(
-                    i - num_attn)
-
             hidden_states, residual = layer(
                 positions=positions,
                 hidden_states=hidden_states,
                 residual=residual,
-                mamba_cache_params=layer_mamba_cache_params,
-                mamba2_metadata=mamba2_metadata,
             )
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors({
-                "hidden_states": hidden_states,
-                "residual": residual
-            })
+            return IntermediateTensors(
+                {"hidden_states": hidden_states, "residual": residual}
+            )
         hidden_states, _ = self.final_layernorm(hidden_states, residual)
         return hidden_states
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
@@ -415,22 +375,28 @@ class BambaModel(nn.Module):
                     continue
 
                 param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
 
 
-class BambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
-                       IsHybrid, SupportsQuant):
+class BambaForCausalLM(
+    nn.Module,
+    HasInnerState,
+    SupportsLoRA,
+    SupportsPP,
+    IsHybrid,
+    SupportsQuant,
+    SupportsMambaPrefixCaching,
+):
     packed_modules_mapping = {
         "qkv_proj": [
             "q_proj",
             "k_proj",
             "v_proj",
         ],
-        "gate_up_proj": ["up_proj", "down_proj"]
+        "gate_up_proj": ["up_proj", "down_proj"],
     }
 
     # LoRA specific attributes
@@ -445,7 +411,6 @@ class BambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
         cls,
         aphrodite_config: "AphroditeConfig",
     ) -> tuple[torch.dtype, torch.dtype]:
-
         return MambaStateDtypeCalculator.mamba2_state_dtype(
             aphrodite_config.model_config.dtype,
             aphrodite_config.cache_config.mamba_cache_dtype,
@@ -456,13 +421,11 @@ class BambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
     def get_mamba_state_shape_from_config(
         cls,
         aphrodite_config: "AphroditeConfig",
-        use_v1: bool = True,
     ) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate shapes for Mamba's convolutional and state caches.
 
         Args:
-            aphrodite_config: vLLM config
-            use_v1: Get shapes for V1 (or V0)
+            aphrodite_config: Aphrodite config
 
         Returns:
             Tuple containing:
@@ -481,26 +444,22 @@ class BambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
             head_dim=hf_config.mamba_d_head,
             state_size=hf_config.mamba_d_state,
             conv_kernel=hf_config.mamba_d_conv,
-            use_v1=use_v1,
         )
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         config = aphrodite_config.model_config.hf_config
         self.aphrodite_config = aphrodite_config
         self.model_config = aphrodite_config.model_config
-        cache_config = aphrodite_config.cache_config
         lora_config = aphrodite_config.lora_config
         scheduler_config = aphrodite_config.scheduler_config
-        assert not cache_config.enable_prefix_caching, \
-            "Bamba currently does not support prefix caching"
-
         self.quant_config = aphrodite_config.quant_config
 
         super().__init__()
         self.config = config
         self.scheduler_config = scheduler_config
-        self.model = BambaModel(aphrodite_config=aphrodite_config,
-                                prefix=maybe_prefix(prefix, "model"))
+        self.model = BambaModel(
+            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
+        )
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -511,70 +470,43 @@ class BambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP,
             padding_size=DEFAULT_VOCAB_PADDING_SIZE
             # We need bigger padding if using lora for kernel
             # compatibility
-            if not lora_config else lora_config.lora_vocab_padding_size,
+            if not lora_config
+            else lora_config.lora_vocab_padding_size,
+            prefix=maybe_prefix(prefix, "lm_head"),
         )
-        # Used to track and store by the Mamba cache between steps.
-        self.mamba_cache: Optional[MambaCacheManager] = None
 
-        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
-                                                config.vocab_size)
+        self.logits_processor = LogitsProcessor(
+            self.unpadded_vocab_size, config.vocab_size
+        )
 
         self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors)
+            self.model.make_empty_intermediate_tensors
+        )
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
 
-    def forward(self,
-                input_ids: torch.Tensor,
-                positions: torch.Tensor,
-                intermediate_tensors: Optional[IntermediateTensors] = None,
-                inputs_embeds: Optional[torch.Tensor] = None,
-                **kwargs):
-
-        mamba_cache_params = None
-        if not envs.APHRODITE_USE_V1:
-            if self.mamba_cache is None:
-                num_mamba_layers = \
-                    self.model_config.get_num_layers_by_block_type(
-                        self.aphrodite_config.parallel_config,
-                        LayerBlockType.mamba
-                    )
-                mamba_state_shape = \
-                    self.get_mamba_state_shape_from_config(
-                        self.aphrodite_config, use_v1=False)
-                mamba_state_dtype = \
-                    self.get_mamba_state_dtype_from_config(
-                    self.aphrodite_config)
-                self.mamba_cache = MambaCacheManager(self.aphrodite_config,
-                                                     num_mamba_layers,
-                                                     *mamba_state_shape,
-                                                     *mamba_state_dtype)
-
-            mamba_cache_params = self.mamba_cache.current_run_tensors(**kwargs)
-
-        hidden_states = self.model(input_ids, positions, mamba_cache_params,
-                                   intermediate_tensors, inputs_embeds)
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
+        **kwargs,
+    ):
+        hidden_states = self.model(
+            input_ids, positions, intermediate_tensors, inputs_embeds
+        )
 
         return hidden_states
-
-    def copy_inputs_before_cuda_graphs(self, input_buffers, **kwargs):
-        return self.mamba_cache.copy_inputs_before_cuda_graphs(
-            input_buffers, **kwargs)
-
-    def get_seqlen_agnostic_capture_inputs(self, batch_size: int):
-        return self.mamba_cache.get_seqlen_agnostic_capture_inputs(batch_size)
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
-        sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
-        logits = self.logits_processor(self.lm_head, hidden_states,
-                                       sampling_metadata)
+    ) -> torch.Tensor | None:
+        logits = self.logits_processor(self.lm_head, hidden_states)
         return logits
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

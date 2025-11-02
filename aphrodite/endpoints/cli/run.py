@@ -1,23 +1,22 @@
 import argparse
 import signal
-from typing import Optional
 
 import uvloop
-from loguru import logger
 
 import aphrodite
-import aphrodite.common.envs as envs
-from aphrodite.utils import (FlexibleArgumentParser, decorate_logs,
-                                    get_tcp_uri, set_process_title)
+import aphrodite.envs as envs
 from aphrodite.endpoints.cli.types import CLISubcommand
 from aphrodite.endpoints.openai.api_server import (run_server,
                                                    run_server_worker,
                                                    setup_server)
 from aphrodite.endpoints.openai.args import (make_arg_parser,
                                              validate_parsed_serve_args)
-from aphrodite.endpoints.utils import (
-    APHRODITE_SUBCMD_PARSER_EPILOG, show_filtered_argument_or_group_from_help)
+from aphrodite.endpoints.utils import APHRODITE_SUBCMD_PARSER_EPILOG
+from aphrodite.logger import init_logger
 from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+from aphrodite.utils.network_utils import get_tcp_uri
+from aphrodite.utils.system_utils import decorate_logs, set_process_title
 from aphrodite.v1.engine.core import EngineCoreProc
 from aphrodite.v1.engine.utils import (CoreEngineProcManager,
                                        launch_core_engines)
@@ -25,6 +24,15 @@ from aphrodite.v1.executor.abstract import Executor
 from aphrodite.v1.metrics.prometheus import setup_multiprocess_prometheus
 from aphrodite.v1.utils import (APIServerProcessManager,
                                 wait_for_completion_or_failure)
+
+logger = init_logger(__name__)
+
+DESCRIPTION = """Launch a local OpenAI-compatible API server to serve LLM
+completions via HTTP. Defaults to Qwen/Qwen3-0.6B if no model is specified.
+Search by using: `--help=<ConfigGroup>` to explore options by section (e.g.,
+--help=ModelConfig, --help=Frontend)
+  Use `--help=all` to show all available flags at once.
+"""
 
 
 class ServeSubcommand(CLISubcommand):
@@ -50,17 +58,14 @@ class ServeSubcommand(CLISubcommand):
         validate_parsed_serve_args(args)
 
     def subparser_init(
-            self,
-            subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
+        self, subparsers: argparse._SubParsersAction
+    ) -> FlexibleArgumentParser:
         serve_parser = subparsers.add_parser(
-            "run",
-            help="Start the Aphrodite OpenAI Compatible API server.",
-            description="Start the Aphrodite OpenAI Compatible API server.",
-            usage="aphrodite run [model_tag] [options]")
+            self.name, description=DESCRIPTION, usage="aphrodite run [model_tag] [options]"
+        )
 
         serve_parser = make_arg_parser(serve_parser)
-        show_filtered_argument_or_group_from_help(serve_parser, ["run"])
-        serve_parser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG
+        serve_parser.epilog = APHRODITE_SUBCMD_PARSER_EPILOG.format(subcmd=self.name)
         return serve_parser
 
 
@@ -99,7 +104,7 @@ def run_headless(args: argparse.Namespace):
 
     # Catch SIGTERM and SIGINT to allow graceful shutdown.
     def signal_handler(signum, frame):
-        logger.debug("Received {} signal.", signum)
+        logger.debug("Received %s signal.", signum)
         raise SystemExit
 
     signal.signal(signal.SIGTERM, signal_handler)
@@ -132,35 +137,30 @@ def run_headless(args: argparse.Namespace):
 def run_multi_api_server(args: argparse.Namespace):
 
     assert not args.headless
-    num_api_servers = args.api_server_count
+    num_api_servers: int = args.api_server_count
     assert num_api_servers > 0
-
-    orig_mm_processor_cache_gb = args.mm_processor_cache_gb
 
     if num_api_servers > 1:
         setup_multiprocess_prometheus()
 
-        # Not compatible with API server scale-out
-        args.mm_processor_cache_gb = 0
-
     listen_address, sock = setup_server(args)
 
     engine_args = aphrodite.AsyncEngineArgs.from_cli_args(args)
+    engine_args._api_process_count = num_api_servers
+    engine_args._api_process_rank = -1
+
     usage_context = UsageContext.OPENAI_API_SERVER
     aphrodite_config = engine_args.create_engine_config(usage_context=usage_context)
-    model_config = aphrodite_config.model_config
 
     if num_api_servers > 1:
         if not envs.APHRODITE_USE_V1:
             raise ValueError("api_server_count > 1 is only supported for V1")
 
         if envs.APHRODITE_ALLOW_RUNTIME_LORA_UPDATING:
-            raise ValueError("APHRODITE_ALLOW_RUNTIME_LORA_UPDATING cannot be used "
-                             "with api_server_count > 1")
-
-        if model_config.is_multimodal_model and orig_mm_processor_cache_gb > 0:
-            logger.warning("Multi-modal processor cache is disabled because "
-                           "it is not compatible with `api_server_count > 1`.")
+            raise ValueError(
+                "APHRODITE_ALLOW_RUNTIME_LORA_UPDATING cannot be used "
+                "with api_server_count > 1"
+            )
 
     executor_class = Executor.get_class(aphrodite_config)
     log_stats = not engine_args.disable_log_stats
@@ -171,12 +171,11 @@ def run_multi_api_server(args: argparse.Namespace):
     hybrid_dp_lb = parallel_config.data_parallel_hybrid_lb
     assert external_dp_lb or hybrid_dp_lb or dp_rank == 0
 
-    api_server_manager: Optional[APIServerProcessManager] = None
+    api_server_manager: APIServerProcessManager | None = None
 
-    with launch_core_engines(aphrodite_config, executor_class, log_stats,
-                             num_api_servers) as (local_engine_manager,
-                                                  coordinator, addresses):
-
+    with launch_core_engines(
+        aphrodite_config, executor_class, log_stats, num_api_servers
+    ) as (local_engine_manager, coordinator, addresses):
         # Construct common args for the APIServerProcessManager up-front.
         api_server_manager_kwargs = dict(
             target_server_fn=run_api_server_worker_proc,
@@ -187,7 +186,9 @@ def run_multi_api_server(args: argparse.Namespace):
             input_addresses=addresses.inputs,
             output_addresses=addresses.outputs,
             stats_update_address=coordinator.get_stats_publish_address()
-            if coordinator else None)
+            if coordinator
+            else None,
+        )
 
         # For dp ranks > 0 in external/hybrid DP LB modes, we must delay the
         # start of the API servers until the local engine is started
@@ -202,28 +203,29 @@ def run_multi_api_server(args: argparse.Namespace):
     # Start API servers now if they weren't already started.
     if api_server_manager is None:
         api_server_manager_kwargs["stats_update_address"] = (
-            addresses.frontend_stats_publish_address)
-        api_server_manager = APIServerProcessManager(
-            **api_server_manager_kwargs)
+            addresses.frontend_stats_publish_address
+        )
+        api_server_manager = APIServerProcessManager(**api_server_manager_kwargs)
 
     # Wait for API servers
-    wait_for_completion_or_failure(api_server_manager=api_server_manager,
-                                   engine_manager=local_engine_manager,
-                                   coordinator=coordinator)
+    wait_for_completion_or_failure(
+        api_server_manager=api_server_manager,
+        engine_manager=local_engine_manager,
+        coordinator=coordinator,
+    )
 
 
-def run_api_server_worker_proc(listen_address,
-                               sock,
-                               args,
-                               client_config=None,
-                               **uvicorn_kwargs) -> None:
+def run_api_server_worker_proc(
+    listen_address, sock, args, client_config=None, **uvicorn_kwargs
+) -> None:
     """Entrypoint for individual API server worker processes."""
+    client_config = client_config or {}
+    server_index = client_config.get("client_index", 0)
 
     # Set process title and add process-specific prefix to stdout and stderr.
-    server_index = client_config.get("client_index", 0) if client_config else 0
     set_process_title("APIServer", str(server_index))
     decorate_logs()
 
     uvloop.run(
-        run_server_worker(listen_address, sock, args, client_config,
-                          **uvicorn_kwargs))
+        run_server_worker(listen_address, sock, args, client_config, **uvicorn_kwargs)
+    )

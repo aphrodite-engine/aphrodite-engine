@@ -5,22 +5,31 @@ For production use, we recommend using our OpenAI compatible server.
 We are also not going to accept PRs modifying this file, please
 change `aphrodite/endpoints/openai/api_server.py` instead.
 """
+
 import asyncio
 import json
 import ssl
 from argparse import Namespace
-from typing import Any, AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-import aphrodite.common.envs as envs
+import aphrodite.envs as envs
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.utils import (FlexibleArgumentParser,
-                                    iterate_with_cancellation, random_uuid)
+from aphrodite.endpoints.utils import with_cancellation
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.async_aphrodite import AsyncAphrodite
+from aphrodite.logger import init_logger
 from aphrodite.server.launch import serve_http
+from aphrodite.usage.usage_lib import UsageContext
+from aphrodite.utils import random_uuid
+from aphrodite.utils.argparse_utils import FlexibleArgumentParser
+from aphrodite.utils.system_utils import set_ulimit
+from aphrodite.version import __version__ as APHRODITE_VERSION
+
+logger = init_logger("aphrodite.endpoints.api_server")
 
 app = FastAPI()
 engine = None
@@ -42,6 +51,11 @@ async def generate(request: Request) -> Response:
     - other fields: the sampling parameters (See `SamplingParams` for details).
     """
     request_dict = await request.json()
+    return await _generate(request_dict, raw_request=request)
+
+
+@with_cancellation
+async def _generate(request_dict: dict, raw_request: Request) -> Response:
     prompt = request_dict.pop("prompt")
     stream = request_dict.pop("stream", False)
     sampling_params = SamplingParams(**request_dict)
@@ -49,18 +63,15 @@ async def generate(request: Request) -> Response:
 
     assert engine is not None
     results_generator = engine.generate(prompt, sampling_params, request_id)
-    results_generator = iterate_with_cancellation(
-        results_generator, is_cancelled=request.is_disconnected)
 
     # Streaming case
     async def stream_results() -> AsyncGenerator[bytes, None]:
         async for request_output in results_generator:
             prompt = request_output.prompt
-            text_outputs = [
-                prompt + output.text for output in request_output.outputs
-            ]
+            assert prompt is not None
+            text_outputs = [prompt + output.text for output in request_output.outputs]
             ret = {"text": text_outputs}
-            yield (json.dumps(ret) + "\0").encode("utf-8")
+            yield (json.dumps(ret) + "\n").encode("utf-8")
 
     if stream:
         return StreamingResponse(stream_results())
@@ -75,6 +86,7 @@ async def generate(request: Request) -> Response:
 
     assert final_output is not None
     prompt = final_output.prompt
+    assert prompt is not None
     text_outputs = [prompt + output.text for output in final_output.outputs]
     ret = {"text": text_outputs}
     return JSONResponse(ret)
@@ -89,28 +101,39 @@ def build_app(args: Namespace) -> FastAPI:
 
 async def init_app(
     args: Namespace,
-    llm_engine: Optional[AsyncAphrodite] = None,
+    llm_engine: AsyncAphrodite | None = None,
 ) -> FastAPI:
     app = build_app(args)
 
     global engine
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
-    engine = (llm_engine
-              if llm_engine is not None else AsyncAphrodite.from_engine_args(
-                  engine_args))
-
+    engine = (
+        llm_engine
+        if llm_engine is not None
+        else AsyncAphrodite.from_engine_args(
+            engine_args, usage_context=UsageContext.API_SERVER
+        )
+    )
+    app.state.engine_client = engine
     return app
 
 
-async def run_server(args: Namespace,
-                     llm_engine: Optional[AsyncAphrodite] = None,
-                     **uvicorn_kwargs: Any) -> None:
+async def run_server(
+    args: Namespace, llm_engine: AsyncAphrodite | None = None, **uvicorn_kwargs: Any
+) -> None:
+    logger.info("Aphrodite API server version %s", APHRODITE_VERSION)
+    logger.info("args: %s", args)
+
+    set_ulimit()
 
     app = await init_app(args, llm_engine)
+    assert engine is not None
 
     shutdown_task = await serve_http(
         app,
+        sock=None,
+        enable_ssl_refresh=args.enable_ssl_refresh,
         host=args.host,
         port=args.port,
         log_level=args.log_level,
@@ -128,24 +151,30 @@ async def run_server(args: Namespace,
 if __name__ == "__main__":
     parser = FlexibleArgumentParser()
     parser.add_argument("--host", type=str, default=None)
-    parser.add_argument("--port", type=int, default=2242)
+    parser.add_argument("--port", type=parser.check_port, default=2242)
     parser.add_argument("--ssl-keyfile", type=str, default=None)
     parser.add_argument("--ssl-certfile", type=str, default=None)
-    parser.add_argument("--ssl-ca-certs",
-                        type=str,
-                        default=None,
-                        help="The CA certificates file")
+    parser.add_argument(
+        "--ssl-ca-certs", type=str, default=None, help="The CA certificates file"
+    )
+    parser.add_argument(
+        "--enable-ssl-refresh",
+        action="store_true",
+        default=False,
+        help="Refresh SSL Context when SSL certificate files change",
+    )
     parser.add_argument(
         "--ssl-cert-reqs",
         type=int,
         default=int(ssl.CERT_NONE),
-        help="Whether client certificate is required (see stdlib ssl module's)"
+        help="Whether client certificate is required (see stdlib ssl module's)",
     )
     parser.add_argument(
         "--root-path",
         type=str,
         default=None,
-        help="FastAPI root_path when app is behind a path based routing proxy")
+        help="FastAPI root_path when app is behind a path based routing proxy",
+    )
     parser.add_argument("--log-level", type=str, default="debug")
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()

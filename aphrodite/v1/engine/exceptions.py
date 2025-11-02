@@ -1,5 +1,6 @@
 class EngineGenerateError(Exception):
     """Raised when a AsyncLLM.generate() fails. Recoverable."""
+
     pass
 
 

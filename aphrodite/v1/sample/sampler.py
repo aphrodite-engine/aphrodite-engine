@@ -1,14 +1,11 @@
 """A layer that samples the next tokens from the model's outputs."""
-from typing import Optional
-
 import torch
 import torch.nn as nn
-from loguru import logger
 
-from aphrodite.common.logger import log_once
 from aphrodite.common.sampling_params import SamplerID
-from aphrodite.config import LogprobsMode
-from aphrodite.utils import is_pin_memory_available
+from aphrodite.config.model import LogprobsMode
+from aphrodite.logger import init_logger
+from aphrodite.utils.platform_utils import is_pin_memory_available
 from aphrodite.v1.outputs import LogprobsTensors, SamplerOutput
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.sample.ops import SamplingOps
@@ -16,6 +13,7 @@ from aphrodite.v1.sample.ops.logprobs import batched_count_greater_than
 from aphrodite.v1.sample.ops.temperatures import apply_all_temperatures
 from aphrodite.v1.sample.ops.topk_topp_sampler import TopKTopPSampler
 
+logger = init_logger(__name__)
 _SAMPLING_EPS = 1e-5
 
 # Default sampler execution order (same as V0)
@@ -78,8 +76,7 @@ class Sampler(nn.Module):
     9. Return the final `SamplerOutput`.
     """
 
-    def __init__(self,
-                 logprobs_mode: LogprobsMode = LogprobsMode.RAW_LOGPROBS):
+    def __init__(self, logprobs_mode: LogprobsMode = "raw_logprobs"):
         super().__init__()
         self.topk_topp_sampler = TopKTopPSampler(logprobs_mode)
         self.sampling_ops = SamplingOps()
@@ -90,30 +87,27 @@ class Sampler(nn.Module):
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
+        predict_bonus_token: bool = False,
+        logprobs_mode_override: LogprobsMode | None = None,
     ) -> SamplerOutput:
+        logprobs_mode = logprobs_mode_override or self.logprobs_mode
         # NOTE: Use the original logits (before any penalties or
         # temperature scaling) for the top-k logprobs.
         # This is different from the V0 sampler, which uses the logits that
         # is used for sampling (after penalties and temperature scaling).
         num_logprobs = sampling_metadata.max_num_logprobs
         if num_logprobs is not None:
-            if self.logprobs_mode == LogprobsMode.RAW_LOGPROBS:
+            if logprobs_mode == "raw_logprobs":
                 raw_logprobs = self.compute_logprobs(logits)
-            elif self.logprobs_mode == LogprobsMode.RAW_LOGITS:
+            elif logprobs_mode == "raw_logits":
                 raw_logprobs = logits.clone()
 
         # Use float32 for the logits.
         logits = logits.to(torch.float32)
 
-        # Apply allowed token ids, bad words, and logits bias
-        # (these are not part of the priority system)
-        logits = self.sampling_ops.apply_allowed_token_ids(
-            logits, sampling_metadata)
-        logits = self.sampling_ops.apply_bad_words(logits, sampling_metadata)
-
-        # Apply logits processors which can impact greedy sampling
-        for processor in sampling_metadata.logitsprocs.non_argmax_invariant:
-            logits = processor.apply(logits)
+        logits = self.sampling_ops.apply_logits_processors(
+            logits, sampling_metadata, predict_bonus_token
+        )
 
         # Apply samplers in priority order
         logits = self._execute_samplers_in_order(logits, sampling_metadata)
@@ -131,10 +125,18 @@ class Sampler(nn.Module):
         # return int32 (while PyTorch argmax and topk return int64).
         sampled = sampled.long()
 
-        # Gather the logprobs of the topk and sampled token (if requested).
-        # Get logprobs and rank tensors (if requested)
-        logprobs_tensors = None if num_logprobs is None else \
-            self.gather_logprobs(raw_logprobs, num_logprobs, token_ids=sampled)
+        if num_logprobs is None:
+            logprobs_tensors = None
+        elif num_logprobs == -1:
+            # Return the full unsorted and unranked logprobs.
+            logprobs_tensors = LogprobsTensors(
+                torch.empty(0), raw_logprobs, torch.empty(0)
+            )
+        else:
+            # Gather the logprobs and ranks of the topk and sampled token.
+            logprobs_tensors = self.gather_logprobs(
+                raw_logprobs, num_logprobs, token_ids=sampled
+            )
 
         # Use int32 to reduce the tensor size.
         sampled = sampled.to(torch.int32)
@@ -149,8 +151,8 @@ class Sampler(nn.Module):
         )
         return sampler_output
 
+    @staticmethod
     def apply_temperature(
-        self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
@@ -205,8 +207,7 @@ class Sampler(nn.Module):
         else:
             # Warn if both custom order and temp_last are specified
             if do_temp_last:
-                log_once(
-                    "WARNING",
+                logger.warning_once(
                     "Both sampler_priority and temperature_last=True "
                     "were specified. Using custom sampler_priority order "
                     "and ignoring temperature_last.")
@@ -228,7 +229,7 @@ class Sampler(nn.Module):
                 not sampling_metadata.no_penalties:
                 logger.debug("Applying penalties")
                 logits = self.sampling_ops.apply_penalties(
-                    logits, sampling_metadata)
+                    logits, sampling_metadata, sampling_metadata.output_token_ids)
 
             elif sampler_id == SamplerID.NO_REPEAT_NGRAM and \
                 sampling_metadata.no_repeat_ngram_size is not None:
@@ -338,22 +339,24 @@ class Sampler(nn.Module):
 
         return logits
 
-    def greedy_sample(self, logits: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def greedy_sample(logits: torch.Tensor) -> torch.Tensor:
         return logits.argmax(dim=-1).view(-1)
 
     def sample(
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        logprobs_mode_override: LogprobsMode | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Sample logits based on sampling metadata.
 
         The various logits processing functions called in this method
         may update the logits tensor in-place.
         """
 
-        assert not (sampling_metadata.all_greedy
-                    and sampling_metadata.all_random)
+        logprobs_mode = logprobs_mode_override or self.logprobs_mode
+        assert not (sampling_metadata.all_greedy and sampling_metadata.all_random)
         if sampling_metadata.all_random:
             greedy_sampled = None
         else:
@@ -361,9 +364,9 @@ class Sampler(nn.Module):
             if sampling_metadata.all_greedy:
                 processed_logprobs = None
                 if sampling_metadata.max_num_logprobs is not None:
-                    if self.logprobs_mode == LogprobsMode.PROCESSED_LOGITS:
+                    if logprobs_mode == "processed_logits":
                         processed_logprobs = logits
-                    elif self.logprobs_mode == LogprobsMode.PROCESSED_LOGPROBS:
+                    elif logprobs_mode == "processed_logprobs":
                         processed_logprobs = self.compute_logprobs(logits)
                 return greedy_sampled, processed_logprobs
 
@@ -396,11 +399,12 @@ class Sampler(nn.Module):
         )
         return sampled, processed_logprobs
 
-    def compute_logprobs(self, logits: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def compute_logprobs(logits: torch.Tensor) -> torch.Tensor:
         return logits.log_softmax(dim=-1, dtype=torch.float32)
 
+    @staticmethod
     def gather_logprobs(
-        self,
         logprobs: torch.Tensor,
         num_logprobs: int,
         token_ids: torch.Tensor,
@@ -425,9 +429,7 @@ class Sampler(nn.Module):
         """
         assert token_ids.dtype == torch.int64
         # Find the topK values.
-        topk_logprobs, topk_indices = torch.topk(logprobs,
-                                                 num_logprobs,
-                                                 dim=-1)
+        topk_logprobs, topk_indices = torch.topk(logprobs, num_logprobs, dim=-1)
 
         # Get with the logprob of the prompt or sampled token.
         token_ids = token_ids.unsqueeze(-1)

@@ -1,28 +1,27 @@
 from collections.abc import Sequence
-from typing import List, Optional, Union
 
 import torch
-from loguru import logger
 
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import SamplingParams
+from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
+from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
+
+logger = init_logger(__name__)
 
 
 class RequestLogger:
-
-    def __init__(self, *, max_log_len: Optional[int]) -> None:
-
+    def __init__(self, *, max_log_len: int | None) -> None:
         self.max_log_len = max_log_len
 
     def log_inputs(
         self,
         request_id: str,
-        prompt: Optional[str],
-        prompt_token_ids: Optional[List[int]],
-        prompt_embeds: Optional[torch.Tensor],
-        params: Optional[Union[SamplingParams, PoolingParams]],
-        lora_request: Optional[LoRARequest],
+        prompt: str | None,
+        prompt_token_ids: list[int] | None,
+        prompt_embeds: torch.Tensor | None,
+        params: SamplingParams | PoolingParams | BeamSearchParams | None,
+        lora_request: LoRARequest | None,
     ) -> None:
         max_log_len = self.max_log_len
         if max_log_len is not None:
@@ -32,19 +31,29 @@ class RequestLogger:
             if prompt_token_ids is not None:
                 prompt_token_ids = prompt_token_ids[:max_log_len]
 
-        logger.info(f"Received request {request_id}: "
-                    f"params: {params}, "
-                    f"num_prompt_tokens: {len(prompt_token_ids)}, "
-                    f"lora_request: {lora_request}, "
-                    "prompt_embeds shape: {}",
-                    prompt_embeds.shape if prompt_embeds is not None else None)
+        logger.debug(
+            "Request %s details: prompt: %r, "
+            "prompt_token_ids: %s, "
+            "prompt_embeds shape: %s.",
+            request_id,
+            prompt,
+            prompt_token_ids,
+            prompt_embeds.shape if prompt_embeds is not None else None,
+        )
+
+        logger.info(
+            "Received request %s: params: %s, lora_request: %s.",
+            request_id,
+            params,
+            lora_request,
+        )
 
     def log_outputs(
         self,
         request_id: str,
         outputs: str,
-        output_token_ids: Optional[Sequence[int]],
-        finish_reason: Optional[str] = None,
+        output_token_ids: Sequence[int] | None,
+        finish_reason: str | None = None,
         is_streaming: bool = False,
         delta: bool = False,
     ) -> None:
@@ -59,12 +68,11 @@ class RequestLogger:
 
         stream_info = ""
         if is_streaming:
-            stream_info = (" (streaming delta)"
-                           if delta else " (streaming complete)")
+            stream_info = " (streaming delta)" if delta else " (streaming complete)"
 
         logger.info(
-            "Generated response {}: output: {}, "
-            "output_token_ids: {}, finish_reason: {}",
+            "Generated response %s%s: output: %r, "
+            "output_token_ids: %s, finish_reason: %s",
             request_id,
             stream_info,
             outputs,

@@ -9,7 +9,6 @@ from aphrodite.endpoints.ssl import SSLCertRefresher
 
 
 class MockSSLContext(SSLContext):
-
     def __init__(self):
         self.load_cert_chain_count = 0
         self.load_ca_count = 0
@@ -32,7 +31,7 @@ class MockSSLContext(SSLContext):
 
 
 def create_file() -> str:
-    with tempfile.NamedTemporaryFile(dir='/tmp', delete=False) as f:
+    with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as f:
         return f.name
 
 

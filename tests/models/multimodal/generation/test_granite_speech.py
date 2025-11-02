@@ -1,14 +1,13 @@
 from collections.abc import Sequence
-from typing import Optional
 
 import pytest
 from transformers import AutoModelForSpeechSeq2Seq
 
+from aphrodite.logprobs import SampleLogprobs
 from aphrodite.lora.request import LoRARequest
-from aphrodite.common.sequence import SampleLogprobs
 
-from ....conftest import (AudioTestAssets, HfRunner, PromptAudioInput,
-                          AphroditeRunner)
+from ....conftest import (AphroditeRunner, AudioTestAssets, HfRunner,
+                          PromptAudioInput)
 from ...registry import HF_EXAMPLE_MODELS
 from ...utils import check_logprobs_close
 
@@ -16,8 +15,8 @@ HF_AUDIO_PROMPT = "<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: 
 
 
 def aphrodite_to_hf_output(
-    aphrodite_output: tuple[list[int], str, Optional[SampleLogprobs]],
-) -> tuple[list[int], str, Optional[SampleLogprobs]]:
+    aphrodite_output: tuple[list[int], str, SampleLogprobs | None],
+) -> tuple[list[int], str, SampleLogprobs | None]:
     """Sanitize hf output to be comparable with aphrodite output."""
     output_ids, output_str, out_logprobs = aphrodite_output
 
@@ -44,7 +43,7 @@ def run_test(
     max_tokens: int,
     num_logprobs: int,
     tensor_parallel_size: int,
-    distributed_executor_backend: Optional[str] = None,
+    distributed_executor_backend: str | None = None,
 ):
     """Inference result should be the same between hf and aphrodite.
 
@@ -61,50 +60,49 @@ def run_test(
     # will hurt multiprocessing backend with fork method (the default method).
     # max_model_len should be greater than image_feature_size
     with aphrodite_runner(
-            model,
-            runner="generate",
-            max_model_len=max_model_len,
-            max_num_seqs=1,
-            dtype=dtype,
-            limit_mm_per_prompt={"audio": 1},
-            tensor_parallel_size=tensor_parallel_size,
-            distributed_executor_backend=distributed_executor_backend,
-            enable_lora=True,
-            max_lora_rank=64,
-            enforce_eager=True,
+        model,
+        runner="generate",
+        max_model_len=max_model_len,
+        max_num_seqs=1,
+        dtype=dtype,
+        limit_mm_per_prompt={"audio": 1},
+        tensor_parallel_size=tensor_parallel_size,
+        distributed_executor_backend=distributed_executor_backend,
+        enable_lora=True,
+        max_lora_rank=64,
+        enforce_eager=True,
     ) as aphrodite_model:
         lora_request = LoRARequest("audio", 1, audio_lora_path)
         aphrodite_outputs_per_case = [
-            aphrodite_model.generate_greedy_logprobs(prompts,
-                                                max_tokens,
-                                                num_logprobs=num_logprobs,
-                                                audios=audios,
-                                                lora_request=lora_request)
+            aphrodite_model.generate_greedy_logprobs(
+                prompts,
+                max_tokens,
+                num_logprobs=num_logprobs,
+                audios=audios,
+                lora_request=lora_request,
+            )
             for prompts, audios in inputs
         ]
 
-    with hf_runner(model, dtype=dtype,
-                   auto_cls=AutoModelForSpeechSeq2Seq) as hf_model:
-
+    with hf_runner(model, dtype=dtype, auto_cls=AutoModelForSpeechSeq2Seq) as hf_model:
         hf_processor = hf_model.processor
         eos_token_id = hf_processor.tokenizer.eos_token_id
 
         hf_outputs_per_case = [
-            hf_model.generate_greedy_logprobs_limit(prompts,
-                                                    max_tokens,
-                                                    num_logprobs=num_logprobs,
-                                                    audios=[audios],
-                                                    eos_token_id=eos_token_id)
+            hf_model.generate_greedy_logprobs_limit(
+                prompts,
+                max_tokens,
+                num_logprobs=num_logprobs,
+                audios=[audios],
+                eos_token_id=eos_token_id,
+            )
             for prompts, audios in inputs
         ]
 
-    for hf_outputs, aphrodite_outputs in zip(hf_outputs_per_case,
-                                        aphrodite_outputs_per_case):
+    for hf_outputs, aphrodite_outputs in zip(hf_outputs_per_case, aphrodite_outputs_per_case):
         check_logprobs_close(
             outputs_0_lst=hf_outputs,
-            outputs_1_lst=[
-                aphrodite_to_hf_output(output) for output in aphrodite_outputs
-            ],
+            outputs_1_lst=[aphrodite_to_hf_output(output) for output in aphrodite_outputs],
             name_0="hf",
             name_1="aphrodite",
         )
@@ -115,9 +113,16 @@ def run_test(
 @pytest.mark.parametrize("max_model_len", [2048])
 @pytest.mark.parametrize("max_tokens", [128])
 @pytest.mark.parametrize("num_logprobs", [10])
-def test_models(hf_runner, aphrodite_runner, model: str,
-                audio_assets: AudioTestAssets, dtype: str, max_model_len: int,
-                max_tokens: int, num_logprobs: int) -> None:
+def test_models(
+    hf_runner,
+    aphrodite_runner,
+    model: str,
+    audio_assets: AudioTestAssets,
+    dtype: str,
+    max_model_len: int,
+    max_tokens: int,
+    num_logprobs: int,
+) -> None:
     model_info = HF_EXAMPLE_MODELS.find_hf_info(model)
     model_info.check_available_online(on_fail="skip")
     model_info.check_transformers_version(on_fail="skip")
