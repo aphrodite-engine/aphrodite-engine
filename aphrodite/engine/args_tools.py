@@ -526,6 +526,14 @@ class EngineArgs:
     kv_thresh: float = SchedulerConfig.kv_thresh
     minp: int = SchedulerConfig.minp
 
+    # KTransformers hybrid CPU-GPU MoE parameters
+    kt_amx_weight_path: str | None = None
+    kt_amx_method: str = "AMXINT4"
+    kt_cpuinfer: int | None = None
+    kt_threadpool_count: int = 2
+    kt_num_gpu_experts: int | None = None
+    kt_chunked_prefill_size: int | None = None
+
     def __post_init__(self):
         # support `EngineArgs(compilation_config={...})`
         # without having to manually construct a
@@ -534,6 +542,10 @@ class EngineArgs:
             self.compilation_config = CompilationConfig(**self.compilation_config)
         if isinstance(self.eplb_config, dict):
             self.eplb_config = EPLBConfig(**self.eplb_config)
+        
+        # Set KTransformers environment variables if provided
+        self._handle_ktransformers_configs()
+        
         # Setup plugins
         from aphrodite.plugins import load_general_plugins
 
@@ -547,6 +559,22 @@ class EngineArgs:
                 model_id,
                 self.model,
             )
+
+    def _handle_ktransformers_configs(self):
+        """Set KTransformers environment variables from CLI arguments."""
+
+        if self.kt_amx_weight_path is not None:
+            envs.APHRODITE_KT_MOE_AMX_WEIGHT_PATH = self.kt_amx_weight_path
+        if self.kt_amx_method is not None:
+            envs.APHRODITE_KT_AMX_METHOD = self.kt_amx_method
+        if self.kt_cpuinfer is not None:
+            envs.APHRODITE_KT_MOE_CPUINFER = self.kt_cpuinfer
+        if self.kt_threadpool_count is not None:
+            envs.APHRODITE_KT_THREADPOOL_COUNT = self.kt_threadpool_count
+        if self.kt_num_gpu_experts is not None:
+            envs.APHRODITE_KT_MOE_NUM_GPU_EXPERTS = self.kt_num_gpu_experts
+        if self.kt_chunked_prefill_size is not None:
+            envs.APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE = self.kt_chunked_prefill_size
 
     @staticmethod
     def add_cli_args(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
@@ -1079,6 +1107,48 @@ class EngineArgs:
         )
         aphrodite_group.add_argument(
             "--structured-outputs-config", **aphrodite_kwargs["structured_outputs_config"]
+        )
+
+        # KTransformers hybrid CPU-GPU MoE arguments
+        kt_group = parser.add_argument_group(
+            title="KTransformers",
+            description="Arguments for KTransformers hybrid CPU-GPU MoE inference",
+        )
+        kt_group.add_argument(
+            "--kt-amx-weight-path",
+            type=str,
+            default=None,
+            help="Path to quantized expert weights for AMX kernel (local folder).",
+        )
+        kt_group.add_argument(
+            "--kt-amx-method",
+            type=str,
+            default="AMXINT4",
+            help="Quantization format for CPU execution (default: AMXINT4).",
+        )
+        kt_group.add_argument(
+            "--kt-cpuinfer",
+            type=int,
+            default=None,
+            help="Number of CPUInfer threads for hybrid MoE.",
+        )
+        kt_group.add_argument(
+            "--kt-threadpool-count",
+            type=int,
+            default=2,
+            help="Number of thread pools (one per NUMA node, default: 2).",
+        )
+        kt_group.add_argument(
+            "--kt-num-gpu-experts",
+            type=int,
+            default=None,
+            help="Number of GPU experts for hybrid MoE.",
+        )
+        kt_group.add_argument(
+            "--kt-chunked-prefill-size",
+            type=int,
+            default=None,
+            help="Chunked prefill size for hybrid MoE.",
         )
 
         # Other arguments

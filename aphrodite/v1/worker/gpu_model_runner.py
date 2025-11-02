@@ -357,6 +357,13 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 self.compilation_config.cudagraph_capture_sizes
             )
 
+            # Set capture batch sizes for KTransformers AMXMoEWrapper if enabled
+            try:
+                from kt_kernel import AMXMoEWrapper
+                AMXMoEWrapper.set_capture_batch_sizes(self.cudagraph_batch_sizes)
+            except ImportError:
+                pass
+
         # Cache the device properties.
         self._init_device_properties()
 

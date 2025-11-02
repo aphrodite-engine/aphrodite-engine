@@ -222,6 +222,13 @@ if TYPE_CHECKING:
     APHRODITE_REQUEST_LEVEL_METRICS: bool = True
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
     APHRODITE_DISABLE_FLASH_ATTN_COMPILE: bool = False
+    # Ktransformers
+    APHRODITE_KT_MOE_AMX_WEIGHT_PATH: str | None = None
+    APHRODITE_KT_AMX_METHOD: str | None = None
+    APHRODITE_KT_MOE_CPUINFER: int | None = None
+    APHRODITE_KT_THREADPOOL_COUNT: int | None = None
+    APHRODITE_KT_MOE_NUM_GPU_EXPERTS: int | None = None
+    APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE: int | None = None
 
 
 def get_default_cache_root():
@@ -1469,6 +1476,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_DISABLE_FLASH_ATTN_COMPILE": lambda: bool(
         int(os.getenv("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "0"))
     ),
+    # Ktransformers hybrid CPU-GPU MoE parameters
+    "APHRODITE_KT_MOE_AMX_WEIGHT_PATH": lambda: os.getenv("APHRODITE_KT_MOE_AMX_WEIGHT_PATH", None),
+    "APHRODITE_KT_AMX_METHOD": lambda: os.getenv("APHRODITE_KT_AMX_METHOD", "AMXINT4"),
+    "APHRODITE_KT_MOE_CPUINFER": lambda: maybe_convert_int(os.getenv("APHRODITE_KT_MOE_CPUINFER", None)),
+    "APHRODITE_KT_THREADPOOL_COUNT": lambda: int(os.getenv("APHRODITE_KT_THREADPOOL_COUNT", "2")),
+    "APHRODITE_KT_MOE_NUM_GPU_EXPERTS": lambda: maybe_convert_int(os.getenv("APHRODITE_KT_MOE_NUM_GPU_EXPERTS", None)),
+    "APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE": lambda: maybe_convert_int(os.getenv("APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE", None)),
 }
 
 # --8<-- [end:env-vars-definition]

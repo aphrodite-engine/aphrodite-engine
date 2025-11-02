@@ -1323,8 +1323,17 @@ class FusedMoE(CustomOp):
             "GPTQMarlinMoEMethod",
             "CompressedTensorsWNA16MarlinMoEMethod",
             "CompressedTensorsWNA16MoEMethod",
+            "CompressedTensorsWNA16AMXMoEMethod",
+            "CompressedTensorsWNA16AMXEPMoEMethod",
         ):
             moe_quant_params["intermediate_size_full"] = intermediate_size
+
+        # KTransformers AMX methods need top_k
+        if self.quant_method.__class__.__name__ in (
+            "CompressedTensorsWNA16AMXMoEMethod",
+            "CompressedTensorsWNA16AMXEPMoEMethod",
+        ):
+            moe_quant_params["top_k"] = self.top_k
 
         self.quant_method.create_weights(layer=self, **moe_quant_params)
 

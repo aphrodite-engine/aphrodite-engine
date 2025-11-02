@@ -1,6 +1,14 @@
 import enum
+import re
 from collections.abc import Callable
 from enum import Enum
+
+try:
+    from kt_kernel import AMXMoEWrapper
+
+    KTRANSFORMERS_AVAILABLE = True
+except ImportError:
+    KTRANSFORMERS_AVAILABLE = False
 
 import torch
 from compressed_tensors import CompressionFormat
@@ -52,6 +60,18 @@ from aphrodite.utils.deep_gemm import (get_col_major_tma_aligned_tensor,
 logger = init_logger(__name__)
 
 
+def _mask_topk_ids_cpu_experts(topk_ids: torch.Tensor, num_gpu_experts: int):
+    """Mask topk_ids >= num_gpu_experts by setting them to -1."""
+    topk_ids[topk_ids >= num_gpu_experts] = -1
+
+
+@torch.compile(dynamic=True)
+def mask_cpu_expert_ids(topk_ids: torch.Tensor, num_gpu_experts: int):
+    """mask CPU expert IDs."""
+    _mask_topk_ids_cpu_experts(topk_ids, num_gpu_experts)
+    return topk_ids
+
+
 class GPTQMarlinState(Enum):
     REPACK = enum.auto()
     READY = enum.auto()
@@ -65,6 +85,8 @@ __all__ = [
     "CompressedTensorsWNA16MoEMethod",
     "CompressedTensorsW4A4MoeMethod",
     "CompressedTensorsW4A8Int8MoEMethod",
+    "CompressedTensorsWNA16AMXMoEMethod",
+    "CompressedTensorsWNA16AMXEPMoEMethod",
 ]
 
 
@@ -76,7 +98,19 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
     def get_moe_method(
         quant_config: "CompressedTensorsConfig",  # type: ignore # noqa E501
         layer: torch.nn.Module,
+        prefix: str = "",
     ) -> "CompressedTensorsMoEMethod":
+        # Check for KTransformers AMX weights first
+        if envs.APHRODITE_KT_MOE_AMX_WEIGHT_PATH is not None:
+            match = re.search(r"(\d+)\.mlp", prefix)
+            if not match:
+                raise ValueError(
+                    f"Unable to extract layer number from prefix '{prefix}'. "
+                    f"Expected format: '<layer_number>.mlp'"
+                )
+            layer_number = int(match.group(1))
+            return CompressedTensorsWNA16AMXEPMoEMethod(quant_config, layer.moe_config, layer_number)
+        
         # TODO: @dsikka: refactor this to use schemes as other kernels
         # are supported + check if the layer is being ignored.
         # Check if a using "Linear" to select schemes
@@ -2234,3 +2268,289 @@ class CompressedTensorsW4A8Int8MoEMethod(CompressedTensorsMoEMethod):
             apply_router_weight_on_input,
             int(_act_kind(activation)),
         )
+
+
+class CompressedTensorsWNA16AMXMoEMethod(CompressedTensorsMoEMethod):
+    """AMX MoE method using AMXMoEWrapper for CPU inference."""
+
+    def __init__(
+        self,
+        moe: FusedMoEConfig,
+        layer_idx: int,
+        num_gpu_experts: int | None = None,
+        cpuinfer: int | None = None,
+        threadpool_count: int | None = None,
+        amx_weight_path: str | None = None,
+        chunked_prefill_size: int | None = None,
+    ):
+        super().__init__(moe)
+
+        if not KTRANSFORMERS_AVAILABLE:
+            raise ImportError(
+                "kt_kernel is not installed, to use CompressedTensorsWNA16AMXMoEMethod, please install kt_kernel."
+            )
+
+        from aphrodite.distributed import get_tensor_model_parallel_rank
+
+        self.tp_rank = get_tensor_model_parallel_rank()
+        self.layer_idx = layer_idx
+        self.num_gpu_experts = num_gpu_experts or 0
+        self.amx_weight_path = amx_weight_path
+        self.chunked_prefill_size = chunked_prefill_size
+        self.cpuinfer = cpuinfer
+        self.threadpool_count = threadpool_count
+        self.amx_wrapper = None
+
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        num_experts: int,
+        hidden_size: int,
+        intermediate_size_per_partition: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ):
+        self.experts_num = num_experts
+        self.num_experts_per_tok = extra_weight_attrs.pop("top_k", 2)
+        self.hidden_size = hidden_size
+        self.moe_intermediate_size = extra_weight_attrs.pop("intermediate_size_full", intermediate_size_per_partition)
+
+        if self.tp_rank != 0:
+            return
+        
+        if self.amx_wrapper is None:
+            self.amx_wrapper = AMXMoEWrapper(
+                layer_idx=self.layer_idx,
+                num_experts=num_experts,
+                num_experts_per_tok=self.num_experts_per_tok,
+                hidden_size=hidden_size,
+                moe_intermediate_size=self.moe_intermediate_size,
+                num_gpu_experts=self.num_gpu_experts,
+                cpuinfer_threads=self.cpuinfer,
+                threadpool_count=self.threadpool_count,
+                amx_weight_path=self.amx_weight_path,
+                chunked_prefill_size=self.chunked_prefill_size,
+            )
+
+    def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        if self.tp_rank != 0 or self.amx_wrapper is None:
+            return
+
+        torch.cuda.synchronize()
+        # Note: Aphrodite doesn't have EPLB physical_to_logical_map_cpu
+        # If needed, this should be adapted based on Aphrodite's EP implementation
+        # For now, we'll pass an identity mapping
+        physical_to_logical_map_cpu = torch.arange(
+            self.experts_num, dtype=torch.int32, device="cpu"
+        ).contiguous()
+        self.amx_wrapper.load_weights(physical_to_logical_map_cpu)
+
+    def get_fused_moe_quant_config(
+        self, layer: torch.nn.Module
+    ) -> FusedMoEQuantConfig | None:
+        return None
+
+    def apply(
+        self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        router_logits: torch.Tensor,
+        top_k: int,
+        renormalize: bool,
+        use_grouped_topk: bool = False,
+        topk_group: int | None = None,
+        num_expert_group: int | None = None,
+        global_num_experts: int = -1,
+        expert_map: torch.Tensor | None = None,
+        custom_routing_function: Callable | None = None,
+        scoring_func: str = "softmax",
+        routed_scaling_factor: float = 1.0,
+        e_score_correction_bias: torch.Tensor | None = None,
+        apply_router_weight_on_input: bool = False,
+        activation: str = "silu",
+        enable_eplb: bool = False,
+        expert_load_view: torch.Tensor | None = None,
+        logical_to_physical_map: torch.Tensor | None = None,
+        logical_replica_count: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Execute AMX MoE forward pass synchronously."""
+        assert activation == "silu", "Only SiLU activation is supported."
+
+        if self.tp_rank != 0 or self.amx_wrapper is None:
+            return torch.zeros_like(x)
+
+        # Compute topk
+        from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
+
+        topk_weights, topk_ids = fused_topk(
+            hidden_states=x,
+            gating_output=router_logits,
+            topk=top_k,
+            renormalize=renormalize,
+        )
+
+        # Execute forward using wrapper (submit + sync)
+        output = self.amx_wrapper.forward(
+            x, topk_ids, topk_weights, torch.cuda.current_stream(x.device).cuda_stream
+        )
+        return output
+
+
+class CompressedTensorsWNA16AMXEPMoEMethod(CompressedTensorsMoEMethod):
+    """Hybrid CPU+GPU MoE method combining AMX CPU inference with GPU Marlin."""
+
+    def __init__(
+        self,
+        quant_config: "CompressedTensorsConfig",  # type: ignore # noqa E501
+        moe: FusedMoEConfig,
+        layer_idx: int,
+    ):
+        super().__init__(moe)
+        from aphrodite.distributed import get_tensor_model_parallel_rank
+
+        self.tp_rank = get_tensor_model_parallel_rank()
+
+        if (
+            envs.APHRODITE_KT_MOE_NUM_GPU_EXPERTS is None
+            or envs.APHRODITE_KT_MOE_CPUINFER is None
+            or envs.APHRODITE_KT_MOE_AMX_WEIGHT_PATH is None
+        ):
+            raise RuntimeError(
+                "The following environment variables are required: "
+                "APHRODITE_KT_MOE_AMX_WEIGHT_PATH, APHRODITE_KT_MOE_CPUINFER, APHRODITE_KT_MOE_NUM_GPU_EXPERTS"
+            )
+        
+        self.num_gpu_experts = envs.APHRODITE_KT_MOE_NUM_GPU_EXPERTS
+        cpuinfer = envs.APHRODITE_KT_MOE_CPUINFER
+        threadpool_count = envs.APHRODITE_KT_THREADPOOL_COUNT
+        amx_weight_path = envs.APHRODITE_KT_MOE_AMX_WEIGHT_PATH
+        chunked_prefill_size = envs.APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE
+
+        self.AMX_method = CompressedTensorsWNA16AMXMoEMethod(
+            moe,
+            layer_idx,
+            self.num_gpu_experts,
+            cpuinfer,
+            threadpool_count,
+            amx_weight_path,
+            chunked_prefill_size,
+        )
+        self.marlin_method = CompressedTensorsWNA16MarlinMoEMethod(quant_config, moe)
+        self.layer_id = layer_idx
+
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        num_experts: int,
+        hidden_size: int,
+        intermediate_size_per_partition: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ):
+        self.global_num_experts = num_experts
+        self.AMX_method.create_weights(
+            layer,
+            num_experts,
+            hidden_size,
+            intermediate_size_per_partition,
+            params_dtype,
+            **extra_weight_attrs,
+        )
+        # Filter out CPU expert weights from GPU method
+        # Only load weights for GPU experts (< num_gpu_experts)
+        self.marlin_method.create_weights(
+            layer,
+            min(num_experts, self.num_gpu_experts),
+            hidden_size,
+            intermediate_size_per_partition,
+            params_dtype,
+            **extra_weight_attrs,
+        )
+
+    def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        self.AMX_method.process_weights_after_loading(layer)
+        self.marlin_method.process_weights_after_loading(layer)
+
+    def get_fused_moe_quant_config(
+        self, layer: torch.nn.Module
+    ) -> FusedMoEQuantConfig | None:
+        return self.marlin_method.get_fused_moe_quant_config(layer)
+
+    def apply(
+        self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        router_logits: torch.Tensor,
+        top_k: int,
+        renormalize: bool,
+        use_grouped_topk: bool = False,
+        topk_group: int | None = None,
+        num_expert_group: int | None = None,
+        global_num_experts: int = -1,
+        expert_map: torch.Tensor | None = None,
+        custom_routing_function: Callable | None = None,
+        scoring_func: str = "softmax",
+        routed_scaling_factor: float = 1.0,
+        e_score_correction_bias: torch.Tensor | None = None,
+        apply_router_weight_on_input: bool = False,
+        activation: str = "silu",
+        enable_eplb: bool = False,
+        expert_load_view: torch.Tensor | None = None,
+        logical_to_physical_map: torch.Tensor | None = None,
+        logical_replica_count: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Execute hybrid GPU+CPU MoE forward pass with parallelism."""
+        assert activation == "silu", "Only SiLU activation is supported."
+
+        # Compute topk
+        from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
+
+        topk_weights, topk_ids = fused_topk(
+            hidden_states=x,
+            gating_output=router_logits,
+            topk=top_k,
+            renormalize=renormalize,
+        )
+
+        # Step 1: Submit AMX task (non-blocking) if on rank 0
+        if self.tp_rank == 0 and self.AMX_method.amx_wrapper is not None:
+            self.AMX_method.amx_wrapper.submit_forward(
+                x, topk_ids, topk_weights, torch.cuda.current_stream(x.device).cuda_stream
+            )
+
+        # Step 2: Execute GPU (Marlin) experts in parallel with CPU
+        # Mask CPU expert IDs (>= num_gpu_experts) as -1 so they won't be computed on GPU
+        topk_ids = mask_cpu_expert_ids(topk_ids, self.num_gpu_experts)
+
+        # While GPU computes, CPU is also computing
+        # Call fused_marlin_moe directly with masked topk_ids
+        output = fused_marlin_moe(
+            x,
+            layer.w13_weight_packed,
+            layer.w2_weight_packed,
+            None,
+            None,
+            layer.w13_weight_scale,
+            layer.w2_weight_scale,
+            router_logits,
+            topk_weights,
+            topk_ids,
+            quant_type_id=self.marlin_method.quant_type.id,
+            apply_router_weight_on_input=apply_router_weight_on_input,
+            global_num_experts=self.num_gpu_experts,  # Only GPU experts
+            expert_map=expert_map if expert_map is not None else torch.empty(1, device=x.device),
+            g_idx1=layer.w13_weight_g_idx,
+            g_idx2=layer.w2_weight_g_idx,
+            sort_indices1=layer.w13_g_idx_sort_indices,
+            sort_indices2=layer.w2_g_idx_sort_indices,
+            workspace=layer.workspace,
+        )
+
+        # Step 3: Sync AMX results and combine with GPU results
+        if self.tp_rank == 0 and self.AMX_method.amx_wrapper is not None:
+            amx_output = self.AMX_method.amx_wrapper.sync_forward(
+                x, torch.cuda.current_stream(x.device).cuda_stream
+            )
+            output = output + amx_output
+
+        return output
