@@ -57,6 +57,8 @@ class OffloadingConnector(KVConnectorBase_V1):
         self.connector_worker.register_kv_caches(kv_caches)
 
     def start_load_kv(self, forward_context: "ForwardContext", **kwargs) -> None:
+        if self._connector_metadata is None:
+            return
         assert self.connector_worker is not None
         assert isinstance(self._connector_metadata, OffloadingConnectorMetadata)
         self.connector_worker.start_load_kv(self._connector_metadata)
@@ -74,6 +76,8 @@ class OffloadingConnector(KVConnectorBase_V1):
         pass
 
     def wait_for_save(self):
+        if self._connector_metadata is None:
+            return
         assert self.connector_worker is not None
         assert isinstance(self._connector_metadata, OffloadingConnectorMetadata)
         self.connector_worker.start_store_kv(self._connector_metadata)

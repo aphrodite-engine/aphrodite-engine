@@ -140,15 +140,15 @@ class SharedStorageConnector(KVConnectorBase_V1):
                 dst_kv_cache_layer[:, slot_mapping, ...] = src_kv_cache
                 dst_kv_cache_layer.reshape(dst_kv_cache_layer_shape)
 
-        # Get the metadata
-        metadata: KVConnectorMetadata = self._get_connector_metadata()
-        assert isinstance(metadata, SharedStorageConnectorMetadata)
-
-        if metadata is None:
+        if self._connector_metadata is None:
             logger.warning(
                 "In connector.start_load_kv, but the connector metadata is None"
             )
             return
+
+        # Get the metadata
+        metadata: KVConnectorMetadata = self._get_connector_metadata()
+        assert isinstance(metadata, SharedStorageConnectorMetadata)
 
         attn_metadata = forward_context.attn_metadata
         if attn_metadata is None:
@@ -209,6 +209,9 @@ class SharedStorageConnector(KVConnectorBase_V1):
             attn_metadata (AttentionMetadata): the attention metadata.
             **kwargs: additional arguments for the save operation.
         """
+
+        if self._connector_metadata is None:
+            return
 
         def extract_kv_from_layer(
             layer: torch.Tensor,

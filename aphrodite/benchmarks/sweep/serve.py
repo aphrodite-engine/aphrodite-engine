@@ -307,13 +307,13 @@ class SweepServeArgs:
             "--serve-cmd",
             type=str,
             required=True,
-            help="The command used to run the server: `aphrodite serve ...`",
+            help="The command used to run the server: `aphrodite run ...`",
         )
         parser.add_argument(
             "--bench-cmd",
             type=str,
             required=True,
-            help="The command used to run the benchmark: `aphrodite bench serve ...`",
+            help="The command used to run the benchmark: `aphrodite bench run ...`",
         )
         parser.add_argument(
             "--after-bench-cmd",
@@ -333,7 +333,7 @@ class SweepServeArgs:
             type=str,
             default=None,
             help="Path to JSON file containing a list of parameter combinations "
-            "for the `aphrodite serve` command. "
+            "for the `aphrodite run` command. "
             "If both `serve_params` and `bench_params` are given, "
             "this script will iterate over their Cartesian product.",
         )
@@ -342,7 +342,7 @@ class SweepServeArgs:
             type=str,
             default=None,
             help="Path to JSON file containing a list of parameter combinations "
-            "for the `aphrodite bench serve` command. "
+            "for the `aphrodite bench run` command. "
             "If both `serve_params` and `bench_params` are given, "
             "this script will iterate over their Cartesian product.",
         )

@@ -261,6 +261,8 @@ class NixlConnector(KVConnectorBase_V1):
         )
 
     def start_load_kv(self, forward_context: "ForwardContext", **kwargs) -> None:
+        if self._connector_metadata is None:
+            return
         assert self.connector_worker is not None
         assert isinstance(self._connector_metadata, NixlConnectorMetadata)
         self.connector_worker.start_load_kv(self._connector_metadata)
@@ -280,6 +282,8 @@ class NixlConnector(KVConnectorBase_V1):
         pass
 
     def wait_for_save(self):
+        if self._connector_metadata is None:
+            return
         assert self.connector_worker is not None
         assert isinstance(self._connector_metadata, NixlConnectorMetadata)
         if self.connector_worker.use_host_buffer and self.connector_worker.copy_blocks:

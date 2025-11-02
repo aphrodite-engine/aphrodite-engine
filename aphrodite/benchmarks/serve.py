@@ -5,7 +5,7 @@ to launch the Aphrodite OpenAI API server:
     aphrodite run <your_model> <engine arguments>
 
 On the client side, run:
-    aphrodite bench serve \
+    aphrodite bench run \
         --backend <backend or endpoint type. Default 'openai'> \
         --label <benchmark result label. Default using backend> \
         --model <your_model> \

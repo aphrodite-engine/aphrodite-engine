@@ -82,7 +82,7 @@ class ServerProcess:
                 port = int(server_cmd[server_cmd.index(port_key) + 1])
                 break
         else:
-            port = 8000  # The default value in aphrodite serve
+            port = 8000  # The default value in aphrodite run
 
         return f"http://{host}:{port}"
 

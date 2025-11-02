@@ -71,7 +71,12 @@ class P2pNcclConnector(KVConnectorBase_V1):
         self.is_producer = self._kv_transfer_config.is_kv_producer
         self.chunked_prefill: dict[str, tuple[list[int], list[int] | None]] = {}
 
-        self._rank = get_world_group().rank if role == KVConnectorRole.WORKER else 0
+        # Use kv_rank from config for disaggregated setups, fall back to world rank
+        # for distributed parallel setups within a single instance
+        if self._kv_transfer_config.kv_rank is not None:
+            self._rank = self._kv_transfer_config.kv_rank
+        else:
+            self._rank = get_world_group().rank if role == KVConnectorRole.WORKER else 0
         self._local_rank = (
             get_world_group().local_rank if role == KVConnectorRole.WORKER else 0
         )
@@ -175,18 +180,28 @@ class P2pNcclConnector(KVConnectorBase_V1):
                         request_id,
                     )
 
+        if self._connector_metadata is None:
+            return
+
         # Get the metadata
         metadata: KVConnectorMetadata = self._get_connector_metadata()
         assert isinstance(metadata, P2pNcclConnectorMetadata)
 
-        if metadata is None:
-            return
-
         # Load the KV for each request each layer
         for request in metadata.requests:
             request_id = request.request_id
-            ip, port = self.parse_request_id(request_id, False)
-            remote_address = ip + ":" + str(port + self._rank)
+            # Try to parse request ID for address, fall back to configured kv_ip/kv_port
+            try:
+                ip, port = self.parse_request_id(request_id, False)
+                remote_address = ip + ":" + str(port + self._rank)
+            except ValueError:
+                # Use configured address for disaggregated setups
+                # Consumer (rank=1) receives from producer (rank=0)
+                ip = self._kv_transfer_config.kv_ip
+                port = self._kv_transfer_config.kv_port
+                # For simple 2-instance setup: remote_rank = 1 - self._rank
+                remote_rank = self._kv_transfer_config.kv_parallel_size - 1 - self._rank
+                remote_address = ip + ":" + str(port + remote_rank)
             for layer_name in forward_context.no_compile_layers:
                 layer = forward_context.no_compile_layers[layer_name]
 
@@ -244,6 +259,9 @@ class P2pNcclConnector(KVConnectorBase_V1):
         if not self.is_producer:
             return
 
+        if self._connector_metadata is None:
+            return
+
         assert self.p2p_nccl_engine is not None
 
         def extract_kv_from_layer(
@@ -281,8 +299,18 @@ class P2pNcclConnector(KVConnectorBase_V1):
         assert isinstance(connector_metadata, P2pNcclConnectorMetadata)
         for request in connector_metadata.requests:
             request_id = request.request_id
-            ip, port = self.parse_request_id(request_id, True)
-            remote_address = ip + ":" + str(port + self._rank)
+            # Try to parse request ID for address, fall back to configured kv_ip/kv_port
+            try:
+                ip, port = self.parse_request_id(request_id, True)
+                remote_address = ip + ":" + str(port + self._rank)
+            except ValueError:
+                # Use configured address for disaggregated setups
+                # Producer (rank=0) sends to consumer (rank=1)
+                ip = self._kv_transfer_config.kv_ip
+                port = self._kv_transfer_config.kv_port
+                # For simple 2-instance setup: remote_rank = 1 - self._rank
+                remote_rank = self._kv_transfer_config.kv_parallel_size - 1 - self._rank
+                remote_address = ip + ":" + str(port + remote_rank)
 
             kv_cache = extract_kv_from_layer(kv_layer, request.block_ids)
             self.p2p_nccl_engine.send_tensor(
