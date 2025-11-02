@@ -320,7 +320,7 @@ def initialize_ray_cluster(
 
     # Prevalidate GPU requirements before Ray processing
     if current_platform.is_cuda() and parallel_config.world_size > 1:
-        from aphrodite.utils import cuda_device_count_stateless
+        from aphrodite.utils.torch_utils import cuda_device_count_stateless
 
         available_gpus = cuda_device_count_stateless()
         if parallel_config.world_size > available_gpus:
