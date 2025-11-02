@@ -422,6 +422,12 @@ class DummyPooler(Pooler):
         hidden_states: list[torch.Tensor] | torch.Tensor,
         pooling_metadata: PoolingMetadata,
     ) -> PoolerOutput:
+        # Return hidden states as a list to preserve batch dimensions
+        if isinstance(hidden_states, torch.Tensor):
+            # Wrap tensor in a list with one element per request in metadata
+            # For plugin tasks, we want to keep the full tensor per request
+            num_requests = len(pooling_metadata.pooling_params)
+            return [hidden_states[i:i+1] for i in range(num_requests)]
         return hidden_states
 
 

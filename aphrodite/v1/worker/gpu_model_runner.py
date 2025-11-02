@@ -4164,7 +4164,11 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             group.get_metadata_builder().reorder_batch_threshold
             for group in self._attn_group_iterator()
         ]
-        self.reorder_batch_threshold = reduce(min_none_high, reorder_batch_thresholds)
+        # Handle models without attention layers (e.g., embedding/pooling models)
+        if reorder_batch_thresholds:
+            self.reorder_batch_threshold = reduce(min_none_high, reorder_batch_thresholds)
+        else:
+            self.reorder_batch_threshold = None
 
     def _find_compatible_block_sizes(
         self,

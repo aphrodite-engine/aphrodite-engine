@@ -20,8 +20,6 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from terratorch.aphrodite import (DummyDataGenerator, InferenceRunner,
-                                  InputDefinition, InputTypeEnum)
 from transformers import BatchFeature
 
 from aphrodite.common.sequence import IntermediateTensors
@@ -30,6 +28,10 @@ from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.pooler import DispatchPooler, DummyPooler
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
+from aphrodite.modeling.models.terratorch_plugin import (DummyDataGenerator,
+                                                         InferenceRunner,
+                                                         InputDefinition,
+                                                         InputTypeEnum)
 from aphrodite.modeling.models.utils import AutoWeightsLoader
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import MultiModalProcessorOnlyCache

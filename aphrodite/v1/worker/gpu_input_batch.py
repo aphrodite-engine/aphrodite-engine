@@ -615,6 +615,10 @@ class InputBatch:
         self.num_computed_tokens_cpu[req_index] = request.num_computed_tokens
         self.block_table.add_row(request.block_ids, req_index)
 
+        # Store pooling params if present
+        if pooling_params := request.pooling_params:
+            self.pooling_params[req_id] = pooling_params
+
         if sampling_params := request.sampling_params:
             if self.is_spec_decode and is_spec_decode_unsupported(sampling_params):
                 self.spec_decode_unsupported_reqs.add(req_id)

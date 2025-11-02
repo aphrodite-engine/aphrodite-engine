@@ -200,9 +200,11 @@ def tensor_progress_bar(iterable: Iterable[tuple[str, torch.Tensor]],
         ) as progress:
             task = progress.add_task(desc, total=final_bytes / units)
             for item in iterable:
-                steps = item[1].element_size() * item[1].nelement() / units
+                # Only update progress for tensor values, skip dicts/OrderedDicts
+                if hasattr(item[1], 'element_size'):
+                    steps = item[1].element_size() * item[1].nelement() / units
+                    progress.update(task, advance=steps)
                 yield item
-                progress.update(task, advance=steps)
     else:
         yield from iterable
 

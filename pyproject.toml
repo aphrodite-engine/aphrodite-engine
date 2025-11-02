@@ -39,6 +39,9 @@ Documentation="https://aphrodite.pygmalion.chat"
 [project.scripts]
 aphrodite = "aphrodite.endpoints.cli.main:main"
 
+[project.entry-points."aphrodite.io_processor_plugins"]
+terratorch_segmentation = "aphrodite.modeling.models.terratorch_plugin.plugins.segmentation:register_segmentation_plugin"
+
 [tool.setuptools_scm]
 # no extra settings needed, presence enables setuptools-scm
 
