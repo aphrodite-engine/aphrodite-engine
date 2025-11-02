@@ -83,3 +83,4 @@ cd pplx-kernels
 # see https://github.com/pypa/pip/issues/9955#issuecomment-838065925
 # PIP_NO_BUILD_ISOLATION=0 disables build isolation
 PIP_NO_BUILD_ISOLATION=0 TORCH_CUDA_ARCH_LIST=9.0a+PTX pip install . --no-deps -v
+
