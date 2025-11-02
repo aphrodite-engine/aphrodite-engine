@@ -143,7 +143,56 @@ def main():
                 content_type="application/json",
             )
     
-    app.run(port=PORT)
+    @app.route("/v1/models", methods=["GET"])
+    async def handle_models():
+        """Forward /v1/models requests to prefill instance."""
+        try:
+            async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session, session.get(
+                url=PREFILL_SERVICE_URL.replace("/v1/completions", "/v1/models")
+            ) as response:
+                content = await response.read()
+                return Response(
+                    response=content,
+                    status=response.status,
+                    content_type=response.content_type,
+                )
+        except Exception as e:
+            logger.error("Error forwarding /v1/models request: %s", str(e))
+            return Response(
+                response=b'{"error": "Service unavailable"}',
+                status=503,
+                content_type="application/json",
+            )
+    
+    @app.route("/v1/tokenize", methods=["POST"])
+    async def handle_tokenize():
+        """Forward /v1/tokenize requests to prefill instance."""
+        try:
+            request_data = await request.get_json()
+            async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session, session.post(
+                url=PREFILL_SERVICE_URL.replace("/v1/completions", "/v1/tokenize"),
+                json=request_data,
+            ) as response:
+                content = await response.read()
+                return Response(
+                    response=content,
+                    status=response.status,
+                    content_type=response.content_type,
+                )
+        except Exception as e:
+            logger.error("Error forwarding /v1/tokenize request: %s", str(e))
+            return Response(
+                response=b'{"error": "Service unavailable"}',
+                status=503,
+                content_type="application/json",
+            )
+
+    @app.route("/health", methods=["GET"])
+    async def health():
+        return Response(response=b'{"status": "ok"}', status=200, content_type="application/json")
+    
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT, backlog=8192, log_level="info")
 
 
 if __name__ == "__main__":

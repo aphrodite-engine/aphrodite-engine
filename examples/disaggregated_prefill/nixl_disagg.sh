@@ -79,7 +79,7 @@ echo "Decode instance ready!"
 
 # Launch NIXL-aware proxy server
 echo "Launching NIXL proxy server on port $PROXY_PORT..."
-python3 ../benchmarks/disagg_benchmarks/nixl_proxy_server.py \
+python3 ../../benchmarks/disagg_benchmarks/nixl_proxy_server.py \
     --prefill-url http://localhost:$PREFILL_PORT/v1/completions \
     --decode-url http://localhost:$DECODE_PORT/v1/completions \
     --prefill-engine-id "prefill_engine" \

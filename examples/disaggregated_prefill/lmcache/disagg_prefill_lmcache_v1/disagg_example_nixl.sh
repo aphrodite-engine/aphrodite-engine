@@ -127,7 +127,7 @@ main() {
     echo "All servers are up. Starting benchmark..."
 
     # begin benchmark
-    cd ../../../../benchmarks/
+    cd ../../../../../benchmarks/
     aphrodite bench serve --port 9000 --seed $(date +%s) \
         --model Qwen/Qwen3-0.6B \
         --dataset-name random --random-input-len 7500 --random-output-len 200 \
