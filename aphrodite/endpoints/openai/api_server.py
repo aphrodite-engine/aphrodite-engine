@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import inspect
 import json
+import logging
 import multiprocessing
 import multiprocessing.forkserver as forkserver
 import os
@@ -1418,6 +1419,131 @@ def load_log_config(log_config_file: str | None) -> dict | None:
         return None
 
 
+class UvicornFormatter(logging.Formatter):
+    """Custom formatter for uvicorn that matches Aphrodite's styling with colors."""
+
+    def __init__(self, fmt, datefmt=None, style="%"):
+        super().__init__(fmt, datefmt, style)
+        from aphrodite.logging_utils.formatter import _supports_color, Colors
+
+        self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
+        self.use_color = _supports_color() and os.environ.get('APHRODITE_LOGGING_COLOR', '1') in ('1', 'true', 'True')
+        self.level_colors = {
+            'DEBUG': Colors.DEBUG,
+            'INFO': Colors.INFO,
+            'WARNING': Colors.WARNING,
+            'ERROR': Colors.ERROR,
+            'CRITICAL': Colors.CRITICAL,
+        }
+        self.path_color = Colors.PATH
+        self.time_color = Colors.TIME
+        self.reset_color = Colors.RESET
+    
+    def format(self, record):
+        if not self.verbose_logging:
+            original_datefmt = self.datefmt
+            self.datefmt = "%H:%M:%S"
+
+        msg = super().format(record)
+
+        if not self.verbose_logging:
+            self.datefmt = original_datefmt
+
+        if 'WARNING' in msg:
+            msg = msg.replace('WARNING', 'WARN', 1)
+
+        if self.use_color:
+            level_color = self.level_colors.get(record.levelname, '')
+            level_str = 'WARN' if record.levelname == 'WARNING' else record.levelname
+
+            if level_str in msg:
+                msg = msg.replace(level_str, f"{level_color}{level_str}{self.reset_color}", 1)
+
+            asctime = self.formatTime(record, self.datefmt if not self.verbose_logging else "%m-%d %H:%M:%S")
+            if asctime in msg:
+                msg = msg.replace(asctime, f"{self.time_color}{asctime}{self.reset_color}", 1)
+
+            if self.verbose_logging:
+                name_with_lineno = f"[{record.name:<15}:{record.lineno:>4}]"
+                if name_with_lineno in msg:
+                    msg = msg.replace(name_with_lineno, f"{self.path_color}{name_with_lineno}{self.reset_color}", 1)
+
+        if record.message != "":
+            parts = msg.split(record.message)
+            msg = msg.replace("\n", "\r\n" + parts[0])
+
+        return msg
+
+
+def create_uvicorn_log_config() -> dict:
+    """Create uvicorn log config that matches Aphrodite's log format."""
+
+    if envs.APHRODITE_LOGGING_VERBOSE:
+        date_format = "%m-%d %H:%M:%S"
+        default_format = (
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
+            "[%(name)-15s:%(lineno)4d] %(message)s"
+        )
+        access_format = (
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
+            "[%(name)-15s:%(lineno)4d] %(message)s"
+        )
+    else:
+        date_format = "%H:%M:%S"
+        default_format = (
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
+        )
+        access_format = (
+            f"{envs.APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
+        )
+
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "()": "aphrodite.endpoints.openai.api_server.UvicornFormatter",
+                "datefmt": date_format,
+                "format": default_format,
+            },
+            "access": {
+                "()": "aphrodite.endpoints.openai.api_server.UvicornFormatter",
+                "datefmt": date_format,
+                "format": access_format,
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": envs.APHRODITE_LOGGING_STREAM,
+            },
+            "access": {
+                "formatter": "access",
+                "class": "logging.StreamHandler",
+                "stream": envs.APHRODITE_LOGGING_STREAM,
+            },
+        },
+        "loggers": {
+            "uvicorn": {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "handlers": ["access"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }
+
+
 class AuthenticationMiddleware:
     """
     Pure ASGI middleware that authenticates each request by checking
@@ -2083,10 +2209,11 @@ async def run_server_worker(listen_address,
     if args.tool_parser_plugin and len(args.tool_parser_plugin) > 3:
         ToolParserManager.import_tool_parser(args.tool_parser_plugin)
 
-    # Load logging config for uvicorn if specified
     log_config = load_log_config(args.log_config_file)
     if log_config is not None:
         uvicorn_kwargs['log_config'] = log_config
+    else:
+        uvicorn_kwargs['log_config'] = create_uvicorn_log_config()
 
     async with build_async_engine_client(
             args,

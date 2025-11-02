@@ -15,6 +15,7 @@ from typing import Any, TypeVar
 import msgspec
 import zmq
 
+from aphrodite import envs
 from aphrodite.config import AphroditeConfig, ParallelConfig
 from aphrodite.distributed import (
     stateless_destroy_torch_distributed_process_group)
@@ -228,6 +229,10 @@ class EngineCore:
             elapsed,
             scope="local",
         )
+        if envs.APHRODITE_REQUEST_LEVEL_METRICS:
+            logger.warning_once(
+                "Throughput metrics are set to request-level. If you want to get aggregate "
+                "metrics, set APHRODITE_REQUEST_LEVEL_METRICS=0.", scope="global")
         return num_gpu_blocks, num_cpu_blocks, scheduler_kv_cache_config
 
     def get_supported_tasks(self) -> tuple[SupportedTask, ...]:

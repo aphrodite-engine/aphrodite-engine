@@ -219,7 +219,7 @@ if TYPE_CHECKING:
     APHRODITE_GC_DEBUG: str = ""
     APHRODITE_DISABLE_SHARED_EXPERTS_STREAM: bool = False
     APHRODITE_KOBOLD_API: bool = False
-    APHRODITE_REQUEST_LEVEL_METRICS: bool = False
+    APHRODITE_REQUEST_LEVEL_METRICS: bool = True
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
     APHRODITE_DISABLE_FLASH_ATTN_COMPILE: bool = False
 
@@ -1459,7 +1459,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # Whether to enable request-level metrics instead of interval-based metrics
     "APHRODITE_REQUEST_LEVEL_METRICS": lambda: bool(
-        int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "0"))
+        int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "1"))
     ),
     # Whether to enable sampling kernels
     "APHRODITE_ENABLE_SAMPLING_KERNELS": lambda: bool(
