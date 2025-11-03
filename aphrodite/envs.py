@@ -121,6 +121,7 @@ if TYPE_CHECKING:
     K_SCALE_CONSTANT: int = 200
     V_SCALE_CONSTANT: int = 100
     APHRODITE_SERVER_DEV_MODE: bool = False
+    APHRODITE_ENABLE_MULTI_MODEL: bool = False
     APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE: int = 128
     APHRODITE_MLA_DISABLE: bool = False
     APHRODITE_FLASH_ATTN_MAX_NUM_SPLITS_FOR_CUDA_GRAPH: int = 32
@@ -989,6 +990,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # some additional endpoints for developing and debugging,
     # e.g. `/reset_prefix_cache`
     "APHRODITE_SERVER_DEV_MODE": lambda: bool(int(os.getenv("APHRODITE_SERVER_DEV_MODE", "0"))),
+    # Experimental: Enable multi-model support with dynamic KV cache
+    # Allows loading multiple models simultaneously in the same server
+    "APHRODITE_ENABLE_MULTI_MODEL": lambda: bool(int(os.getenv("APHRODITE_ENABLE_MULTI_MODEL", "0"))),
     # Controls the maximum number of requests to handle in a
     # single asyncio task when processing per-token outputs in the
     # V1 AsyncLLM interface. It is applicable when handling a high

@@ -268,7 +268,7 @@ class ServingScores(OpenAIServing):
         request_id: str,
         raw_request: Request | None = None,
     ) -> list[PoolingRequestOutput] | ErrorResponse:
-        lora_request = self._maybe_get_adapters(request)
+        lora_request = self._maybe_get_adapters(request, raw_request=raw_request)
 
         tokenizer = await self.engine_client.get_tokenizer()
 

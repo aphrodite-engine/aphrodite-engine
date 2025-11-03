@@ -16,6 +16,7 @@ import uuid
 from argparse import Namespace
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from distutils.util import strtobool
 from http import HTTPStatus
 from typing import Annotated, Any, Literal
@@ -43,9 +44,7 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.args import (make_arg_parser,
                                              validate_parsed_serve_args)
-from aphrodite.endpoints.openai.protocol import (AnthropicMessagesRequest,
-                                                 AnthropicMessagesResponse,
-                                                 ChatCompletionRequest,
+from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
                                                  ChatCompletionResponse,
                                                  ClassificationRequest,
                                                  ClassificationResponse,
@@ -102,6 +101,8 @@ from aphrodite.endpoints.utils import (cli_env_setup, load_aware_call,
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.protocol import Device, EngineClient
 from aphrodite.logger import init_logger
+from aphrodite.logging_utils.formatter import Colors, _supports_color
+from aphrodite.modeling.model_loader.weight_utils import get_model_config_yaml
 from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.server import serve_http
 from aphrodite.tasks import POOLING_TASKS
@@ -127,16 +128,29 @@ logger = init_logger("aphrodite.endpoints.openai.api_server")
 _running_tasks: set[asyncio.Task] = set()
 
 
+@dataclass
+class ModelInfo:
+    """Information about a loaded model in the registry."""
+    engine_client: EngineClient
+    serving_models: OpenAIServingModels
+    args: Namespace
+    model_path: str
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         if app.state.log_stats:
-            engine_client: EngineClient = app.state.engine_client
-
             async def _force_log():
                 while True:
                     await asyncio.sleep(envs.APHRODITE_LOG_STATS_INTERVAL)
-                    await engine_client.do_log_stats()
+                    # Log stats for all loaded models (multi-model mode)
+                    if hasattr(app.state, 'model_registry') and app.state.model_registry is not None:
+                        for model_info in app.state.model_registry.values():
+                            await model_info.engine_client.do_log_stats()
+                    # Single-model mode fallback
+                    elif hasattr(app.state, 'engine_client') and app.state.engine_client is not None:
+                        await app.state.engine_client.do_log_stats()
 
             task = asyncio.create_task(_force_log())
             _running_tasks.add(task)
@@ -175,8 +189,6 @@ async def build_async_engine_client(
         multiprocessing.set_forkserver_preload(["aphrodite.v1.engine.async_llm"])
         forkserver.ensure_running()
         logger.debug("Forkserver setup complete!")
-
-    from aphrodite.modeling.model_loader.weight_utils import get_model_config_yaml
 
     model_config_yaml = get_model_config_yaml(
         args.model, getattr(args, 'download_dir', None)
@@ -388,46 +400,58 @@ def engine_client(request: Request) -> EngineClient:
 
 
 async def maybe_switch_model(raw_request: Request, requested_model: str) -> None:
-    """Switch models if inline model loading is enabled and a different model is requested.
+    """Load or switch to a model if inline model loading is enabled.
 
-    This function checks if:
+    Behavior depends on APHRODITE_ENABLE_MULTI_MODEL:
+    - Multi-model mode (enabled): Loads additional models into registry
+    - Single-model mode (disabled): Unloads current model and loads new one
+    
+    Checks:
     1. Inline model loading is enabled
-    2. The requested model is different from the currently loaded model
-
-    If both conditions are true, it unloads the current model and loads the requested one.
+    2. The requested model is not already loaded
     """
     if not raw_request.app.state.enable_inline_model_loading:
         return
 
-    current_model = raw_request.app.state.current_model_path
+    # Check if model is already loaded
+    if envs.APHRODITE_ENABLE_MULTI_MODEL:
+        # Multi-model mode: check registry
+        if (hasattr(raw_request.app.state, 'model_registry') and 
+            raw_request.app.state.model_registry is not None and
+            requested_model in raw_request.app.state.model_registry):
+            return  # Already loaded
 
-    if requested_model == current_model:
-        return
+        logger.info(f"Inline model loading: Loading '{requested_model}' into multi-model registry")
+    else:
+        # Single-model mode: check current model
+        current_model = getattr(raw_request.app.state, 'current_model_path', None)
+        if requested_model == current_model:
+            return  # Already loaded
 
-    logger.info(
-        f"Inline model switching: Switching from '{current_model}' to '{requested_model}'"
-    )
-
-    handler = models(raw_request)
-    old_client = raw_request.app.state.engine_client
-
-    if old_client is not None:
-        logger.info("Unloading current model...")
-        await handler.unload_model(old_client)
-        raw_request.app.state.engine_client = None
+        logger.info(f"Inline model switching: Switching from '{current_model}' to '{requested_model}'")
+        
+        # Unload current model
+        if (hasattr(raw_request.app.state, 'engine_client') and 
+            raw_request.app.state.engine_client is not None):
+            handler = models(raw_request)
+            await handler.unload_model(raw_request.app.state.engine_client)
+            raw_request.app.state.engine_client = None
 
     # Load new model (this will use aphrodite_config.yaml if it exists)
-    logger.info(f"Loading new model: {requested_model}")
+    handler = models(raw_request)
     new_client, updated_args, _ = await handler.load_model(
         original_args=raw_request.app.state.original_engine_args,
         model=requested_model,
         config_data=None,  # Use model directory config if available
     )
 
-    # Update app state
+    # Update app state (adds to registry if multi-model, or sets as current if single-model)
     await init_app_state(new_client, raw_request.app.state, updated_args)
 
-    logger.info(f"Model switch complete: now serving '{requested_model}'")
+    logger.info(
+        f"Model "
+        f"{'loaded into registry' if envs.APHRODITE_ENABLE_MULTI_MODEL else 'switch complete'}: '{requested_model}'"
+    )
 
 
 @router.get("/health", response_class=Response)
@@ -544,10 +568,50 @@ def maybe_register_tokenizer_info_endpoint(args):
 
 @router.get("/v1/models")
 async def show_available_models(raw_request: Request):
-    handler = models(raw_request)
+    """List all available models from the registry."""
+    from aphrodite.endpoints.openai.protocol import (ModelCard, ModelList,
+                                                     ModelPermission)
 
-    models_ = await handler.show_available_models()
-    return JSONResponse(content=models_.model_dump())
+    model_cards = []
+
+    # If multi-model is enabled and registry exists, aggregate models from all loaded models
+    if (envs.APHRODITE_ENABLE_MULTI_MODEL and 
+        hasattr(raw_request.app.state, 'model_registry') and 
+        raw_request.app.state.model_registry is not None):
+        # Track already added models to avoid duplicates from aliases
+        seen_models = set()
+
+        for model_name, model_info in raw_request.app.state.model_registry.items():
+            # Skip if we've already added this model (it's an alias)
+            if id(model_info) in seen_models:
+                continue
+            seen_models.add(id(model_info))
+
+            # Add cards for this model's base models
+            for base_model in model_info.serving_models.base_model_paths:
+                model_cards.append(ModelCard(
+                    id=base_model.name,
+                    max_model_len=model_info.serving_models.max_model_len,
+                    root=base_model.model_path,
+                    permission=[ModelPermission()],
+                ))
+
+            # Add LoRA adapters for this model
+            for lora in model_info.serving_models.lora_requests.values():
+                model_cards.append(ModelCard(
+                    id=lora.lora_name,
+                    root=lora.local_path,
+                    parent=lora.base_model_name if lora.base_model_name
+                        else model_info.serving_models.base_model_paths[0].name,
+                    permission=[ModelPermission()],
+                ))
+    else:
+        # Fallback to legacy single-model behavior
+        handler = models(raw_request)
+        models_ = await handler.show_available_models()
+        return JSONResponse(content=models_.model_dump())
+
+    return JSONResponse(content=ModelList(data=model_cards).model_dump())
 
 
 @router.get("/version")
@@ -1148,22 +1212,117 @@ if envs.APHRODITE_SERVER_DEV_MODE:
     @router.post("/v1/unload_model")
     async def unload_model(raw_request: Request):
         """
-        Unload the model by shutting down the engine.
+        Unload a model by shutting down its engine.
         This completely frees GPU memory including CUDA context (~1-2 GB).
         Waits for all in-flight requests to complete before unloading.
         Use /v1/load_model to reload the model.
+
+        Parameters (JSON body):
+        - model (optional): Specific model name to unload. If not provided, unloads all models.
+
+        Example usage:
+        ```bash
+        # Unload a specific model
+        curl -X POST http://localhost:2242/v1/unload_model \
+          -H "Content-Type: application/json" \
+          -d '{"model": "Qwen/Qwen3-0.6B"}'
+
+        # Unload all models
+        curl -X POST http://localhost:2242/v1/unload_model
+        ```
         """
         try:
-            if not hasattr(raw_request.app.state, 'engine_client') or raw_request.app.state.engine_client is None:
-                return JSONResponse(content={
-                    "status": "info",
-                    "message": "Model is already unloaded."
-                })
+            # Parse optional model parameter
+            model_to_unload = None
+            content_type = raw_request.headers.get("content-type", "").lower()
+            if "application/json" in content_type:
+                try:
+                    body = await raw_request.json()
+                    model_to_unload = body.get("model")
+                except json.JSONDecodeError:
+                    pass
 
-            handler = models(raw_request)
-            old_client = raw_request.app.state.engine_client
-            result = await handler.unload_model(old_client)
-            raw_request.app.state.engine_client = None
+            # Check if multi-model is enabled when trying to unload specific models
+            if model_to_unload and not envs.APHRODITE_ENABLE_MULTI_MODEL:
+                return JSONResponse(content={
+                    "status": "error",
+                    "message": (
+                        "Selective model unloading requires multi-model support. "
+                        "Use /v1/unload_model without parameters to unload the current model, "
+                        "or enable multi-model support with APHRODITE_ENABLE_MULTI_MODEL=1."
+                    )
+                }, status_code=400)
+
+            # Multi-model mode: use registry
+            if envs.APHRODITE_ENABLE_MULTI_MODEL:
+                if not hasattr(raw_request.app.state, 'model_registry') or raw_request.app.state.model_registry is None:
+                    return JSONResponse(content={
+                        "status": "info",
+                        "message": "No models are loaded."
+                    })
+                registry = raw_request.app.state.model_registry
+
+                if model_to_unload:
+                    # Unload specific model
+                    if model_to_unload not in registry:
+                        return JSONResponse(content={
+                            "status": "error",
+                            "message": f"Model '{model_to_unload}' is not loaded."
+                        }, status_code=404)
+
+                    model_info = registry[model_to_unload]
+                    handler = models(raw_request)
+                    result = await handler.unload_model(model_info.engine_client)
+
+                    # Remove from registry (including all aliases pointing to same instance)
+                    models_to_remove = [k for k, v in registry.items() if v is model_info]
+                    for key in models_to_remove:
+                        del registry[key]
+
+                    # Update legacy engine_client if we unloaded the default
+                    if raw_request.app.state.engine_client is model_info.engine_client:
+                        # Set to another model if available, else None
+                        raw_request.app.state.engine_client = (
+                            next(iter(registry.values())).engine_client if registry else None
+                        )
+
+                    result["unloaded_model"] = model_to_unload
+                    result["models_remaining"] = list(set(registry.keys()))
+                else:
+                    # Unload all models
+                    handler = models(raw_request)
+                    total_time = 0
+                    unloaded = []
+
+                    # Get unique model infos (avoid unloading same engine multiple times)
+                    unique_models = {id(v): (k, v) for k, v in registry.items()}.values()
+
+                    for model_name, model_info in unique_models:
+                        result = await handler.unload_model(model_info.engine_client)
+                        total_time += result.get("total_time_s", 0)
+                        unloaded.append(model_name)
+
+                    registry.clear()
+                    raw_request.app.state.engine_client = None
+                    
+                    result = {
+                        "status": "success",
+                        "message": f"All models unloaded successfully in {total_time:.2f}s.",
+                        "total_time_s": round(total_time, 2),
+                        "unloaded_models": unloaded
+                    }
+            else:
+                # Single-model mode: unload the current model
+                if not hasattr(raw_request.app.state, 'engine_client') or raw_request.app.state.engine_client is None:
+                    return JSONResponse(content={
+                        "status": "info",
+                        "message": "No model is loaded."
+                    })
+
+                handler = models(raw_request)
+                old_client = raw_request.app.state.engine_client
+                result = await handler.unload_model(old_client)
+                raw_request.app.state.engine_client = None
 
             return JSONResponse(content=result)
         except Exception as e:
@@ -1238,12 +1397,6 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         ```
         """
         try:
-            if hasattr(raw_request.app.state, 'engine_client') and raw_request.app.state.engine_client is not None:
-                return JSONResponse(content={
-                    "status": "info",
-                    "message": "Model is already loaded."
-                })
-
             import yaml
 
             # Parse the request - support both JSON and multipart/form-data
@@ -1285,6 +1438,35 @@ if envs.APHRODITE_SERVER_DEV_MODE:
                             status_code=HTTPStatus.BAD_REQUEST.value,
                             detail=f"Invalid YAML config file: {str(e)}"
                         ) from e
+
+            # Determine the model to load (default to original if not specified)
+            if model_name is None:
+                model_name = raw_request.app.state.original_engine_args.model
+
+            # Check if multi-model is enabled when trying to load additional models
+            if envs.APHRODITE_ENABLE_MULTI_MODEL:
+                # Multi-model mode: check if already loaded in registry
+                if (hasattr(raw_request.app.state, 'model_registry') and 
+                    raw_request.app.state.model_registry is not None and
+                    model_name in raw_request.app.state.model_registry):
+                    return JSONResponse(content={
+                        "status": "info",
+                        "message": f"Model '{model_name}' is already loaded in the registry."
+                    })
+            else:
+                # Single-model mode: check if a model is already loaded
+                if (hasattr(raw_request.app.state, 'engine_client') and 
+                    raw_request.app.state.engine_client is not None):
+                    # Single model mode - must unload first
+                    current_model = getattr(raw_request.app.state, 'current_model_path', 'unknown')
+                    return JSONResponse(content={
+                        "status": "error",
+                        "message": (
+                            f"A model ('{current_model}') is already loaded. "
+                            "In single-model mode, use /v1/unload_model first, then /v1/load_model. "
+                            "Or enable multi-model support with APHRODITE_ENABLE_MULTI_MODEL=1."
+                        )
+                    }, status_code=400)
 
             # Load the model using the serving_models handler
             handler = models(raw_request)
@@ -1663,7 +1845,6 @@ class UvicornFormatter(logging.Formatter):
 
     def __init__(self, fmt, datefmt=None, style="%"):
         super().__init__(fmt, datefmt, style)
-        from aphrodite.logging_utils.formatter import _supports_color, Colors
 
         self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
         self.use_color = _supports_color() and os.environ.get('APHRODITE_LOGGING_COLOR', '1') in ('1', 'true', 'True')
@@ -2140,41 +2321,95 @@ async def init_app_state(
     state: State,
     args: Namespace,
 ) -> None:
+    """Initialize app state. For multi-model support, this adds a model to the registry."""
     aphrodite_config = engine_client.aphrodite_config
 
     if args.served_model_name is not None:
         served_model_names = args.served_model_name
     else:
         served_model_names = [args.model]
-    state.served_model_names = served_model_names
 
-    if args.enable_log_requests:
-        request_logger = RequestLogger(max_log_len=args.max_log_len)
-    else:
-        request_logger = None
+    # Initialize model registry if this is the first model and multi-model is enabled
+    if not hasattr(state, 'model_registry'):
+        if envs.APHRODITE_ENABLE_MULTI_MODEL:
+            logger.warning(
+                "=" * 80 + "\n"  # noqa: G003
+                "EXPERIMENTAL: Multi-model support is ENABLED via APHRODITE_ENABLE_MULTI_MODEL.\n"
+                "This feature is experimental and may not work properly. Known limitations:\n"
+                "- Requires APHRODITE_ENABLE_DYNAMIC_KV_CACHE=1 for efficient memory usage\n"
+                "- May have unexpected behavior with certain model configurations\n"
+                "- Not all endpoints are fully tested with multi-model support\n"
+                "- Use at your own risk in production environments\n"
+                + "=" * 80
+            )
+            state.model_registry: dict[str, ModelInfo] = {}
+        else:
+            # Single-model mode (default)
+            state.model_registry = None
+
+        state.log_stats = not args.disable_log_stats
+
+        # Store original args only on first initialization
+        from copy import deepcopy
+        state.original_engine_args = deepcopy(args)
+        state.enable_inline_model_loading = args.enable_inline_model_loading
+
+        # Initialize request logger (shared across all models)
+        if args.enable_log_requests:
+            state.request_logger = RequestLogger(max_log_len=args.max_log_len)
+        else:
+            state.request_logger = None
+
+    # Merge default_mm_loras into the static lora_modules
+    default_mm_loras = (
+        aphrodite_config.lora_config.default_mm_loras
+        if aphrodite_config.lora_config is not None
+        else {}
+    )
+    lora_modules = process_lora_modules(args.lora_modules, default_mm_loras)
 
     base_model_paths = [
         BaseModelPath(name=name, model_path=args.model)
         for name in served_model_names
     ]
 
-    state.engine_client = engine_client
-    state.log_stats = not args.disable_log_stats
-    state.aphrodite_config = aphrodite_config
-    # Store both the current args and the original args for model reloading
-    state.engine_args = args
-    if not hasattr(state, 'original_engine_args'):
-        # Only store original args on first init, not on subsequent loads
-        from copy import deepcopy
-        state.original_engine_args = deepcopy(args)
+    # Create OpenAIServingModels for this specific model
+    serving_models = OpenAIServingModels(
+        engine_client=engine_client,
+        base_model_paths=base_model_paths,
+        lora_modules=lora_modules,
+    )
+    await serving_models.init_static_loras()
 
-    # Track the currently loaded model for inline model loading
-    state.current_model_path = args.model
-    state.enable_inline_model_loading = args.enable_inline_model_loading
+    # Add this model to the registry (if multi-model is enabled)
+    if state.model_registry is not None:
+        model_key = served_model_names[0]
+        state.model_registry[model_key] = ModelInfo(
+            engine_client=engine_client,
+            serving_models=serving_models,
+            args=args,
+            model_path=args.model,
+        )
+
+        # Also add aliases for all served model names
+        for name in served_model_names:
+            if name != model_key:
+                state.model_registry[name] = state.model_registry[model_key]
+
+    # Keep legacy state.engine_client for backward compatibility (points to first model)
+    if not hasattr(state, 'engine_client') or state.engine_client is None:
+        state.engine_client = engine_client
+        state.served_model_names = served_model_names
+        state.aphrodite_config = aphrodite_config
+        state.engine_args = args
+        state.current_model_path = args.model
+
     supported_tasks = await engine_client.get_supported_tasks()
 
-    logger.info("Supported tasks: %s", supported_tasks)
+    logger.info("Supported tasks for model '%s': %s", model_key, supported_tasks)
 
+    # Initialize handlers (or re-initialize if loading additional models)
+    # Note: For multi-model, handlers will dynamically look up from model_registry
     resolved_chat_template = await process_chat_template(
         args.chat_template, engine_client, aphrodite_config.model_config
     )
@@ -2189,31 +2424,16 @@ async def init_app_state(
     else:
         tool_server = None
 
-    # Merge default_mm_loras into the static lora_modules
-    default_mm_loras = (
-        aphrodite_config.lora_config.default_mm_loras
-        if aphrodite_config.lora_config is not None
-        else {}
-    )
+    # Only set openai_serving_models on first initialization (for backward compatibility)
+    # Handlers will look up from registry for multi-model support
+    if not hasattr(state, 'openai_serving_models'):
+        state.openai_serving_models = serving_models
 
-    default_mm_loras = (
-        aphrodite_config.lora_config.default_mm_loras
-        if aphrodite_config.lora_config is not None
-        else {}
-    )
-    lora_modules = process_lora_modules(args.lora_modules, default_mm_loras)
-
-    state.openai_serving_models = OpenAIServingModels(
-        engine_client=engine_client,
-        base_model_paths=base_model_paths,
-        lora_modules=lora_modules,
-    )
-    await state.openai_serving_models.init_static_loras()
     state.openai_serving_responses = (
         OpenAIServingResponses(
             engine_client,
             state.openai_serving_models,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             chat_template=resolved_chat_template,
             chat_template_content_format=args.chat_template_content_format,
             return_tokens_as_token_ids=args.return_tokens_as_token_ids,
@@ -2235,7 +2455,7 @@ async def init_app_state(
             engine_client,
             state.openai_serving_models,
             args.response_role,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             chat_template=resolved_chat_template,
             chat_template_content_format=args.chat_template_content_format,
             trust_request_chat_template=args.trust_request_chat_template,
@@ -2257,7 +2477,7 @@ async def init_app_state(
         OpenAIServingCompletion(
             engine_client,
             state.openai_serving_models,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             return_tokens_as_token_ids=args.return_tokens_as_token_ids,
             enable_prompt_tokens_details=args.enable_prompt_tokens_details,
             enable_force_include_usage=args.enable_force_include_usage,
@@ -2273,7 +2493,7 @@ async def init_app_state(
                 engine_client,
                 state.openai_serving_models,
                 supported_tasks=supported_tasks,
-                request_logger=request_logger,
+                request_logger=state.request_logger,
                 chat_template=resolved_chat_template,
                 chat_template_content_format=args.chat_template_content_format,
                 trust_request_chat_template=args.trust_request_chat_template,
@@ -2288,7 +2508,7 @@ async def init_app_state(
         OpenAIServingEmbedding(
             engine_client,
             state.openai_serving_models,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             chat_template=resolved_chat_template,
             chat_template_content_format=args.chat_template_content_format,
             trust_request_chat_template=args.trust_request_chat_template,
@@ -2302,7 +2522,7 @@ async def init_app_state(
         ServingClassification(
             engine_client,
             state.openai_serving_models,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             log_error_stack=args.log_error_stack,
             enable_inline_model_loading=args.enable_inline_model_loading,
         )
@@ -2313,7 +2533,7 @@ async def init_app_state(
         ServingScores(
             engine_client,
             state.openai_serving_models,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             log_error_stack=args.log_error_stack,
             enable_inline_model_loading=args.enable_inline_model_loading,
         )
@@ -2323,7 +2543,7 @@ async def init_app_state(
     state.openai_serving_tokenization = OpenAIServingTokenization(
         engine_client,
         state.openai_serving_models,
-        request_logger=request_logger,
+        request_logger=state.request_logger,
         chat_template=resolved_chat_template,
         chat_template_content_format=args.chat_template_content_format,
         trust_request_chat_template=args.trust_request_chat_template,
@@ -2334,7 +2554,7 @@ async def init_app_state(
         OpenAIServingTranscription(
             engine_client,
             state.openai_serving_models,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             log_error_stack=args.log_error_stack,
             enable_force_include_usage=args.enable_force_include_usage,
             enable_inline_model_loading=args.enable_inline_model_loading,
@@ -2346,7 +2566,7 @@ async def init_app_state(
         OpenAIServingTranslation(
             engine_client,
             state.openai_serving_models,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             log_error_stack=args.log_error_stack,
             enable_force_include_usage=args.enable_force_include_usage,
             enable_inline_model_loading=args.enable_inline_model_loading,
@@ -2358,7 +2578,7 @@ async def init_app_state(
         OpenAIServingKobold(
             engine_client,
             state.openai_serving_models,
-            request_logger=request_logger,
+            request_logger=state.request_logger,
             log_error_stack=args.log_error_stack,
             enable_inline_model_loading=args.enable_inline_model_loading,
         )

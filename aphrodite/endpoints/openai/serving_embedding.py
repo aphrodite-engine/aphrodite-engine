@@ -60,7 +60,7 @@ class EmbeddingMixin(OpenAIServing):
     ) -> ErrorResponse | None:
         ctx = cast(EmbeddingServeContext, ctx)
         try:
-            ctx.lora_request = self._maybe_get_adapters(ctx.request)
+            ctx.lora_request = self._maybe_get_adapters(ctx.request, raw_request=ctx.raw_request)
 
             tokenizer = await self.engine_client.get_tokenizer()
             renderer = self._get_renderer(tokenizer)

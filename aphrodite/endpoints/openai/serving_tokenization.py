@@ -60,7 +60,7 @@ class OpenAIServingTokenization(OpenAIServing):
         request_id = f"tokn-{self._base_request_id(raw_request)}"
 
         try:
-            lora_request = self._maybe_get_adapters(request)
+            lora_request = self._maybe_get_adapters(request, raw_request=raw_request)
 
             tokenizer = await self.engine_client.get_tokenizer()
             renderer = self._get_renderer(tokenizer)
@@ -134,7 +134,7 @@ class OpenAIServingTokenization(OpenAIServing):
 
         request_id = f"tokn-{self._base_request_id(raw_request)}"
 
-        lora_request = self._maybe_get_adapters(request)
+        lora_request = self._maybe_get_adapters(request, raw_request=raw_request)
 
         tokenizer = await self.engine_client.get_tokenizer()
 

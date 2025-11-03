@@ -83,12 +83,15 @@ class OpenAIServingPooling(OpenAIServing):
 
         is_io_processor_request = isinstance(request, IOProcessorRequest)
         try:
-            lora_request = self._maybe_get_adapters(request)
+            lora_request = self._maybe_get_adapters(request, raw_request=raw_request)
 
+            # Look up the correct engine_client from registry for multi-model support
+            engine_client, _ = self._get_model_info(request.model, raw_request)
+            
             if self.model_config.skip_tokenizer_init:
                 tokenizer = None
             else:
-                tokenizer = await self.engine_client.get_tokenizer()
+                tokenizer = await engine_client.get_tokenizer()
             renderer = self._get_renderer(tokenizer)
 
             if getattr(request, "dimensions", None) is not None:
@@ -204,7 +207,8 @@ class OpenAIServingPooling(OpenAIServing):
                     else await self._get_trace_headers(raw_request.headers)
                 )
 
-                generator = self.engine_client.encode(
+                # Use engine_client from registry lookup (set earlier in try block)
+                generator = engine_client.encode(
                     engine_prompt,
                     pooling_params,
                     request_id_item,

@@ -7,6 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from http import HTTPStatus
 
+from aphrodite import envs
 from aphrodite.endpoints.openai.protocol import (ErrorInfo, ErrorResponse,
                                                  LoadLoRAAdapterRequest,
                                                  ModelCard, ModelList,
@@ -375,6 +376,16 @@ class OpenAIServingModels:
                 "new": model,
                 "source": "request"
             }
+
+            if envs.APHRODITE_ENABLE_MULTI_MODEL:
+                # Clear potentially conflicting config parameters when loading a different model
+                # These will be re-set by the model's config if needed
+                if hasattr(args, 'cudagraph_capture_sizes'):
+                    args.cudagraph_capture_sizes = None
+                if hasattr(args, 'compilation_config') and args.compilation_config and hasattr(
+                    args.compilation_config, 'cudagraph_capture_sizes'
+                ):
+                    args.compilation_config.cudagraph_capture_sizes = None
 
         # Only auto-load aphrodite_config.yaml from model directory if NO explicit config was provided
         if config_data is None:
