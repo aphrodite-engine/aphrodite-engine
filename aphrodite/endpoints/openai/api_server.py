@@ -1129,36 +1129,42 @@ if envs.APHRODITE_SERVER_DEV_MODE:
         """
         Load the model by creating a new engine instance.
         The model must have been previously unloaded with /v1/unload_model.
-
+        
         Accepts either JSON body or multipart/form-data:
-        - JSON: {"model": "model-name", "config": {...}}
+        - JSON: {"model": "...", "config": {...}} or {"model": "...", "param": value, ...}
         - Form: model as form field, config as file upload
-
+        
         Parameters:
         - model (optional): Model name or path to load. If not provided, 
           uses the original model from server startup.
-        - config (optional): Config overrides as JSON object or YAML file upload.
-
+        - config (optional): Config overrides as nested JSON object or YAML file upload.
+        - Any other keys in JSON body are treated as config parameters (flat format).
+ 
         Configuration priority (highest to lowest):
-        1. Config in request (JSON object or uploaded file)
+        1. Config in request (JSON params, nested config, or uploaded file)
         2. Original server startup args
-
+ 
         Note: The model directory's aphrodite_config.yaml is ONLY loaded
         automatically when NO explicit config is provided in the request.
         If you provide a config, it completely replaces any model directory
         config to give you full control.
-
+ 
         Example usage with curl:
         ```bash
         # Reload original model
         curl -X POST http://localhost:2242/v1/load_model
-
+        
         # Load a different model (JSON)
         curl -X POST http://localhost:2242/v1/load_model \
           -H "Content-Type: application/json" \
           -d '{"model": "Qwen/Qwen3-0.6B"}'
-
-        # Load model with inline config (JSON)
+        
+        # Load model with flat config args (JSON)
+        curl -X POST http://localhost:2242/v1/load_model \
+          -H "Content-Type: application/json" \
+          -d '{"model": "Qwen/Qwen3-32B-FP8", "tensor_parallel_size": 2, "max_model_len": 8192}'
+        
+        # Load model with nested config (JSON)
         curl -X POST http://localhost:2242/v1/load_model \
           -H "Content-Type: application/json" \
           -d '{
@@ -1168,13 +1174,13 @@ if envs.APHRODITE_SERVER_DEV_MODE:
               "tensor_parallel_size": 2
             }
           }'
-
+        
         # Load model with config file (multipart form)
         curl -X POST http://localhost:2242/v1/load_model \
           -F "model=meta-llama/Llama-3.2-3B-Instruct" \
           -F "config=@my_config.yaml"
         ```
-
+        
         Example config.yaml:
         ```yaml
         max_model_len: 4096
@@ -1201,7 +1207,18 @@ if envs.APHRODITE_SERVER_DEV_MODE:
                 try:
                     body = await raw_request.json()
                     model_name = body.get("model")
-                    config_data = body.get("config")
+
+                    # Support two formats:
+                    # 1. {"model": "...", "config": {...}}
+                    # 2. {"model": "...", "tensor_parallel_size": 2, ...}
+                    if "config" in body:
+                        # Explicit config dict
+                        config_data = body.get("config")
+                    else:
+                        # Treat all other keys as config parameters
+                        config_data = {k: v for k, v in body.items() if k != "model"}
+                        if not config_data:
+                            config_data = None
                 except json.JSONDecodeError:
                     pass
             elif "multipart/form-data" in content_type:
