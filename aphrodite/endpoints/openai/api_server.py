@@ -387,6 +387,49 @@ def engine_client(request: Request) -> EngineClient:
     return request.app.state.engine_client
 
 
+async def maybe_switch_model(raw_request: Request, requested_model: str) -> None:
+    """Switch models if inline model loading is enabled and a different model is requested.
+
+    This function checks if:
+    1. Inline model loading is enabled
+    2. The requested model is different from the currently loaded model
+
+    If both conditions are true, it unloads the current model and loads the requested one.
+    """
+    if not raw_request.app.state.enable_inline_model_loading:
+        return
+
+    current_model = raw_request.app.state.current_model_path
+
+    if requested_model == current_model:
+        return
+
+    logger.info(
+        f"Inline model switching: Switching from '{current_model}' to '{requested_model}'"
+    )
+
+    handler = models(raw_request)
+    old_client = raw_request.app.state.engine_client
+
+    if old_client is not None:
+        logger.info("Unloading current model...")
+        await handler.unload_model(old_client)
+        raw_request.app.state.engine_client = None
+
+    # Load new model (this will use aphrodite_config.yaml if it exists)
+    logger.info(f"Loading new model: {requested_model}")
+    new_client, updated_args, _ = await handler.load_model(
+        original_args=raw_request.app.state.original_engine_args,
+        model=requested_model,
+        config_data=None,  # Use model directory config if available
+    )
+
+    # Update app state
+    await init_app_state(new_client, raw_request.app.state, updated_args)
+
+    logger.info(f"Model switch complete: now serving '{requested_model}'")
+
+
 @router.get("/health", response_class=Response)
 async def health(raw_request: Request) -> Response:
     """Health check."""
@@ -656,6 +699,9 @@ async def cancel_responses(response_id: str, raw_request: Request):
 @load_aware_call
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):
+    # Check if we need to switch models (inline model loading)
+    await maybe_switch_model(raw_request, request.model)
+
     handler = chat(raw_request)
     if handler is None:
         return base(raw_request).create_error_response(
@@ -690,6 +736,9 @@ async def create_chat_completion(request: ChatCompletionRequest,
 @with_cancellation
 @load_aware_call
 async def create_completion(request: CompletionRequest, raw_request: Request):
+    # Check if we need to switch models (inline model loading)
+    await maybe_switch_model(raw_request, request.model)
+
     handler = completion(raw_request)
     if handler is None:
         return base(raw_request).create_error_response(
@@ -2118,6 +2167,10 @@ async def init_app_state(
         # Only store original args on first init, not on subsequent loads
         from copy import deepcopy
         state.original_engine_args = deepcopy(args)
+
+    # Track the currently loaded model for inline model loading
+    state.current_model_path = args.model
+    state.enable_inline_model_loading = args.enable_inline_model_loading
     supported_tasks = await engine_client.get_supported_tasks()
 
     logger.info("Supported tasks: %s", supported_tasks)
@@ -2172,6 +2225,7 @@ async def init_app_state(
             enable_force_include_usage=args.enable_force_include_usage,
             enable_log_outputs=args.enable_log_outputs,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "generate" in supported_tasks
         else None
@@ -2194,6 +2248,7 @@ async def init_app_state(
             enable_force_include_usage=args.enable_force_include_usage,
             enable_log_outputs=args.enable_log_outputs,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "generate" in supported_tasks
         else None
@@ -2207,6 +2262,7 @@ async def init_app_state(
             enable_prompt_tokens_details=args.enable_prompt_tokens_details,
             enable_force_include_usage=args.enable_force_include_usage,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "generate" in supported_tasks
         else None
@@ -2222,6 +2278,7 @@ async def init_app_state(
                 chat_template_content_format=args.chat_template_content_format,
                 trust_request_chat_template=args.trust_request_chat_template,
                 log_error_stack=args.log_error_stack,
+                enable_inline_model_loading=args.enable_inline_model_loading,
             )
         )
         if any(task in POOLING_TASKS for task in supported_tasks)
@@ -2236,6 +2293,7 @@ async def init_app_state(
             chat_template_content_format=args.chat_template_content_format,
             trust_request_chat_template=args.trust_request_chat_template,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "embed" in supported_tasks
         else None
@@ -2246,6 +2304,7 @@ async def init_app_state(
             state.openai_serving_models,
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "classify" in supported_tasks
         else None
@@ -2256,6 +2315,7 @@ async def init_app_state(
             state.openai_serving_models,
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if ("embed" in supported_tasks or "score" in supported_tasks)
         else None
@@ -2268,6 +2328,7 @@ async def init_app_state(
         chat_template_content_format=args.chat_template_content_format,
         trust_request_chat_template=args.trust_request_chat_template,
         log_error_stack=args.log_error_stack,
+        enable_inline_model_loading=args.enable_inline_model_loading,
     )
     state.openai_serving_transcription = (
         OpenAIServingTranscription(
@@ -2276,6 +2337,7 @@ async def init_app_state(
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
             enable_force_include_usage=args.enable_force_include_usage,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "transcription" in supported_tasks
         else None
@@ -2287,6 +2349,7 @@ async def init_app_state(
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
             enable_force_include_usage=args.enable_force_include_usage,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "transcription" in supported_tasks
         else None
@@ -2297,6 +2360,7 @@ async def init_app_state(
             state.openai_serving_models,
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "generate" in supported_tasks
         else None
