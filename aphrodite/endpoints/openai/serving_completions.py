@@ -108,12 +108,15 @@ class OpenAIServingCompletion(OpenAIServing):
             raw_request.state.request_metadata = request_metadata
 
         try:
-            lora_request = self._maybe_get_adapters(request)
+            lora_request = self._maybe_get_adapters(request, raw_request=raw_request)
 
+            # Look up the correct engine_client from registry for multi-model support
+            engine_client, _ = self._get_model_info(request.model, raw_request)
+            
             if self.model_config.skip_tokenizer_init:
                 tokenizer = None
             else:
-                tokenizer = await self.engine_client.get_tokenizer()
+                tokenizer = await engine_client.get_tokenizer()
             renderer = self._get_renderer(tokenizer)
 
             engine_prompts = await renderer.render_prompt_and_embeds(
@@ -209,7 +212,8 @@ class OpenAIServingCompletion(OpenAIServing):
                         priority=request.priority,
                     )
 
-                    generator = self.engine_client.generate(
+                    # Use engine_client from registry lookup (set earlier in try block)
+                    generator = engine_client.generate(
                         engine_request,
                         sampling_params,
                         request_id_item,

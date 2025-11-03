@@ -284,7 +284,7 @@ class OpenAIServingResponses(OpenAIServing):
             prev_response = None
 
         try:
-            lora_request = self._maybe_get_adapters(request)
+            lora_request = self._maybe_get_adapters(request, raw_request=raw_request)
             model_name = self.models.model_name(lora_request)
             tokenizer = await self.engine_client.get_tokenizer()
 

@@ -159,12 +159,14 @@ class OpenAIServingChat(OpenAIServing):
 
         try:
             lora_request = self._maybe_get_adapters(
-                request, supports_default_mm_loras=True
+                request, supports_default_mm_loras=True, raw_request=raw_request
             )
 
-            model_name = self.models.model_name(lora_request)
+            # Look up the correct engine_client and serving_models from registry
+            engine_client, serving_models = self._get_model_info(request.model, raw_request)
+            model_name = serving_models.model_name(lora_request)
 
-            tokenizer = await self.engine_client.get_tokenizer()
+            tokenizer = await engine_client.get_tokenizer()
 
             tool_parser = self.tool_parser
 
@@ -302,7 +304,9 @@ class OpenAIServingChat(OpenAIServing):
                         priority=request.priority,
                     )
 
-                    generator = self.engine_client.generate(
+                    # Look up the correct engine_client from registry for multi-model support
+                    engine_client, _ = self._get_model_info(request.model, raw_request)
+                    generator = engine_client.generate(
                         engine_request,
                         sampling_params,
                         request_id,

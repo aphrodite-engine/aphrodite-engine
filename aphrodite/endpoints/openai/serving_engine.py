@@ -258,6 +258,24 @@ class OpenAIServing:
         self.model_config = self.models.model_config
         self.max_model_len = self.model_config.max_model_len
 
+        # Store app state reference for multi-model registry access
+        self._app_state = None
+
+    def _get_model_info(self, model_name: str, raw_request=None):
+        """
+        Get ModelInfo from registry for multi-model support.
+        Returns (engine_client, serving_models) tuple.
+        Falls back to self.engine_client and self.models if model not in registry.
+        """
+        if raw_request is not None and hasattr(raw_request.app, 'state'):
+            state = raw_request.app.state
+            if hasattr(state, 'model_registry') and model_name in state.model_registry:
+                model_info = state.model_registry[model_name]
+                return model_info.engine_client, model_info.serving_models
+
+        # Fallback to default engine_client (for backward compatibility)
+        return self.engine_client, self.models
+
     def _get_tool_parser(
         self, tool_parser_name: str | None = None, enable_auto_tools: bool = False
     ) -> Callable[[AnyTokenizer], ToolParser] | None:
@@ -779,9 +797,19 @@ class OpenAIServing:
         self,
         request: AnyRequest,
         supports_default_mm_loras: bool = False,
+        raw_request = None,
     ) -> LoRARequest | None:
+        # First check local models (for backward compatibility)
         if request.model in self.models.lora_requests:
             return self.models.lora_requests[request.model]
+
+        # Check registry for multi-model support
+        if raw_request is not None and hasattr(raw_request.app, 'state'):
+            state = raw_request.app.state
+            if hasattr(state, 'model_registry') and request.model in state.model_registry:
+                model_info = state.model_registry[request.model]
+                if request.model in model_info.serving_models.lora_requests:
+                    return model_info.serving_models.lora_requests[request.model]
 
         # Currently only support default modality specific loras
         # if we have exactly one lora matched on the request.
@@ -790,7 +818,7 @@ class OpenAIServing:
             if default_mm_lora is not None:
                 return default_mm_lora
 
-        if self._is_model_supported(request.model):
+        if self._is_model_supported(request.model, raw_request):
             return None
 
         # if _check_model has been called earlier, this will be unreachable
@@ -1303,10 +1331,21 @@ class OpenAIServing:
             return logprob.decoded_token
         return tokenizer.decode(token_id)
 
-    def _is_model_supported(self, model_name: str | None) -> bool:
+    def _is_model_supported(self, model_name: str | None, raw_request = None) -> bool:
         if not model_name:
             return True
-        return self.models.is_base_model(model_name)
+
+        # Check local models first
+        if self.models.is_base_model(model_name):
+            return True
+
+        # Check registry for multi-model support
+        if raw_request is not None and hasattr(raw_request.app, 'state'):
+            state = raw_request.app.state
+            if hasattr(state, 'model_registry') and model_name in state.model_registry:
+                return True
+
+        return False
 
 
 def clamp_prompt_logprobs(

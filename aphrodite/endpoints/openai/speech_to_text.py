@@ -162,7 +162,7 @@ class OpenAISpeechToText(OpenAIServing):
             raw_request.state.request_metadata = request_metadata
 
         try:
-            lora_request = self._maybe_get_adapters(request)
+            lora_request = self._maybe_get_adapters(request, raw_request=raw_request)
 
             if lora_request:
                 return self.create_error_response(
