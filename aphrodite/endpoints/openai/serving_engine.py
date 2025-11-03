@@ -269,7 +269,7 @@ class OpenAIServing:
         """
         if raw_request is not None and hasattr(raw_request.app, 'state'):
             state = raw_request.app.state
-            if hasattr(state, 'model_registry') and model_name in state.model_registry:
+            if hasattr(state, 'model_registry') and state.model_registry and model_name in state.model_registry:
                 model_info = state.model_registry[model_name]
                 return model_info.engine_client, model_info.serving_models
 
@@ -806,7 +806,7 @@ class OpenAIServing:
         # Check registry for multi-model support
         if raw_request is not None and hasattr(raw_request.app, 'state'):
             state = raw_request.app.state
-            if hasattr(state, 'model_registry') and request.model in state.model_registry:
+            if hasattr(state, 'model_registry') and state.model_registry and request.model in state.model_registry:
                 model_info = state.model_registry[request.model]
                 if request.model in model_info.serving_models.lora_requests:
                     return model_info.serving_models.lora_requests[request.model]
@@ -1342,7 +1342,7 @@ class OpenAIServing:
         # Check registry for multi-model support
         if raw_request is not None and hasattr(raw_request.app, 'state'):
             state = raw_request.app.state
-            if hasattr(state, 'model_registry') and model_name in state.model_registry:
+            if hasattr(state, 'model_registry') and state.model_registry and model_name in state.model_registry:
                 return True
 
         return False
