@@ -176,6 +176,29 @@ async def build_async_engine_client(
         forkserver.ensure_running()
         logger.debug("Forkserver setup complete!")
 
+    from aphrodite.modeling.model_loader.weight_utils import get_model_config_yaml
+
+    model_config_yaml = get_model_config_yaml(
+        args.model, getattr(args, 'download_dir', None)
+    )
+
+    if model_config_yaml:
+        logger.info(f"Applying {len(model_config_yaml)} config values from model directory")
+        for key, value in model_config_yaml.items():
+            # Convert dashes to underscores for attribute names
+            attr_name = key.replace('-', '_')
+
+            # Don't override the model path itself
+            if attr_name == 'model':
+                continue
+
+            if hasattr(args, attr_name):
+                old_value = getattr(args, attr_name)
+                setattr(args, attr_name, value)
+                logger.info(f"Config from model dir: {key} = {value} (was: {old_value})")
+            else:
+                logger.warning(f"Unknown config key in model directory: {key} - ignoring")
+
     # Context manager to handle engine_client lifecycle
     # Ensures everything is shutdown and cleaned up on error/exit
     engine_args = AsyncEngineArgs.from_cli_args(args)
@@ -362,6 +385,49 @@ def kobold(request: Request) -> OpenAIServingKobold | None:
 
 def engine_client(request: Request) -> EngineClient:
     return request.app.state.engine_client
+
+
+async def maybe_switch_model(raw_request: Request, requested_model: str) -> None:
+    """Switch models if inline model loading is enabled and a different model is requested.
+
+    This function checks if:
+    1. Inline model loading is enabled
+    2. The requested model is different from the currently loaded model
+
+    If both conditions are true, it unloads the current model and loads the requested one.
+    """
+    if not raw_request.app.state.enable_inline_model_loading:
+        return
+
+    current_model = raw_request.app.state.current_model_path
+
+    if requested_model == current_model:
+        return
+
+    logger.info(
+        f"Inline model switching: Switching from '{current_model}' to '{requested_model}'"
+    )
+
+    handler = models(raw_request)
+    old_client = raw_request.app.state.engine_client
+
+    if old_client is not None:
+        logger.info("Unloading current model...")
+        await handler.unload_model(old_client)
+        raw_request.app.state.engine_client = None
+
+    # Load new model (this will use aphrodite_config.yaml if it exists)
+    logger.info(f"Loading new model: {requested_model}")
+    new_client, updated_args, _ = await handler.load_model(
+        original_args=raw_request.app.state.original_engine_args,
+        model=requested_model,
+        config_data=None,  # Use model directory config if available
+    )
+
+    # Update app state
+    await init_app_state(new_client, raw_request.app.state, updated_args)
+
+    logger.info(f"Model switch complete: now serving '{requested_model}'")
 
 
 @router.get("/health", response_class=Response)
@@ -633,6 +699,9 @@ async def cancel_responses(response_id: str, raw_request: Request):
 @load_aware_call
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):
+    # Check if we need to switch models (inline model loading)
+    await maybe_switch_model(raw_request, request.model)
+
     handler = chat(raw_request)
     if handler is None:
         return base(raw_request).create_error_response(
@@ -667,6 +736,9 @@ async def create_chat_completion(request: ChatCompletionRequest,
 @with_cancellation
 @load_aware_call
 async def create_completion(request: CompletionRequest, raw_request: Request):
+    # Check if we need to switch models (inline model loading)
+    await maybe_switch_model(raw_request, request.model)
+
     handler = completion(raw_request)
     if handler is None:
         return base(raw_request).create_error_response(
@@ -1072,6 +1144,173 @@ if envs.APHRODITE_SERVER_DEV_MODE:
             else:
                 response.append(str(result))
         return JSONResponse(content={"results": response})
+
+    @router.post("/v1/unload_model")
+    async def unload_model(raw_request: Request):
+        """
+        Unload the model by shutting down the engine.
+        This completely frees GPU memory including CUDA context (~1-2 GB).
+        Waits for all in-flight requests to complete before unloading.
+        Use /v1/load_model to reload the model.
+        """
+        try:
+            if not hasattr(raw_request.app.state, 'engine_client') or raw_request.app.state.engine_client is None:
+                return JSONResponse(content={
+                    "status": "info",
+                    "message": "Model is already unloaded."
+                })
+
+            handler = models(raw_request)
+            old_client = raw_request.app.state.engine_client
+            result = await handler.unload_model(old_client)
+            raw_request.app.state.engine_client = None
+
+            return JSONResponse(content=result)
+        except Exception as e:
+            logger.error(f"Model unload failed: {e}")
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+                detail=f"Model unload failed: {str(e)}"
+            ) from e
+
+    @router.post("/v1/load_model")
+    async def load_model(raw_request: Request):
+        """
+        Load the model by creating a new engine instance.
+        The model must have been previously unloaded with /v1/unload_model.
+        
+        Accepts either JSON body or multipart/form-data:
+        - JSON: {"model": "...", "config": {...}} or {"model": "...", "param": value, ...}
+        - Form: model as form field, config as file upload
+        
+        Parameters:
+        - model (optional): Model name or path to load. If not provided, 
+          uses the original model from server startup.
+        - config (optional): Config overrides as nested JSON object or YAML file upload.
+        - Any other keys in JSON body are treated as config parameters (flat format).
+ 
+        Configuration priority (highest to lowest):
+        1. Config in request (JSON params, nested config, or uploaded file)
+        2. Original server startup args
+ 
+        Note: The model directory's aphrodite_config.yaml is ONLY loaded
+        automatically when NO explicit config is provided in the request.
+        If you provide a config, it completely replaces any model directory
+        config to give you full control.
+ 
+        Example usage with curl:
+        ```bash
+        # Reload original model
+        curl -X POST http://localhost:2242/v1/load_model
+        
+        # Load a different model (JSON)
+        curl -X POST http://localhost:2242/v1/load_model \
+          -H "Content-Type: application/json" \
+          -d '{"model": "Qwen/Qwen3-0.6B"}'
+        
+        # Load model with flat config args (JSON)
+        curl -X POST http://localhost:2242/v1/load_model \
+          -H "Content-Type: application/json" \
+          -d '{"model": "Qwen/Qwen3-32B-FP8", "tensor_parallel_size": 2, "max_model_len": 8192}'
+        
+        # Load model with nested config (JSON)
+        curl -X POST http://localhost:2242/v1/load_model \
+          -H "Content-Type: application/json" \
+          -d '{
+            "model": "Qwen/Qwen3-0.6B",
+            "config": {
+              "max_model_len": 4096,
+              "tensor_parallel_size": 2
+            }
+          }'
+        
+        # Load model with config file (multipart form)
+        curl -X POST http://localhost:2242/v1/load_model \
+          -F "model=meta-llama/Llama-3.2-3B-Instruct" \
+          -F "config=@my_config.yaml"
+        ```
+        
+        Example config.yaml:
+        ```yaml
+        max_model_len: 4096
+        tensor_parallel_size: 2
+        gpu_memory_utilization: 0.9
+        ```
+        """
+        try:
+            if hasattr(raw_request.app.state, 'engine_client') and raw_request.app.state.engine_client is not None:
+                return JSONResponse(content={
+                    "status": "info",
+                    "message": "Model is already loaded."
+                })
+
+            import yaml
+
+            # Parse the request - support both JSON and multipart/form-data
+            model_name = None
+            config_data = None
+            content_type = raw_request.headers.get("content-type", "").lower()
+
+            if "application/json" in content_type:
+                # JSON request body
+                try:
+                    body = await raw_request.json()
+                    model_name = body.get("model")
+
+                    # Support two formats:
+                    # 1. {"model": "...", "config": {...}}
+                    # 2. {"model": "...", "tensor_parallel_size": 2, ...}
+                    if "config" in body:
+                        # Explicit config dict
+                        config_data = body.get("config")
+                    else:
+                        # Treat all other keys as config parameters
+                        config_data = {k: v for k, v in body.items() if k != "model"}
+                        if not config_data:
+                            config_data = None
+                except json.JSONDecodeError:
+                    pass
+            elif "multipart/form-data" in content_type:
+                # Form data with optional file upload
+                form = await raw_request.form()
+                model_name = form.get("model")
+                config_file = form.get("config")
+                if config_file and hasattr(config_file, "read"):
+                    # It's a file upload
+                    config_content = await config_file.read()
+                    try:
+                        config_data = yaml.safe_load(config_content)
+                    except yaml.YAMLError as e:
+                        raise HTTPException(
+                            status_code=HTTPStatus.BAD_REQUEST.value,
+                            detail=f"Invalid YAML config file: {str(e)}"
+                        ) from e
+
+            # Load the model using the serving_models handler
+            handler = models(raw_request)
+            new_client, updated_args, response_data = await handler.load_model(
+                original_args=raw_request.app.state.original_engine_args,
+                model=model_name,
+                config_data=config_data,
+            )
+
+            # Store the updated args for future reloads
+            await init_app_state(new_client, raw_request.app.state, updated_args)
+
+            return JSONResponse(content=response_data)
+        except HTTPException:
+            raise
+        except ValueError as e:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=str(e)
+            ) from e
+        except Exception as e:
+            logger.error(f"Model load failed: {e}")
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+                detail=f"Model load failed: {str(e)}"
+            ) from e
 
 
 @router.post(
@@ -1922,6 +2161,16 @@ async def init_app_state(
     state.engine_client = engine_client
     state.log_stats = not args.disable_log_stats
     state.aphrodite_config = aphrodite_config
+    # Store both the current args and the original args for model reloading
+    state.engine_args = args
+    if not hasattr(state, 'original_engine_args'):
+        # Only store original args on first init, not on subsequent loads
+        from copy import deepcopy
+        state.original_engine_args = deepcopy(args)
+
+    # Track the currently loaded model for inline model loading
+    state.current_model_path = args.model
+    state.enable_inline_model_loading = args.enable_inline_model_loading
     supported_tasks = await engine_client.get_supported_tasks()
 
     logger.info("Supported tasks: %s", supported_tasks)
@@ -1976,6 +2225,7 @@ async def init_app_state(
             enable_force_include_usage=args.enable_force_include_usage,
             enable_log_outputs=args.enable_log_outputs,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "generate" in supported_tasks
         else None
@@ -1998,6 +2248,7 @@ async def init_app_state(
             enable_force_include_usage=args.enable_force_include_usage,
             enable_log_outputs=args.enable_log_outputs,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "generate" in supported_tasks
         else None
@@ -2011,6 +2262,7 @@ async def init_app_state(
             enable_prompt_tokens_details=args.enable_prompt_tokens_details,
             enable_force_include_usage=args.enable_force_include_usage,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "generate" in supported_tasks
         else None
@@ -2026,6 +2278,7 @@ async def init_app_state(
                 chat_template_content_format=args.chat_template_content_format,
                 trust_request_chat_template=args.trust_request_chat_template,
                 log_error_stack=args.log_error_stack,
+                enable_inline_model_loading=args.enable_inline_model_loading,
             )
         )
         if any(task in POOLING_TASKS for task in supported_tasks)
@@ -2040,6 +2293,7 @@ async def init_app_state(
             chat_template_content_format=args.chat_template_content_format,
             trust_request_chat_template=args.trust_request_chat_template,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "embed" in supported_tasks
         else None
@@ -2050,6 +2304,7 @@ async def init_app_state(
             state.openai_serving_models,
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "classify" in supported_tasks
         else None
@@ -2060,6 +2315,7 @@ async def init_app_state(
             state.openai_serving_models,
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if ("embed" in supported_tasks or "score" in supported_tasks)
         else None
@@ -2072,6 +2328,7 @@ async def init_app_state(
         chat_template_content_format=args.chat_template_content_format,
         trust_request_chat_template=args.trust_request_chat_template,
         log_error_stack=args.log_error_stack,
+        enable_inline_model_loading=args.enable_inline_model_loading,
     )
     state.openai_serving_transcription = (
         OpenAIServingTranscription(
@@ -2080,6 +2337,7 @@ async def init_app_state(
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
             enable_force_include_usage=args.enable_force_include_usage,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "transcription" in supported_tasks
         else None
@@ -2091,6 +2349,7 @@ async def init_app_state(
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
             enable_force_include_usage=args.enable_force_include_usage,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "transcription" in supported_tasks
         else None
@@ -2101,6 +2360,7 @@ async def init_app_state(
             state.openai_serving_models,
             request_logger=request_logger,
             log_error_stack=args.log_error_stack,
+            enable_inline_model_loading=args.enable_inline_model_loading,
         )
         if "generate" in supported_tasks
         else None
@@ -2252,6 +2512,8 @@ async def run_server_worker(listen_address,
         logger.info(f"Detokenization API:     {url_prefix}/v1/detokenize")
         logger.info(f"Tokenizer Info API:     {url_prefix}/tokenizer_info")
         logger.info(f"Tokenization API:       {url_prefix}/v1/tokenize")
+        logger.info(f"Model Management:       {url_prefix}/v1/unload_model")
+        logger.info(f"Model Management:       {url_prefix}/v1/load_model")
         logger.info(f"KoboldAI API:           {url_prefix}/api/v1")
         logger.info(f"KoboldAI Extra:         {url_prefix}/api/extra")
 

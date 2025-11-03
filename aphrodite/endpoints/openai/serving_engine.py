@@ -234,6 +234,7 @@ class OpenAIServing:
         request_logger: RequestLogger | None,
         return_tokens_as_token_ids: bool = False,
         log_error_stack: bool = False,
+        enable_inline_model_loading: bool = False,
     ):
         super().__init__()
 
@@ -250,6 +251,7 @@ class OpenAIServing:
 
         self._async_tokenizer_pool: dict[AnyTokenizer, AsyncMicrobatchTokenizer] = {}
         self.log_error_stack = log_error_stack
+        self.enable_inline_model_loading = enable_inline_model_loading
 
         self.processor = self.models.processor
         self.io_processor = self.models.io_processor
@@ -720,6 +722,11 @@ class OpenAIServing:
         self,
         request: AnyRequest,
     ) -> ErrorResponse | None:
+        # Skip model validation when inline model loading is enabled
+        # The model will be switched automatically before this handler is called
+        if self.enable_inline_model_loading:
+            return None
+
         error_response = None
 
         if self._is_model_supported(request.model):

@@ -61,7 +61,7 @@ async def serve_http(
 
     loop = asyncio.get_running_loop()
 
-    watchdog_task = loop.create_task(watchdog_loop(server, app.state.engine_client))
+    watchdog_task = loop.create_task(watchdog_loop(server, app))
     server_task = loop.create_task(server.serve(sockets=[sock] if sock else None))
 
     ssl_cert_refresher = (
@@ -107,7 +107,7 @@ async def serve_http(
         watchdog_task.cancel()
 
 
-async def watchdog_loop(server: uvicorn.Server, engine: EngineClient):
+async def watchdog_loop(server: uvicorn.Server, app: FastAPI):
     """
     # Watchdog task that runs in the background, checking
     # for error state in the engine. Needed to trigger shutdown
@@ -116,7 +116,10 @@ async def watchdog_loop(server: uvicorn.Server, engine: EngineClient):
     APHRODITE_WATCHDOG_TIME_S = 5.0
     while True:
         await asyncio.sleep(APHRODITE_WATCHDOG_TIME_S)
-        terminate_if_errored(server, engine)
+        # Check the current engine client from app.state, not a stale reference
+        engine = getattr(app.state, 'engine_client', None)
+        if engine is not None:
+            terminate_if_errored(server, engine)
 
 
 def terminate_if_errored(server: uvicorn.Server, engine: EngineClient):

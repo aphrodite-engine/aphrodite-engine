@@ -870,6 +870,73 @@ def convert_pyslice_to_tensor(x: Any) -> torch.Tensor:
     return x
 
 
+def get_model_config_yaml(
+    model_name_or_path: str, cache_dir: str | None = None
+) -> dict[str, Any] | None:
+    """Look for aphrodite_config.yaml in model directory or HF repo.
+
+    Args:
+        model_name_or_path: Local path or HF model name
+        cache_dir: Optional cache directory for HF downloads
+
+    Returns:
+        Dict containing the config if found, None otherwise
+    """
+    is_local = os.path.isdir(model_name_or_path)
+    config_path = None
+
+    if is_local:
+        # Check for both .yaml and .yml extensions
+        for ext in ["yaml", "yml"]:
+            candidate_path = os.path.join(
+                model_name_or_path, f"aphrodite_config.{ext}"
+            )
+            if os.path.exists(candidate_path):
+                config_path = candidate_path
+                break
+        if config_path is None:
+            return None
+    else:
+        # Try to download from HuggingFace Hub
+        try:
+            with get_lock(model_name_or_path, cache_dir):
+                valid_names = ["aphrodite_config.yaml", "aphrodite_config.yml"]
+                for name in valid_names:
+                    try:
+                        config_path = hf_hub_download(
+                            model_name_or_path,
+                            filename=name,
+                            cache_dir=cache_dir,
+                            local_files_only=huggingface_hub.constants.HF_HUB_OFFLINE,
+                        )
+                        if os.path.exists(config_path):
+                            break
+                    except (
+                        huggingface_hub.utils.EntryNotFoundError,
+                        huggingface_hub.utils.LocalEntryNotFoundError,
+                    ):
+                        continue
+        except Exception:
+            return None
+
+    if config_path is None:
+        return None
+
+    try:
+        import yaml
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        logger.info(
+            f"Loaded aphrodite_config from {config_path} with keys: "
+            f"{list(config.keys()) if config else 'none'}"
+        )
+        return config
+    except Exception as e:
+        logger.warning(f"Failed to load aphrodite_config.yaml: {e}")
+        return None
+
+
 def default_weight_loader(param: torch.Tensor, loaded_weight: torch.Tensor) -> None:
     """Default weight loader."""
     try:
