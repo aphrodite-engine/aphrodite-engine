@@ -2406,7 +2406,7 @@ async def init_app_state(
 
     supported_tasks = await engine_client.get_supported_tasks()
 
-    logger.info("Supported tasks for model '%s': %s", model_key, supported_tasks)
+    logger.info("Supported tasks: %s", supported_tasks)
 
     # Initialize handlers (or re-initialize if loading additional models)
     # Note: For multi-model, handlers will dynamically look up from model_registry
