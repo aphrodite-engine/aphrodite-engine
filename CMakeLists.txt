@@ -283,6 +283,9 @@ set(APHRODITE_EXT_SRC
   "kernels/quantization/activation_kernels.cu"
   "kernels/cuda_utils_kernels.cu"
   "kernels/all_reduce/custom_all_reduce.cu"
+  "kernels/vmm/page.cpp"
+  "kernels/vmm/ftensor.cpp"
+  "kernels/vmm/allocator.cpp"
   "kernels/torch_bindings.cpp")
 
   if(APHRODITE_GPU_LANG STREQUAL "CUDA")

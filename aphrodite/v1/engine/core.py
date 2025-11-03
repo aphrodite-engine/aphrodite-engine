@@ -106,6 +106,15 @@ class EngineCore:
 
         self.structured_output_manager = StructuredOutputManager(aphrodite_config)
 
+        is_elastic = envs.APHRODITE_ENABLE_DYNAMIC_KV_CACHE
+        if is_elastic:
+            from aphrodite.v1.core.dynamic_kv.interfaces import init_kvcached
+            init_kvcached(
+                tp_rank=0,
+                tp_size=aphrodite_config.parallel_config.tensor_parallel_size,
+                is_worker=False,
+            )
+
         # Setup scheduler.
         if isinstance(aphrodite_config.scheduler_config.scheduler_cls, str):
             Scheduler = resolve_obj_by_qualname(

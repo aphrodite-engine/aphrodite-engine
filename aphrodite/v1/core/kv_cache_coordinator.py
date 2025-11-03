@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from aphrodite.v1.core.block_pool import BlockPool
+import aphrodite.envs as envs
+from aphrodite.v1.core.block_pool import BlockPool, ElasticBlockPool
 from aphrodite.v1.core.kv_cache_utils import BlockHash, KVCacheBlock
 from aphrodite.v1.core.single_type_kv_cache_manager import (
     CrossAttentionManager, FullAttentionManager, get_manager_for_kv_cache_spec)
@@ -28,9 +29,35 @@ class KVCacheCoordinator(ABC):
         self.max_model_len = max_model_len
         self.enable_caching = enable_caching
 
-        self.block_pool = BlockPool(
-            kv_cache_config.num_blocks, enable_caching, enable_kv_cache_events
-        )
+        self.is_elastic = envs.APHRODITE_ENABLE_DYNAMIC_KV_CACHE
+
+        self.block_pool: BlockPool
+        if self.is_elastic:
+            if self.enable_caching:
+                raise ValueError("Prefix caching is not supported with dynamic KV cache")
+
+            if len(self.kv_cache_config.kv_cache_groups) != 1:
+                raise ValueError(
+                    "Only one kv cache group is supported for dynamic KV cache")
+
+            kv_cache_group = self.kv_cache_config.kv_cache_groups[0]
+            block_size = kv_cache_group.kv_cache_spec.block_size
+            num_gpu_blocks = self.kv_cache_config.num_blocks
+            num_layers = len(self.kv_cache_config.kv_cache_tensors)
+            # cell_size is the size (in bytes) of the per-token K/V cache
+            cell_size = (kv_cache_group.kv_cache_spec.page_size_bytes //
+                         block_size // 2)
+
+            self.block_pool = ElasticBlockPool(
+                num_gpu_blocks=num_gpu_blocks,
+                block_size=block_size,
+                cell_size=cell_size,
+                num_layers=num_layers,
+                enable_caching=enable_caching,
+                enable_kv_cache_events=enable_kv_cache_events)
+        else:
+            self.block_pool = BlockPool(kv_cache_config.num_blocks,
+                                        enable_caching, enable_kv_cache_events)
 
         # Needs special handling for find_longest_cache_hit if eagle is enabled
         self.use_eagle = use_eagle

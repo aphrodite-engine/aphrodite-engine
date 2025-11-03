@@ -222,6 +222,7 @@ if TYPE_CHECKING:
     APHRODITE_REQUEST_LEVEL_METRICS: bool = True
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
     APHRODITE_DISABLE_FLASH_ATTN_COMPILE: bool = False
+    APHRODITE_ENABLE_DYNAMIC_KV_CACHE: bool = False
 
 
 def get_default_cache_root():
@@ -1468,6 +1469,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Whether to disable flash attention compilation
     "APHRODITE_DISABLE_FLASH_ATTN_COMPILE": lambda: bool(
         int(os.getenv("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "0"))
+    ),
+
+    # When enabled without prefix caching, allow aphrodite to dynamically
+    # allocate KV cache memory instead of pre-allocation.
+    "APHRODITE_ENABLE_DYNAMIC_KV_CACHE": lambda: bool(
+        int(os.getenv("APHRODITE_ENABLE_DYNAMIC_KV_CACHE", "0"))
     ),
 }
 
