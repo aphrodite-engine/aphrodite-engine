@@ -1,5 +1,9 @@
+import gc
+import time
+from argparse import Namespace
 from asyncio import Lock
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
 from http import HTTPStatus
 
@@ -8,10 +12,13 @@ from aphrodite.endpoints.openai.protocol import (ErrorInfo, ErrorResponse,
                                                  ModelCard, ModelList,
                                                  ModelPermission,
                                                  UnloadLoRAAdapterRequest)
+from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.lora.resolver import LoRAResolver, LoRAResolverRegistry
+from aphrodite.modeling.model_loader.weight_utils import get_model_config_yaml
+from aphrodite.usage.usage_lib import UsageContext
 from aphrodite.utils.counter import AtomicCounter
 
 logger = init_logger(__name__)
@@ -285,6 +292,183 @@ class OpenAIServingModels:
                     err_type="NotFoundError",
                     status_code=HTTPStatus.NOT_FOUND,
                 )
+
+    async def unload_model(
+        self, old_engine_client: EngineClient
+    ) -> dict[str, str | float]:
+        """Unload the current model and free GPU memory.
+
+        Returns a dict with status information including timing metrics.
+        """
+        start_time = time.time()
+
+        logger.info("Model unload requested - waiting for in-flight requests to drain...")
+
+        try:
+            await old_engine_client.wait_for_requests_to_drain(drain_timeout=300)
+            drain_time = time.time() - start_time
+            logger.info(f"All requests drained in {drain_time:.2f}s. Shutting down engine...")
+        except TimeoutError:
+            drain_time = time.time() - start_time
+            logger.warning(
+                f"Timeout waiting for requests to drain after {drain_time:.2f}s. "
+                "Proceeding with shutdown anyway..."
+            )
+
+        # Mark engine as already dead to prevent monitor from triggering API server shutdown
+        if hasattr(old_engine_client, 'engine_core') and hasattr(
+            old_engine_client.engine_core, 'resources'
+        ):
+            old_engine_client.engine_core.resources.engine_dead = True
+
+        shutdown_start = time.time()
+        old_engine_client.shutdown()
+
+        import torch.cuda
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        shutdown_time = time.time() - shutdown_start
+        total_time = time.time() - start_time
+        logger.info(
+            f"Engine shutdown complete in {shutdown_time:.2f}s. "
+            f"Total unload time: {total_time:.2f}s. GPU memory freed."
+        )
+
+        return {
+            "status": "success",
+            "message": f"Model unloaded successfully in {total_time:.2f}s. All GPU memory has been freed.",
+            "drain_time_s": round(drain_time, 2),
+            "shutdown_time_s": round(shutdown_time, 2),
+            "total_time_s": round(total_time, 2),
+        }
+
+    async def load_model(
+        self,
+        original_args: Namespace,
+        model: str | None = None,
+        config_data: dict | None = None,
+    ) -> tuple[EngineClient, Namespace, dict[str, str | float | dict]]:
+        """Load a model with optional config overrides.
+
+        Args:
+            original_args: The original server startup arguments
+            model: Optional model name/path to load (different from original)
+            config_data: Optional config dict to override settings
+ 
+        Returns:
+            Tuple of (new_engine_client, updated_args, response_data)
+        """
+        start_time = time.time()
+
+        # Start with the ORIGINAL server startup args
+        args = deepcopy(original_args)
+        config_applied = {}
+
+        # If a different model is specified, update it
+        if model is not None:
+            old_model = args.model
+            args.model = model
+            logger.info(f"Switching model from {old_model} to {model}")
+            config_applied["model"] = {
+                "old": old_model,
+                "new": model,
+                "source": "request"
+            }
+
+        # Only auto-load aphrodite_config.yaml from model directory if NO explicit config was provided
+        if config_data is None:
+            model_config_yaml = get_model_config_yaml(
+                args.model, getattr(args, 'download_dir', None)
+            )
+
+            if model_config_yaml:
+                logger.info(
+                    f"Found aphrodite_config in model directory with "
+                    f"{len(model_config_yaml)} settings"
+                )
+                for key, value in model_config_yaml.items():
+                    attr_name = key.replace('-', '_')
+                    # Don't override the model path if it was explicitly provided in request
+                    if attr_name == 'model' and model is not None:
+                        continue
+                    if hasattr(args, attr_name):
+                        old_value = getattr(args, attr_name)
+                        setattr(args, attr_name, value)
+                        config_applied[key] = {
+                            "old": old_value,
+                            "new": value,
+                            "source": "model_dir"
+                        }
+                        logger.info(
+                            f"Config from model dir: {key} = {value} (was: {old_value})"
+                        )
+                    else:
+                        logger.warning(
+                            f"Unknown config key in model directory: {key} - ignoring"
+                        )
+
+        # If config was provided, apply it (this overrides everything)
+        if config_data is not None:
+            logger.info("Config data provided - applying...")
+
+            if not isinstance(config_data, dict):
+                raise ValueError("Config must be a dictionary/object")
+
+            # Apply config values to args
+            for key, value in config_data.items():
+                attr_name = key.replace('-', '_')
+
+                if hasattr(args, attr_name):
+                    old_value = getattr(args, attr_name)
+                    setattr(args, attr_name, value)
+                    config_applied[key] = {
+                        "old": old_value,
+                        "new": value,
+                        "source": "uploaded"
+                    }
+                    logger.info(
+                        f"Config override (uploaded): {key} = {value} (was: {old_value})"
+                    )
+                else:
+                    logger.warning(f"Unknown config key: {key} - ignoring")
+
+            logger.info(f"Applied {len(config_applied)} config overrides")
+
+        logger.info("Model load requested - initializing engine...")
+
+        from aphrodite.v1.engine.async_llm import AsyncLLM
+
+        engine_args = AsyncEngineArgs.from_cli_args(args)
+        aphrodite_config = engine_args.create_engine_config(
+            usage_context=UsageContext.OPENAI_API_SERVER
+        )
+
+        new_client = AsyncLLM.from_aphrodite_config(
+            aphrodite_config=aphrodite_config,
+            usage_context=UsageContext.OPENAI_API_SERVER,
+            enable_log_requests=engine_args.enable_log_requests,
+            aggregate_engine_logging=engine_args.aggregate_engine_logging,
+            disable_log_stats=engine_args.disable_log_stats,
+        )
+
+        total_time = time.time() - start_time
+        logger.info(f"Model load complete in {total_time:.2f}s!")
+
+        response_data = {
+            "status": "success",
+            "message": f"Model loaded successfully in {total_time:.2f}s.",
+            "load_time_s": round(total_time, 2),
+            "model": args.model,
+        }
+
+        if config_applied:
+            response_data["config_applied"] = {
+                key: {"value": value["new"], "source": value["source"]}
+                for key, value in config_applied.items()
+            }
+
+        return new_client, args, response_data
 
 
 def create_error_response(
