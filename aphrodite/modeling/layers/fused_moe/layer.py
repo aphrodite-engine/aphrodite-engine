@@ -1323,8 +1323,17 @@ class FusedMoE(CustomOp):
             "GPTQMarlinMoEMethod",
             "CompressedTensorsWNA16MarlinMoEMethod",
             "CompressedTensorsWNA16MoEMethod",
+            "CompressedTensorsWNA16AMXMoEMethod",
+            "CompressedTensorsWNA16AMXEPMoEMethod",
         ):
             moe_quant_params["intermediate_size_full"] = intermediate_size
+
+        # KTransformers AMX methods need top_k
+        if self.quant_method.__class__.__name__ in (
+            "CompressedTensorsWNA16AMXMoEMethod",
+            "CompressedTensorsWNA16AMXEPMoEMethod",
+        ):
+            moe_quant_params["top_k"] = self.top_k
 
         self.quant_method.create_weights(layer=self, **moe_quant_params)
 
@@ -1639,6 +1648,23 @@ class FusedMoE(CustomOp):
         expert_id: int,
         return_success: bool = False,
     ) -> bool | None:
+        # Skip loading weights for CPU experts in hybrid MoE (KTransformers)
+        if self.quant_method is not None:
+            from aphrodite.quantization.compressed_tensors.compressed_tensors_moe import (
+                CompressedTensorsWNA16AMXEPMoEMethod,
+                CompressedTensorsWNA16AMXMoEMethod,
+                CompressedTensorsWNA16MoEMethod,
+            )
+            if isinstance(self.quant_method, (
+                CompressedTensorsWNA16MoEMethod,
+                CompressedTensorsWNA16AMXMoEMethod,
+                CompressedTensorsWNA16AMXEPMoEMethod,
+            )):
+                num_gpu_experts = getattr(self.quant_method, "num_gpu_experts", -1)
+                if num_gpu_experts != -1 and expert_id >= num_gpu_experts:
+                    # This expert is handled by CPU (AMX), skip GPU weight loading
+                    return True if return_success else None
+        
         if self.quant_config and self.quant_config.get_name() == "mxfp4":
             # (FIXME) for gpt-oss all experts are combined
             if "bias" in weight_name:
@@ -1675,6 +1701,8 @@ class FusedMoE(CustomOp):
         if self.quant_method.__class__.__name__ in (
             "CompressedTensorsWNA16MarlinMoEMethod",
             "CompressedTensorsWNA16MoEMethod",
+            "CompressedTensorsWNA16AMXMoEMethod",
+            "CompressedTensorsWNA16AMXEPMoEMethod",
         ):
             loaded_weight = loaded_weight.t().contiguous()
 
