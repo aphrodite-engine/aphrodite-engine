@@ -52,3 +52,4 @@ python-multipart # required for multipart/form-data requests
 blobfile
 numba
 anthropic == 0.71.0
+posix_ipc >= 1.0  # required for dynamic KV cache

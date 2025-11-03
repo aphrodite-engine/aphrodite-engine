@@ -2,9 +2,51 @@
 #include "cuda_utils.h"
 #include "ops.h"
 #include "core/registration.h"
+#include "vmm/allocator.hpp"
+#include "vmm/constants.hpp"
+#include "vmm/torch_utils.hpp"
 
 #include <torch/library.h>
 #include <torch/version.h>
+
+// VMM operations for elastic KV cache
+namespace {
+
+void init_kvcached(const std::string &dev_str, int64_t page_size,
+                   bool contiguous_layout) {
+  aphrodite::vmm::FTensorAllocator::init(dev_str, static_cast<size_t>(page_size),
+                                          contiguous_layout);
+}
+
+void shutdown_kvcached() {
+  aphrodite::vmm::FTensorAllocator::shutdown();
+}
+
+std::vector<torch::Tensor> create_kv_tensors(int64_t size, int64_t dtype_size,
+                                              const std::string &dev_str,
+                                              int64_t num_layers) {
+  auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
+  auto dtype = aphrodite::vmm::torch_dtype_from_size(static_cast<size_t>(dtype_size));
+  return allocator->create_kv_tensors(static_cast<size_t>(size), dtype, dev_str,
+                                      num_layers);
+}
+
+bool kv_tensors_created() {
+  auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
+  return allocator->kv_tensors_created();
+}
+
+void map_to_kv_tensors(const std::vector<int64_t> &offsets) {
+  auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
+  allocator->map_to_kv_tensors(offsets);
+}
+
+void unmap_from_kv_tensors(const std::vector<int64_t> &offsets) {
+  auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
+  allocator->unmap_from_kv_tensors(offsets);
+}
+
+}  // namespace
 
 // Note on op signatures:
 // The X_meta signatures are for the meta functions corresponding to op X.
@@ -789,6 +831,21 @@ ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
   ops.impl("top_k_mask_logits", torch::kCUDA, &top_k_mask_logits);
 
 #endif
+
+  // VMM ops for elastic KV cache
+  // These ops have no tensor arguments, so we register them as CompositeImplicitAutograd
+  // which acts as a fallback for all backends
+  ops.def("init_kvcached(str dev_str, int page_size, bool contiguous_layout) -> ()", &init_kvcached);
+
+  ops.def("shutdown_kvcached() -> ()", &shutdown_kvcached);
+
+  ops.def("create_kv_tensors(int size, int dtype_size, str dev_str, int num_layers) -> Tensor[]", &create_kv_tensors);
+
+  ops.def("kv_tensors_created() -> bool", &kv_tensors_created);
+
+  ops.def("map_to_kv_tensors(int[] offsets) -> ()", &map_to_kv_tensors);
+
+  ops.def("unmap_from_kv_tensors(int[] offsets) -> ()", &unmap_from_kv_tensors);
 }
 
 TORCH_LIBRARY_EXPAND(CONCAT(TORCH_EXTENSION_NAME, _cache_ops), cache_ops) {
