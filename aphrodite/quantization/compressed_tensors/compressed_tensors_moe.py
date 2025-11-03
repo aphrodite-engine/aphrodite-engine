@@ -101,16 +101,23 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
         prefix: str = "",
     ) -> "CompressedTensorsMoEMethod":
         # Check for KTransformers AMX weights first
-        if envs.APHRODITE_KT_MOE_AMX_WEIGHT_PATH is not None:
+        kt_amx_path = envs.APHRODITE_KT_MOE_AMX_WEIGHT_PATH
+
+        if kt_amx_path is not None:
+            logger.info(f"Detected KTransformers AMX weights at: {kt_amx_path}")
+            logger.info(f"Layer prefix: {prefix}")
+
             match = re.search(r"(\d+)\.mlp", prefix)
             if not match:
-                raise ValueError(
+                logger.warning(
                     f"Unable to extract layer number from prefix '{prefix}'. "
-                    f"Expected format: '<layer_number>.mlp'"
+                    f"Expected format: '<layer_number>.mlp'. Falling back to standard method."
                 )
-            layer_number = int(match.group(1))
-            return CompressedTensorsWNA16AMXEPMoEMethod(quant_config, layer.moe_config, layer_number)
-        
+            else:
+                layer_number = int(match.group(1))
+                logger.info(f"Using CompressedTensorsWNA16AMXEPMoEMethod for layer {layer_number}")
+                return CompressedTensorsWNA16AMXEPMoEMethod(quant_config, layer.moe_config, layer_number)
+
         # TODO: @dsikka: refactor this to use schemes as other kernels
         # are supported + check if the layer is being ignored.
         # Check if a using "Linear" to select schemes
@@ -1359,6 +1366,7 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
         self,
         quant_config: "CompressedTensorsConfig",  # type: ignore # noqa E501
         moe: FusedMoEConfig,
+        num_gpu_experts: int = -1,
     ):
         super().__init__(moe)
         self.quant_config = quant_config
@@ -1382,6 +1390,7 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
                 "is supported for the following bits: ",
                 f"{WNA16_SUPPORTED_BITS}",
             )
+        self.num_gpu_experts = num_gpu_experts
         self.quant_type = WNA16_SUPPORTED_TYPES_MAP[self.num_bits]
 
     def create_weights(
@@ -1393,6 +1402,10 @@ class CompressedTensorsWNA16MarlinMoEMethod(CompressedTensorsMoEMethod):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        # Use num_gpu_experts if specified (for hybrid CPU-GPU MoE)
+        if self.num_gpu_experts != -1:
+            num_experts = self.num_gpu_experts
+
         intermediate_size_full = extra_weight_attrs.pop("intermediate_size_full")
 
         # Will transpose the loaded weight along the
@@ -1686,6 +1699,7 @@ class CompressedTensorsWNA16MoEMethod(CompressedTensorsMoEMethod):
         self,
         quant_config: "CompressedTensorsConfig",  # type: ignore # noqa E501
         moe: FusedMoEConfig,
+        num_gpu_experts: int = -1,
     ):
         super().__init__(moe)
         self.quant_config = quant_config
@@ -1695,11 +1709,10 @@ class CompressedTensorsWNA16MoEMethod(CompressedTensorsMoEMethod):
         self.num_bits = config.num_bits
         self.packed_factor = 32 // config.num_bits
         self.strategy = config.strategy
-        # channelwise is not supported by this kernel
-        assert config.strategy == "group"
-        self.group_size = config.group_size
+        self.group_size = config.group_size if config.strategy == "group" else -1
         # grouped actorder isn't supported by this kernel
-        assert config.actorder != "group"
+        if config.strategy == "group":
+            assert config.actorder != "group"
         assert config.symmetric, "Only symmetric quantization is supported for MoE"
 
         if not (
@@ -1712,6 +1725,7 @@ class CompressedTensorsWNA16MoEMethod(CompressedTensorsMoEMethod):
                 "is supported for the following bits: ",
                 f"{WNA16_SUPPORTED_BITS}",
             )
+        self.num_gpu_experts = num_gpu_experts
 
     def create_weights(
         self,
@@ -1722,6 +1736,10 @@ class CompressedTensorsWNA16MoEMethod(CompressedTensorsMoEMethod):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
+        # Use num_gpu_experts if specified (for hybrid CPU-GPU MoE)
+        if self.num_gpu_experts != -1:
+            num_experts = self.num_gpu_experts
+
         # Will transpose the loaded weight along the
         # intermediate and hidden dim sizes. Will
         # shard for TP along the transposed dims
@@ -2435,7 +2453,12 @@ class CompressedTensorsWNA16AMXEPMoEMethod(CompressedTensorsMoEMethod):
             amx_weight_path,
             chunked_prefill_size,
         )
-        self.marlin_method = CompressedTensorsWNA16MarlinMoEMethod(quant_config, moe)
+        
+        # Create Marlin method for GPU experts
+        # Marlin supports both group and channel quantization strategies
+        self.marlin_method = CompressedTensorsWNA16MarlinMoEMethod(
+            quant_config, moe, num_gpu_experts=self.num_gpu_experts
+        )
         self.layer_id = layer_idx
 
     def create_weights(
@@ -2456,11 +2479,12 @@ class CompressedTensorsWNA16AMXEPMoEMethod(CompressedTensorsMoEMethod):
             params_dtype,
             **extra_weight_attrs,
         )
-        # Filter out CPU expert weights from GPU method
-        # Only load weights for GPU experts (< num_gpu_experts)
+        
+        # Create GPU weights for only GPU experts
+        # Weight loader will skip loading experts >= num_gpu_experts
         self.marlin_method.create_weights(
             layer,
-            min(num_experts, self.num_gpu_experts),
+            num_experts,  # Pass total, but method will use num_gpu_experts
             hidden_size,
             intermediate_size_per_partition,
             params_dtype,
@@ -2512,6 +2536,19 @@ class CompressedTensorsWNA16AMXEPMoEMethod(CompressedTensorsMoEMethod):
             renormalize=renormalize,
         )
 
+        # CPU-only mode: Just use AMX method if num_gpu_experts is 0
+        if self.num_gpu_experts == 0:
+            logger.info_once("Running in CPU-only mode with AMX", scope="global")
+            return self.AMX_method.apply(
+                layer, x, router_logits, top_k, renormalize,
+                use_grouped_topk, topk_group, num_expert_group,
+                global_num_experts, expert_map, custom_routing_function,
+                scoring_func, routed_scaling_factor, e_score_correction_bias,
+                apply_router_weight_on_input, activation, enable_eplb,
+                expert_load_view, logical_to_physical_map, logical_replica_count
+            )
+
+        # Hybrid mode: GPU + CPU
         # Step 1: Submit AMX task (non-blocking) if on rank 0
         if self.tp_rank == 0 and self.AMX_method.amx_wrapper is not None:
             self.AMX_method.amx_wrapper.submit_forward(

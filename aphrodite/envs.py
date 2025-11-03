@@ -228,7 +228,7 @@ if TYPE_CHECKING:
     APHRODITE_KT_MOE_CPUINFER: int | None = None
     APHRODITE_KT_THREADPOOL_COUNT: int | None = None
     APHRODITE_KT_MOE_NUM_GPU_EXPERTS: int | None = None
-    APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE: int | None = None
+    APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE: int = 512
 
 
 def get_default_cache_root():
@@ -1482,7 +1482,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_KT_MOE_CPUINFER": lambda: maybe_convert_int(os.getenv("APHRODITE_KT_MOE_CPUINFER", None)),
     "APHRODITE_KT_THREADPOOL_COUNT": lambda: int(os.getenv("APHRODITE_KT_THREADPOOL_COUNT", "2")),
     "APHRODITE_KT_MOE_NUM_GPU_EXPERTS": lambda: maybe_convert_int(os.getenv("APHRODITE_KT_MOE_NUM_GPU_EXPERTS", None)),
-    "APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE": lambda: maybe_convert_int(os.getenv("APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE", None)),
+    "APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE": lambda: int(os.getenv("APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE", "512")),
 }
 
 # --8<-- [end:env-vars-definition]

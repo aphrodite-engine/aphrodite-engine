@@ -532,7 +532,7 @@ class EngineArgs:
     kt_cpuinfer: int | None = None
     kt_threadpool_count: int = 2
     kt_num_gpu_experts: int | None = None
-    kt_chunked_prefill_size: int | None = None
+    kt_chunked_prefill_size: int = 512  # Default chunked prefill size for KTransformers
 
     def __post_init__(self):
         # support `EngineArgs(compilation_config={...})`
@@ -562,19 +562,22 @@ class EngineArgs:
 
     def _handle_ktransformers_configs(self):
         """Set KTransformers environment variables from CLI arguments."""
+        import os
 
         if self.kt_amx_weight_path is not None:
-            envs.APHRODITE_KT_MOE_AMX_WEIGHT_PATH = self.kt_amx_weight_path
+            os.environ["APHRODITE_KT_MOE_AMX_WEIGHT_PATH"] = self.kt_amx_weight_path
         if self.kt_amx_method is not None:
-            envs.APHRODITE_KT_AMX_METHOD = self.kt_amx_method
+            os.environ["APHRODITE_KT_AMX_METHOD"] = self.kt_amx_method
+            # KTransformers also checks AMX_METHOD
+            os.environ["AMX_METHOD"] = self.kt_amx_method
         if self.kt_cpuinfer is not None:
-            envs.APHRODITE_KT_MOE_CPUINFER = self.kt_cpuinfer
+            os.environ["APHRODITE_KT_MOE_CPUINFER"] = str(self.kt_cpuinfer)
         if self.kt_threadpool_count is not None:
-            envs.APHRODITE_KT_THREADPOOL_COUNT = self.kt_threadpool_count
+            os.environ["APHRODITE_KT_THREADPOOL_COUNT"] = str(self.kt_threadpool_count)
         if self.kt_num_gpu_experts is not None:
-            envs.APHRODITE_KT_MOE_NUM_GPU_EXPERTS = self.kt_num_gpu_experts
-        if self.kt_chunked_prefill_size is not None:
-            envs.APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE = self.kt_chunked_prefill_size
+            os.environ["APHRODITE_KT_MOE_NUM_GPU_EXPERTS"] = str(self.kt_num_gpu_experts)
+        # Always set chunked_prefill_size since it has a default value
+        os.environ["APHRODITE_KT_MOE_CHUNKED_PREFILL_SIZE"] = str(self.kt_chunked_prefill_size)
 
     @staticmethod
     def add_cli_args(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
@@ -1147,8 +1150,8 @@ class EngineArgs:
         kt_group.add_argument(
             "--kt-chunked-prefill-size",
             type=int,
-            default=None,
-            help="Chunked prefill size for hybrid MoE.",
+            default=512,
+            help="Chunked prefill size for hybrid MoE (default: 512).",
         )
 
         # Other arguments
