@@ -122,12 +122,14 @@ class ServingClassification(ClassificationMixin):
         *,
         request_logger: RequestLogger | None,
         log_error_stack: bool = False,
+        enable_inline_model_loading: bool = False,
     ) -> None:
         super().__init__(
             engine_client=engine_client,
             models=models,
             request_logger=request_logger,
             log_error_stack=log_error_stack,
+            enable_inline_model_loading=enable_inline_model_loading,
         )
 
     async def create_classify(

@@ -48,12 +48,14 @@ class OpenAIServingPooling(OpenAIServing):
         chat_template_content_format: ChatTemplateContentFormatOption,
         trust_request_chat_template: bool = False,
         log_error_stack: bool = False,
+        enable_inline_model_loading: bool = False,
     ) -> None:
         super().__init__(
             engine_client=engine_client,
             models=models,
             request_logger=request_logger,
             log_error_stack=log_error_stack,
+            enable_inline_model_loading=enable_inline_model_loading,
         )
 
         self.supported_tasks = supported_tasks

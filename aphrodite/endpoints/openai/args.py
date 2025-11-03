@@ -180,6 +180,9 @@ class FrontendArgs:
     Helps mitigate header abuse. Default: 256."""
     log_error_stack: bool = envs.APHRODITE_SERVER_DEV_MODE
     """If set to True, log the stack trace of error responses"""
+    enable_inline_model_loading: bool = False
+    """If set to True, automatically unload and load models when a different
+    model is requested in /v1/completions or /v1/chat/completions endpoints."""
 
     @staticmethod
     def add_cli_args(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
@@ -270,6 +273,13 @@ def validate_parsed_serve_args(args: argparse.Namespace):
     if args.enable_auto_tool_choice and not args.tool_call_parser:
         raise TypeError("Error: --enable-auto-tool-choice requires "
                         "--tool-call-parser")
+
+    # Inline model loading requires dev mode
+    if args.enable_inline_model_loading and not envs.APHRODITE_SERVER_DEV_MODE:
+        raise ValueError(
+            "Error: --enable-inline-model-loading requires dev mode. "
+            "Set APHRODITE_SERVER_DEV_MODE=1 environment variable."
+        )
 
 
 def create_parser_for_docs() -> FlexibleArgumentParser:
