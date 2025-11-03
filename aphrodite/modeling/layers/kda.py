@@ -12,6 +12,7 @@ from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.weight_utils import sharded_weight_loader
 from aphrodite.modeling.utils import set_weight_attrs
+from aphrodite.quantization.base_config import QuantizationConfig
 from aphrodite.utils.torch_utils import direct_register_custom_op
 from aphrodite.v1.attention.backends.gdn_attn import GDNAttentionMetadata
 
@@ -22,7 +23,6 @@ from .mamba.abstract import MambaBase
 from .mamba.mamba_utils import (MambaStateDtypeCalculator,
                                 MambaStateShapeCalculator)
 from .mamba.ops.causal_conv1d import causal_conv1d_fn, causal_conv1d_update
-from .quantization.base_config import QuantizationConfig
 
 logger = init_logger(__name__)
 
