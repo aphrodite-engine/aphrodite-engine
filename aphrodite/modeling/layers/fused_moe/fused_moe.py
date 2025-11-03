@@ -804,6 +804,8 @@ def get_config_file_name(
     E: int, N: int, dtype: str | None, block_shape: list[int] | None = None
 ) -> str:
     device_name = current_platform.get_device_name().replace(" ", "_")
+    if "H200" in device_name:
+        device_name = "H200"
     dtype_selector = "" if not dtype else f",dtype={dtype}"
     block_shape_selector = (
         "" if not block_shape or not all(block_shape) else f",block_shape={block_shape}"
