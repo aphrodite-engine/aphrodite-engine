@@ -141,9 +141,9 @@ class PageAllocator:
             "total_mem_size=%dMB, "
             "page_size=%d, "
             "tp_size=%d, "
-            "async_sched=%b, "
-            "contiguous_layout=%b, "
-            "enable_prealloc=%b",
+            "async_sched=%s, "
+            "contiguous_layout=%s, "
+            "enable_prealloc=%s",
             num_layers,
             mem_size_per_layer // (1024 * 1024),
             2 * num_layers * mem_size_per_layer // (1024 * 1024),
