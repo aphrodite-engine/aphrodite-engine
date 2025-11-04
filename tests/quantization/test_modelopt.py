@@ -24,17 +24,11 @@ def enable_pickle(monkeypatch):
 def test_modelopt_fp8_checkpoint_setup(aphrodite_runner):
     """Test ModelOpt FP8 checkpoint loading and structure validation."""
     # TODO: provide a small publicly available test checkpoint
-    model_path = (
-        "/home/scratch.omniml_data_1/zhiyu/ckpts/test_ckpts/"
-        "TinyLlama-1.1B-Chat-v1.0-fp8-0710"
-    )
+    model_path = "/home/scratch.omniml_data_1/zhiyu/ckpts/test_ckpts/TinyLlama-1.1B-Chat-v1.0-fp8-0710"
 
     # Skip test if checkpoint doesn't exist
     if not os.path.exists(model_path):
-        pytest.skip(
-            f"Test checkpoint not found at {model_path}. "
-            "This test requires a local ModelOpt FP8 checkpoint."
-        )
+        pytest.skip(f"Test checkpoint not found at {model_path}. This test requires a local ModelOpt FP8 checkpoint.")
 
     with aphrodite_runner(model_path, quantization="modelopt", enforce_eager=True) as llm:
 

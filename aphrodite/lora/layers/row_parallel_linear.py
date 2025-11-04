@@ -1,11 +1,9 @@
-
 import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
 from aphrodite.config.lora import LoRAConfig
-from aphrodite.distributed import (split_tensor_along_last_dim,
-                                   tensor_model_parallel_all_reduce)
+from aphrodite.distributed import split_tensor_along_last_dim, tensor_model_parallel_all_reduce
 from aphrodite.modeling.layers.linear import RowParallelLinear
 from aphrodite.platforms import current_platform
 
@@ -33,9 +31,7 @@ class RowParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
     def slice_lora_b(self, lora_b: torch.Tensor) -> torch.Tensor:
         return lora_b
 
-    def forward(
-        self, input_: torch.Tensor
-    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor | None]:
+    def forward(self, input_: torch.Tensor) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor | None]:
         """Forward of RowParallelLinear
 
         Args:
@@ -52,9 +48,7 @@ class RowParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
             input_parallel = input_
         else:
             # TODO: simplify code below
-            splitted_input = split_tensor_along_last_dim(
-                input_, num_partitions=self.tp_size
-            )
+            splitted_input = split_tensor_along_last_dim(input_, num_partitions=self.tp_size)
             input_parallel = splitted_input[self.tp_rank].contiguous()
 
         # Matrix multiply.
@@ -65,11 +59,7 @@ class RowParallelLinearWithLoRA(BaseLinearLayerWithLoRA):
             output_ = output_parallel
 
         if not self.base_layer.skip_bias_add:
-            output = (
-                output_ + self.base_layer.bias
-                if self.base_layer.bias is not None
-                else output_
-            )
+            output = output_ + self.base_layer.bias if self.base_layer.bias is not None else output_
             output_bias = None
         else:
             output = output_
@@ -125,9 +115,7 @@ class RowParallelLinearWithShardedLoRA(RowParallelLinearWithLoRA):
             device=x.device,
         )
 
-        shrunk_buffer: torch.Tensor | None = self.punica_wrapper.add_shrink(
-            buffer, x, self.lora_a_stacked, 1.0
-        )
+        shrunk_buffer: torch.Tensor | None = self.punica_wrapper.add_shrink(buffer, x, self.lora_a_stacked, 1.0)
         if not current_platform.can_update_inplace():
             buffer = shrunk_buffer
         if self.tp_size > 1:

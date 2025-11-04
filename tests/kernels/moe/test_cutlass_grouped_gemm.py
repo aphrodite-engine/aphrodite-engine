@@ -27,9 +27,7 @@ from tests.kernels.utils import baseline_scaled_mm
 )
 @pytest.mark.parametrize("out_dtype", [torch.float16])
 @pytest.mark.skipif(
-    (lambda x: x is None or x.to_int() != 100)(
-        current_platform.get_device_capability()
-    ),
+    (lambda x: x is None or x.to_int() != 100)(current_platform.get_device_capability()),
     reason="Block Scaled Grouped GEMM is only supported on SM100.",
 )
 def test_cutlass_grouped_gemm(
@@ -41,9 +39,7 @@ def test_cutlass_grouped_gemm(
 ):
     device = "cuda"
     alignment = 128
-    group_ms = [
-        int(expected_m_per_group * random.uniform(0.7, 1.3)) for _ in range(num_groups)
-    ]
+    group_ms = [int(expected_m_per_group * random.uniform(0.7, 1.3)) for _ in range(num_groups)]
     m = sum([cdiv(m, alignment) * alignment for m in group_ms])
 
     x = torch.randn((m, k), device=device, dtype=out_dtype)
@@ -61,9 +57,7 @@ def test_cutlass_grouped_gemm(
     x_fp8 = per_token_cast_to_fp8(x)
     y_fp8 = (
         torch.empty_like(y, dtype=torch.float8_e4m3fn),
-        torch.empty(
-            (num_groups, cdiv(n, 128), k // 128), device=device, dtype=torch.float
-        ),
+        torch.empty((num_groups, cdiv(n, 128), k // 128), device=device, dtype=torch.float),
     )
     for i in range(num_groups):
         y_fp8[0][i], y_fp8[1][i] = per_block_cast_to_fp8(y[i], [128, 128])

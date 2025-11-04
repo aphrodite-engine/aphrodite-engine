@@ -30,12 +30,8 @@ def _kv_cache_update_kernel(
     # Copy from new_kv_hbm_ref to scratch
     for i in range(num_slices_per_block):
         offset_i = i + block_idx * num_slices_per_block
-        new_kv_start = jax.lax.select(
-            offset_i < num_slices_ref[0], slices_ref[1, offset_i], 0
-        )
-        length = jax.lax.select(
-            offset_i < num_slices_ref[0], slices_ref[2, offset_i], 0
-        )
+        new_kv_start = jax.lax.select(offset_i < num_slices_ref[0], slices_ref[1, offset_i], 0)
+        length = jax.lax.select(offset_i < num_slices_ref[0], slices_ref[2, offset_i], 0)
         async_copy = pltpu.make_async_copy(
             new_kv_hbm_ref.at[pl.ds(new_kv_start, length), ...],
             scratch.at[i, pl.ds(0, length), ...],
@@ -51,12 +47,8 @@ def _kv_cache_update_kernel(
     async_copies.clear()
     for i in range(num_slices_per_block):
         offset_i = i + block_idx * num_slices_per_block
-        kv_cache_start = jax.lax.select(
-            offset_i < num_slices_ref[0], slices_ref[0, offset_i], 0
-        )
-        length = jax.lax.select(
-            offset_i < num_slices_ref[0], slices_ref[2, offset_i], 0
-        )
+        kv_cache_start = jax.lax.select(offset_i < num_slices_ref[0], slices_ref[0, offset_i], 0)
+        length = jax.lax.select(offset_i < num_slices_ref[0], slices_ref[2, offset_i], 0)
         async_copy = pltpu.make_async_copy(
             scratch.at[i, pl.ds(0, length), ...],
             kv_cache_hbm_ref.at[pl.ds(kv_cache_start, length), ...],

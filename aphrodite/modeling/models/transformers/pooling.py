@@ -19,8 +19,7 @@ import torch
 from transformers import AutoModelForSequenceClassification
 
 from aphrodite.config.utils import getattr_iter
-from aphrodite.modeling.layers.pooler import (ClassifierPooler, CLSPool,
-                                              DispatchPooler, Pooler)
+from aphrodite.modeling.layers.pooler import ClassifierPooler, CLSPool, DispatchPooler, Pooler
 from aphrodite.modeling.models.interfaces import SupportsCrossEncoding
 from aphrodite.modeling.models.interfaces_base import AphroditeModelForPooling
 
@@ -33,9 +32,7 @@ class EmbeddingMixin(AphroditeModelForPooling):
 
     def __init__(self, *, aphrodite_config: "AphroditeConfig", prefix: str = ""):
         # Skip AphroditeModelForPooling.__init__ and call the next class in MRO
-        super(AphroditeModelForPooling, self).__init__(
-            aphrodite_config=aphrodite_config, prefix=prefix
-        )
+        super(AphroditeModelForPooling, self).__init__(aphrodite_config=aphrodite_config, prefix=prefix)
 
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
@@ -53,9 +50,7 @@ class SequenceClassificationMixin(SupportsCrossEncoding, AphroditeModelForPoolin
 
     def __init__(self, *, aphrodite_config: "AphroditeConfig", prefix: str = ""):
         # Skip AphroditeModelForPooling.__init__ and call the next class in MRO
-        super(AphroditeModelForPooling, self).__init__(
-            aphrodite_config=aphrodite_config, prefix=prefix
-        )
+        super(AphroditeModelForPooling, self).__init__(aphrodite_config=aphrodite_config, prefix=prefix)
 
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
@@ -81,8 +76,7 @@ class SequenceClassificationMixin(SupportsCrossEncoding, AphroditeModelForPoolin
         self.classifier = getattr_iter(seq_cls_model, ["classifier", "score"], None)
         if self.classifier is None:
             raise ValueError(
-                "Could not find `classifier` or `score` layer in the "
-                "`AutoModelForSequenceClassification` instance."
+                "Could not find `classifier` or `score` layer in the `AutoModelForSequenceClassification` instance."
             )
         self.init_parameters(self.classifier, dtype=self.model_config.head_dtype)
 
@@ -99,14 +93,8 @@ class SequenceClassificationMixin(SupportsCrossEncoding, AphroditeModelForPoolin
 
         self.pooler = DispatchPooler(
             {
-                "token_classify": Pooler.for_token_classify(
-                    pooler_config, classifier=self.classifier
-                ),
-                "classify": ClassifierPooler(
-                    pooling=CLSPool(), classifier=self.classifier, act_fn="classify"
-                ),
-                "score": ClassifierPooler(
-                    pooling=CLSPool(), classifier=self.classifier, act_fn="score"
-                ),
+                "token_classify": Pooler.for_token_classify(pooler_config, classifier=self.classifier),
+                "classify": ClassifierPooler(pooling=CLSPool(), classifier=self.classifier, act_fn="classify"),
+                "score": ClassifierPooler(pooling=CLSPool(), classifier=self.classifier, act_fn="score"),
             }
         )

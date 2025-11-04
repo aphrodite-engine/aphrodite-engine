@@ -8,9 +8,7 @@ import regex as re
 if TYPE_CHECKING:
     from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage,
-                                                 ResponsesRequest)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage, ResponsesRequest
 from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
 
@@ -149,18 +147,10 @@ class Olmo3ReasoningBuffer:
         _, overlap_think_start = string_overlap(delta_text, self.think_start)
         _, overlap_think_end = string_overlap(delta_text, self.think_end)
 
-        partial_overlap_start = overlap_think_start is not None and len(
-            overlap_think_start
-        ) < len(self.think_start)
-        partial_overlap_end = overlap_think_end is not None and len(
-            overlap_think_end
-        ) < len(self.think_end)
+        partial_overlap_start = overlap_think_start is not None and len(overlap_think_start) < len(self.think_start)
+        partial_overlap_end = overlap_think_end is not None and len(overlap_think_end) < len(self.think_end)
 
-        if (
-            partial_overlap_start
-            and self.think_start in self.buffer
-            and not partial_overlap_end
-        ):
+        if partial_overlap_start and self.think_start in self.buffer and not partial_overlap_end:
             # we can only process the buffer if partial overlap
             # is the last part of think token (thus causing
             # text_buffer to contain the start of think token)
@@ -225,15 +215,10 @@ class Olmo3ReasoningParser(ReasoningParser):
         # notice that the first think is optional; this allows template to
         # work in cases when we hardcode a <think> at the beginning of the
         # reasoning template.
-        reasoning_expr = (
-            rf"^(?:{self.think_start})?(?P<reasoning>.*?)"
-            + rf"{self.think_end}(?P<content>.*)$"
-        )
+        reasoning_expr = rf"^(?:{self.think_start})?(?P<reasoning>.*?)" + rf"{self.think_end}(?P<content>.*)$"
         self.reasoning_regex = re.compile(reasoning_expr, re.DOTALL)
 
-        self.buffer = Olmo3ReasoningBuffer(
-            think_start=self.think_start, think_end=self.think_end
-        )
+        self.buffer = Olmo3ReasoningBuffer(think_start=self.think_start, think_end=self.think_end)
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
         text = self.model_tokenizer.decode(input_ids)

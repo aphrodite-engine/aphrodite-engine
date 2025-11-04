@@ -2,7 +2,7 @@
 # ruff: noqa: E501
 # copied from https://huggingface.co/AIDC-AI/Ovis2-1B/blob/main/configuration_aimv2.py
 # and https://huggingface.co/AIDC-AI/Ovis2-1B/blob/main/configuration_ovis.py
-from typing import Any, Optional, Union
+from typing import Any
 
 from transformers import AutoConfig, PretrainedConfig
 
@@ -84,8 +84,7 @@ class BaseVisualTokenizerConfig(PretrainedConfig):
                  tau=1.0,
                  depths=None,
                  drop_cls_token=False,
-                 backbone_config: Optional[Union[PretrainedConfig,
-                                                 dict]] = None,
+                 backbone_config: PretrainedConfig | dict | None = None,
                  hidden_stride: int = 1,
                  **kwargs):
         super().__init__(**kwargs)
@@ -131,9 +130,8 @@ class OvisConfig(PretrainedConfig):
     model_type = "ovis"
 
     def __init__(self,
-                 llm_config: Optional[Union[PretrainedConfig, dict]] = None,
-                 visual_tokenizer_config: Optional[Union[PretrainedConfig,
-                                                         dict]] = None,
+                 llm_config: PretrainedConfig | dict | None = None,
+                 visual_tokenizer_config: PretrainedConfig | dict | None = None,
                  multimodal_max_length=8192,
                  hidden_size=None,
                  conversation_formatter_class=None,

@@ -90,9 +90,7 @@ async def test_bigger_truncation_size(client: openai.AsyncOpenAI):
     error_details = err.value.response.json()["error"]
     assert error_details["type"] == "BadRequestError"
     expected_message = (
-        "truncate_prompt_tokens value is "
-        "greater than max_model_len."
-        " Please, select a smaller truncation size."
+        "truncate_prompt_tokens value is greater than max_model_len. Please, select a smaller truncation size."
     )
     assert error_details["message"] == expected_message
 

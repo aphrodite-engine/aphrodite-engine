@@ -8,9 +8,7 @@ import torch_xla.distributed.spmd as xs
 from torch.nn.parameter import Parameter
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 
 logger = init_logger(__name__)
 
@@ -57,12 +55,8 @@ class XlaQKVParallelLinear(nn.Module):
         # along the output dimension.
         qkv_weight = qkv_linear.weight.data.cpu()
         q_weight = Parameter(qkv_weight[:q_proj_size], requires_grad=False)
-        k_weight = Parameter(
-            qkv_weight[q_proj_size : q_proj_size + k_proj_size], requires_grad=False
-        )
-        v_weight = Parameter(
-            qkv_weight[q_proj_size + k_proj_size :], requires_grad=False
-        )
+        k_weight = Parameter(qkv_weight[q_proj_size : q_proj_size + k_proj_size], requires_grad=False)
+        v_weight = Parameter(qkv_weight[q_proj_size + k_proj_size :], requires_grad=False)
         self.register_parameter("q_weight", q_weight)
         self.register_parameter("k_weight", k_weight)
         self.register_parameter("v_weight", v_weight)
@@ -73,9 +67,7 @@ class XlaQKVParallelLinear(nn.Module):
                 qkv_linear.bias[q_proj_size : q_proj_size + k_proj_size],
                 requires_grad=False,
             )
-            v_bias = Parameter(
-                qkv_linear.bias[q_proj_size + k_proj_size :], requires_grad=False
-            )
+            v_bias = Parameter(qkv_linear.bias[q_proj_size + k_proj_size :], requires_grad=False)
             self.register_parameter("q_bias", q_bias)
             self.register_parameter("k_bias", k_bias)
             self.register_parameter("v_bias", v_bias)
@@ -101,35 +93,27 @@ class XlaQKVParallelLinear(nn.Module):
         # The concat and the following split will be noop, and should be
         # optimized away by the compiler.
         qkv_proj = torch.cat([q_proj, k_proj, v_proj], dim=-1)
-        output_bias = (
-            torch.cat([q_bias, k_bias, v_bias], dim=-1) if self.skip_bias_add else None
-        )
+        output_bias = torch.cat([q_bias, k_bias, v_bias], dim=-1) if self.skip_bias_add else None
         if not self.return_bias:
             return qkv_proj
         return qkv_proj, output_bias
 
 
-def partition_column_parallel_linear(
-    layer: torch.nn.Module, mesh: xs.Mesh
-) -> torch.nn.Module:
+def partition_column_parallel_linear(layer: torch.nn.Module, mesh: xs.Mesh) -> torch.nn.Module:
     assert isinstance(layer, ColumnParallelLinear)
     xs.mark_sharding(layer.weight, mesh, ("x", None))
     logger.debug("Applied column-parallel sharding to %s", layer)
     return layer
 
 
-def partition_row_parallel_linear(
-    layer: torch.nn.Module, mesh: xs.Mesh
-) -> torch.nn.Module:
+def partition_row_parallel_linear(layer: torch.nn.Module, mesh: xs.Mesh) -> torch.nn.Module:
     assert isinstance(layer, RowParallelLinear)
     xs.mark_sharding(layer.weight, mesh, (None, "x"))
     logger.debug("Applied row-parallel sharding to %s", layer)
     return layer
 
 
-def partition_qkv_parallel_linear(
-    layer: torch.nn.Module, mesh: xs.Mesh
-) -> torch.nn.Module:
+def partition_qkv_parallel_linear(layer: torch.nn.Module, mesh: xs.Mesh) -> torch.nn.Module:
     assert isinstance(layer, QKVParallelLinear)
     xla_layer = XlaQKVParallelLinear(layer, mesh)
     logger.debug("Applied qkv parallel sharding to %s", layer)
@@ -165,9 +149,7 @@ def shard_model(model: torch.nn.Module, mesh: "xs.Mesh") -> None:
             if get_fqn(module) == module_type:
                 wrapped_module = wrapping_func(module, mesh)
 
-                assert parent is not None and name is not None, (
-                    "Top Level module is not expected to be wrapped."
-                )
+                assert parent is not None and name is not None, "Top Level module is not expected to be wrapped."
                 if wrapped_module is not module:
                     # Wrapped module and module are different py object.
                     # The original module should be replaced by the

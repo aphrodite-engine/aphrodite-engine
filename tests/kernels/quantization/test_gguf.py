@@ -14,18 +14,14 @@ GGUF_SAMPLE = snapshot_download("Isotr0py/test-gguf-sample")
 GGUF_SAMPLE_MOE = snapshot_download("SzymonOzog/test-gguf-moe-sample")
 
 
-def get_gguf_sample_tensors(
-    hidden_size: int, quant_type: GGMLQuantizationType
-) -> list[ReaderTensor]:
+def get_gguf_sample_tensors(hidden_size: int, quant_type: GGMLQuantizationType) -> list[ReaderTensor]:
     sample_dir = GGUF_SAMPLE
     filename = f"Quant_{quant_type.name}_{hidden_size}.gguf"
     sample_file = Path(sample_dir) / filename
     return GGUFReader(sample_file).tensors
 
 
-def get_gguf_MoE_tensors(
-    hidden_size: int, quant_type: GGMLQuantizationType
-) -> list[ReaderTensor]:
+def get_gguf_MoE_tensors(hidden_size: int, quant_type: GGMLQuantizationType) -> list[ReaderTensor]:
     sample_dir = GGUF_SAMPLE_MOE
     filename = f"Quant_{quant_type.name}_{hidden_size}.gguf"
     sample_file = Path(sample_dir) / filename
@@ -65,20 +61,14 @@ QUANT_TYPES = [
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("quant_type", QUANT_TYPES)
 @torch.inference_mode()
-def test_dequantize(
-    hidden_size: int, dtype: torch.dtype, quant_type: GGMLQuantizationType
-):
+def test_dequantize(hidden_size: int, dtype: torch.dtype, quant_type: GGMLQuantizationType):
     tensors = get_gguf_sample_tensors(hidden_size, quant_type)
     for tensor in tensors:
         shape_str = tensor.name.split("_")[-1]
         shape = map(int, shape_str.split("x"))
 
-        ref_output = torch.tensor(
-            dequantize(tensor.data, quant_type), device="cuda"
-        ).to(dtype)
-        output = ops.ggml_dequantize(
-            torch.tensor(tensor.data, device="cuda"), quant_type, *list(shape), dtype
-        )
+        ref_output = torch.tensor(dequantize(tensor.data, quant_type), device="cuda").to(dtype)
+        output = ops.ggml_dequantize(torch.tensor(tensor.data, device="cuda"), quant_type, *list(shape), dtype)
 
         torch.testing.assert_close(output, ref_output, atol=1e-2, rtol=4e-2)
 
@@ -93,15 +83,11 @@ def test_mmvq(hidden_size: int, dtype: torch.dtype, quant_type: GGMLQuantization
     tensors = get_gguf_sample_tensors(hidden_size, quant_type)
     x = torch.rand((1, hidden_size), dtype=dtype, device="cuda")
     for tensor in tensors:
-        weight = torch.tensor(dequantize(tensor.data, quant_type), device="cuda").to(
-            dtype
-        )
+        weight = torch.tensor(dequantize(tensor.data, quant_type), device="cuda").to(dtype)
         ref_output = x @ weight.T
 
         qweight = torch.tensor(tensor.data, device="cuda")
-        output = ops.ggml_mul_mat_vec_a8(qweight, x, quant_type, qweight.shape[0]).to(
-            dtype
-        )
+        output = ops.ggml_mul_mat_vec_a8(qweight, x, quant_type, qweight.shape[0]).to(dtype)
 
         torch.testing.assert_close(output, ref_output, atol=1, rtol=1e-1)
 
@@ -136,9 +122,7 @@ def test_mmq(
     tensors = get_gguf_sample_tensors(hidden_size, quant_type)
     x = torch.rand((num_tokens, hidden_size), dtype=dtype, device="cuda")
     for tensor in tensors:
-        weight = torch.tensor(dequantize(tensor.data, quant_type), device="cuda").to(
-            dtype
-        )
+        weight = torch.tensor(dequantize(tensor.data, quant_type), device="cuda").to(dtype)
         ref_output = x @ weight.T
 
         qweight = torch.tensor(tensor.data, device="cuda")
@@ -148,9 +132,7 @@ def test_mmq(
         # bfloat16 tends to accumulate and can greatly inflate rtol
         # since outputs are also very close to 0
         rtols = {torch.half: 1e-1, torch.bfloat16: 1e4, torch.float: 2e1}
-        torch.testing.assert_close(
-            output, ref_output, atol=atols[dtype], rtol=rtols[dtype]
-        )
+        torch.testing.assert_close(output, ref_output, atol=atols[dtype], rtol=rtols[dtype])
 
 
 @pytest.mark.parametrize("num_tokens", NUM_TOKENS)
@@ -172,18 +154,14 @@ def test_moe(
     x = torch.rand((num_tokens, H), dtype=dtype, device="cuda")
 
     topk_weights = torch.rand(num_tokens, top_k, device="cuda", dtype=dtype)
-    topk_ids = torch.randint(
-        0, E, (num_tokens, top_k), device="cuda", dtype=torch.int32
-    )
+    topk_ids = torch.randint(0, E, (num_tokens, top_k), device="cuda", dtype=torch.int32)
 
     tensors = get_gguf_MoE_tensors(hidden_size, quant_type)
 
     w13 = tensors[0]
     w2 = tensors[1]
 
-    w13_dequant = torch.tensor(dequantize(w13.data, quant_type), device="cuda").to(
-        dtype
-    )
+    w13_dequant = torch.tensor(dequantize(w13.data, quant_type), device="cuda").to(dtype)
 
     w2_dequant = torch.tensor(dequantize(w2.data, quant_type), device="cuda").to(dtype)
 
@@ -198,7 +176,5 @@ def test_moe(
         "silu",
     )
 
-    ref_output = fused_experts(
-        x, w13_dequant, w2_dequant, topk_weights, topk_ids
-    ).reshape(output.shape)
+    ref_output = fused_experts(x, w13_dequant, w2_dequant, topk_weights, topk_ids).reshape(output.shape)
     torch.testing.assert_close(output, ref_output, atol=1, rtol=1e-1)

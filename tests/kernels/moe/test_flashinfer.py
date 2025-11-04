@@ -3,24 +3,23 @@ from dataclasses import dataclass
 import pytest
 import torch
 
-from aphrodite.config import (AphroditeConfig, ParallelConfig,
-                              set_current_aphrodite_config)
-from aphrodite.modeling.layers.fused_moe.config import (
-    fp8_w8a8_moe_quant_config)
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
+from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts
 from aphrodite.modeling.layers.fused_moe.layer import FusedMoE
 from aphrodite.modeling.models.llama4 import Llama4MoE
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.flashinfer_utils import (
-    apply_flashinfer_per_tensor_scale_fp8, flashinfer_cutlass_moe_fp8,
-    register_moe_scaling_factors, rotate_flashinfer_fp8_moe_weights,
-    swap_w13_to_w31)
+    apply_flashinfer_per_tensor_scale_fp8,
+    flashinfer_cutlass_moe_fp8,
+    register_moe_scaling_factors,
+    rotate_flashinfer_fp8_moe_weights,
+    swap_w13_to_w31,
+)
 from aphrodite.quantization.utils.fp8_utils import input_to_float8
 from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe
 
-if not has_flashinfer_cutlass_fused_moe() or not current_platform.has_device_capability(
-    100
-):
+if not has_flashinfer_cutlass_fused_moe() or not current_platform.has_device_capability(100):
     pytest.skip(
         "Requires flashinfer_cutlass_fused_moe and nvfp4 support",
         allow_module_level=True,
@@ -72,9 +71,7 @@ class TestData:
     layer: torch.nn.Module
 
     @staticmethod
-    def make_moe_tensors_8bit(
-        m: int, k: int, n: int, e: int, reorder: bool
-    ) -> "TestData":
+    def make_moe_tensors_8bit(m: int, k: int, n: int, e: int, reorder: bool) -> "TestData":
         hidden_states = torch.randn((m, k), device="cuda", dtype=torch.bfloat16) / 10
         w13 = torch.randn((e, 2 * n, k), device="cuda", dtype=torch.bfloat16)
         w2 = torch.randn((e, k, n), device="cuda", dtype=torch.bfloat16)
@@ -181,9 +178,7 @@ def test_flashinfer_per_tensor_moe_fp8_no_graph(
         torch.testing.assert_close(output, flashinfer_output, atol=5.5e-2, rtol=1e-2)
 
 
-@pytest.mark.skip(
-    "Requires flashinfer version that contains https://github.com/flashinfer-ai/flashinfer/pull/1472"
-)
+@pytest.mark.skip("Requires flashinfer version that contains https://github.com/flashinfer-ai/flashinfer/pull/1472")
 @pytest.mark.parametrize("m,n,k", MNK_FACTORS)
 @pytest.mark.parametrize("e", NUM_EXPERTS)
 @pytest.mark.parametrize("topk", TOP_KS)
@@ -246,6 +241,4 @@ def test_flashinfer_cutlass_moe_fp8_no_graph(
             apply_router_weight_on_input=True,
         )
 
-        torch.testing.assert_close(
-            output, flashinfer_cutlass_output, atol=5.5e-2, rtol=1e-2
-        )
+        torch.testing.assert_close(output, flashinfer_cutlass_output, atol=5.5e-2, rtol=1e-2)

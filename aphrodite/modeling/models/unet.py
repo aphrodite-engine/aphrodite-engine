@@ -1,7 +1,6 @@
 """UNet2DConditionModel implementation for Stable Diffusion."""
 
 import math
-from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -27,9 +26,7 @@ def get_timestep_embedding(
     Create sinusoidal timestep embeddings.
     """
     half_dim = embedding_dim // 2
-    exponent = -math.log(max_period) * torch.arange(
-        start=0, end=half_dim, dtype=torch.float32, device=timesteps.device
-    )
+    exponent = -math.log(max_period) * torch.arange(start=0, end=half_dim, dtype=torch.float32, device=timesteps.device)
     exponent = exponent / (half_dim - downscale_freq_shift)
 
     emb = torch.exp(exponent)
@@ -83,8 +80,7 @@ class Downsample2D(nn.Module):
         self.padding = padding
 
         if use_conv:
-            self.conv = nn.Conv2d(channels, channels, kernel_size=3,
-                                  stride=2, padding=padding)
+            self.conv = nn.Conv2d(channels, channels, kernel_size=3, stride=2, padding=padding)
         else:
             self.conv = None
 
@@ -132,21 +128,18 @@ class UNetResidualBlock(nn.Module):
 
         # First conv block
         self.norm1 = nn.GroupNorm(groups, in_channels, eps=eps)
-        self.conv1 = nn.Conv2d(
-            in_channels, out_channels, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
 
         # Time embedding projection
         self.time_emb_proj = nn.Linear(time_embedding_dim, out_channels)
 
         # Second conv block
         self.norm2 = nn.GroupNorm(groups, out_channels, eps=eps)
-        self.conv2 = nn.Conv2d(
-            out_channels, out_channels, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
 
         # Shortcut connection
         if self.use_shortcut and in_channels != out_channels:
-            self.conv_shortcut = nn.Conv2d(
-                in_channels, out_channels, kernel_size=1)
+            self.conv_shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         else:
             self.conv_shortcut = None
 
@@ -189,7 +182,7 @@ class UNetAttention(nn.Module):
     def __init__(
         self,
         channels: int,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         num_attention_heads: int = 8,
         attention_head_dim: int = None,
         quant_config=None,
@@ -211,31 +204,23 @@ class UNetAttention(nn.Module):
         self.to_q = nn.Linear(channels, self.inner_dim, bias=False)
 
         # Key and Value projections (from cross_attention_dim for cross-attn)
-        self.to_k = nn.Linear(
-            self.cross_attention_dim, self.inner_dim, bias=False)
-        self.to_v = nn.Linear(
-            self.cross_attention_dim, self.inner_dim, bias=False)
+        self.to_k = nn.Linear(self.cross_attention_dim, self.inner_dim, bias=False)
+        self.to_v = nn.Linear(self.cross_attention_dim, self.inner_dim, bias=False)
 
         # Output projection
-        self.to_out = nn.ModuleList([
-            nn.Linear(self.inner_dim, channels),
-            nn.Identity(),  # Dropout placeholder
-        ])
+        self.to_out = nn.ModuleList(
+            [
+                nn.Linear(self.inner_dim, channels),
+                nn.Identity(),  # Dropout placeholder
+            ]
+        )
 
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor, encoder_hidden_states: torch.Tensor | None = None) -> torch.Tensor:
         batch_size, seq_len, channels = hidden_states.shape
 
         # Use encoder_hidden_states for cross-attention, hidden_states for
         # self-attention
-        context = (
-            encoder_hidden_states
-            if encoder_hidden_states is not None
-            else hidden_states
-        )
+        context = encoder_hidden_states if encoder_hidden_states is not None else hidden_states
 
         # Get QKV
         q = self.to_q(hidden_states)
@@ -244,15 +229,21 @@ class UNetAttention(nn.Module):
 
         # Reshape for multi-head attention
         q = q.view(
-            batch_size, seq_len, self.num_attention_heads,
+            batch_size,
+            seq_len,
+            self.num_attention_heads,
             self.attention_head_dim,
         )
         k = k.view(
-            batch_size, context.shape[1], self.num_attention_heads,
+            batch_size,
+            context.shape[1],
+            self.num_attention_heads,
             self.attention_head_dim,
         )
         v = v.view(
-            batch_size, context.shape[1], self.num_attention_heads,
+            batch_size,
+            context.shape[1],
+            self.num_attention_heads,
             self.attention_head_dim,
         )
 
@@ -283,7 +274,7 @@ class FeedForward(nn.Module):
     def __init__(
         self,
         dim: int,
-        dim_out: Optional[int] = None,
+        dim_out: int | None = None,
         mult: int = 4,
         quant_config=None,
         prefix: str = "",
@@ -293,13 +284,17 @@ class FeedForward(nn.Module):
         dim_out = dim_out or dim
 
         # GeGLU: project to 2x inner_dim, then split for gate and value
-        self.net = nn.ModuleList([
-            nn.ModuleList([
-                nn.Linear(dim, inner_dim * 2),  # proj layer (GeGLU splits this)  # noqa: E501
-            ]),
-            nn.Identity(),  # Placeholder for potential dropout
-            nn.Linear(inner_dim, dim_out),
-        ])
+        self.net = nn.ModuleList(
+            [
+                nn.ModuleList(
+                    [
+                        nn.Linear(dim, inner_dim * 2),  # proj layer (GeGLU splits this)  # noqa: E501
+                    ]
+                ),
+                nn.Identity(),  # Placeholder for potential dropout
+                nn.Linear(inner_dim, dim_out),
+            ]
+        )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         # GeGLU activation
@@ -416,17 +411,19 @@ class Transformer2DModel(nn.Module):
         self.proj_out = nn.Conv2d(self.inner_dim, in_channels, kernel_size=1)
 
         # Transformer blocks
-        self.transformer_blocks = nn.ModuleList([
-            BasicTransformerBlock(
-                dim=self.inner_dim,
-                cross_attention_dim=cross_attention_dim,
-                num_attention_heads=num_attention_heads,
-                attention_head_dim=attention_head_dim,
-                quant_config=quant_config,
-                prefix=maybe_prefix(prefix, f"transformer_blocks.{i}"),
-            )
-            for i in range(num_layers)
-        ])
+        self.transformer_blocks = nn.ModuleList(
+            [
+                BasicTransformerBlock(
+                    dim=self.inner_dim,
+                    cross_attention_dim=cross_attention_dim,
+                    num_attention_heads=num_attention_heads,
+                    attention_head_dim=attention_head_dim,
+                    quant_config=quant_config,
+                    prefix=maybe_prefix(prefix, f"transformer_blocks.{i}"),
+                )
+                for i in range(num_layers)
+            ]
+        )
 
     def forward(
         self,
@@ -443,7 +440,9 @@ class Transformer2DModel(nn.Module):
         # Reshape to sequence format
         inner_dim = hidden_states.shape[1]
         hidden_states = hidden_states.view(
-            batch_size, inner_dim, height * width,
+            batch_size,
+            inner_dim,
+            height * width,
         )
         hidden_states = hidden_states.transpose(1, 2)
 
@@ -453,8 +452,7 @@ class Transformer2DModel(nn.Module):
 
         # Reshape back to spatial format
         hidden_states = hidden_states.transpose(1, 2)
-        hidden_states = hidden_states.view(
-            batch_size, inner_dim, height, width)
+        hidden_states = hidden_states.view(batch_size, inner_dim, height, width)
 
         # Output projection
         hidden_states = self.proj_out(hidden_states)
@@ -559,7 +557,7 @@ class CrossAttnDownBlock2D(nn.Module):
         hidden_states: torch.Tensor,
         time_emb: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         output_states = []
 
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -610,7 +608,7 @@ class DownBlock2D(nn.Module):
         self,
         hidden_states: torch.Tensor,
         time_emb: torch.Tensor,
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         output_states = []
 
         for resnet in self.resnets:
@@ -715,7 +713,7 @@ class CrossAttnUpBlock2D(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_tuple: Tuple[torch.Tensor, ...],
+        res_hidden_states_tuple: tuple[torch.Tensor, ...],
         time_emb: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
     ) -> torch.Tensor:
@@ -728,8 +726,7 @@ class CrossAttnUpBlock2D(nn.Module):
             res_hidden_states = res_hidden_states_list.pop()
 
             # Concatenate input with skip connection
-            hidden_states = torch.cat(
-                [hidden_states, res_hidden_states], dim=1)
+            hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
 
             # Apply ResNet and attention
             hidden_states = resnet(hidden_states, time_emb)
@@ -783,7 +780,7 @@ class UpBlock2D(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_tuple: Tuple[torch.Tensor, ...],
+        res_hidden_states_tuple: tuple[torch.Tensor, ...],
         time_emb: torch.Tensor,
     ) -> torch.Tensor:
         # Convert tuple to list for popping (matching Diffusers implementation)
@@ -795,8 +792,7 @@ class UpBlock2D(nn.Module):
             res_hidden_states = res_hidden_states_list.pop()
 
             # Concatenate input with skip connection
-            hidden_states = torch.cat(
-                [hidden_states, res_hidden_states], dim=1)
+            hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
 
             # Apply ResNet
             hidden_states = resnet(hidden_states, time_emb)
@@ -827,29 +823,33 @@ class UNetMidBlock2DCrossAttn(nn.Module):
             attention_head_dim = in_channels // num_attention_heads
 
         # 2 resnets with 1 attention in between
-        self.resnets = nn.ModuleList([
-            UNetResidualBlock(
-                in_channels=in_channels,
-                out_channels=in_channels,
-                time_embedding_dim=time_embedding_dim,
-            ),
-            UNetResidualBlock(
-                in_channels=in_channels,
-                out_channels=in_channels,
-                time_embedding_dim=time_embedding_dim,
-            ),
-        ])
+        self.resnets = nn.ModuleList(
+            [
+                UNetResidualBlock(
+                    in_channels=in_channels,
+                    out_channels=in_channels,
+                    time_embedding_dim=time_embedding_dim,
+                ),
+                UNetResidualBlock(
+                    in_channels=in_channels,
+                    out_channels=in_channels,
+                    time_embedding_dim=time_embedding_dim,
+                ),
+            ]
+        )
 
-        self.attentions = nn.ModuleList([
-            Transformer2DModel(
-                num_attention_heads=num_attention_heads,
-                attention_head_dim=attention_head_dim,
-                in_channels=in_channels,
-                cross_attention_dim=cross_attention_dim,
-                num_layers=1,
-                prefix=maybe_prefix(prefix, "attentions.0"),
-            )
-        ])
+        self.attentions = nn.ModuleList(
+            [
+                Transformer2DModel(
+                    num_attention_heads=num_attention_heads,
+                    attention_head_dim=attention_head_dim,
+                    in_channels=in_channels,
+                    cross_attention_dim=cross_attention_dim,
+                    num_layers=1,
+                    prefix=maybe_prefix(prefix, "attentions.0"),
+                )
+            ]
+        )
 
     def forward(
         self,
@@ -858,8 +858,7 @@ class UNetMidBlock2DCrossAttn(nn.Module):
         encoder_hidden_states: torch.Tensor,
     ) -> torch.Tensor:
         hidden_states = self.resnets[0](hidden_states, time_emb)
-        hidden_states = self.attentions[0](
-            hidden_states, encoder_hidden_states)
+        hidden_states = self.attentions[0](hidden_states, encoder_hidden_states)
         hidden_states = self.resnets[1](hidden_states, time_emb)
 
         return hidden_states
@@ -895,22 +894,23 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
         self.cross_attention_dim = config.cross_attention_dim
         self.norm_num_groups = config.norm_num_groups
         # Time embedding dimension (Diffusers uses block_out_channels[0] * 4)
-        self.time_embedding_dim = (
-            config.time_embedding_dim
-            or (self.block_out_channels[0] * 4)
-        )
+        self.time_embedding_dim = config.time_embedding_dim or (self.block_out_channels[0] * 4)
 
         # Time embedding
         time_embed_dim = self.time_embedding_dim
         self.time_proj = lambda x: get_timestep_embedding(
-            x, 320, flip_sin_to_cos=True,
+            x,
+            320,
+            flip_sin_to_cos=True,
         )
         self.time_embedding = TimestepEmbedding(320, time_embed_dim)
 
         # Input convolution
         self.conv_in = nn.Conv2d(
-            self.in_channels, self.block_out_channels[0],
-            kernel_size=3, padding=1,
+            self.in_channels,
+            self.block_out_channels[0],
+            kernel_size=3,
+            padding=1,
         )
 
         # Build down blocks matching Diffusers structure exactly
@@ -920,14 +920,8 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
         # 'CrossAttnDownBlock2D', 'DownBlock2D']
         down_block_types = config.down_block_types
 
-        for i, (down_block_type, out_channels) in enumerate(
-            zip(down_block_types, self.block_out_channels)
-        ):
-            in_channels = (
-                self.block_out_channels[i - 1]
-                if i > 0
-                else self.block_out_channels[0]
-            )
+        for i, (down_block_type, out_channels) in enumerate(zip(down_block_types, self.block_out_channels)):
+            in_channels = self.block_out_channels[i - 1] if i > 0 else self.block_out_channels[0]
             is_final_block = i == len(self.block_out_channels) - 1
 
             if down_block_type == "CrossAttnDownBlock2D":
@@ -953,8 +947,7 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
                     prefix=maybe_prefix(prefix, f"down_blocks.{i}"),
                 )
             else:
-                raise ValueError(
-                    f"Unsupported down_block_type: {down_block_type}")
+                raise ValueError(f"Unsupported down_block_type: {down_block_type}")
 
             self.down_blocks.append(down_block)
 
@@ -979,11 +972,7 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
         reversed_block_out_channels = list(reversed(self.block_out_channels))
 
         for i, (up_block_type, out_channels) in enumerate(zip(up_block_types, reversed_block_out_channels)):  # noqa: E501
-            prev_output_channel = (
-                reversed_block_out_channels[i - 1]
-                if i > 0
-                else mid_block_channel
-            )
+            prev_output_channel = reversed_block_out_channels[i - 1] if i > 0 else mid_block_channel
             is_final_block = i == len(self.block_out_channels) - 1
 
             if up_block_type == "CrossAttnUpBlock2D":
@@ -1017,11 +1006,14 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
 
         # Output layers
         self.conv_norm_out = nn.GroupNorm(
-            self.norm_num_groups, self.block_out_channels[0],
+            self.norm_num_groups,
+            self.block_out_channels[0],
         )
         self.conv_out = nn.Conv2d(
-            self.block_out_channels[0], self.out_channels,
-            kernel_size=3, padding=1,
+            self.block_out_channels[0],
+            self.out_channels,
+            kernel_size=3,
+            padding=1,
         )
 
     def forward(
@@ -1055,11 +1047,13 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
         # connection
 
         for down_block in self.down_blocks:
-            if hasattr(down_block, 'forward'):
+            if hasattr(down_block, "forward"):
                 # CrossAttnDownBlock2D or DownBlock2D
                 if isinstance(down_block, CrossAttnDownBlock2D):
                     sample, res_samples = down_block(
-                        sample, emb, encoder_hidden_states,
+                        sample,
+                        emb,
+                        encoder_hidden_states,
                     )
                 elif isinstance(down_block, DownBlock2D):
                     sample, res_samples = down_block(sample, emb)
@@ -1090,8 +1084,7 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
                     block_skip_connections.append(skip_stack.pop(0))
                 else:
                     raise ValueError(
-                        "Insufficient skip connections for "
-                        f"{type(up_block).__name__}",
+                        f"Insufficient skip connections for {type(up_block).__name__}",
                     )
 
             # Convert to tuple and pass to the block
@@ -1099,7 +1092,10 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
 
             if isinstance(up_block, CrossAttnUpBlock2D):
                 sample = up_block(
-                    sample, res_samples, emb, encoder_hidden_states,
+                    sample,
+                    res_samples,
+                    emb,
+                    encoder_hidden_states,
                 )
             elif isinstance(up_block, UpBlock2D):
                 sample = up_block(sample, res_samples, emb)
@@ -1135,22 +1131,26 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
         mapping = {}
 
         # Time embedding (direct mapping)
-        mapping.update({
-            "time_embedding.linear_1.weight": "time_embedding.linear_1.weight",
-            "time_embedding.linear_1.bias": "time_embedding.linear_1.bias",
-            "time_embedding.linear_2.weight": "time_embedding.linear_2.weight",
-            "time_embedding.linear_2.bias": "time_embedding.linear_2.bias",
-        })
+        mapping.update(
+            {
+                "time_embedding.linear_1.weight": "time_embedding.linear_1.weight",
+                "time_embedding.linear_1.bias": "time_embedding.linear_1.bias",
+                "time_embedding.linear_2.weight": "time_embedding.linear_2.weight",
+                "time_embedding.linear_2.bias": "time_embedding.linear_2.bias",
+            }
+        )
 
         # Conv layers (direct mapping)
-        mapping.update({
-            "conv_in.weight": "conv_in.weight",
-            "conv_in.bias": "conv_in.bias",
-            "conv_out.weight": "conv_out.weight",
-            "conv_out.bias": "conv_out.bias",
-            "conv_norm_out.weight": "conv_norm_out.weight",
-            "conv_norm_out.bias": "conv_norm_out.bias",
-        })
+        mapping.update(
+            {
+                "conv_in.weight": "conv_in.weight",
+                "conv_in.bias": "conv_in.bias",
+                "conv_out.weight": "conv_out.weight",
+                "conv_out.bias": "conv_out.bias",
+                "conv_norm_out.weight": "conv_norm_out.weight",
+                "conv_norm_out.bias": "conv_norm_out.bias",
+            }
+        )
 
         # Down blocks
         for block_idx in range(4):
@@ -1172,26 +1172,26 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
         # ResNet blocks (2 per down block)
         for resnet_idx in range(2):
             self._map_resnet_block(
-                mapping, f"{block_prefix}.resnets.{resnet_idx}",
+                mapping,
+                f"{block_prefix}.resnets.{resnet_idx}",
             )
 
         # Attention blocks (only for first 3 down blocks)
         if block_idx < 3:
             for attn_idx in range(2):
                 self._map_attention_block(
-                    mapping, f"{block_prefix}.attentions.{attn_idx}",
+                    mapping,
+                    f"{block_prefix}.attentions.{attn_idx}",
                 )
 
         # Downsampler (except for last block)
         if block_idx < 3:
-            mapping.update({
-                f"{block_prefix}.downsamplers.0.conv.weight": (
-                    f"{block_prefix}.downsamplers.0.conv.weight"
-                ),
-                f"{block_prefix}.downsamplers.0.conv.bias": (
-                    f"{block_prefix}.downsamplers.0.conv.bias"
-                ),
-            })
+            mapping.update(
+                {
+                    f"{block_prefix}.downsamplers.0.conv.weight": (f"{block_prefix}.downsamplers.0.conv.weight"),
+                    f"{block_prefix}.downsamplers.0.conv.bias": (f"{block_prefix}.downsamplers.0.conv.bias"),
+                }
+            )
 
     def _map_up_block(self, mapping: dict[str, str], block_idx: int):
         """Map up block weights."""
@@ -1200,26 +1200,26 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
         # ResNet blocks (3 per up block)
         for resnet_idx in range(3):
             self._map_resnet_block(
-                mapping, f"{block_prefix}.resnets.{resnet_idx}",
+                mapping,
+                f"{block_prefix}.resnets.{resnet_idx}",
             )
 
         # Attention blocks (for blocks 1, 2, 3)
         if block_idx > 0:
             for attn_idx in range(3):
                 self._map_attention_block(
-                    mapping, f"{block_prefix}.attentions.{attn_idx}",
+                    mapping,
+                    f"{block_prefix}.attentions.{attn_idx}",
                 )
 
         # Upsampler (except for last block)
         if block_idx < 3:
-            mapping.update({
-                f"{block_prefix}.upsamplers.0.conv.weight": (
-                    f"{block_prefix}.upsamplers.0.conv.weight"
-                ),
-                f"{block_prefix}.upsamplers.0.conv.bias": (
-                    f"{block_prefix}.upsamplers.0.conv.bias"
-                ),
-            })
+            mapping.update(
+                {
+                    f"{block_prefix}.upsamplers.0.conv.weight": (f"{block_prefix}.upsamplers.0.conv.weight"),
+                    f"{block_prefix}.upsamplers.0.conv.bias": (f"{block_prefix}.upsamplers.0.conv.bias"),
+                }
+            )
 
     def _map_mid_block(self, mapping: dict[str, str]):
         """Map mid block weights."""
@@ -1232,84 +1232,93 @@ class UNet2DConditionModel(nn.Module, SupportsQuant):
 
     def _map_resnet_block(self, mapping: dict[str, str], prefix: str):
         """Map ResNet block weights."""
-        mapping.update({
-            f"{prefix}.norm1.weight": f"{prefix}.norm1.weight",
-            f"{prefix}.norm1.bias": f"{prefix}.norm1.bias",
-            f"{prefix}.conv1.weight": f"{prefix}.conv1.weight",
-            f"{prefix}.conv1.bias": f"{prefix}.conv1.bias",
-            f"{prefix}.time_emb_proj.weight": f"{prefix}.time_emb_proj.weight",
-            f"{prefix}.time_emb_proj.bias": f"{prefix}.time_emb_proj.bias",
-            f"{prefix}.norm2.weight": f"{prefix}.norm2.weight",
-            f"{prefix}.norm2.bias": f"{prefix}.norm2.bias",
-            f"{prefix}.conv2.weight": f"{prefix}.conv2.weight",
-            f"{prefix}.conv2.bias": f"{prefix}.conv2.bias",
-        })
+        mapping.update(
+            {
+                f"{prefix}.norm1.weight": f"{prefix}.norm1.weight",
+                f"{prefix}.norm1.bias": f"{prefix}.norm1.bias",
+                f"{prefix}.conv1.weight": f"{prefix}.conv1.weight",
+                f"{prefix}.conv1.bias": f"{prefix}.conv1.bias",
+                f"{prefix}.time_emb_proj.weight": f"{prefix}.time_emb_proj.weight",
+                f"{prefix}.time_emb_proj.bias": f"{prefix}.time_emb_proj.bias",
+                f"{prefix}.norm2.weight": f"{prefix}.norm2.weight",
+                f"{prefix}.norm2.bias": f"{prefix}.norm2.bias",
+                f"{prefix}.conv2.weight": f"{prefix}.conv2.weight",
+                f"{prefix}.conv2.bias": f"{prefix}.conv2.bias",
+            }
+        )
 
         # Optional shortcut connection (when input/output channels differ)
-        mapping.update({
-            f"{prefix}.conv_shortcut.weight": f"{prefix}.conv_shortcut.weight",
-            f"{prefix}.conv_shortcut.bias": f"{prefix}.conv_shortcut.bias",
-        })
+        mapping.update(
+            {
+                f"{prefix}.conv_shortcut.weight": f"{prefix}.conv_shortcut.weight",
+                f"{prefix}.conv_shortcut.bias": f"{prefix}.conv_shortcut.bias",
+            }
+        )
 
     def _map_attention_block(self, mapping: dict[str, str], prefix: str):
         """Map attention block weights (Transformer2DModel)."""
         # Outer projection layers
-        mapping.update({
-            f"{prefix}.norm.weight": f"{prefix}.norm.weight",
-            f"{prefix}.norm.bias": f"{prefix}.norm.bias",
-            f"{prefix}.proj_in.weight": f"{prefix}.proj_in.weight",
-            f"{prefix}.proj_in.bias": f"{prefix}.proj_in.bias",
-            f"{prefix}.proj_out.weight": f"{prefix}.proj_out.weight",
-            f"{prefix}.proj_out.bias": f"{prefix}.proj_out.bias",
-        })
+        mapping.update(
+            {
+                f"{prefix}.norm.weight": f"{prefix}.norm.weight",
+                f"{prefix}.norm.bias": f"{prefix}.norm.bias",
+                f"{prefix}.proj_in.weight": f"{prefix}.proj_in.weight",
+                f"{prefix}.proj_in.bias": f"{prefix}.proj_in.bias",
+                f"{prefix}.proj_out.weight": f"{prefix}.proj_out.weight",
+                f"{prefix}.proj_out.bias": f"{prefix}.proj_out.bias",
+            }
+        )
 
         # Transformer blocks (usually just 1)
         for transformer_idx in range(1):
             # SD 1.5 has 1 transformer block per attention
             self._map_transformer_block(
-                mapping, f"{prefix}.transformer_blocks.{transformer_idx}",
+                mapping,
+                f"{prefix}.transformer_blocks.{transformer_idx}",
             )
 
     def _map_transformer_block(self, mapping: dict[str, str], prefix: str):
         """Map BasicTransformerBlock weights."""
         # Layer norms
-        mapping.update({
-            f"{prefix}.norm1.weight": f"{prefix}.norm1.weight",
-            f"{prefix}.norm1.bias": f"{prefix}.norm1.bias",
-            f"{prefix}.norm2.weight": f"{prefix}.norm2.weight",
-            f"{prefix}.norm2.bias": f"{prefix}.norm2.bias",
-            f"{prefix}.norm3.weight": f"{prefix}.norm3.weight",
-            f"{prefix}.norm3.bias": f"{prefix}.norm3.bias",
-        })
+        mapping.update(
+            {
+                f"{prefix}.norm1.weight": f"{prefix}.norm1.weight",
+                f"{prefix}.norm1.bias": f"{prefix}.norm1.bias",
+                f"{prefix}.norm2.weight": f"{prefix}.norm2.weight",
+                f"{prefix}.norm2.bias": f"{prefix}.norm2.bias",
+                f"{prefix}.norm3.weight": f"{prefix}.norm3.weight",
+                f"{prefix}.norm3.bias": f"{prefix}.norm3.bias",
+            }
+        )
 
         # Self-attention (attn1)
-        mapping.update({
-            f"{prefix}.attn1.to_q.weight": f"{prefix}.attn1.to_q.weight",
-            f"{prefix}.attn1.to_k.weight": f"{prefix}.attn1.to_k.weight",
-            f"{prefix}.attn1.to_v.weight": f"{prefix}.attn1.to_v.weight",
-            f"{prefix}.attn1.to_out.0.weight": (
-                f"{prefix}.attn1.to_out.0.weight"
-            ),
-            f"{prefix}.attn1.to_out.0.bias": f"{prefix}.attn1.to_out.0.bias",
-        })
+        mapping.update(
+            {
+                f"{prefix}.attn1.to_q.weight": f"{prefix}.attn1.to_q.weight",
+                f"{prefix}.attn1.to_k.weight": f"{prefix}.attn1.to_k.weight",
+                f"{prefix}.attn1.to_v.weight": f"{prefix}.attn1.to_v.weight",
+                f"{prefix}.attn1.to_out.0.weight": (f"{prefix}.attn1.to_out.0.weight"),
+                f"{prefix}.attn1.to_out.0.bias": f"{prefix}.attn1.to_out.0.bias",
+            }
+        )
 
         # Cross-attention (attn2)
-        mapping.update({
-            f"{prefix}.attn2.to_q.weight": f"{prefix}.attn2.to_q.weight",
-            f"{prefix}.attn2.to_k.weight": f"{prefix}.attn2.to_k.weight",
-            f"{prefix}.attn2.to_v.weight": f"{prefix}.attn2.to_v.weight",
-            f"{prefix}.attn2.to_out.0.weight": (
-                f"{prefix}.attn2.to_out.0.weight"
-            ),
-            f"{prefix}.attn2.to_out.0.bias": f"{prefix}.attn2.to_out.0.bias",
-        })
+        mapping.update(
+            {
+                f"{prefix}.attn2.to_q.weight": f"{prefix}.attn2.to_q.weight",
+                f"{prefix}.attn2.to_k.weight": f"{prefix}.attn2.to_k.weight",
+                f"{prefix}.attn2.to_v.weight": f"{prefix}.attn2.to_v.weight",
+                f"{prefix}.attn2.to_out.0.weight": (f"{prefix}.attn2.to_out.0.weight"),
+                f"{prefix}.attn2.to_out.0.bias": f"{prefix}.attn2.to_out.0.bias",
+            }
+        )
 
         # Feedforward (GeGLU)
-        mapping.update({
-            f"{prefix}.ff.net.0.proj.weight": (
-                f"{prefix}.ff.net.0.0.weight"
-            ),  # GeGLU proj layer
-            f"{prefix}.ff.net.0.proj.bias": f"{prefix}.ff.net.0.0.bias",
-            f"{prefix}.ff.net.2.weight": f"{prefix}.ff.net.2.weight",
-            f"{prefix}.ff.net.2.bias": f"{prefix}.ff.net.2.bias",
-        })
+        mapping.update(
+            {
+                f"{prefix}.ff.net.0.proj.weight": (f"{prefix}.ff.net.0.0.weight"),  # GeGLU proj layer
+                f"{prefix}.ff.net.0.proj.bias": f"{prefix}.ff.net.0.0.bias",
+                f"{prefix}.ff.net.2.weight": f"{prefix}.ff.net.2.weight",
+                f"{prefix}.ff.net.2.bias": f"{prefix}.ff.net.2.bias",
+            }
+        )

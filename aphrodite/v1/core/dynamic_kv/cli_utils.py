@@ -2,7 +2,6 @@ import fcntl
 import mmap
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import posix_ipc
@@ -12,7 +11,7 @@ from .utils import SHM_DIR
 
 def get_ipc_path(ipc_name: str) -> str:
     """Convert IPC name to full path in /dev/shm."""
-    if ipc_name.startswith('/'):
+    if ipc_name.startswith("/"):
         return ipc_name
     return os.path.join(SHM_DIR, ipc_name)
 
@@ -35,7 +34,7 @@ class MemInfoStruct:
     @classmethod
     def _view(cls, buf: mmap.mmap) -> np.ndarray:
         """Return a live NumPy view onto the shared buffer."""
-        return np.ndarray((cls.N_FIELDS, ), dtype=cls.DTYPE, buffer=buf)
+        return np.ndarray((cls.N_FIELDS,), dtype=cls.DTYPE, buffer=buf)
 
     @classmethod
     def from_buffer(cls, buf: mmap.mmap) -> "MemInfoStruct":
@@ -83,48 +82,36 @@ class RwLockedShm:
 
 def init_kv_cache_limit(ipc_name: str, kv_cache_limit: int):
     """Set the kv cache limit for the current process."""
-    shm = posix_ipc.SharedMemory(get_ipc_name(ipc_name),
-                                 posix_ipc.O_CREAT,
-                                 size=MemInfoStruct.SHM_SIZE,
-                                 mode=0o666)
+    shm = posix_ipc.SharedMemory(get_ipc_name(ipc_name), posix_ipc.O_CREAT, size=MemInfoStruct.SHM_SIZE, mode=0o666)
     shm.close_fd()
 
-    with RwLockedShm(get_ipc_name(ipc_name), MemInfoStruct.SHM_SIZE,
-                     RwLockedShm.WLOCK) as mm:
+    with RwLockedShm(get_ipc_name(ipc_name), MemInfoStruct.SHM_SIZE, RwLockedShm.WLOCK) as mm:
         mem_info = MemInfoStruct(kv_cache_limit, 0, 0)
         mem_info.write_to_buffer(mm)
         return mem_info
 
 
-def get_kv_cache_limit(ipc_name: str) -> Optional[MemInfoStruct]:
+def get_kv_cache_limit(ipc_name: str) -> MemInfoStruct | None:
     """Get the kv cache limit for the current process."""
     try:
-        with RwLockedShm(get_ipc_name(ipc_name), MemInfoStruct.SHM_SIZE,
-                         RwLockedShm.RLOCK) as mm:
+        with RwLockedShm(get_ipc_name(ipc_name), MemInfoStruct.SHM_SIZE, RwLockedShm.RLOCK) as mm:
             return MemInfoStruct.from_buffer(mm)
     except FileNotFoundError:
         return None
 
 
-def update_kv_cache_limit(ipc_name: str,
-                          kv_cache_limit: int) -> Optional[MemInfoStruct]:
+def update_kv_cache_limit(ipc_name: str, kv_cache_limit: int) -> MemInfoStruct | None:
     """Update the kv cache limit for the current process."""
     try:
-        with RwLockedShm(get_ipc_name(ipc_name), MemInfoStruct.SHM_SIZE,
-                         RwLockedShm.WLOCK) as mm:
+        with RwLockedShm(get_ipc_name(ipc_name), MemInfoStruct.SHM_SIZE, RwLockedShm.WLOCK) as mm:
             mem_info = MemInfoStruct.from_buffer(mm)
             delta = kv_cache_limit - mem_info.total_size
-            if delta < 0:
-                if mem_info.used_size > kv_cache_limit:
-                    print(
-                        f"No enough free space to decrease for the new kv_cache_limit for {ipc_name}"
-                    )
+            if delta < 0 and mem_info.used_size > kv_cache_limit:
+                print(f"No enough free space to decrease for the new kv_cache_limit for {ipc_name}")
             mem_info.total_size = kv_cache_limit
             mem_info.write_to_buffer(mm)
             human_limit = _format_size(kv_cache_limit)
-            print(
-                f"Updated kv cache limit for {ipc_name} to {human_limit} ({kv_cache_limit} bytes)"
-            )
+            print(f"Updated kv cache limit for {ipc_name} to {human_limit} ({kv_cache_limit} bytes)")
             return mem_info
     except FileNotFoundError:
         return None
@@ -143,7 +130,7 @@ def delete_kv_cache_segment(ipc_name: str) -> bool:
 
     try:
         os.unlink(get_ipc_path(shm_name))
-        removed = True or removed
+        removed = True
     except FileNotFoundError:
         pass
 
@@ -171,4 +158,3 @@ def _format_size(num_bytes: int) -> str:
         size /= 1024
 
     raise RuntimeError("_format_size fell through all units")
-

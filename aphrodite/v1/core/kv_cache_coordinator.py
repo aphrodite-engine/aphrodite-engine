@@ -5,9 +5,11 @@ import aphrodite.envs as envs
 from aphrodite.v1.core.block_pool import BlockPool, ElasticBlockPool
 from aphrodite.v1.core.kv_cache_utils import BlockHash, KVCacheBlock
 from aphrodite.v1.core.single_type_kv_cache_manager import (
-    CrossAttentionManager, FullAttentionManager, get_manager_for_kv_cache_spec)
-from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                             KVCacheSpec)
+    CrossAttentionManager,
+    FullAttentionManager,
+    get_manager_for_kv_cache_spec,
+)
+from aphrodite.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
 from aphrodite.v1.request import Request
 
 
@@ -37,16 +39,14 @@ class KVCacheCoordinator(ABC):
                 raise ValueError("Prefix caching is not supported with dynamic KV cache")
 
             if len(self.kv_cache_config.kv_cache_groups) != 1:
-                raise ValueError(
-                    "Only one kv cache group is supported for dynamic KV cache")
+                raise ValueError("Only one kv cache group is supported for dynamic KV cache")
 
             kv_cache_group = self.kv_cache_config.kv_cache_groups[0]
             block_size = kv_cache_group.kv_cache_spec.block_size
             num_gpu_blocks = self.kv_cache_config.num_blocks
             num_layers = len(self.kv_cache_config.kv_cache_tensors)
             # cell_size is the size (in bytes) of the per-token K/V cache
-            cell_size = (kv_cache_group.kv_cache_spec.page_size_bytes //
-                         block_size // 2)
+            cell_size = kv_cache_group.kv_cache_spec.page_size_bytes // block_size // 2
 
             self.block_pool = ElasticBlockPool(
                 num_gpu_blocks=num_gpu_blocks,
@@ -54,10 +54,10 @@ class KVCacheCoordinator(ABC):
                 cell_size=cell_size,
                 num_layers=num_layers,
                 enable_caching=enable_caching,
-                enable_kv_cache_events=enable_kv_cache_events)
+                enable_kv_cache_events=enable_kv_cache_events,
+            )
         else:
-            self.block_pool = BlockPool(kv_cache_config.num_blocks,
-                                        enable_caching, enable_kv_cache_events)
+            self.block_pool = BlockPool(kv_cache_config.num_blocks, enable_caching, enable_kv_cache_events)
 
         # Needs special handling for find_longest_cache_hit if eagle is enabled
         self.use_eagle = use_eagle
@@ -98,9 +98,7 @@ class KVCacheCoordinator(ABC):
             if isinstance(manager, CrossAttentionManager):
                 # For cross-attention, we issue a single static allocation
                 # of blocks based on the number of encoder input tokens.
-                num_blocks_to_allocate += manager.get_num_blocks_to_allocate(
-                    request_id, num_encoder_tokens, []
-                )
+                num_blocks_to_allocate += manager.get_num_blocks_to_allocate(request_id, num_encoder_tokens, [])
             else:
                 num_blocks_to_allocate += manager.get_num_blocks_to_allocate(
                     request_id, num_tokens, new_computed_blocks[i]
@@ -141,9 +139,7 @@ class KVCacheCoordinator(ABC):
         return tuple(
             manager.allocate_new_blocks(
                 request_id,
-                num_encoder_tokens
-                if isinstance(manager, CrossAttentionManager)
-                else num_tokens,
+                num_encoder_tokens if isinstance(manager, CrossAttentionManager) else num_tokens,
             )
             for manager in self.single_type_managers
         )
@@ -183,10 +179,7 @@ class KVCacheCoordinator(ABC):
         Returns:
             list[int]: The number of common prefix blocks for each kv cache group.
         """
-        return [
-            manager.get_num_common_prefix_blocks(running_request_id)
-            for manager in self.single_type_managers
-        ]
+        return [manager.get_num_common_prefix_blocks(running_request_id) for manager in self.single_type_managers]
 
     def remove_skipped_blocks(self, request_id: str, num_computed_tokens: int) -> None:
         """
@@ -204,10 +197,7 @@ class KVCacheCoordinator(ABC):
         """
         Get the blocks for the request.
         """
-        return tuple(
-            manager.req_to_blocks.get(request_id) or []
-            for manager in self.single_type_managers
-        )
+        return tuple(manager.req_to_blocks.get(request_id) or [] for manager in self.single_type_managers)
 
     @abstractmethod
     def find_longest_cache_hit(
@@ -252,9 +242,7 @@ class KVCacheCoordinatorNoPrefixCache(KVCacheCoordinator):
         block_hashes: list[BlockHash],
         max_cache_hit_length: int,
     ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
-        blocks: tuple[list[KVCacheBlock], ...] = tuple(
-            [] for _ in range(self.num_single_type_manager)
-        )
+        blocks: tuple[list[KVCacheBlock], ...] = tuple([] for _ in range(self.num_single_type_manager))
         return blocks, 0
 
 
@@ -353,8 +341,7 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                     full_attention_spec = g.kv_cache_spec
                 else:
                     assert full_attention_spec == g.kv_cache_spec, (
-                        "HybridKVCacheCoordinator assumes exactly one type of "
-                        "full attention groups now."
+                        "HybridKVCacheCoordinator assumes exactly one type of full attention groups now."
                     )
                 self.full_attention_group_ids.append(i)
             else:
@@ -362,23 +349,17 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
                     other_spec = g.kv_cache_spec
                 else:
                     assert other_spec == g.kv_cache_spec, (
-                        "HybridKVCacheCoordinator assumes "
-                        "exactly one other type of groups now."
+                        "HybridKVCacheCoordinator assumes exactly one other type of groups now."
                     )
                 self.other_group_ids.append(i)
 
         assert full_attention_spec is not None, (
-            "HybridKVCacheCoordinator assumes exactly one type of full "
-            "attention groups now."
+            "HybridKVCacheCoordinator assumes exactly one type of full attention groups now."
         )
-        assert other_spec is not None, (
-            "HybridKVCacheCoordinator assumes exactly one type of other groups now."
-        )
+        assert other_spec is not None, "HybridKVCacheCoordinator assumes exactly one type of other groups now."
 
         self.full_attention_manager_cls = FullAttentionManager
-        self.other_attention_cls = self.single_type_managers[
-            self.other_group_ids[0]
-        ].__class__
+        self.other_attention_cls = self.single_type_managers[self.other_group_ids[0]].__class__
         self.full_attention_spec = full_attention_spec
         self.other_spec = other_spec
         self.full_attention_block_size = self.full_attention_spec.block_size
@@ -388,8 +369,7 @@ class HybridKVCacheCoordinator(KVCacheCoordinator):
             # this requirement is only needed for the prefix caching logic
             divisible = self.other_block_size % self.full_attention_block_size
             assert divisible == 0, (
-                "KVCacheCoordinator assumes the block_size of full "
-                "attention layers is divisible by other layers now."
+                "KVCacheCoordinator assumes the block_size of full attention layers is divisible by other layers now."
             )
 
         if max(self.full_attention_group_ids) < min(self.other_group_ids):

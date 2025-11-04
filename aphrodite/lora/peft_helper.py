@@ -60,9 +60,7 @@ class PEFTHelper:
         class_fields = {f.name: f for f in fields(cls)}
         # Check for required fields
         required_fields = {
-            name
-            for name, f in class_fields.items()
-            if f.default is MISSING and f.default_factory is MISSING
+            name for name, f in class_fields.items() if f.default is MISSING and f.default_factory is MISSING
         }
 
         # Identify any missing required fields
@@ -88,12 +86,8 @@ class PEFTHelper:
             tensorizer_args = tensorizer_config._construct_tensorizer_args()
             from tensorizer.stream_io import open_stream
 
-            lora_config_path = os.path.join(
-                tensorizer_config.tensorizer_dir, "adapter_config.json"
-            )
-            with open_stream(
-                lora_config_path, mode="rb", **tensorizer_args.stream_kwargs
-            ) as f:
+            lora_config_path = os.path.join(tensorizer_config.tensorizer_dir, "adapter_config.json")
+            with open_stream(lora_config_path, mode="rb", **tensorizer_args.stream_kwargs) as f:
                 config = json.load(f)
 
             logger.info(
@@ -115,10 +109,7 @@ class PEFTHelper:
         """
         error_msg = self._validate_features()
         if self.r > lora_config.max_lora_rank:
-            error_msg.append(
-                f"LoRA rank {self.r} is greater than max_lora_rank"
-                f" {lora_config.max_lora_rank}."
-            )
+            error_msg.append(f"LoRA rank {self.r} is greater than max_lora_rank {lora_config.max_lora_rank}.")
         if self.bias != "none":
             error_msg.append("Adapter bias is not supported.")
         if error_msg:

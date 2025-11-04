@@ -19,17 +19,23 @@ from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.activation import ReLUSquaredActivation
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, PPMissingLayer, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers)
+from .utils import (
+    AutoWeightsLoader,
+    PPMissingLayer,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+)
 
 
 class ArceeMLP(nn.Module):
@@ -66,10 +72,7 @@ class ArceeMLP(nn.Module):
             prefix=f"{prefix}.down_proj",
         )
         if hidden_act != "relu2":
-            raise ValueError(
-                f"Unsupported activation: {hidden_act}. "
-                "Only 'relu2' is supported for AFM."
-            )
+            raise ValueError(f"Unsupported activation: {hidden_act}. Only 'relu2' is supported for AFM.")
         # Define ReLU^2 activation: (ReLU(x))^2 elementwise
         self.act_fn = ReLUSquaredActivation()
 
@@ -96,32 +99,23 @@ class ArceeDecoderLayer(nn.Module):
         # Rotary embedding parameters (reuse LLaMA defaults)
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        if rope_scaling is not None and getattr(
-            config, "original_max_position_embeddings", None
-        ):
-            rope_scaling["original_max_position_embeddings"] = (
-                config.original_max_position_embeddings
-            )
+        if rope_scaling is not None and getattr(config, "original_max_position_embeddings", None):
+            rope_scaling["original_max_position_embeddings"] = config.original_max_position_embeddings
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         # Determine if attention bias is needed (some variants use bias terms)
-        attention_bias = getattr(config, "attention_bias", False) or getattr(
-            config, "bias", False
-        )
+        attention_bias = getattr(config, "attention_bias", False) or getattr(config, "bias", False)
         bias_o_proj = attention_bias
         if hasattr(config, "qkv_bias"):
             attention_bias = config.qkv_bias
 
         # Self-Attention (using LLaMA's attention structure)
-        from aphrodite.modeling.models.llama import (
-            LlamaAttention)  # import here to avoid circular import
+        from aphrodite.modeling.models.llama import LlamaAttention  # import here to avoid circular import
 
         self.self_attn = LlamaAttention(
             config=config,
             hidden_size=self.hidden_size,
             num_heads=config.num_attention_heads,
-            num_kv_heads=getattr(
-                config, "num_key_value_heads", config.num_attention_heads
-            ),
+            num_kv_heads=getattr(config, "num_key_value_heads", config.num_attention_heads),
             rope_theta=rope_theta,
             rope_scaling=rope_scaling,
             max_position_embeddings=max_position_embeddings,
@@ -130,9 +124,7 @@ class ArceeDecoderLayer(nn.Module):
             bias_o_proj=bias_o_proj,
             cache_config=cache_config,
             prefix=f"{prefix}.self_attn",
-            attn_type=getattr(
-                config, "attn_type", "decoder"
-            ),  # assume decoder (causal) unless specified
+            attn_type=getattr(config, "attn_type", "decoder"),  # assume decoder (causal) unless specified
         )
         # MLP with ReLU^2 activation
         self.mlp = ArceeMLP(
@@ -145,9 +137,7 @@ class ArceeDecoderLayer(nn.Module):
         )
         # Layer normalization layers (RMSNorm as in LLaMA)
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -191,9 +181,7 @@ class ArceeModel(nn.Module):
         self.org_vocab_size = config.vocab_size
 
         # Word embeddings (parallelized if using pipeline parallel)
-        if get_pp_group().is_first_rank or (
-            config.tie_word_embeddings and get_pp_group().is_last_rank
-        ):
+        if get_pp_group().is_first_rank or (config.tie_word_embeddings and get_pp_group().is_last_rank):
             self.embed_tokens = VocabParallelEmbedding(
                 self.vocab_size,
                 config.hidden_size,
@@ -242,34 +230,22 @@ class ArceeModel(nn.Module):
     ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
         # Embedding lookup (on first pipeline rank)
         if get_pp_group().is_first_rank:
-            hidden_states = (
-                inputs_embeds
-                if inputs_embeds is not None
-                else self.get_input_embeddings(input_ids)
-            )
+            hidden_states = inputs_embeds if inputs_embeds is not None else self.get_input_embeddings(input_ids)
             residual = None
         else:
-            assert intermediate_tensors is not None, (
-                "IntermediateTensors must be provided for non-first pipeline ranks"
-            )
+            assert intermediate_tensors is not None, "IntermediateTensors must be provided for non-first pipeline ranks"
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
 
         aux_hidden_states: list[torch.Tensor] = []
-        for idx, layer in enumerate(
-            islice(self.layers, self.start_layer, self.end_layer)
-        ):
+        for idx, layer in enumerate(islice(self.layers, self.start_layer, self.end_layer)):
             if idx in self.aux_hidden_state_layers:
-                aux_hidden_states.append(
-                    hidden_states + residual
-                )  # capture pre-layer hidden state if needed
+                aux_hidden_states.append(hidden_states + residual)  # capture pre-layer hidden state if needed
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
             # Send intermediate results to the next pipeline stage
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         # On last rank: apply final layer norm
         hidden_states, _ = self.norm(hidden_states, residual)
         if len(aux_hidden_states) > 0:
@@ -293,14 +269,10 @@ class ArceeModel(nn.Module):
             if "rotary_emb.cos_cached" in name or "rotary_emb.sin_cached" in name:
                 continue
 
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -386,16 +358,12 @@ class ArceeForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
                 # Tie output weights with input embedding matrix
                 self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
             logit_scale = getattr(config, "logit_scale", 1.0)
-            self.logits_processor = LogitsProcessor(
-                self.unpadded_vocab_size, config.vocab_size, logit_scale
-            )
+            self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size, logit_scale)
         else:
             # Placeholder for lm_head on non-last ranks
             self.lm_head = PPMissingLayer()
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def forward(
         self,

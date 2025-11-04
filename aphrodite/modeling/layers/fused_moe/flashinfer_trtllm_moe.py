@@ -1,8 +1,7 @@
 import torch
 
 from aphrodite.modeling.layers.fused_moe.utils import moe_kernel_quantize_input
-from aphrodite.quantization.utils.flashinfer_utils import (
-    calculate_tile_tokens_dim)
+from aphrodite.quantization.utils.flashinfer_utils import calculate_tile_tokens_dim
 from aphrodite.quantization.utils.fp8_utils import per_token_group_quant_fp8
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
@@ -25,8 +24,7 @@ def flashinfer_fused_moe_blockscale_fp8(
     block_shape: list[int],
     routed_scaling: float = 1.0,
 ) -> torch.Tensor:
-    from aphrodite.utils.flashinfer import (
-        flashinfer_trtllm_fp8_block_scale_moe)
+    from aphrodite.utils.flashinfer import flashinfer_trtllm_fp8_block_scale_moe
 
     assert top_k <= global_num_experts
     assert top_k <= 8
@@ -59,9 +57,7 @@ def flashinfer_fused_moe_blockscale_fp8(
         local_expert_offset=expert_offset,
         local_num_experts=local_num_experts,
         routed_scaling_factor=routed_scaling,
-        tile_tokens_dim=calculate_tile_tokens_dim(
-            x.shape[0], top_k, global_num_experts
-        ),
+        tile_tokens_dim=calculate_tile_tokens_dim(x.shape[0], top_k, global_num_experts),
         routing_method_type=2,  # DeepSeek-styled routing method
         use_shuffled_weight=False,
     )
@@ -128,8 +124,7 @@ def flashinfer_fused_moe_per_tensor_scale_fp8(
         per_act_token_quant=False,
     )
 
-    from aphrodite.utils.flashinfer import (
-        flashinfer_trtllm_fp8_per_tensor_scale_moe)
+    from aphrodite.utils.flashinfer import flashinfer_trtllm_fp8_per_tensor_scale_moe
 
     return flashinfer_trtllm_fp8_per_tensor_scale_moe(
         routing_logits=routing_logits,
@@ -149,9 +144,7 @@ def flashinfer_fused_moe_per_tensor_scale_fp8(
         local_num_experts=local_num_experts,
         routed_scaling_factor=routed_scaling_factor,
         use_routing_scales_on_input=use_routing_scales_on_input,
-        tile_tokens_dim=calculate_tile_tokens_dim(
-            hidden_states.shape[0], top_k, num_experts
-        ),
+        tile_tokens_dim=calculate_tile_tokens_dim(hidden_states.shape[0], top_k, num_experts),
         routing_method_type=routing_method_type,
     )
 

@@ -4,8 +4,7 @@ from typing import Annotated, Literal
 
 import torch
 import torch.nn as nn
-from transformers import (BatchFeature, CLIPConfig, CLIPProcessor,
-                          CLIPTextConfig, CLIPVisionConfig)
+from transformers import BatchFeature, CLIPConfig, CLIPProcessor, CLIPTextConfig, CLIPVisionConfig
 
 from aphrodite.attention import Attention
 from aphrodite.attention.layer import MultiHeadAttention
@@ -14,26 +13,27 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.interfaces import SupportsQuant
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalInputs,
-                                         MultiModalKwargsItems,
-                                         MultiModalUUIDDict)
-from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptIndexTargets,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.inputs import (
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalInputs,
+    MultiModalKwargsItems,
+    MultiModalUUIDDict,
+)
+from aphrodite.multimodal.parse import ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptIndexTargets,
+    PromptReplacement,
+    PromptUpdate,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
@@ -41,10 +41,13 @@ from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal
 from .interfaces_base import default_pooling_type
 from .utils import AutoWeightsLoader, maybe_prefix
-from .vision import (VisionEncoderInfo, VisionFeatureSelectStrategy,
-                     VisionFeatureSelectStrategyStr,
-                     get_num_selected_vision_tokens,
-                     resolve_visual_encoder_outputs)
+from .vision import (
+    VisionEncoderInfo,
+    VisionFeatureSelectStrategy,
+    VisionFeatureSelectStrategyStr,
+    get_num_selected_vision_tokens,
+    resolve_visual_encoder_outputs,
+)
 
 
 class CLIPImagePixelInputs(TensorSchema):
@@ -94,10 +97,7 @@ def _get_vision_feature_select_strategy(pooling_type: str):
     try:
         return _POOLING_TYPE_TO_STRATEGY[pooling_type]
     except KeyError:
-        raise ValueError(
-            f"No feature selection strategy is defined for "
-            f"pooling_type: {pooling_type!r}"
-        ) from None
+        raise ValueError(f"No feature selection strategy is defined for pooling_type: {pooling_type!r}") from None
 
 
 class CLIPProcessingInfo(BaseProcessingInfo):
@@ -265,9 +265,7 @@ class CLIPTextEmbeddings(nn.Module):
         embed_dim = config.hidden_size
 
         self.token_embedding = VocabParallelEmbedding(config.vocab_size, embed_dim)
-        self.position_embedding = VocabParallelEmbedding(
-            config.max_position_embeddings, embed_dim
-        )
+        self.position_embedding = VocabParallelEmbedding(config.max_position_embeddings, embed_dim)
 
     def forward(
         self,
@@ -277,9 +275,7 @@ class CLIPTextEmbeddings(nn.Module):
     ) -> torch.Tensor:
         if inputs_embeds is None:
             if input_ids is None:
-                raise ValueError(
-                    "Either `input_ids` or `input_embeds` must be provided"
-                )
+                raise ValueError("Either `input_ids` or `input_embeds` must be provided")
 
             inputs_embeds = self.token_embedding(input_ids)
 
@@ -320,9 +316,7 @@ class CLIPVisionEmbeddings(nn.Module):
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         batch_size = pixel_values.shape[0]
         target_dtype = self.patch_embedding.weight.dtype
-        patch_embeds = self.patch_embedding(
-            pixel_values.to(dtype=target_dtype)
-        )  # shape = [*, width, grid, grid]
+        patch_embeds = self.patch_embedding(pixel_values.to(dtype=target_dtype))  # shape = [*, width, grid, grid]
         patch_embeds = patch_embeds.flatten(2).transpose(1, 2)
 
         class_embeds = self.class_embedding.expand(batch_size, 1, -1)
@@ -852,9 +846,7 @@ class CLIPEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
         feature_select_strategy: VisionFeatureSelectStrategy | None = None,
     ) -> torch.Tensor:
         if feature_select_strategy is None:
-            feature_select_strategy = _get_vision_feature_select_strategy(
-                self.pooler_config.pooling_type
-            )
+            feature_select_strategy = _get_vision_feature_select_strategy(self.pooler_config.pooling_type)
 
         pooled_output = self.vision_model(
             pixel_values=pixel_values,
@@ -866,9 +858,7 @@ class CLIPEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
 
         return image_features
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> CLIPImagePixelInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> CLIPImagePixelInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         if pixel_values is None:
             return None
@@ -896,9 +886,7 @@ class CLIPEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
         is_multimodal: torch.Tensor | None = None,
         handle_oov_mm_token: bool = False,
     ) -> torch.Tensor:
-        self._is_text_input = (
-            multimodal_embeddings is None or len(multimodal_embeddings) == 0
-        )
+        self._is_text_input = multimodal_embeddings is None or len(multimodal_embeddings) == 0
 
         # This is to satisfy the type checker for each overload
         if multimodal_embeddings is None or is_multimodal is None:
@@ -935,9 +923,7 @@ class CLIPEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
             return inputs_embeds
 
         # Text inputs
-        return self.get_text_features(
-            input_ids=input_ids, position_ids=positions, inputs_embeds=inputs_embeds
-        )
+        return self.get_text_features(input_ids=input_ids, position_ids=positions, inputs_embeds=inputs_embeds)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(

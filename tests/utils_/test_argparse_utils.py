@@ -7,8 +7,7 @@ import pytest
 import yaml
 from transformers import AutoTokenizer
 
-from aphrodite.transformers_utils.detokenizer_utils import (
-    convert_ids_list_to_tokens)
+from aphrodite.transformers_utils.detokenizer_utils import convert_ids_list_to_tokens
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 from ..utils import flat_product
@@ -18,9 +17,7 @@ from ..utils import flat_product
 @pytest.fixture
 def parser():
     parser = FlexibleArgumentParser()
-    parser.add_argument(
-        "--image-input-type", choices=["pixel_values", "image_features"]
-    )
+    parser.add_argument("--image-input-type", choices=["pixel_values", "image_features"])
     parser.add_argument("--model-name")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--enable-feature", action="store_true")
@@ -49,17 +46,13 @@ def test_underscore_to_dash(parser):
 
 
 def test_mixed_usage(parser):
-    args = parser.parse_args(
-        ["--image_input_type", "image_features", "--model-name", "facebook/opt-125m"]
-    )
+    args = parser.parse_args(["--image_input_type", "image_features", "--model-name", "facebook/opt-125m"])
     assert args.image_input_type == "image_features"
     assert args.model_name == "facebook/opt-125m"
 
 
 def test_with_equals_sign(parser):
-    args = parser.parse_args(
-        ["--image_input_type=pixel_values", "--model-name=facebook/opt-125m"]
-    )
+    args = parser.parse_args(["--image_input_type=pixel_values", "--model-name=facebook/opt-125m"])
     assert args.image_input_type == "pixel_values"
     assert args.model_name == "facebook/opt-125m"
 
@@ -90,13 +83,9 @@ def test_missing_required_argument(parser):
 
 
 def test_cli_override_to_config(parser_with_config, cli_config_file):
-    args = parser_with_config.parse_args(
-        ["run", "mymodel", "--config", cli_config_file, "--tensor-parallel-size", "3"]
-    )
+    args = parser_with_config.parse_args(["run", "mymodel", "--config", cli_config_file, "--tensor-parallel-size", "3"])
     assert args.tensor_parallel_size == 3
-    args = parser_with_config.parse_args(
-        ["run", "mymodel", "--tensor-parallel-size", "3", "--config", cli_config_file]
-    )
+    args = parser_with_config.parse_args(["run", "mymodel", "--tensor-parallel-size", "3", "--config", cli_config_file])
     assert args.tensor_parallel_size == 3
     assert args.port == 12312
     args = parser_with_config.parse_args(
@@ -116,23 +105,17 @@ def test_cli_override_to_config(parser_with_config, cli_config_file):
 
 
 def test_config_args(parser_with_config, cli_config_file):
-    args = parser_with_config.parse_args(
-        ["run", "mymodel", "--config", cli_config_file]
-    )
+    args = parser_with_config.parse_args(["run", "mymodel", "--config", cli_config_file])
     assert args.tensor_parallel_size == 2
     assert args.trust_remote_code
 
 
 def test_config_file(parser_with_config):
     with pytest.raises(FileNotFoundError):
-        parser_with_config.parse_args(
-            ["run", "mymodel", "--config", "test_config.yml"]
-        )
+        parser_with_config.parse_args(["run", "mymodel", "--config", "test_config.yml"])
 
     with pytest.raises(ValueError):
-        parser_with_config.parse_args(
-            ["run", "mymodel", "--config", "./data/test_config.json"]
-        )
+        parser_with_config.parse_args(["run", "mymodel", "--config", "./data/test_config.json"])
 
     with pytest.raises(ValueError):
         parser_with_config.parse_args(
@@ -247,13 +230,9 @@ def test_duplicate_dict_args(caplog_aphrodite, parser):
     assert "-O.mode" in caplog_aphrodite.text
 
 
-def test_model_specification(
-    parser_with_config, cli_config_file, cli_config_file_with_model
-):
+def test_model_specification(parser_with_config, cli_config_file, cli_config_file_with_model):
     # Test model in CLI takes precedence over config
-    args = parser_with_config.parse_args(
-        ["run", "cli-model", "--config", cli_config_file_with_model]
-    )
+    args = parser_with_config.parse_args(["run", "cli-model", "--config", cli_config_file_with_model])
     assert args.model_tag == "cli-model"
     assert args.served_model_name == "mymodel"
 

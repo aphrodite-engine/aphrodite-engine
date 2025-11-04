@@ -10,18 +10,14 @@ from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.utils import divide
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.configs.ovis import AIMv2Config
 
 
 class AIMv2SwiGLUFFN(nn.Module):
-    def __init__(
-        self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str
-    ):
+    def __init__(self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str):
         super().__init__()
         hidden_features = config.intermediate_size
         in_features = config.hidden_size
@@ -84,9 +80,7 @@ class AIMv2ViTPreprocessor(nn.Module):
 
 
 class AIMv2Attention(nn.Module):
-    def __init__(
-        self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str
-    ):
+    def __init__(self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str):
         super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
@@ -120,9 +114,7 @@ class AIMv2Attention(nn.Module):
         self.tp_size = get_tensor_model_parallel_world_size()
         self.num_heads_per_partition = divide(self.num_heads, self.tp_size)
 
-        self.attn = MultiHeadAttention(
-            self.num_heads_per_partition, self.head_dim, self.scale
-        )
+        self.attn = MultiHeadAttention(self.num_heads_per_partition, self.head_dim, self.scale)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         qkv, _ = self.qkv(x)
@@ -134,17 +126,11 @@ class AIMv2Attention(nn.Module):
 
 
 class AIMv2Block(nn.Module):
-    def __init__(
-        self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str
-    ):
+    def __init__(self, config: AIMv2Config, quant_config: QuantizationConfig, prefix: str):
         super().__init__()
-        self.attn = AIMv2Attention(
-            config, quant_config=quant_config, prefix=f"{prefix}.attn"
-        )
+        self.attn = AIMv2Attention(config, quant_config=quant_config, prefix=f"{prefix}.attn")
         self.norm_1 = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.mlp = AIMv2SwiGLUFFN(
-            config, quant_config=quant_config, prefix=f"{prefix}.mlp"
-        )
+        self.mlp = AIMv2SwiGLUFFN(config, quant_config=quant_config, prefix=f"{prefix}.mlp")
         self.norm_2 = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -165,10 +151,7 @@ class AIMv2Transformer(nn.Module):
         super().__init__()
 
         self.blocks = nn.ModuleList(
-            [
-                AIMv2Block(config, quant_config, prefix=f"{prefix}.blocks.{i}")
-                for i in range(config.num_hidden_layers)
-            ]
+            [AIMv2Block(config, quant_config, prefix=f"{prefix}.blocks.{i}") for i in range(config.num_hidden_layers)]
         )
         if require_post_norm:
             self.post_trunk_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -219,10 +202,7 @@ class AIMv2Model(torch.nn.Module):
 
         for name, loaded_weight in weights:
             # post_layernorm is optional in SiglipVisionModel
-            if (
-                name.startswith("trunk.post_trunk_norm")
-                and self.trunk.post_trunk_norm is None
-            ):
+            if name.startswith("trunk.post_trunk_norm") and self.trunk.post_trunk_norm is None:
                 continue
 
             for param_name, weight_name, shard_id in stacked_params_mapping:

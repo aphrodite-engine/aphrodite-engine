@@ -49,6 +49,4 @@ class OffloadingSpecFactory:
 
 
 # Register various specs here.
-OffloadingSpecFactory.register_spec(
-    "CPUOffloadingSpec", "aphrodite.v1.kv_offload.cpu", "CPUOffloadingSpec"
-)
+OffloadingSpecFactory.register_spec("CPUOffloadingSpec", "aphrodite.v1.kv_offload.cpu", "CPUOffloadingSpec")

@@ -61,9 +61,7 @@ def check_compress_decompress_invariance(
 
     eye = torch.eye(b.shape[0], device="cuda", dtype=dtype)
     eye_scale = torch.ones(1, device="cuda", dtype=torch.float32)
-    b_decomp = ops.cutlass_scaled_sparse_mm(
-        eye, b_compressed, b_metadata, eye_scale, eye_scale, out_dtype=out_dtype
-    )
+    b_decomp = ops.cutlass_scaled_sparse_mm(eye, b_compressed, b_metadata, eye_scale, eye_scale, out_dtype=out_dtype)
 
     torch.testing.assert_close(b.to(dtype=out_dtype), b_decomp)
 
@@ -114,9 +112,7 @@ def test_cutlass_sparse_subset():
     scale_a = torch.randn((1, 1), device="cuda", dtype=torch.float32) / 10
     scale_b = torch.randn((1, 1), device="cuda", dtype=torch.float32) / 10
 
-    out = ops.cutlass_scaled_sparse_mm(
-        a, b_comp, e, scale_a, scale_b, out_dtype=torch.bfloat16
-    )
+    out = ops.cutlass_scaled_sparse_mm(a, b_comp, e, scale_a, scale_b, out_dtype=torch.bfloat16)
     baseline = baseline_scaled_mm(a, b, scale_a, scale_b, out_dtype=torch.bfloat16)
 
     torch.testing.assert_close(out, baseline, rtol=1e-1, atol=1e0)
@@ -153,9 +149,7 @@ MNK_FACTORS = [
 @pytest.mark.parametrize("m, n, k", MNK_FACTORS)
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("use_bias", [True, False])
-def test_cutlass_sparse_gemm(
-    m: int, k: int, n: int, dtype: type[torch.dtype], use_bias: bool
-):
+def test_cutlass_sparse_gemm(m: int, k: int, n: int, dtype: type[torch.dtype], use_bias: bool):
     # Create tensors
     b_comp, e, a, b = make_rand_sparse_tensors(dtype, m, n, k)
     scale_a = torch.ones((1, 1), device="cuda", dtype=torch.float32)
@@ -163,9 +157,7 @@ def test_cutlass_sparse_gemm(
 
     bias = torch.rand((n,), device="cuda", dtype=dtype) if use_bias else None
 
-    out = ops.cutlass_scaled_sparse_mm(
-        a, b_comp, e, scale_a, scale_b, out_dtype=dtype, bias=bias
-    )
+    out = ops.cutlass_scaled_sparse_mm(a, b_comp, e, scale_a, scale_b, out_dtype=dtype, bias=bias)
 
     baseline = baseline_scaled_mm(a, b, scale_a, scale_b, out_dtype=dtype, bias=bias)
 
@@ -191,13 +183,9 @@ def test_cutlass_sparse_fp8_gemm(m: int, n: int, k: int, use_bias: bool):
 
     bias = torch.rand((n,), device="cuda", dtype=out_dtype) * 10 if use_bias else None
 
-    out = ops.cutlass_scaled_sparse_mm(
-        a, b_comp, e, scale_a, scale_b, out_dtype=out_dtype, bias=bias
-    )
+    out = ops.cutlass_scaled_sparse_mm(a, b_comp, e, scale_a, scale_b, out_dtype=out_dtype, bias=bias)
 
-    baseline = baseline_scaled_mm(
-        a, b, scale_a, scale_b, out_dtype=out_dtype, bias=bias
-    )
+    baseline = baseline_scaled_mm(a, b, scale_a, scale_b, out_dtype=out_dtype, bias=bias)
 
     torch.testing.assert_close(out, baseline, rtol=1e-2, atol=3e-1)
 
@@ -210,9 +198,7 @@ def test_cutlass_sparse_fp8_gemm(m: int, n: int, k: int, use_bias: bool):
 @pytest.mark.parametrize("per_act_token", [True, False])
 @pytest.mark.parametrize("per_out_ch", [True, False])
 @pytest.mark.parametrize("use_bias", [True, False])
-def test_cutlass_sparse_int8_gemm(
-    m: int, n: int, k: int, per_act_token: bool, per_out_ch: bool, use_bias: bool
-):
+def test_cutlass_sparse_int8_gemm(m: int, n: int, k: int, per_act_token: bool, per_out_ch: bool, use_bias: bool):
     # Create tensors
     b_comp, e, a, b = make_rand_sparse_tensors(torch.int8, m, n, k)
     scale_a = torch.randn((1, 1), device="cuda", dtype=torch.float32)
@@ -221,12 +207,8 @@ def test_cutlass_sparse_int8_gemm(
 
     bias = torch.rand((n,), device="cuda", dtype=out_dtype) * 10 if use_bias else None
 
-    out = ops.cutlass_scaled_sparse_mm(
-        a, b_comp, e, scale_a, scale_b, out_dtype=out_dtype, bias=bias
-    )
+    out = ops.cutlass_scaled_sparse_mm(a, b_comp, e, scale_a, scale_b, out_dtype=out_dtype, bias=bias)
 
-    baseline = baseline_scaled_mm(
-        a, b, scale_a, scale_b, out_dtype=out_dtype, bias=bias
-    )
+    baseline = baseline_scaled_mm(a, b, scale_a, scale_b, out_dtype=out_dtype, bias=bias)
 
     torch.testing.assert_close(out, baseline, rtol=1e0, atol=2e0)

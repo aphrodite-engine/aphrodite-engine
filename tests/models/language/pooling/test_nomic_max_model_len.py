@@ -19,9 +19,7 @@ max_model_len = int(original_max_position_embeddings * factor)
 
 @pytest.mark.parametrize("model_info", MODELS)
 def test_default(model_info, aphrodite_runner):
-    with aphrodite_runner(
-        model_info.name, runner="pooling", max_model_len=None
-    ) as aphrodite_model:
+    with aphrodite_runner(model_info.name, runner="pooling", max_model_len=None) as aphrodite_model:
         model_config = aphrodite_model.llm.llm_engine.model_config
         if model_info.name == "nomic-ai/nomic-embed-text-v2-moe":
             # For nomic-embed-text-v2-moe the length is set to 512
@@ -34,9 +32,7 @@ def test_default(model_info, aphrodite_runner):
 @pytest.mark.parametrize("model_info", MODELS)
 def test_set_max_model_len_legal(model_info, aphrodite_runner):
     # set max_model_len <= 512
-    with aphrodite_runner(
-        model_info.name, runner="pooling", max_model_len=256
-    ) as aphrodite_model:
+    with aphrodite_runner(model_info.name, runner="pooling", max_model_len=256) as aphrodite_model:
         model_config = aphrodite_model.llm.llm_engine.model_config
         assert model_config.max_model_len == 256
 
@@ -48,9 +44,7 @@ def test_set_max_model_len_legal(model_info, aphrodite_runner):
             with aphrodite_runner(model_info.name, runner="pooling", max_model_len=1024):
                 pass
     else:
-        with aphrodite_runner(
-            model_info.name, runner="pooling", max_model_len=1024
-        ) as aphrodite_model:
+        with aphrodite_runner(model_info.name, runner="pooling", max_model_len=1024) as aphrodite_model:
             model_config = aphrodite_model.llm.llm_engine.model_config
             assert model_config.max_model_len == 1024
 
@@ -86,9 +80,7 @@ def test_use_rope_scaling_legal(model_info, aphrodite_runner):
         "max_model_len": max_model_len,
     }
 
-    with aphrodite_runner(
-        model_info.name, runner="pooling", max_model_len=None, hf_overrides=hf_overrides
-    ):
+    with aphrodite_runner(model_info.name, runner="pooling", max_model_len=None, hf_overrides=hf_overrides):
         pass
 
 

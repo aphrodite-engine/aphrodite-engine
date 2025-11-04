@@ -20,23 +20,19 @@ from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.distributed.parallel_state import init_distributed_environment
 from aphrodite.forward_context import set_forward_context
 from aphrodite.modeling.layers.fused_moe.config import (
-    FUSED_MOE_UNQUANTIZED_CONFIG, int4_w4a16_moe_quant_config,
-    int8_w8a16_moe_quant_config)
-from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-    batched_fused_marlin_moe, fused_marlin_moe)
-from aphrodite.modeling.layers.fused_moe.fused_moe import (
-    fused_topk, modular_triton_fused_moe)
-from aphrodite.modeling.layers.fused_moe.moe_torch_iterative import (
-    fused_moe as iterative_moe)
+    FUSED_MOE_UNQUANTIZED_CONFIG,
+    int4_w4a16_moe_quant_config,
+    int8_w8a16_moe_quant_config,
+)
+from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import batched_fused_marlin_moe, fused_marlin_moe
+from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk, modular_triton_fused_moe
+from aphrodite.modeling.layers.fused_moe.moe_torch_iterative import fused_moe as iterative_moe
 from aphrodite.modeling.models.mixtral import MixtralMoE
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.marlin_utils import marlin_permute_bias
-from aphrodite.quantization.utils.marlin_utils_fp4 import (
-    rand_marlin_weight_mxfp4_like, rand_marlin_weight_nvfp4_like)
-from aphrodite.quantization.utils.marlin_utils_fp8 import (
-    marlin_quant_fp8_torch)
-from aphrodite.quantization.utils.marlin_utils_test import (
-    awq_marlin_quantize, marlin_quantize)
+from aphrodite.quantization.utils.marlin_utils_fp4 import rand_marlin_weight_mxfp4_like, rand_marlin_weight_nvfp4_like
+from aphrodite.quantization.utils.marlin_utils_fp8 import marlin_quant_fp8_torch
+from aphrodite.quantization.utils.marlin_utils_test import awq_marlin_quantize, marlin_quantize
 from aphrodite.quantization.utils.quant_utils import quantize_weights
 from aphrodite.scalar_type import ScalarType, scalar_types
 from tests.kernels.moe.utils import fused_moe
@@ -286,18 +282,12 @@ def test_fused_moe_wn16(
 
     w1_ref = w1.clone()
     w2_ref = w2.clone()
-    w1_qweight = torch.empty(
-        (e, 2 * n, k // pack_factor), device="cuda", dtype=torch.uint8
-    )
+    w1_qweight = torch.empty((e, 2 * n, k // pack_factor), device="cuda", dtype=torch.uint8)
     w2_qweight = torch.empty((e, k, n // pack_factor), device="cuda", dtype=torch.uint8)
     w1_scales = torch.empty((e, 2 * n, k // group_size), device="cuda", dtype=dtype)
     w2_scales = torch.empty((e, k, n // group_size), device="cuda", dtype=dtype)
-    w1_qzeros = torch.empty(
-        (e, 2 * n // pack_factor, k // group_size), device="cuda", dtype=torch.uint8
-    )
-    w2_qzeros = torch.empty(
-        (e, k // pack_factor, n // group_size), device="cuda", dtype=torch.uint8
-    )
+    w1_qzeros = torch.empty((e, 2 * n // pack_factor, k // group_size), device="cuda", dtype=torch.uint8)
+    w2_qzeros = torch.empty((e, k // pack_factor, n // group_size), device="cuda", dtype=torch.uint8)
 
     for i in range(e * 2):
         expert_id = i % e
@@ -317,9 +307,7 @@ def test_fused_moe_wn16(
                 w2_scales,
                 w2_qzeros,
             )
-        weight, qweight, scales, qzeros = quantize_weights(
-            w[expert_id].T, quant_type, group_size, has_zp, False
-        )
+        weight, qweight, scales, qzeros = quantize_weights(w[expert_id].T, quant_type, group_size, has_zp, False)
         weight = weight.T
         qweight = qweight.T.contiguous().to(torch.uint8)
         scales = scales.T
@@ -385,19 +373,14 @@ def test_fused_moe_wn16(
 
 @pytest.mark.parametrize("dtype", [torch.bfloat16])
 @pytest.mark.parametrize("padding", [True, False])
-@pytest.mark.parametrize(
-    "use_rocm_aiter", [True, False] if current_platform.is_rocm() else [False]
-)
+@pytest.mark.parametrize("use_rocm_aiter", [True, False] if current_platform.is_rocm() else [False])
 @torch.inference_mode()
-def test_mixtral_moe(
-    dist_init, dtype: torch.dtype, padding: bool, use_rocm_aiter: bool, monkeypatch
-):
+def test_mixtral_moe(dist_init, dtype: torch.dtype, padding: bool, use_rocm_aiter: bool, monkeypatch):
     """Make sure our Mixtral MoE implementation agrees with the one from
     huggingface."""
 
     # clear the cache before every test
-    from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import (
-        is_rocm_aiter_moe_enabled)
+    from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import is_rocm_aiter_moe_enabled
 
     is_rocm_aiter_moe_enabled.cache_clear()
     if use_rocm_aiter:
@@ -446,9 +429,7 @@ def test_mixtral_moe(
         # Pad the weight if moe padding is enabled
         if padding:
             aphrodite_moe.experts.w13_weight = Parameter(
-                F.pad(aphrodite_moe.experts.w13_weight, (0, 128), "constant", 0)[
-                    ..., 0:-128
-                ],
+                F.pad(aphrodite_moe.experts.w13_weight, (0, 128), "constant", 0)[..., 0:-128],
                 requires_grad=False,
             )
             aphrodite_moe.experts.w2_weight = Parameter(
@@ -471,9 +452,7 @@ def test_mixtral_moe(
     if use_rocm_aiter:
         # The values of rtol and atol are set based on the tests in ROCM AITER package.
         # https://github.com/ROCm/aiter/blob/dfed377f4be7da96ca2d75ac0761f569676f7240/op_tests/test_moe.py#L174
-        torch.testing.assert_close(
-            hf_states.flatten(0, 1), aphrodite_states, rtol=0.01, atol=100
-        )
+        torch.testing.assert_close(hf_states.flatten(0, 1), aphrodite_states, rtol=0.01, atol=100)
     else:
         torch.testing.assert_close(
             hf_states.flatten(0, 1),
@@ -518,9 +497,7 @@ def marlin_moe_generate_valid_test_cases():
         is_k_full_list,
     )
 
-    def is_invalid(
-        m, n, k, e, topk, ep_size, dtype, group_size, act_order, quant_type, is_k_full
-    ):
+    def is_invalid(m, n, k, e, topk, ep_size, dtype, group_size, act_order, quant_type, is_k_full):
         if quant_type == scalar_types.float8_e4m3fn and group_size not in [-1, 128]:
             return False
         if quant_type == scalar_types.float4_e2m1f:
@@ -584,13 +561,9 @@ class MarlinMoEWeightData:
         for i in range(w.shape[0]):
             if quant_type == scalar_types.float4_e2m1f:
                 if group_size == 16:
-                    w_ref, qweight, scales, global_scale = (
-                        rand_marlin_weight_nvfp4_like(w[i], group_size)
-                    )
+                    w_ref, qweight, scales, global_scale = rand_marlin_weight_nvfp4_like(w[i], group_size)
                 else:
-                    w_ref, qweight, scales = rand_marlin_weight_mxfp4_like(
-                        w[i], group_size
-                    )
+                    w_ref, qweight, scales = rand_marlin_weight_mxfp4_like(w[i], group_size)
                     global_scale = None
 
                 w_ref_l.append(w_ref.T)
@@ -604,9 +577,7 @@ class MarlinMoEWeightData:
                 qweight_l.append(qweight)
                 scales_l.append(scales)
             elif has_zp:
-                w_ref, qweight, scales, zeros = awq_marlin_quantize(
-                    w[i].transpose(1, 0), quant_type, group_size
-                )
+                w_ref, qweight, scales, zeros = awq_marlin_quantize(w[i].transpose(1, 0), quant_type, group_size)
 
                 w_ref_l.append(w_ref.T)
                 qweight_l.append(qweight)
@@ -683,22 +654,16 @@ def test_fused_marlin_moe(
     else:
         e_map = None
 
-    w1_data = MarlinMoEWeightData.make(
-        w=w1, quant_type=quant_type, group_size=group_size, act_order=act_order
-    )
+    w1_data = MarlinMoEWeightData.make(w=w1, quant_type=quant_type, group_size=group_size, act_order=act_order)
 
-    w2_data = MarlinMoEWeightData.make(
-        w=w2, quant_type=quant_type, group_size=group_size, act_order=act_order
-    )
+    w2_data = MarlinMoEWeightData.make(w=w2, quant_type=quant_type, group_size=group_size, act_order=act_order)
 
     score = torch.randn((m, e), device="cuda", dtype=dtype)
 
     topk_weights, topk_ids, _ = fused_topk(a, score, topk, False)
 
     with set_current_aphrodite_config(aphrodite_config):
-        torch_output = torch_moe(
-            a, w1_data.w_ref, w2_data.w_ref, score, topk, expert_map=e_map
-        )
+        torch_output = torch_moe(a, w1_data.w_ref, w2_data.w_ref, score, topk, expert_map=e_map)
 
     marlin_output = fused_marlin_moe(
         a,
@@ -769,9 +734,7 @@ def test_fused_marlin_moe_with_bias(m):
     topk_weights, topk_ids, _ = fused_topk(a, score, topk, False)
 
     with set_current_aphrodite_config(aphrodite_config):
-        torch_output = torch_moe(
-            a, w1_data.w_ref, w2_data.w_ref, score, topk, b_bias1, b_bias2
-        )
+        torch_output = torch_moe(a, w1_data.w_ref, w2_data.w_ref, score, topk, b_bias1, b_bias2)
 
     marlin_output = fused_marlin_moe(
         a,
@@ -807,14 +770,10 @@ def test_moe_align_block_size_opcheck():
     topk_ids = torch.randint(0, num_experts, (3, 4), dtype=torch.int32, device="cuda")
 
     max_num_tokens_padded = topk_ids.numel() + num_experts * (block_size - 1)
-    sorted_ids = torch.empty(
-        (max_num_tokens_padded,), dtype=torch.int32, device=topk_ids.device
-    )
+    sorted_ids = torch.empty((max_num_tokens_padded,), dtype=torch.int32, device=topk_ids.device)
     sorted_ids.fill_(topk_ids.numel())
     max_num_m_blocks = max_num_tokens_padded // block_size
-    expert_ids = torch.empty(
-        (max_num_m_blocks,), dtype=torch.int32, device=topk_ids.device
-    )
+    expert_ids = torch.empty((max_num_m_blocks,), dtype=torch.int32, device=topk_ids.device)
     num_tokens_post_pad = torch.empty((1), dtype=torch.int32, device=topk_ids.device)
 
     opcheck(
@@ -907,9 +866,7 @@ def test_cpu_fused_moe_basic(m, n, k, e, topk, dtype, with_bias, activation):
         b2 = torch.randn((e, k), device=device, dtype=dtype) / 10
 
     ref = (
-        torch_moe(a, w13, w2, router_logits, topk, b1, b2)
-        if with_bias
-        else torch_moe(a, w13, w2, router_logits, topk)
+        torch_moe(a, w13, w2, router_logits, topk, b1, b2) if with_bias else torch_moe(a, w13, w2, router_logits, topk)
     )
 
     class _Dummy(torch.nn.Module):
@@ -958,14 +915,8 @@ def test_cpu_fused_moe_basic(m, n, k, e, topk, dtype, with_bias, activation):
 @pytest.mark.parametrize("topk", [2, 4])
 @pytest.mark.parametrize("max_tokens_per_batch", [16, 32, 64])
 @pytest.mark.skipif(current_platform.is_rocm(), reason="Skip for rocm")
-def test_batched_fused_marlin_moe(
-    m: int, n: int, k: int, e: int, topk: int, max_tokens_per_batch: int
-):
-    print(
-        f"testing m={m}, n={n}, k={k}, e={e}, "
-        f"topk={topk}, "
-        f"max_tokens_per_batch={max_tokens_per_batch}"
-    )
+def test_batched_fused_marlin_moe(m: int, n: int, k: int, e: int, topk: int, max_tokens_per_batch: int):
+    print(f"testing m={m}, n={n}, k={k}, e={e}, topk={topk}, max_tokens_per_batch={max_tokens_per_batch}")
     torch.cuda.manual_seed(0)
 
     dtype = torch.bfloat16
@@ -976,12 +927,8 @@ def test_batched_fused_marlin_moe(
     w1 = torch.randn((e, 2 * n, k), device="cuda", dtype=dtype) / 20
     w2 = torch.randn((e, k, n), device="cuda", dtype=dtype) / 20
 
-    w1_data = MarlinMoEWeightData.make(
-        w=w1, quant_type=quant_dtype, group_size=group_size, act_order=None
-    )
-    w2_data = MarlinMoEWeightData.make(
-        w=w2, quant_type=quant_dtype, group_size=group_size, act_order=None
-    )
+    w1_data = MarlinMoEWeightData.make(w=w1, quant_type=quant_dtype, group_size=group_size, act_order=None)
+    w2_data = MarlinMoEWeightData.make(w=w2, quant_type=quant_dtype, group_size=group_size, act_order=None)
 
     score = torch.randn((m, e), device="cuda", dtype=dtype)
     topk_weights, topk_ids, _ = fused_topk(a, score, topk, False)
@@ -1008,9 +955,7 @@ def test_batched_fused_marlin_moe(
             self.e = num_experts
             self.topk_ids_cpu = _topk_ids.to("cpu")
             self.topk_weights_cpu = _topk_weights.to("cpu")
-            self.expert_num_tokens_cpu = self._make_expert_num_tokens_cpu(
-                self.e, self.topk_ids_cpu
-            )
+            self.expert_num_tokens_cpu = self._make_expert_num_tokens_cpu(self.e, self.topk_ids_cpu)
 
         def is_valid(self):
             """
@@ -1037,9 +982,7 @@ def test_batched_fused_marlin_moe(
             assert torch.allclose(counter_cpu, self.expert_num_tokens_cpu)
             return batched_hidden_states_cpu.to("cuda")
 
-        def _gather(
-            self, batched_outputs: torch.Tensor, gather_outputs: torch.Tensor
-        ) -> torch.Tensor:
+        def _gather(self, batched_outputs: torch.Tensor, gather_outputs: torch.Tensor) -> torch.Tensor:
             batched_outputs_cpu = batched_outputs.to("cpu")
             gather_outputs_cpu = torch.zeros_like(gather_outputs)
 
@@ -1047,9 +990,7 @@ def test_batched_fused_marlin_moe(
             md = gather_outputs_cpu.size(0)
             for t_idx in range(md):
                 token = None
-                for topk_id, topk_weight in zip(
-                    self.topk_ids_cpu[t_idx], self.topk_weights_cpu[t_idx]
-                ):
+                for topk_id, topk_weight in zip(self.topk_ids_cpu[t_idx], self.topk_weights_cpu[t_idx]):
                     pos_in_batch = counter_cpu[topk_id]
                     t = batched_outputs_cpu[topk_id, pos_in_batch] * topk_weight
                     if token is None:
@@ -1062,9 +1003,7 @@ def test_batched_fused_marlin_moe(
             gather_outputs.copy_(gather_outputs_cpu)
             return gather_outputs
 
-        def run(
-            self, hidden_states: torch.Tensor, fused_marlin_moe_kwargs: dict[Any, Any]
-        ) -> torch.Tensor:
+        def run(self, hidden_states: torch.Tensor, fused_marlin_moe_kwargs: dict[Any, Any]) -> torch.Tensor:
             assert hidden_states.ndim == 2
             assert self.is_valid()
 

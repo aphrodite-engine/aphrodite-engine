@@ -43,9 +43,7 @@ model_pairs = [
 
 @pytest.mark.flaky(reruns=2)
 @pytest.mark.skipif(
-    not is_quant_method_supported("gptq_marlin_24")
-    or current_platform.is_rocm()
-    or not current_platform.is_cuda(),
+    not is_quant_method_supported("gptq_marlin_24") or current_platform.is_rocm() or not current_platform.is_cuda(),
     reason="Marlin24 is not supported on this GPU type.",
 )
 @pytest.mark.parametrize("model_pair", model_pairs)
@@ -60,19 +58,11 @@ def test_models(
     max_tokens: int,
     num_logprobs: int,
 ) -> None:
-    with aphrodite_runner(
-        model_pair.model_marlin, dtype=dtype, quantization="gptq_marlin_24"
-    ) as marlin_24_model:
-        marlin_24_outputs = marlin_24_model.generate_greedy_logprobs(
-            example_prompts, max_tokens, num_logprobs
-        )
+    with aphrodite_runner(model_pair.model_marlin, dtype=dtype, quantization="gptq_marlin_24") as marlin_24_model:
+        marlin_24_outputs = marlin_24_model.generate_greedy_logprobs(example_prompts, max_tokens, num_logprobs)
 
-    with aphrodite_runner(
-        model_pair.model_gptq, dtype=dtype, quantization="gptq"
-    ) as gptq_model:
-        gptq_outputs = gptq_model.generate_greedy_logprobs(
-            example_prompts, max_tokens, num_logprobs
-        )
+    with aphrodite_runner(model_pair.model_gptq, dtype=dtype, quantization="gptq") as gptq_model:
+        gptq_outputs = gptq_model.generate_greedy_logprobs(example_prompts, max_tokens, num_logprobs)
 
     check_logprobs_close(
         outputs_0_lst=gptq_outputs,

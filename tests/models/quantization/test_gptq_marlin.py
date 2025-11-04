@@ -34,9 +34,7 @@ MODELS = [
 
 @pytest.mark.flaky(reruns=3)
 @pytest.mark.skipif(
-    not is_quant_method_supported("gptq_marlin")
-    or current_platform.is_rocm()
-    or not current_platform.is_cuda(),
+    not is_quant_method_supported("gptq_marlin") or current_platform.is_rocm() or not current_platform.is_cuda(),
     reason="gptq_marlin is not supported on this GPU type.",
 )
 @pytest.mark.parametrize("model", MODELS)
@@ -62,9 +60,7 @@ def test_models(
         max_model_len=MAX_MODEL_LEN,
         tensor_parallel_size=1,
     ) as gptq_marlin_model:
-        gptq_marlin_outputs = gptq_marlin_model.generate_greedy_logprobs(
-            example_prompts[:-1], max_tokens, num_logprobs
-        )
+        gptq_marlin_outputs = gptq_marlin_model.generate_greedy_logprobs(example_prompts[:-1], max_tokens, num_logprobs)
     _ROPE_DICT.clear()  # clear rope cache to avoid rope dtype error
 
     # Run gptq.
@@ -79,9 +75,7 @@ def test_models(
         max_model_len=MAX_MODEL_LEN,
         tensor_parallel_size=1,
     ) as gptq_model:
-        gptq_outputs = gptq_model.generate_greedy_logprobs(
-            example_prompts[:-1], max_tokens, num_logprobs
-        )
+        gptq_outputs = gptq_model.generate_greedy_logprobs(example_prompts[:-1], max_tokens, num_logprobs)
 
     check_logprobs_close(
         outputs_0_lst=gptq_outputs,

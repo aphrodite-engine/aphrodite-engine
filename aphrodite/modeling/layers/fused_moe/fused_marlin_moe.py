@@ -7,33 +7,29 @@ import torch
 import aphrodite._custom_ops as ops
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.moe_align_block_size import (
-    batched_moe_align_block_size, moe_align_block_size)
-from aphrodite.modeling.layers.fused_moe.prepare_finalize import (
-    MoEPrepareAndFinalizeNoEP)
+from aphrodite.modeling.layers.fused_moe.moe_align_block_size import batched_moe_align_block_size, moe_align_block_size
+from aphrodite.modeling.layers.fused_moe.prepare_finalize import MoEPrepareAndFinalizeNoEP
 from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceDelegate, TopKWeightAndReduceNoOP)
-from aphrodite.modeling.layers.fused_moe.utils import (_resize_cache,
-                                                       disable_inplace)
+    TopKWeightAndReduceDelegate,
+    TopKWeightAndReduceNoOP,
+)
+from aphrodite.modeling.layers.fused_moe.utils import _resize_cache, disable_inplace
 from aphrodite.quantization.utils.marlin_utils import (
-    marlin_make_workspace_new, marlin_moe_intermediate_size,
-    maybe_warn_marlin_atomic_add)
+    marlin_make_workspace_new,
+    marlin_moe_intermediate_size,
+    maybe_warn_marlin_atomic_add,
+)
 from aphrodite.scalar_type import ScalarType, scalar_types
 
 
-def default_activation_func(
-    activation: str, output: torch.Tensor, input: torch.Tensor
-) -> None:
+def default_activation_func(activation: str, output: torch.Tensor, input: torch.Tensor) -> None:
     if activation == "silu":
         torch.ops._C.silu_and_mul(output, input)
     elif activation == "swigluoai":
         # alpha = 1.702, limit = 7.0
         torch.ops._C.swigluoai_and_mul(output, input)
     else:
-        raise ValueError(
-            f"Unsupported activation: {activation}. "
-            "Only silu and swigluoai activations are supported."
-        )
+        raise ValueError(f"Unsupported activation: {activation}. Only silu and swigluoai activations are supported.")
 
 
 def _fused_marlin_moe(
@@ -54,9 +50,7 @@ def _fused_marlin_moe(
     expert_ids: torch.Tensor,
     num_tokens_post_padded: torch.Tensor,
     activation: str = "silu",
-    activation_func: Callable[
-        [str, torch.Tensor, torch.Tensor], None
-    ] = default_activation_func,
+    activation_func: Callable[[str, torch.Tensor, torch.Tensor], None] = default_activation_func,
     global_scale1: torch.Tensor | None = None,
     global_scale2: torch.Tensor | None = None,
     g_idx1: torch.Tensor | None = None,
@@ -99,10 +93,7 @@ def _fused_marlin_moe(
     intermediate_cache2 = _resize_cache(intermediate_cache2, (M * num_topk, N))
 
     maybe_warn_marlin_atomic_add(hidden_states.device, hidden_states.dtype)
-    use_atomic_add = (
-        hidden_states.dtype == torch.half
-        or torch.cuda.get_device_capability(hidden_states.device)[0] >= 9
-    )
+    use_atomic_add = hidden_states.dtype == torch.half or torch.cuda.get_device_capability(hidden_states.device)[0] >= 9
 
     intermediate_cache1 = ops.moe_wna16_marlin_gemm(
         hidden_states,
@@ -133,9 +124,7 @@ def _fused_marlin_moe(
         is_zp_float=False,
     )
 
-    activation_func(
-        activation, intermediate_cache2, intermediate_cache1.view(-1, 2 * N)
-    )
+    activation_func(activation, intermediate_cache2, intermediate_cache1.view(-1, 2 * N))
 
     if output is None:
         output = intermediate_cache3
@@ -190,9 +179,7 @@ def fused_marlin_moe(
     apply_router_weight_on_input: bool = False,
     global_num_experts: int = -1,
     activation: str = "silu",
-    activation_func: Callable[
-        [str, torch.Tensor, torch.Tensor], None
-    ] = default_activation_func,
+    activation_func: Callable[[str, torch.Tensor, torch.Tensor], None] = default_activation_func,
     moe_sum: Callable[[torch.Tensor, torch.Tensor], None] | None = None,
     expert_map: torch.Tensor | None = None,
     global_scale1: torch.Tensor | None = None,
@@ -388,8 +375,7 @@ def batched_fused_marlin_moe(
     """
 
     assert hidden_states.ndim == 3, (
-        f"hidden states must be batched. e.g. [B, MAX_TOKENS, K]."
-        f"But got {hidden_states.size()}"
+        f"hidden states must be batched. e.g. [B, MAX_TOKENS, K].But got {hidden_states.size()}"
     )
     if inplace:
         assert output is None, "Conflicting request."
@@ -419,8 +405,7 @@ def batched_fused_marlin_moe(
     assert hidden_states.dtype in [torch.float16, torch.bfloat16]
     assert expert_num_tokens.size(0) == E
     assert B == E, (
-        "Batch must be as big as number of experts as the tokens"
-        "are sorted into the batch/expert they belong to"
+        "Batch must be as big as number of experts as the tokensare sorted into the batch/expert they belong to"
     )
     assert w1.size(1) * 16 == K, "Hidden size mismatch w1"
     assert w2.size(2) // (num_bits // 2) == K, "Hidden size mismatch w2"
@@ -447,9 +432,7 @@ def batched_fused_marlin_moe(
 
     # TODO (varun): This can be avoided by plumbing the marlin kernel to
     # ignore topk_weights when topk_weights_ptr is a nullptr.
-    topk_weights = torch.ones(
-        (M, topk), device=hidden_states.device, dtype=torch.float32
-    )
+    topk_weights = torch.ones((M, topk), device=hidden_states.device, dtype=torch.float32)
 
     assert activation is not None
     output = _fused_marlin_moe(

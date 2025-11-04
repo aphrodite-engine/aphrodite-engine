@@ -7,26 +7,22 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from multiprocessing import connection
 from multiprocessing.process import BaseProcess
-from typing import (TYPE_CHECKING, Any, Generic, Optional, TypeVar, Union,
-                    overload)
+from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar, Union, overload
 
 import torch
 from torch.autograd.profiler import record_function
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
-from aphrodite.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
-                                       usage_message)
-from aphrodite.utils.network_utils import (get_open_port,
-                                           get_open_zmq_ipc_path, get_tcp_uri)
+from aphrodite.usage.usage_lib import UsageContext, is_usage_stats_enabled, usage_message
+from aphrodite.utils.network_utils import get_open_port, get_open_zmq_ipc_path, get_tcp_uri
 from aphrodite.utils.system_utils import kill_process_tree
 
 if TYPE_CHECKING:
     import numpy as np
 
     from aphrodite.v1.engine.coordinator import DPCoordinator
-    from aphrodite.v1.engine.utils import (CoreEngineActorManager,
-                                           CoreEngineProcManager)
+    from aphrodite.v1.engine.utils import CoreEngineActorManager, CoreEngineProcManager
 
 logger = init_logger(__name__)
 
@@ -139,11 +135,7 @@ def get_engine_client_zmq_addr(local_only: bool, host: str, port: int = 0) -> st
     Otherwise, the provided host and port will be used to construct a TCP
     address (port == 0 means assign an available port)."""
 
-    return (
-        get_open_zmq_ipc_path()
-        if local_only
-        else (get_tcp_uri(host, port or get_open_port()))
-    )
+    return get_open_zmq_ipc_path() if local_only else (get_tcp_uri(host, port or get_open_port()))
 
 
 class APIServerProcessManager:
@@ -184,9 +176,7 @@ class APIServerProcessManager:
         spawn_context = multiprocessing.get_context("spawn")
         self.processes: list[BaseProcess] = []
 
-        for i, in_addr, out_addr in zip(
-            range(num_servers), input_addresses, output_addresses
-        ):
+        for i, in_addr, out_addr in zip(range(num_servers), input_addresses, output_addresses):
             client_config = {
                 "input_address": in_addr,
                 "output_address": out_addr,
@@ -216,8 +206,7 @@ class APIServerProcessManager:
 
 def wait_for_completion_or_failure(
     api_server_manager: APIServerProcessManager,
-    engine_manager: Union["CoreEngineProcManager", "CoreEngineActorManager"]
-    | None = None,
+    engine_manager: Union["CoreEngineProcManager", "CoreEngineActorManager"] | None = None,
     coordinator: Optional["DPCoordinator"] = None,
 ) -> None:
     """Wait for all processes to complete or detect if any fail.
@@ -232,16 +221,13 @@ def wait_for_completion_or_failure(
         coordinator: The coordinator for data parallel.
     """
 
-    from aphrodite.v1.engine.utils import (CoreEngineActorManager,
-                                           CoreEngineProcManager)
+    from aphrodite.v1.engine.utils import CoreEngineActorManager, CoreEngineProcManager
 
     try:
         logger.info("Waiting for API servers to complete ...")
         # Create a mapping of sentinels to their corresponding processes
         # for efficient lookup
-        sentinel_to_proc: dict[Any, BaseProcess] = {
-            proc.sentinel: proc for proc in api_server_manager.processes
-        }
+        sentinel_to_proc: dict[Any, BaseProcess] = {proc.sentinel: proc for proc in api_server_manager.processes}
 
         if coordinator:
             sentinel_to_proc[coordinator.proc.sentinel] = coordinator.proc
@@ -264,10 +250,7 @@ def wait_for_completion_or_failure(
 
                 # Check if process exited with error
                 if proc.exitcode != 0:
-                    raise RuntimeError(
-                        f"Process {proc.name} (PID: {proc.pid}) "
-                        f"died with exit code {proc.exitcode}"
-                    )
+                    raise RuntimeError(f"Process {proc.name} (PID: {proc.pid}) died with exit code {proc.exitcode}")
 
             if actor_run_refs:
                 import ray
@@ -310,9 +293,7 @@ def shutdown(procs: list[BaseProcess]):
             kill_process_tree(pid)
 
 
-def copy_slice(
-    from_tensor: torch.Tensor, to_tensor: torch.Tensor, length: int
-) -> torch.Tensor:
+def copy_slice(from_tensor: torch.Tensor, to_tensor: torch.Tensor, length: int) -> torch.Tensor:
     """
     Copy the first length elements of a tensor into another tensor in a
     non-blocking manner.
@@ -324,9 +305,7 @@ def copy_slice(
     return to_tensor[:length].copy_(from_tensor[:length], non_blocking=True)
 
 
-def report_usage_stats(
-    aphrodite_config, usage_context: UsageContext = UsageContext.ENGINE_CONTEXT
-) -> None:
+def report_usage_stats(aphrodite_config, usage_context: UsageContext = UsageContext.ENGINE_CONTEXT) -> None:
     """Report usage statistics if enabled."""
 
     if not is_usage_stats_enabled():

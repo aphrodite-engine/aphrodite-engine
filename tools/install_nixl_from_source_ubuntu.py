@@ -150,9 +150,7 @@ def build_and_install_prerequisites(args):
     ucx_lib_path = os.path.join(ucx_install_path, "lib")
     ucx_plugin_path = os.path.join(ucx_lib_path, "ucx")
     existing_ld_path = os.environ.get("LD_LIBRARY_PATH", "")
-    build_env["LD_LIBRARY_PATH"] = (
-        f"{ucx_lib_path}:{ucx_plugin_path}:{existing_ld_path}".strip(":")
-    )
+    build_env["LD_LIBRARY_PATH"] = f"{ucx_lib_path}:{ucx_plugin_path}:{existing_ld_path}".strip(":")
     print(f"--> Using LD_LIBRARY_PATH: {build_env['LD_LIBRARY_PATH']}", flush=True)
 
     temp_wheel_dir = os.path.join(ROOT_DIR, "temp_wheelhouse")
@@ -210,9 +208,7 @@ def build_and_install_prerequisites(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Build and install UCX and NIXL dependencies."
-    )
+    parser = argparse.ArgumentParser(description="Build and install UCX and NIXL dependencies.")
     parser.add_argument(
         "--force-reinstall",
         action="store_true",

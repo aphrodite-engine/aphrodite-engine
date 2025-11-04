@@ -45,10 +45,7 @@ def test_qwen2_5_vl_evs_functionality(
     """
 
     # Sample frames from video assets
-    sampled_vids = [
-        sample_frames_from_video(asset.np_ndarrays, num_frames)
-        for asset in video_assets
-    ]
+    sampled_vids = [sample_frames_from_video(asset.np_ndarrays, num_frames) for asset in video_assets]
 
     prompts = [VIDEO_PROMPTS[0]]
     videos = [sampled_vids[0]]
@@ -102,10 +99,7 @@ def test_qwen2_5_vl_evs_batched_videos(
     3. The model doesn't crash when processing multiple videos simultaneously
     """
     # Sample frames from video assets
-    sampled_vids = [
-        sample_frames_from_video(asset.np_ndarrays, num_frames)
-        for asset in video_assets
-    ]
+    sampled_vids = [sample_frames_from_video(asset.np_ndarrays, num_frames) for asset in video_assets]
 
     # Test batched videos
     prompts = [VIDEO_PROMPTS[0], VIDEO_PROMPTS[0]]

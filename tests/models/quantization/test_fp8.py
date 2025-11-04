@@ -68,9 +68,7 @@ def test_models(
         pytest.skip(f"{kv_cache_dtype} is currently not supported on ROCm/HIP.")
 
     if not flash_attn_supports_fp8():
-        pytest.skip(
-            f"{kv_cache_dtype} is not supported on this GPU type with {backend} attention."
-        )
+        pytest.skip(f"{kv_cache_dtype} is not supported on this GPU type with {backend} attention.")
 
     with monkeypatch.context() as m:
         m.setenv("TOKENIZERS_PARALLELISM", "true")
@@ -86,9 +84,7 @@ def test_models(
             enforce_eager=enforce_eager,
             kv_cache_dtype="auto",
         ) as aphrodite_model:
-            baseline_outputs = aphrodite_model.generate_greedy_logprobs(
-                example_prompts, max_tokens, NUM_LOG_PROBS
-            )
+            baseline_outputs = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, NUM_LOG_PROBS)
 
         with aphrodite_runner(
             test_model,
@@ -97,9 +93,7 @@ def test_models(
             enforce_eager=enforce_eager,
             kv_cache_dtype=kv_cache_dtype,
         ) as aphrodite_model:
-            test_outputs = aphrodite_model.generate_greedy_logprobs(
-                example_prompts, max_tokens, NUM_LOG_PROBS
-            )
+            test_outputs = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, NUM_LOG_PROBS)
 
         check_logprobs_close(
             outputs_0_lst=baseline_outputs,
@@ -149,9 +143,7 @@ def test_cpu_models(
             dtype="bfloat16",
             kv_cache_dtype="auto",
         ) as aphrodite_model:
-            baseline_outputs = aphrodite_model.generate_greedy_logprobs(
-                example_prompts, max_tokens, NUM_LOG_PROBS
-            )
+            baseline_outputs = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, NUM_LOG_PROBS)
 
         with aphrodite_runner(
             test_model,
@@ -159,9 +151,7 @@ def test_cpu_models(
             dtype="bfloat16",
             kv_cache_dtype=kv_cache_dtype,
         ) as aphrodite_model:
-            test_outputs = aphrodite_model.generate_greedy_logprobs(
-                example_prompts, max_tokens, NUM_LOG_PROBS
-            )
+            test_outputs = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, NUM_LOG_PROBS)
 
         check_logprobs_close(
             outputs_0_lst=baseline_outputs,

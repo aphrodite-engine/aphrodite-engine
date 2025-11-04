@@ -9,10 +9,8 @@ import torch.nn as nn
 
 import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
-from aphrodite.distributed import (ensure_model_parallel_initialized,
-                                   init_distributed_environment)
-from aphrodite.distributed.kv_transfer import (ensure_kv_transfer_initialized,
-                                               has_kv_transfer_group)
+from aphrodite.distributed import ensure_model_parallel_initialized, init_distributed_environment
+from aphrodite.distributed.kv_transfer import ensure_kv_transfer_initialized, has_kv_transfer_group
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.modeling import set_random_seed
@@ -22,8 +20,7 @@ from aphrodite.tasks import SupportedTask
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
 from aphrodite.v1.core.sched.output import SchedulerOutput
-from aphrodite.v1.kv_cache_interface import (AttentionSpec, KVCacheConfig,
-                                             KVCacheSpec)
+from aphrodite.v1.kv_cache_interface import AttentionSpec, KVCacheConfig, KVCacheSpec
 from aphrodite.v1.outputs import ModelRunnerOutput
 from aphrodite.v1.utils import report_usage_stats
 from aphrodite.v1.worker.utils import bind_kv_cache
@@ -98,9 +95,7 @@ class TPUWorker:
             # For TPU, we can only have 1 active profiler session for 1 profiler
             # server. So we only profile on rank0.
             self.profile_dir = envs.APHRODITE_TORCH_PROFILER_DIR
-            logger.info(
-                "Profiling enabled. Traces will be saved to: %s", self.profile_dir
-            )
+            logger.info("Profiling enabled. Traces will be saved to: %s", self.profile_dir)
 
         if self.model_config.seed is None:
             self.model_config.seed = 0
@@ -116,8 +111,7 @@ class TPUWorker:
         # `xla_tpu_force_1d_allreduce_at_chunk_count` is a temporary solution to
         # fix this. It will be removed after the bug in XLA compiler is fixed.
         os.environ["LIBTPU_INIT_ARGS"] = (
-            os.environ.get("LIBTPU_INIT_ARGS", "")
-            + " --xla_tpu_force_1d_allreduce_at_chunk_count=1"
+            os.environ.get("LIBTPU_INIT_ARGS", "") + " --xla_tpu_force_1d_allreduce_at_chunk_count=1"
             " --xla_jf_conv_input_fusion=False"
         )
         # --xla_jf_conv_input_fusion=False is used to improve the perf of
@@ -157,15 +151,11 @@ class TPUWorker:
         # cache during development is recommended.We can disable it by
         # `export APHRODITE_XLA_CACHE_PATH=`
         if envs.APHRODITE_XLA_CACHE_PATH:
-            per_rank_path = os.path.join(
-                envs.APHRODITE_XLA_CACHE_PATH, f"tp{world_size}_rank{rank}"
-            )
+            per_rank_path = os.path.join(envs.APHRODITE_XLA_CACHE_PATH, f"tp{world_size}_rank{rank}")
             xr.initialize_cache(per_rank_path, readonly=False)
 
         # Init ModelRunner here, so that we have access to self.device.
-        self.model_runner = TPUModelRunner(
-            self.aphrodite_config, self.device, self.original_parallel_config
-        )
+        self.model_runner = TPUModelRunner(self.aphrodite_config, self.device, self.original_parallel_config)
 
         if rank == 0:
             # If usage stat is enabled, collect relevant info.
@@ -183,9 +173,7 @@ class TPUWorker:
                 tpu_kv_cache = torch.tensor([], dtype=dtype).to(self.device)
                 kv_caches[layer_name] = tpu_kv_cache
             else:
-                raise NotImplementedError(
-                    f"Unsupported KV cache spec '{type(layer_spec)}'"
-                )
+                raise NotImplementedError(f"Unsupported KV cache spec '{type(layer_spec)}'")
 
         runner_kv_caches: list[torch.Tensor] = []
         bind_kv_cache(
@@ -234,15 +222,11 @@ class TPUWorker:
         profiled = current_mem * 1.02
 
         # Calculate the TPU KV cache size based on profiling.
-        usable_memory_size = int(
-            total_memory_size * self.cache_config.gpu_memory_utilization
-        )
+        usable_memory_size = int(total_memory_size * self.cache_config.gpu_memory_utilization)
         tpu_kv_cache_bytes = max(usable_memory_size - profiled, 0)
         head_size = self.model_config.get_head_size()
         if head_size > 0:
-            padded_head_size = (
-                cdiv(head_size, TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
-            )
+            padded_head_size = cdiv(head_size, TPU_HEAD_SIZE_ALIGNMENT) * TPU_HEAD_SIZE_ALIGNMENT
             if padded_head_size != head_size:
                 logger.warning_once("head size is padded to %d", padded_head_size)
             # We adjust the usable memory size for the KV cache to prevent OOM
@@ -331,9 +315,7 @@ class TPUWorker:
             distributed_init_method=distributed_init_method,
             backend=current_platform.dist_backend,
         )
-        ensure_model_parallel_initialized(
-            parallel_config.tensor_parallel_size, parallel_config.pipeline_parallel_size
-        )
+        ensure_model_parallel_initialized(parallel_config.tensor_parallel_size, parallel_config.pipeline_parallel_size)
 
         ensure_kv_transfer_initialized(aphrodite_config)
 

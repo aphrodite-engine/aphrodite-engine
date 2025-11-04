@@ -7,8 +7,7 @@ import aphrodite.envs as envs
 from aphrodite.config import ParallelConfig
 from aphrodite.distributed import get_dp_group, get_tensor_model_parallel_rank
 from aphrodite.logger import init_logger
-from aphrodite.quantization.utils.ocp_mx_utils import (OCP_MX_DTYPES,
-                                                       OCP_MX_Scheme)
+from aphrodite.quantization.utils.ocp_mx_utils import OCP_MX_DTYPES, OCP_MX_Scheme
 from aphrodite.quantization.utils.quant_utils import GroupShape
 from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe
 from aphrodite.utils.import_utils import has_triton_kernels
@@ -20,10 +19,7 @@ if has_triton_kernels():
     try:
         from triton_kernels.matmul_ogs import PrecisionConfig
     except ImportError:
-        logger.error(
-            "Failed to import Triton kernels. Please make sure your triton "
-            "version is compatible."
-        )
+        logger.error("Failed to import Triton kernels. Please make sure your triton version is compatible.")
 
 
 def _get_config_dtype_str(
@@ -167,9 +163,7 @@ class FusedMoEQuantConfig:
     _w2: FusedMoEQuantDesc
 
     def __post_init__(self):
-        assert not self.per_act_token_quant or self.block_shape is None, (
-            "illegal quantization"
-        )
+        assert not self.per_act_token_quant or self.block_shape is None, "illegal quantization"
 
     #
     # Convenience accessors for various properties.
@@ -300,9 +294,7 @@ class FusedMoEQuantConfig:
             ):
                 self._ocp_mx_scheme = None
             else:
-                ocp_mx_scheme = OCP_MX_Scheme.from_quant_dtype(
-                    self._a1.dtype, self._w1.dtype
-                )
+                ocp_mx_scheme = OCP_MX_Scheme.from_quant_dtype(self._a1.dtype, self._w1.dtype)
 
                 if ocp_mx_scheme is not None:
                     ocp_mx_scheme = ocp_mx_scheme.value
@@ -432,18 +424,12 @@ class FusedMoEQuantConfig:
         if weight_dtype is None:
             weight_dtype = quant_dtype
 
-        a_shape, w_shape = _quant_flags_to_group_shape(
-            quant_dtype, per_act_token_quant, per_out_ch_quant, block_shape
-        )
+        a_shape, w_shape = _quant_flags_to_group_shape(quant_dtype, per_act_token_quant, per_out_ch_quant, block_shape)
         quant_config = FusedMoEQuantConfig(
             _a1=FusedMoEQuantDesc(quant_dtype, a_shape, a1_scale, a1_gscale),
             _a2=FusedMoEQuantDesc(quant_dtype, a_shape, a2_scale, a2_gscale),
-            _w1=FusedMoEQuantDesc(
-                weight_dtype, w_shape, w1_scale, g1_alphas, w1_zp, w1_bias
-            ),
-            _w2=FusedMoEQuantDesc(
-                weight_dtype, w_shape, w2_scale, g2_alphas, w2_zp, w2_bias
-            ),
+            _w1=FusedMoEQuantDesc(weight_dtype, w_shape, w1_scale, g1_alphas, w1_zp, w1_bias),
+            _w2=FusedMoEQuantDesc(weight_dtype, w_shape, w2_scale, g2_alphas, w2_zp, w2_bias),
         )
         assert quant_config.per_act_token_quant == per_act_token_quant
         assert quant_config.per_out_ch_quant == per_out_ch_quant
@@ -670,19 +656,14 @@ class FusedMoEParallelConfig:
 
     @property
     def use_deepep_ht_kernels(self):
-        return (
-            self.use_all2all_kernels
-            and self.all2all_backend == "deepep_high_throughput"
-        )
+        return self.use_all2all_kernels and self.all2all_backend == "deepep_high_throughput"
 
     @property
     def use_deepep_ll_kernels(self):
         return self.use_all2all_kernels and self.all2all_backend == "deepep_low_latency"
 
     @staticmethod
-    def flatten_tp_across_dp(
-        tp_size: int, dp_size: int, dp_rank: int
-    ) -> tuple[int, int]:
+    def flatten_tp_across_dp(tp_size: int, dp_size: int, dp_rank: int) -> tuple[int, int]:
         tp_rank = 0 if tp_size == 1 else get_tensor_model_parallel_rank()
         # There are actually dp_size * tp_size devices. Update tp_size
         # and tp_rank so we shard across all devices.
@@ -691,9 +672,7 @@ class FusedMoEParallelConfig:
         return flatten_tp_size, flatten_tp_rank
 
     @staticmethod
-    def make(
-        tp_size_: int, dp_size_: int, aphrodite_parallel_config: ParallelConfig
-    ) -> "FusedMoEParallelConfig":
+    def make(tp_size_: int, dp_size_: int, aphrodite_parallel_config: ParallelConfig) -> "FusedMoEParallelConfig":
         """
         Determine MoE parallel configuration. Based on the input `tp_size_`,
         `dp_size_` and aphrodite's parallel config, determine what
@@ -769,9 +748,7 @@ class FusedMoEParallelConfig:
 
         dp_size = dp_size_
         dp_rank = get_dp_group().rank_in_group if dp_size > 1 else 0
-        tp_size, tp_rank = FusedMoEParallelConfig.flatten_tp_across_dp(
-            tp_size_, dp_size_, dp_rank
-        )
+        tp_size, tp_rank = FusedMoEParallelConfig.flatten_tp_across_dp(tp_size_, dp_size_, dp_rank)
 
         if not use_ep:
             return FusedMoEParallelConfig(
@@ -825,9 +802,7 @@ class FusedMoEConfig:
 
     def __post_init__(self):
         if self.dp_size > 1:
-            logger.debug_once(
-                "Using FusedMoEConfig::max_num_tokens=%d", self.max_num_tokens
-            )
+            logger.debug_once("Using FusedMoEConfig::max_num_tokens=%d", self.max_num_tokens)
 
         assert self.max_num_tokens > 0
 

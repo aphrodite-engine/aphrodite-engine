@@ -5,8 +5,7 @@ import time
 import numpy as np
 import torch.distributed as dist
 
-from aphrodite.distributed.device_communicators.shm_broadcast import (
-    MessageQueue)
+from aphrodite.distributed.device_communicators.shm_broadcast import MessageQueue
 from aphrodite.distributed.utils import StatelessProcessGroup
 from aphrodite.utils.network_utils import get_open_port
 from aphrodite.utils.system_utils import update_environment_variables
@@ -70,9 +69,7 @@ def worker_fn():
 
     for pg in [dist.group.WORLD, stateless_pg]:
         writer_rank = 2
-        broadcaster = MessageQueue.create_from_process_group(
-            pg, 40 * 1024, 2, writer_rank
-        )
+        broadcaster = MessageQueue.create_from_process_group(pg, 40 * 1024, 2, writer_rank)
         if rank == writer_rank:
             seed = random.randint(0, 1000)
             dist.broadcast_object_list([seed], writer_rank)

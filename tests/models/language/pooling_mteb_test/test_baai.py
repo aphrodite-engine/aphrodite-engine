@@ -1,10 +1,13 @@
 import pytest
 
-from tests.models.language.pooling.embed_utils import (
-    correctness_test_embed_models)
-from tests.models.utils import (CLSPoolingEmbedModelInfo,
-                                CLSPoolingRerankModelInfo, EmbedModelInfo,
-                                LASTPoolingEmbedModelInfo, RerankModelInfo)
+from tests.models.language.pooling.embed_utils import correctness_test_embed_models
+from tests.models.utils import (
+    CLSPoolingEmbedModelInfo,
+    CLSPoolingRerankModelInfo,
+    EmbedModelInfo,
+    LASTPoolingEmbedModelInfo,
+    RerankModelInfo,
+)
 
 from .mteb_utils import mteb_test_embed_models, mteb_test_rerank_models
 
@@ -16,42 +19,18 @@ MODELS = [
         mteb_score=0.779336792,
         enable_test=True,
     ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-base-zh", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-small-en", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-small-zh", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-large-en", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-large-zh", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-large-zh-noinstruct", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-base-en-v1.5", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-base-zh-v1.5", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-small-en-v1.5", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-small-zh-v1.5", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-large-en-v1.5", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "BAAI/bge-large-zh-v1.5", architecture="BertModel", enable_test=False
-    ),
+    CLSPoolingEmbedModelInfo("BAAI/bge-base-zh", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-small-en", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-small-zh", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-large-en", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-large-zh", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-large-zh-noinstruct", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-base-en-v1.5", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-base-zh-v1.5", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-small-en-v1.5", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-small-zh-v1.5", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-large-en-v1.5", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("BAAI/bge-large-zh-v1.5", architecture="BertModel", enable_test=False),
     ########## XLMRobertaModel
     CLSPoolingEmbedModelInfo(
         "BAAI/bge-m3",
@@ -96,14 +75,10 @@ def test_embed_models_mteb(hf_runner, aphrodite_runner, model_info: EmbedModelIn
 
 
 @pytest.mark.parametrize("model_info", MODELS)
-def test_embed_models_correctness(
-    hf_runner, aphrodite_runner, model_info: EmbedModelInfo, example_prompts
-) -> None:
+def test_embed_models_correctness(hf_runner, aphrodite_runner, model_info: EmbedModelInfo, example_prompts) -> None:
     correctness_test_embed_models(hf_runner, aphrodite_runner, model_info, example_prompts)
 
 
 @pytest.mark.parametrize("model_info", RERANK_MODELS)
-def test_rerank_models_mteb(
-    hf_runner, aphrodite_runner, model_info: RerankModelInfo
-) -> None:
+def test_rerank_models_mteb(hf_runner, aphrodite_runner, model_info: RerankModelInfo) -> None:
     mteb_test_rerank_models(hf_runner, aphrodite_runner, model_info)

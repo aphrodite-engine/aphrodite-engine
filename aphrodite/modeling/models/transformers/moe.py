@@ -180,9 +180,7 @@ class MoEMixin(MixtureOfExperts):
         top_k = getattr_iter(text_config, ["num_experts_per_tok", "top_k"], None)
         assert top_k is not None
         hidden_size = text_config.hidden_size
-        intermediate_size = getattr_iter(
-            text_config, ["moe_intermediate_size", "intermediate_size"], None
-        )
+        intermediate_size = getattr_iter(text_config, ["moe_intermediate_size", "intermediate_size"], None)
         assert intermediate_size is not None
 
         # If there are shared experts, the results are
@@ -301,9 +299,7 @@ class MoEMixin(MixtureOfExperts):
                     # If results are not all-reduced in FusedMoE, ensure they
                     # are all-reduced at the end of mlp.forward() if tensor
                     # parallel or expert parallel is enabled
-                    if not reduce_results and (
-                        fused_experts.tp_size > 1 or fused_experts.ep_size > 1
-                    ):
+                    if not reduce_results and (fused_experts.tp_size > 1 or fused_experts.ep_size > 1):
                         add_all_reduce(mlp)
                 else:
                     _recursive_replace(child_module, prefix=qual_name)

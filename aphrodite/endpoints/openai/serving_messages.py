@@ -1,31 +1,33 @@
 import json
 from collections.abc import AsyncGenerator
-from typing import Any, Optional, Union
+from typing import Any
 
 import jinja2
 from fastapi import Request
 
 from aphrodite.config import ModelConfig
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (AnthropicContentBlockDelta,
-                                                 AnthropicContentBlockStart,
-                                                 AnthropicContentBlockStop,
-                                                 AnthropicError,
-                                                 AnthropicImageBlock,
-                                                 AnthropicMessage,
-                                                 AnthropicMessageDelta,
-                                                 AnthropicMessagesRequest,
-                                                 AnthropicMessagesResponse,
-                                                 AnthropicMessageStart,
-                                                 AnthropicMessageStop,
-                                                 AnthropicTextBlock,
-                                                 AnthropicThinkingBlock,
-                                                 AnthropicToolResultBlock,
-                                                 AnthropicToolUseBlock,
-                                                 AnthropicUsage,
-                                                 ChatCompletionMessageParam,
-                                                 ChatCompletionRequest,
-                                                 ErrorResponse)
+from aphrodite.endpoints.openai.protocol import (
+    AnthropicContentBlockDelta,
+    AnthropicContentBlockStart,
+    AnthropicContentBlockStop,
+    AnthropicError,
+    AnthropicImageBlock,
+    AnthropicMessage,
+    AnthropicMessageDelta,
+    AnthropicMessagesRequest,
+    AnthropicMessagesResponse,
+    AnthropicMessageStart,
+    AnthropicMessageStop,
+    AnthropicTextBlock,
+    AnthropicThinkingBlock,
+    AnthropicToolResultBlock,
+    AnthropicToolUseBlock,
+    AnthropicUsage,
+    ChatCompletionMessageParam,
+    ChatCompletionRequest,
+    ErrorResponse,
+)
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
@@ -47,12 +49,12 @@ class OpenAIServingMessages(OpenAIServing):
         models: OpenAIServingModels,
         response_role: str,
         *,
-        request_logger: Optional[RequestLogger],
-        chat_template: Optional[str],
+        request_logger: RequestLogger | None,
+        chat_template: str | None,
         return_tokens_as_token_ids: bool = False,
         reasoning_parser: str = "",
         enable_auto_tools: bool = False,
-        tool_parser: Optional[str] = None,
+        tool_parser: str | None = None,
         log_error_stack: bool = False,
     ) -> None:
         super().__init__(
@@ -61,15 +63,12 @@ class OpenAIServingMessages(OpenAIServing):
             models=models,
             request_logger=request_logger,
             return_tokens_as_token_ids=return_tokens_as_token_ids,
-            log_error_stack=log_error_stack
+            log_error_stack=log_error_stack,
         )
 
         self.response_role = response_role
         self.chat_template = chat_template
-        self._primary_model_name = (
-            self.models.base_model_paths[0].name if
-            self.models.base_model_paths else None
-        )
+        self._primary_model_name = self.models.base_model_paths[0].name if self.models.base_model_paths else None
         self.enable_auto_tools = enable_auto_tools
         self.tool_parser = tool_parser
         self.reasoning_parser = reasoning_parser
@@ -90,20 +89,17 @@ class OpenAIServingMessages(OpenAIServing):
             tool_parser=tool_parser,
         )
 
-        self.default_sampling_params = \
-            self.model_config.get_diff_sampling_param()
+        self.default_sampling_params = self.model_config.get_diff_sampling_param()
         if self.default_sampling_params:
             source = self.model_config.generation_config
             source = "model" if source == "auto" else source
-            logger.info("Using default messages sampling params from %s: %s",
-                        source, self.default_sampling_params)
+            logger.info("Using default messages sampling params from %s: %s", source, self.default_sampling_params)
 
     async def create_message(
         self,
         request: AnthropicMessagesRequest,
-        raw_request: Optional[Request] = None,
-    ) -> Union[AsyncGenerator[str, None], AnthropicMessagesResponse,
-               ErrorResponse]:
+        raw_request: Request | None = None,
+    ) -> AsyncGenerator[str, None] | AnthropicMessagesResponse | ErrorResponse:
         """
         Main entry point for Anthropic Messages API.
 
@@ -123,25 +119,19 @@ class OpenAIServingMessages(OpenAIServing):
             chat_request = self._convert_to_chat_request(request)
 
             # Delegate to the chat serving implementation
-            chat_response = await self.chat_serving.create_chat_completion(
-                chat_request, raw_request
-            )
+            chat_response = await self.chat_serving.create_chat_completion(chat_request, raw_request)
 
             # Handle streaming vs non-streaming responses
             if request.stream:
-                return self._convert_streaming_response(
-                    chat_response, request, raw_request
-                )
+                return self._convert_streaming_response(chat_response, request, raw_request)
             else:
-                return self._convert_response(
-                    chat_response, request, raw_request)
+                return self._convert_response(chat_response, request, raw_request)
 
-        except (ValueError, TypeError, RuntimeError,
-                jinja2.TemplateError) as e:
+        except (ValueError, TypeError, RuntimeError, jinja2.TemplateError) as e:
             logger.exception("Error in Messages API processing")
             return self.create_error_response(str(e))
 
-    async def _check_model(self, request) -> Optional[ErrorResponse]:
+    async def _check_model(self, request) -> ErrorResponse | None:
         """
         Override model checking to allow Claude model name aliases.
         """
@@ -152,7 +142,7 @@ class OpenAIServingMessages(OpenAIServing):
         # For non-Claude models, use the base implementation
         return await super()._check_model(request)
 
-    def _is_claude_model_alias(self, model_name: Optional[str]) -> bool:
+    def _is_claude_model_alias(self, model_name: str | None) -> bool:
         """
         Check if the model name is a Claude alias that should be routed
         to the primary model.
@@ -161,7 +151,7 @@ class OpenAIServingMessages(OpenAIServing):
             return False
         return model_name.startswith("claude-")
 
-    def _is_model_supported(self, model_name: Optional[str]) -> bool:
+    def _is_model_supported(self, model_name: str | None) -> bool:
         """
         Override model support checking to allow Claude aliases.
         """
@@ -175,11 +165,7 @@ class OpenAIServingMessages(OpenAIServing):
         # For non-Claude models, use the base implementation
         return super()._is_model_supported(model_name)
 
-    def _get_model_name(
-        self,
-        model_name: Optional[str] = None,
-        lora_request: Optional[LoRARequest] = None
-    ) -> str:
+    def _get_model_name(self, model_name: str | None = None, lora_request: LoRARequest | None = None) -> str:
         """
         Override model name resolution to handle Claude aliases.
         """
@@ -190,13 +176,11 @@ class OpenAIServingMessages(OpenAIServing):
             return self.models.base_model_paths[0].name
 
         if self._is_claude_model_alias(model_name):
-            return self._primary_model_name or \
-                self.models.base_model_paths[0].name
+            return self._primary_model_name or self.models.base_model_paths[0].name
 
         return model_name
 
-    def _convert_to_chat_request(
-        self, request: AnthropicMessagesRequest) -> ChatCompletionRequest:
+    def _convert_to_chat_request(self, request: AnthropicMessagesRequest) -> ChatCompletionRequest:
         """
         Convert Anthropic Messages request to OpenAI ChatCompletion request."""
 
@@ -207,8 +191,7 @@ class OpenAIServingMessages(OpenAIServing):
                 system_content = request.system
             else:
                 # Convert list of text blocks to string
-                system_content = "\n".join(
-                    block.text for block in request.system)
+                system_content = "\n".join(block.text for block in request.system)
             messages.append({"role": "system", "content": system_content})
 
         # Convert user/assistant messages
@@ -226,8 +209,8 @@ class OpenAIServingMessages(OpenAIServing):
                     "function": {
                         "name": tool.name,
                         "description": tool.description or "",
-                        "parameters": tool.input_schema
-                    }
+                        "parameters": tool.input_schema,
+                    },
                 }
                 tools.append(openai_tool)
 
@@ -239,10 +222,7 @@ class OpenAIServingMessages(OpenAIServing):
             elif request.tool_choice.type == "any":
                 tool_choice = "auto"  # Map "any" to "auto" for OpenAI
             elif request.tool_choice.type == "tool":
-                tool_choice = {
-                    "type": "function",
-                    "function": {"name": request.tool_choice.name}
-                }
+                tool_choice = {"type": "function", "function": {"name": request.tool_choice.name}}
             # "none" maps to "none"
         elif request.tools:
             # If tools are provided but no choice specified, default to auto
@@ -290,12 +270,12 @@ class OpenAIServingMessages(OpenAIServing):
                 if isinstance(block, AnthropicTextBlock):
                     content_parts.append({"type": "text", "text": block.text})
                 elif isinstance(block, AnthropicImageBlock):
-                    content_parts.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{block.source.media_type};base64,{block.source.data}"
+                    content_parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{block.source.media_type};base64,{block.source.data}"},
                         }
-                    })
+                    )
                 elif isinstance(block, AnthropicToolResultBlock):
                     # Convert tool result to text for now
                     content_text = block.content if isinstance(block.content, str) else "Tool result"
@@ -315,14 +295,13 @@ class OpenAIServingMessages(OpenAIServing):
                     # Include thinking content in the text
                     content_text += f"<thinking>{block.thinking}</thinking>"
                 elif isinstance(block, AnthropicToolUseBlock):
-                    tool_calls.append({
-                        "id": block.id,
-                        "type": "function",
-                        "function": {
-                            "name": block.name,
-                            "arguments": json.dumps(block.input)
+                    tool_calls.append(
+                        {
+                            "id": block.id,
+                            "type": "function",
+                            "function": {"name": block.name, "arguments": json.dumps(block.input)},
                         }
-                    })
+                    )
 
             result = {"role": "assistant", "content": content_text or None}
             if tool_calls:
@@ -334,11 +313,8 @@ class OpenAIServingMessages(OpenAIServing):
         return {"role": msg.role, "content": str(msg.content)}
 
     def _convert_response(
-        self,
-        chat_response: Any,
-        request: AnthropicMessagesRequest,
-        raw_request: Optional[Request] = None
-    ) -> Union[AnthropicMessagesResponse, ErrorResponse]:
+        self, chat_response: Any, request: AnthropicMessagesRequest, raw_request: Request | None = None
+    ) -> AnthropicMessagesResponse | ErrorResponse:
         """Convert OpenAI ChatCompletion response to Anthropic Messages format."""
 
         if isinstance(chat_response, ErrorResponse):
@@ -351,34 +327,30 @@ class OpenAIServingMessages(OpenAIServing):
         content_blocks = []
 
         # Get the first choice (Anthropic doesn't support multiple choices)
-        if hasattr(chat_response, 'choices') and chat_response.choices:
+        if hasattr(chat_response, "choices") and chat_response.choices:
             choice = chat_response.choices[0]
             message = choice.message
 
             # Handle reasoning content if present
-            if hasattr(message, 'reasoning_content') and message.reasoning_content:
-                content_blocks.append(AnthropicThinkingBlock(
-                    thinking=message.reasoning_content
-                ))
+            if hasattr(message, "reasoning_content") and message.reasoning_content:
+                content_blocks.append(AnthropicThinkingBlock(thinking=message.reasoning_content))
 
             # Handle regular content
             if message.content:
                 content_blocks.append(AnthropicTextBlock(text=message.content))
 
             # Handle tool calls
-            if hasattr(message, 'tool_calls') and message.tool_calls:
+            if hasattr(message, "tool_calls") and message.tool_calls:
                 for tool_call in message.tool_calls:
-                    if hasattr(tool_call, 'function'):
+                    if hasattr(tool_call, "function"):
                         try:
                             input_data = json.loads(tool_call.function.arguments)
                         except (json.JSONDecodeError, AttributeError):
                             input_data = {}
 
-                        content_blocks.append(AnthropicToolUseBlock(
-                            id=tool_call.id,
-                            name=tool_call.function.name,
-                            input=input_data
-                        ))
+                        content_blocks.append(
+                            AnthropicToolUseBlock(id=tool_call.id, name=tool_call.function.name, input=input_data)
+                        )
 
             # Determine stop reason
             stop_reason = "end_turn"  # default
@@ -391,8 +363,7 @@ class OpenAIServingMessages(OpenAIServing):
 
         # Convert usage
         usage = AnthropicUsage(
-            input_tokens=chat_response.usage.prompt_tokens,
-            output_tokens=chat_response.usage.completion_tokens
+            input_tokens=chat_response.usage.prompt_tokens, output_tokens=chat_response.usage.completion_tokens
         )
 
         return AnthropicMessagesResponse(
@@ -400,14 +371,14 @@ class OpenAIServingMessages(OpenAIServing):
             content=content_blocks or [AnthropicTextBlock(text="")],
             model=request.model,
             stop_reason=stop_reason,
-            usage=usage
+            usage=usage,
         )
 
     async def _convert_streaming_response(
         self,
         chat_stream: AsyncGenerator[str, None],
         request: AnthropicMessagesRequest,
-        raw_request: Optional[Request] = None
+        raw_request: Request | None = None,
     ) -> AsyncGenerator[str, None]:
         """Convert OpenAI streaming response to Anthropic streaming format."""
 
@@ -448,7 +419,7 @@ class OpenAIServingMessages(OpenAIServing):
                             content=[],
                             model=request.model,
                             stop_reason=None,
-                            usage=AnthropicUsage(input_tokens=0, output_tokens=0)
+                            usage=AnthropicUsage(input_tokens=0, output_tokens=0),
                         )
 
                         start_event = AnthropicMessageStart(message=initial_message)
@@ -464,15 +435,13 @@ class OpenAIServingMessages(OpenAIServing):
                             # If this is the first content, send content_block_start
                             if not current_text:
                                 content_start = AnthropicContentBlockStart(
-                                    index=content_index,
-                                    content_block=AnthropicTextBlock(text="")
+                                    index=content_index, content_block=AnthropicTextBlock(text="")
                                 )
                                 yield f"data: {content_start.model_dump_json()}\n\n"
 
                             # Send content delta
                             content_delta = AnthropicContentBlockDelta(
-                                index=content_index,
-                                delta={"type": "text_delta", "text": delta["content"]}
+                                index=content_index, delta={"type": "text_delta", "text": delta["content"]}
                             )
                             yield f"data: {content_delta.model_dump_json()}\n\n"
 
@@ -498,20 +467,12 @@ class OpenAIServingMessages(OpenAIServing):
                         # Send message delta with usage
                         message_delta = AnthropicMessageDelta(
                             delta={},
-                            usage=AnthropicUsage(
-                                input_tokens=total_input_tokens,
-                                output_tokens=total_output_tokens
-                            )
+                            usage=AnthropicUsage(input_tokens=total_input_tokens, output_tokens=total_output_tokens),
                         )
                         yield f"data: {message_delta.model_dump_json()}\n\n"
 
         except Exception as e:
-            error_event = AnthropicError(
-                error={
-                    "type": "api_error",
-                    "message": str(e)
-                }
-            )
+            error_event = AnthropicError(error={"type": "api_error", "message": str(e)})
             yield f"data: {error_event.model_dump_json()}\n\n"
 
         # Always send message_stop at the end

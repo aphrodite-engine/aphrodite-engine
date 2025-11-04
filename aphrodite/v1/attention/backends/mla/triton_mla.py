@@ -1,20 +1,14 @@
 import torch
 
 from aphrodite import envs
-from aphrodite.attention.backends.abstract import (AttentionLayer,
-                                                   AttentionType,
-                                                   is_quantized_kv_cache)
-from aphrodite.attention.ops.triton_decode_attention import (
-    decode_attention_fwd)
+from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, is_quantized_kv_cache
+from aphrodite.attention.ops.triton_decode_attention import decode_attention_fwd
 from aphrodite.attention.ops.triton_flash_attention import triton_attention
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import (
-    aphrodite_is_batch_invariant)
+from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import HAS_TRITON
-from aphrodite.v1.attention.backends.mla.common import (MLACommonBackend,
-                                                        MLACommonImpl,
-                                                        MLACommonMetadata)
+from aphrodite.v1.attention.backends.mla.common import MLACommonBackend, MLACommonImpl, MLACommonMetadata
 
 logger = init_logger(__name__)
 
@@ -64,29 +58,21 @@ class TritonMLAImpl(MLACommonImpl[MLACommonMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "TritonMLAImpl does not support one of the following: "
-                "alibi_slopes, sliding_window, logits_soft_cap"
+                "TritonMLAImpl does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and "
-                "encoder/decoder cross-attention "
-                "are not implemented for "
-                "TritonMLAImpl"
+                "Encoder self-attention and encoder/decoder cross-attention are not implemented for TritonMLAImpl"
             )
 
         if is_quantized_kv_cache(self.kv_cache_dtype):
-            raise NotImplementedError(
-                "TritonMLA V1 with FP8 KV cache not yet supported"
-            )
+            raise NotImplementedError("TritonMLA V1 with FP8 KV cache not yet supported")
 
         self.use_triton_flash_attn = envs.APHRODITE_USE_TRITON_FLASH_ATTN
         self.triton_fa_func = triton_attention if HAS_TRITON else None
 
-    def _flash_attn_varlen_diff_headdims_rocm(
-        self, q, k, v, softmax_scale=None, **kwargs
-    ):
+    def _flash_attn_varlen_diff_headdims_rocm(self, q, k, v, softmax_scale=None, **kwargs):
         assert self.triton_fa_func is not None
 
         # Triton Attention requires a padded V
@@ -109,17 +95,9 @@ class TritonMLAImpl(MLACommonImpl[MLACommonMetadata]):
 
         return output_tensor
 
-    def _flash_attn_varlen_diff_headdims(
-        self, q, k, v, return_softmax_lse=False, softmax_scale=None, **kwargs
-    ):
-        if (
-            current_platform.is_rocm()
-            and self.use_triton_flash_attn
-            and not return_softmax_lse
-        ):
-            return self._flash_attn_varlen_diff_headdims_rocm(
-                q, k, v, softmax_scale=softmax_scale, **kwargs
-            )
+    def _flash_attn_varlen_diff_headdims(self, q, k, v, return_softmax_lse=False, softmax_scale=None, **kwargs):
+        if current_platform.is_rocm() and self.use_triton_flash_attn and not return_softmax_lse:
+            return self._flash_attn_varlen_diff_headdims_rocm(q, k, v, softmax_scale=softmax_scale, **kwargs)
         else:
             return super()._flash_attn_varlen_diff_headdims(
                 q,
@@ -149,9 +127,7 @@ class TritonMLAImpl(MLACommonImpl[MLACommonMetadata]):
         assert isinstance(q, torch.Tensor)
         B = q.shape[0]
         q_num_heads = q.shape[1]
-        o = torch.zeros(
-            B, q_num_heads, self.kv_lora_rank, dtype=q.dtype, device=q.device
-        )
+        o = torch.zeros(B, q_num_heads, self.kv_lora_rank, dtype=q.dtype, device=q.device)
         lse = torch.zeros(B, q_num_heads, dtype=q.dtype, device=q.device)
 
         # For batch invariance, use only 1 split to ensure deterministic reduction

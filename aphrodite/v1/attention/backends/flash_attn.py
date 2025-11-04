@@ -6,17 +6,22 @@ import numpy as np
 import torch
 
 from aphrodite import envs
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionImpl,
-                                                   AttentionMetadata,
-                                                   AttentionType, MultipleOf,
-                                                   is_quantized_kv_cache)
+from aphrodite.attention.backends.abstract import (
+    AttentionBackend,
+    AttentionImpl,
+    AttentionMetadata,
+    AttentionType,
+    MultipleOf,
+    is_quantized_kv_cache,
+)
 from aphrodite.attention.layer import Attention
 from aphrodite.attention.ops.common import cp_lse_ag_out_rs
 from aphrodite.attention.ops.merge_attn_states import merge_attn_states
 from aphrodite.attention.utils.fa_utils import (
-    flash_attn_supports_fp8, get_flash_attn_version,
-    is_flash_attn_varlen_func_available)
+    flash_attn_supports_fp8,
+    get_flash_attn_version,
+    is_flash_attn_varlen_func_available,
+)
 
 if is_flash_attn_varlen_func_available():
     from aphrodite.attention.utils.fa_utils import (
@@ -28,13 +33,14 @@ if is_flash_attn_varlen_func_available():
 from aphrodite.config import AphroditeConfig, get_layers_from_aphrodite_config
 from aphrodite.distributed.parallel_state import get_dcp_group
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import (
-    aphrodite_is_batch_invariant)
+from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.utils.math_utils import cdiv
-from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
-                                                   AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata,
-                                                   get_kv_cache_layout)
+from aphrodite.v1.attention.backends.utils import (
+    AttentionCGSupport,
+    AttentionMetadataBuilder,
+    CommonAttentionMetadata,
+    get_kv_cache_layout,
+)
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 logger = init_logger(__name__)
@@ -184,11 +190,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
     # to FULL_AND_PIECEWISE.
     # TODO(luka, lucas): audit FA2 as part of:
     #  https://github.com/vllm-project/vllm/issues/22945
-    cudagraph_support = (
-        AttentionCGSupport.ALWAYS
-        if get_flash_attn_version() == 3
-        else AttentionCGSupport.UNIFORM_BATCH
-    )
+    cudagraph_support = AttentionCGSupport.ALWAYS if get_flash_attn_version() == 3 else AttentionCGSupport.UNIFORM_BATCH
 
     def __init__(
         self,
@@ -203,9 +205,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
         self.cache_config = aphrodite_config.cache_config
         self.compilation_config = aphrodite_config.compilation_config
 
-        self.num_heads_q = self.model_config.get_num_attention_heads(
-            self.parallel_config
-        )
+        self.num_heads_q = self.model_config.get_num_attention_heads(self.parallel_config)
         self.num_heads_kv = self.model_config.get_num_kv_heads(self.parallel_config)
         self.kv_cache_dtype = kv_cache_spec.dtype
         self.headdim = self.model_config.get_head_size()
@@ -224,18 +224,14 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
             self.dcp_world_size = 1
             self.dcp_rank = 0
 
-        self.use_full_cuda_graph = (
-            self.compilation_config.cudagraph_mode.has_full_cudagraphs()
-        )
+        self.use_full_cuda_graph = self.compilation_config.cudagraph_mode.has_full_cudagraphs()
         self.max_cudagraph_size = self.compilation_config.max_cudagraph_capture_size
 
         if self.use_full_cuda_graph and self.aot_schedule:
             if self.max_cudagraph_size > 992:
                 # This condition derives from FA3's internal heuristic.
                 # TODO(woosuk): Support larger cudagraph sizes.
-                raise ValueError(
-                    "Capture size larger than 992 is not supported for full cuda graph."
-                )
+                raise ValueError("Capture size larger than 992 is not supported for full cuda graph.")
 
             self.scheduler_metadata = torch.zeros(
                 aphrodite_config.scheduler_config.max_num_seqs + 1,
@@ -302,14 +298,10 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
         if aphrodite_is_batch_invariant():
             max_num_splits = 1
 
-        def schedule(
-            batch_size, cu_query_lens, max_query_len, seqlens, max_seq_len, causal
-        ):
+        def schedule(batch_size, cu_query_lens, max_query_len, seqlens, max_seq_len, causal):
             cache_dtype = self.cache_config.cache_dtype
             if cache_dtype.startswith("fp8"):
-                qkv_dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(
-                    cache_dtype
-                )
+                qkv_dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(cache_dtype)
             else:
                 qkv_dtype = self.kv_cache_dtype
             if aot_schedule:
@@ -341,8 +333,7 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
 
         if self.dcp_world_size > 1:
             query_kv_lens_cpu = (
-                common_attn_metadata.query_start_loc_cpu[1:]
-                - common_attn_metadata.query_start_loc_cpu[:-1]
+                common_attn_metadata.query_start_loc_cpu[1:] - common_attn_metadata.query_start_loc_cpu[:-1]
             )
             dcp_context_kv_lens_cpu = seq_lens_cpu - query_kv_lens_cpu
             dcp_context_kv_lens_cpu = dcp_context_kv_lens_cpu // self.dcp_world_size + (
@@ -360,15 +351,9 @@ class FlashAttentionMetadataBuilder(AttentionMetadataBuilder[FlashAttentionMetad
                 causal=False,
             )
         elif use_cascade:
-            cu_prefix_query_lens = torch.tensor(
-                [0, num_actual_tokens], dtype=torch.int32, device=self.device
-            )
-            prefix_kv_lens = torch.tensor(
-                [common_prefix_len], dtype=torch.int32, device=self.device
-            )
-            suffix_kv_lens = (seq_lens_cpu[:num_reqs] - common_prefix_len).to(
-                self.device, non_blocking=True
-            )
+            cu_prefix_query_lens = torch.tensor([0, num_actual_tokens], dtype=torch.int32, device=self.device)
+            prefix_kv_lens = torch.tensor([common_prefix_len], dtype=torch.int32, device=self.device)
+            suffix_kv_lens = (seq_lens_cpu[:num_reqs] - common_prefix_len).to(self.device, non_blocking=True)
             prefix_scheduler_metadata = schedule(
                 batch_size=1,
                 cu_query_lens=cu_prefix_query_lens,
@@ -478,18 +463,13 @@ class FlashAttentionImpl(AttentionImpl):
         self.batch_invariant_enabled = aphrodite_is_batch_invariant()
 
         if is_quantized_kv_cache(self.kv_cache_dtype) and not flash_attn_supports_fp8():
-            raise NotImplementedError(
-                "FlashAttention does not support fp8 kv-cache on this device."
-            )
+            raise NotImplementedError("FlashAttention does not support fp8 kv-cache on this device.")
 
         self.sinks = sinks
         if self.sinks is not None:
-            assert self.aphrodite_flash_attn_version == 3, (
-                "Sinks are only supported in FlashAttention 3"
-            )
+            assert self.aphrodite_flash_attn_version == 3, "Sinks are only supported in FlashAttention 3"
             assert self.sinks.shape[0] == num_heads, (
-                "Sinks must have the same number of heads as the number of "
-                "heads in the layer"
+                "Sinks must have the same number of heads as the number of heads in the layer"
             )
 
     def supports_quant_query_input(self) -> bool:
@@ -525,9 +505,7 @@ class FlashAttentionImpl(AttentionImpl):
         assert output is not None, "Output tensor must be provided."
 
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported for FlashAttentionImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for FlashAttentionImpl")
 
         if attn_metadata is None:
             # Profiling run.
@@ -565,11 +543,7 @@ class FlashAttentionImpl(AttentionImpl):
         # key and value may be None in the case of cross attention. They are
         # calculated once based on the output from the encoder and then cached
         # in KV cache.
-        if (
-            self.kv_sharing_target_layer_name is None
-            and key is not None
-            and value is not None
-        ):
+        if self.kv_sharing_target_layer_name is None and key is not None and value is not None:
             # Reshape the input keys and values and store them in the cache.
             # Skip this if sharing KV cache with an earlier attention layer.
             # NOTE(woosuk): Here, key and value are padded while slot_mapping is
@@ -590,9 +564,7 @@ class FlashAttentionImpl(AttentionImpl):
 
         if self.kv_cache_dtype.startswith("fp8"):
             # queries are quantized in the attention layer
-            dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(
-                self.kv_cache_dtype
-            )
+            dtype = FlashAttentionBackend.get_fp8_dtype_for_flashattn(self.kv_cache_dtype)
             key_cache = key_cache.view(dtype)
             value_cache = value_cache.view(dtype)
 
@@ -775,9 +747,7 @@ class FlashAttentionImpl(AttentionImpl):
         """
         # For encoder attention, process FP8 quantization if needed
         if self.kv_cache_dtype.startswith("fp8"):
-            raise NotImplementedError(
-                "quantization is not supported for encoder attention"
-            )
+            raise NotImplementedError("quantization is not supported for encoder attention")
 
         # Use encoder-specific metadata for sequence information
         cu_seqlens_q = attn_metadata.query_start_loc
@@ -856,12 +826,7 @@ def use_cascade_attention(
     num_queries_per_kv = num_query_heads // num_kv_heads
     # The criteria for using FlashDecoding can be found in the following link:
     # https://github.com/aphrodite-project/flash-attention/blob/96266b1111111f3d11aabefaf3bacbab6a89d03c/csrc/flash_attn/flash_api.cpp#L535
-    use_flash_decoding = (
-        num_queries_per_kv > 1
-        and not use_sliding_window
-        and not use_alibi
-        and np.all(query_lens == 1)
-    )
+    use_flash_decoding = num_queries_per_kv > 1 and not use_sliding_window and not use_alibi and np.all(query_lens == 1)
     if not use_flash_decoding:
         # Use cascade attention.
         return True
@@ -883,9 +848,7 @@ def use_cascade_attention(
     cascade_waves = cdiv(cascade_ctas, num_sms)
     cascade_time = cascade_waves * num_prefix_tiles
 
-    flash_decoding_ctas = (
-        num_reqs * num_kv_heads * cdiv(num_queries_per_kv, q_tile_size)
-    )
+    flash_decoding_ctas = num_reqs * num_kv_heads * cdiv(num_queries_per_kv, q_tile_size)
     flash_decoding_ctas *= num_prefix_tiles
     flash_decoding_time = cdiv(flash_decoding_ctas, num_sms)
 
@@ -920,9 +883,7 @@ def cascade_attention(
 ) -> torch.Tensor:
     assert alibi_slopes is None, "Cascade attention does not support ALiBi."
     # TODO: Support sliding window.
-    assert sliding_window == (-1, -1), (
-        "Cascade attention does not support sliding window."
-    )
+    assert sliding_window == (-1, -1), "Cascade attention does not support sliding window."
 
     num_tokens = query.shape[0]
     block_size = key_cache.shape[-3]

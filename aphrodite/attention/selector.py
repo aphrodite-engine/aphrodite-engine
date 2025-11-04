@@ -8,13 +8,13 @@ import torch
 
 import aphrodite.envs as envs
 from aphrodite.attention.backends.abstract import AttentionBackend
-from aphrodite.attention.backends.registry import (_Backend,
-                                                   backend_name_to_enum)
+from aphrodite.attention.backends.registry import _Backend, backend_name_to_enum
 from aphrodite.logger import init_logger
 from aphrodite.utils import STR_BACKEND_ENV_VAR
 from aphrodite.utils.import_utils import resolve_obj_by_qualname
 
 logger = init_logger(__name__)
+
 
 def get_env_variable_attn_backend() -> _Backend | None:
     """
@@ -92,9 +92,7 @@ def is_attn_backend_supported(
     assert isinstance(attn_backend, type)
 
     # TODO: Update the interface once V0 is removed
-    if get_supported_head_sizes := getattr(
-        attn_backend, "get_supported_head_sizes", None
-    ):
+    if get_supported_head_sizes := getattr(attn_backend, "get_supported_head_sizes", None):
         is_head_size_supported = head_size in get_supported_head_sizes()
     elif validate_head_size := getattr(attn_backend, "validate_head_size", None):
         try:
@@ -103,16 +101,12 @@ def is_attn_backend_supported(
         except Exception:
             is_head_size_supported = False
     else:
-        raise NotImplementedError(
-            f"{attn_backend.__name__} does not support head size validation"
-        )
+        raise NotImplementedError(f"{attn_backend.__name__} does not support head size validation")
 
     if get_supported_dtypes := getattr(attn_backend, "get_supported_dtypes", None):
         is_dtype_supported = dtype in get_supported_dtypes()
     else:
-        raise NotImplementedError(
-            f"{attn_backend.__name__} does not support dtype validation"
-        )
+        raise NotImplementedError(f"{attn_backend.__name__} does not support dtype validation")
 
     return _IsSupported(
         can_import=True,
@@ -202,9 +196,7 @@ def _cached_get_attn_backend(
         use_sparse,
     )
     if not attention_cls:
-        raise ValueError(
-            f"Invalid attention backend for {current_platform.device_name}"
-        )
+        raise ValueError(f"Invalid attention backend for {current_platform.device_name}")
     return resolve_obj_by_qualname(attention_cls)
 
 

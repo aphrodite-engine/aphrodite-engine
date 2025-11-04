@@ -77,9 +77,7 @@ class QuantFP8(CustomOp):
 
         assert (scale is not None) == self.static
         assert scale_ub is None or (
-            not self.static
-            and self.group_shape == GroupShape.PER_TOKEN
-            and scale_ub.numel() == 1
+            not self.static and self.group_shape == GroupShape.PER_TOKEN and scale_ub.numel() == 1
         )
         return ops.scaled_fp8_quant(
             x,
@@ -101,9 +99,7 @@ class QuantFP8(CustomOp):
 
         assert (scale is not None) == self.static
         assert scale_ub is None or (
-            not self.static
-            and self.group_shape == GroupShape.PER_TOKEN
-            and scale_ub.numel() == 1
+            not self.static and self.group_shape == GroupShape.PER_TOKEN and scale_ub.numel() == 1
         )
 
         if scale is None:
@@ -132,9 +128,7 @@ class QuantFP8(CustomOp):
 
         return out, scale
 
-    def _quantize_group_native(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _quantize_group_native(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         orig_shape = x.shape
         hidden_dim = x.shape[-1]
         num_groups = (hidden_dim + self.group_size - 1) // self.group_size

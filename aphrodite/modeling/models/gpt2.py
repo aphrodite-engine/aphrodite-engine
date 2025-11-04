@@ -28,23 +28,23 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed.parallel_state import (
-    get_pp_group, get_tensor_model_parallel_world_size)
+from aphrodite.distributed.parallel_state import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
 from ..layers.pooler import DispatchPooler, Pooler
 from .interfaces import SupportsCrossEncoding, SupportsPP
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class GPT2Attention(nn.Module):
@@ -145,9 +145,7 @@ class GPT2Block(nn.Module):
         inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
 
         self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
-        self.attn = GPT2Attention(
-            config, cache_config, quant_config, prefix=f"{prefix}.attn"
-        )
+        self.attn = GPT2Attention(config, cache_config, quant_config, prefix=f"{prefix}.attn")
         self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         self.mlp = GPT2MLP(inner_dim, config, quant_config, prefix=f"{prefix}.mlp")
 
@@ -196,9 +194,7 @@ class GPT2Model(nn.Module):
             prefix=f"{prefix}.h",
         )
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
-        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
-            ["hidden_states"], config.n_embd
-        )
+        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(["hidden_states"], config.n_embd)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.wte(input_ids)
@@ -263,9 +259,7 @@ class GPT2LMHeadModel(nn.Module, SupportsPP):
         quant_config = aphrodite_config.quant_config
         self.config = config
         self.quant_config = quant_config
-        self.transformer = GPT2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "transformer")
-        )
+        self.transformer = GPT2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "transformer"))
         self.lm_head = ParallelLMHead(
             self.config.vocab_size,
             self.config.hidden_size,
@@ -276,9 +270,7 @@ class GPT2LMHeadModel(nn.Module, SupportsPP):
             self.lm_head = self.lm_head.tie_weights(self.transformer.wte)
 
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.transformer.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.transformer.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.transformer.get_input_embeddings(input_ids)
@@ -290,9 +282,7 @@ class GPT2LMHeadModel(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.transformer(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.transformer(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(
@@ -325,9 +315,7 @@ class GPT2ForSequenceClassification(nn.Module, SupportsCrossEncoding):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
-        self.transformer = GPT2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "gpt2")
-        )
+        self.transformer = GPT2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "gpt2"))
         self.score = nn.Linear(
             config.n_embd,
             config.num_labels,
@@ -340,15 +328,9 @@ class GPT2ForSequenceClassification(nn.Module, SupportsCrossEncoding):
 
         self.pooler = DispatchPooler(
             {
-                "token_classify": Pooler.for_token_classify(
-                    pooler_config, classifier=self.score
-                ),
-                "classify": Pooler.for_classify(
-                    pooler_config, classifier=self.score, act_fn="classify"
-                ),
-                "score": Pooler.for_classify(
-                    pooler_config, classifier=self.score, act_fn="score"
-                ),
+                "token_classify": Pooler.for_token_classify(pooler_config, classifier=self.score),
+                "classify": Pooler.for_classify(pooler_config, classifier=self.score, act_fn="classify"),
+                "score": Pooler.for_classify(pooler_config, classifier=self.score, act_fn="score"),
             }
         )
 

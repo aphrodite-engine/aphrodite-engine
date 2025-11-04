@@ -3,8 +3,7 @@ import tempfile
 
 import pytest
 
-from aphrodite.modeling.model_loader.weight_utils import (
-    download_weights_from_hf)
+from aphrodite.modeling.model_loader.weight_utils import download_weights_from_hf
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
 from ...utils import RemoteOpenAIServer
@@ -59,10 +58,7 @@ async def test_token_in_token_out_and_logprobs(server):
         )
 
         # Verify all fields are present
-        assert (
-            completion.choices[0].token_ids is not None
-            and 0 < len(completion.choices[0].token_ids) <= 20
-        )
+        assert completion.choices[0].token_ids is not None and 0 < len(completion.choices[0].token_ids) <= 20
         assert completion.choices[0].prompt_token_ids is not None
 
         # Decode prompt tokens

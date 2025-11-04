@@ -3,28 +3,41 @@ import json
 from collections.abc import Iterable, Sequence
 from typing import Literal
 
-from openai.types.responses import (ResponseFunctionToolCall,
-                                    ResponseOutputItem, ResponseOutputMessage,
-                                    ResponseOutputText, ResponseReasoningItem)
+from openai.types.responses import (
+    ResponseFunctionToolCall,
+    ResponseOutputItem,
+    ResponseOutputMessage,
+    ResponseOutputText,
+    ResponseReasoningItem,
+)
 from openai.types.responses.response_function_web_search import (
-    ActionFind, ActionOpenPage, ActionSearch, ResponseFunctionWebSearch)
-from openai.types.responses.response_reasoning_item import (
-    Content as ResponseReasoningTextContent)
+    ActionFind,
+    ActionOpenPage,
+    ActionSearch,
+    ResponseFunctionWebSearch,
+)
+from openai.types.responses.response_reasoning_item import Content as ResponseReasoningTextContent
 from openai.types.responses.tool import Tool
-from openai_harmony import (Author, ChannelConfig, Conversation,
-                            DeveloperContent, HarmonyEncodingName)
-from openai_harmony import Message
+from openai_harmony import (
+    Author,
+    ChannelConfig,
+    Conversation,
+    DeveloperContent,
+    HarmonyEncodingName,
+    Message,
+    ReasoningEffort,
+    Role,
+    StreamableParser,
+    SystemContent,
+    TextContent,
+    ToolDescription,
+    load_harmony_encoding,
+)
 from openai_harmony import Message as OpenAIHarmonyMessage
-from openai_harmony import ReasoningEffort
-from openai_harmony import Role
 from openai_harmony import Role as OpenAIHarmonyRole
-from openai_harmony import (StreamableParser, SystemContent, TextContent,
-                            ToolDescription, load_harmony_encoding)
 
 from aphrodite import envs
-from aphrodite.endpoints.openai.protocol import (ChatCompletionToolsParam,
-                                                 ResponseInputOutputItem,
-                                                 ResponsesRequest)
+from aphrodite.endpoints.openai.protocol import ChatCompletionToolsParam, ResponseInputOutputItem, ResponsesRequest
 from aphrodite.utils import random_uuid
 
 REASONING_EFFORT = {
@@ -76,14 +89,10 @@ def get_system_message(
         sys_msg_content = sys_msg_content.with_model_identity(model_identity)
     if instructions is not None and envs.APHRODITE_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS:
         current_identity = sys_msg_content.model_identity
-        new_identity = (
-            f"{current_identity}\n{instructions}" if current_identity else instructions
-        )
+        new_identity = f"{current_identity}\n{instructions}" if current_identity else instructions
         sys_msg_content = sys_msg_content.with_model_identity(new_identity)
     if reasoning_effort is not None:
-        sys_msg_content = sys_msg_content.with_reasoning_effort(
-            REASONING_EFFORT[reasoning_effort]
-        )
+        sys_msg_content = sys_msg_content.with_reasoning_effort(REASONING_EFFORT[reasoning_effort])
     if start_date is None:
         # NOTE(woosuk): This brings non-determinism in Aphrodite. Be careful.
         start_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -97,9 +106,7 @@ def get_system_message(
     if not with_custom_tools:
         channel_config = sys_msg_content.channel_config
         invalid_channel = "commentary"
-        new_config = ChannelConfig.require_channels(
-            [c for c in channel_config.valid_channels if c != invalid_channel]
-        )
+        new_config = ChannelConfig.require_channels([c for c in channel_config.valid_channels if c != invalid_channel])
         sys_msg_content = sys_msg_content.with_channel_config(new_config)
     sys_msg = Message.from_role_and_content(Role.SYSTEM, sys_msg_content)
     return sys_msg
@@ -145,12 +152,8 @@ def get_developer_message(
             else:
                 raise ValueError(f"tool type {tool.type} not supported")
         if function_tools:
-            function_tool_descriptions = [
-                create_tool_definition(tool) for tool in function_tools
-            ]
-            dev_msg_content = dev_msg_content.with_function_tools(
-                function_tool_descriptions
-            )
+            function_tool_descriptions = [create_tool_definition(tool) for tool in function_tools]
+            dev_msg_content = dev_msg_content.with_function_tools(function_tool_descriptions)
     dev_msg = Message.from_role_and_content(Role.DEVELOPER, dev_msg_content)
     return dev_msg
 
@@ -187,10 +190,7 @@ def parse_response_input(
         call_id = response_msg["call_id"]
         call_response: ResponseFunctionToolCall | None = None
         for prev_response in reversed(prev_responses):
-            if (
-                isinstance(prev_response, ResponseFunctionToolCall)
-                and prev_response.call_id == call_id
-            ):
+            if isinstance(prev_response, ResponseFunctionToolCall) and prev_response.call_id == call_id:
                 call_response = prev_response
                 break
         if call_response is None:
@@ -243,14 +243,12 @@ def parse_input_to_harmony_message(chat_msg) -> list[Message]:
             # Handle array format for tool message content
             # by concatenating all text parts.
             content = "".join(
-                item.get("text", "")
-                for item in content
-                if isinstance(item, dict) and item.get("type") == "text"
+                item.get("text", "") for item in content if isinstance(item, dict) and item.get("type") == "text"
             )
 
-        msg = Message.from_author_and_content(
-            Author.new(Role.TOOL, f"functions.{name}"), content
-        ).with_channel("commentary")
+        msg = Message.from_author_and_content(Author.new(Role.TOOL, f"functions.{name}"), content).with_channel(
+            "commentary"
+        )
         return [msg]
 
     # Default: user/assistant/system messages with content
@@ -276,10 +274,7 @@ def construct_harmony_previous_input_messages(
                 # To match OpenAI, instructions, reasoning and tools are
                 # always taken from the most recent Responses API request
                 # not carried over from previous requests
-                if (
-                    message_role == OpenAIHarmonyRole.SYSTEM
-                    or message_role == OpenAIHarmonyRole.DEVELOPER
-                ):
+                if message_role == OpenAIHarmonyRole.SYSTEM or message_role == OpenAIHarmonyRole.DEVELOPER:
                     continue
                 messages.append(message)
             else:
@@ -289,10 +284,7 @@ def construct_harmony_previous_input_messages(
                     # To match OpenAI, instructions, reasoning and tools are
                     # always taken from the most recent Responses API request
                     # not carried over from previous requests
-                    if (
-                        message_role == OpenAIHarmonyRole.SYSTEM
-                        or message_role == OpenAIHarmonyRole.DEVELOPER
-                    ):
+                    if message_role == OpenAIHarmonyRole.SYSTEM or message_role == OpenAIHarmonyRole.DEVELOPER:
                         continue
                     messages.append(harmony_msg)
     return messages
@@ -300,9 +292,7 @@ def construct_harmony_previous_input_messages(
 
 def render_for_completion(messages: list[Message]) -> list[int]:
     conversation = Conversation.from_messages(messages)
-    token_ids = get_encoding().render_conversation_for_completion(
-        conversation, Role.ASSISTANT
-    )
+    token_ids = get_encoding().render_conversation_for_completion(conversation, Role.ASSISTANT)
     return token_ids
 
 
@@ -332,9 +322,7 @@ def parse_output_message(message: Message) -> list[ResponseOutputItem]:
             # If the content is not valid JSON, then it was
             # caught and retried by Aphrodite, which means we
             # need to make note of that so the user is aware
-            json_retry_output_message = (
-                f"Invalid JSON args, caught and retried: {content.text}"
-            )
+            json_retry_output_message = f"Invalid JSON args, caught and retried: {content.text}"
             browser_call = {
                 "query": json_retry_output_message,
                 "url": json_retry_output_message,
@@ -342,13 +330,9 @@ def parse_output_message(message: Message) -> list[ResponseOutputItem]:
             }
         # TODO: translate to url properly!
         if recipient == "browser.search":
-            action = ActionSearch(
-                query=f"cursor:{browser_call.get('query', '')}", type="search"
-            )
+            action = ActionSearch(query=f"cursor:{browser_call.get('query', '')}", type="search")
         elif recipient == "browser.open":
-            action = ActionOpenPage(
-                url=f"cursor:{browser_call.get('url', '')}", type="open_page"
-            )
+            action = ActionOpenPage(url=f"cursor:{browser_call.get('url', '')}", type="open_page")
         elif recipient == "browser.find":
             action = ActionFind(
                 pattern=browser_call["pattern"],
@@ -370,11 +354,7 @@ def parse_output_message(message: Message) -> list[ResponseOutputItem]:
                 id=f"rs_{random_uuid()}",
                 summary=[],
                 type="reasoning",
-                content=[
-                    ResponseReasoningTextContent(
-                        text=content.text, type="reasoning_text"
-                    )
-                ],
+                content=[ResponseReasoningTextContent(text=content.text, type="reasoning_text")],
                 status=None,
             )
             output_items.append(reasoning_item)
@@ -392,20 +372,14 @@ def parse_output_message(message: Message) -> list[ResponseOutputItem]:
                 )
                 output_items.append(response_item)
         elif recipient is not None and (
-            recipient.startswith("python")
-            or recipient.startswith("browser")
-            or recipient.startswith("container")
+            recipient.startswith("python") or recipient.startswith("browser") or recipient.startswith("container")
         ):
             for content in message.content:
                 reasoning_item = ResponseReasoningItem(
                     id=f"rs_{random_uuid()}",
                     summary=[],
                     type="reasoning",
-                    content=[
-                        ResponseReasoningTextContent(
-                            text=content.text, type="reasoning_text"
-                        )
-                    ],
+                    content=[ResponseReasoningTextContent(text=content.text, type="reasoning_text")],
                     status=None,
                 )
                 output_items.append(reasoning_item)
@@ -448,11 +422,7 @@ def parse_remaining_state(parser: StreamableParser) -> list[ResponseOutputItem]:
             id=f"rs_{random_uuid()}",
             summary=[],
             type="reasoning",
-            content=[
-                ResponseReasoningTextContent(
-                    text=parser.current_content, type="reasoning_text"
-                )
-            ],
+            content=[ResponseReasoningTextContent(text=parser.current_content, type="reasoning_text")],
             status=None,
         )
         return [reasoning_item]

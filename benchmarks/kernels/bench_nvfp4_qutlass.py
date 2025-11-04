@@ -20,12 +20,12 @@ import copy
 import itertools
 
 import torch
+from aphrodite.model_executor.layers.quantization.qutlass_utils import to_blocked
 from compressed_tensors.transform.utils.hadamard import deterministic_hadamard_matrix
 from weight_shapes import WEIGHT_SHAPES
 
 from aphrodite import _custom_ops as ops  # use existing nvfp4 gemm in aphrodite
 from aphrodite._custom_ops import fusedQuantizeNv
-from aphrodite.model_executor.layers.quantization.qutlass_utils import to_blocked
 from aphrodite.triton_utils import triton
 
 PROVIDER_CFGS = {
@@ -38,10 +38,7 @@ _enabled = [k for k, v in PROVIDER_CFGS.items() if v["enabled"]]
 
 
 def get_hadamard_matrix(group_size: int, dtype: torch.dtype, device: torch.device):
-    return (
-        deterministic_hadamard_matrix(group_size, dtype=dtype, device=device)
-        * group_size**-0.5
-    )
+    return deterministic_hadamard_matrix(group_size, dtype=dtype, device=device) * group_size**-0.5
 
 
 def _quant_weight_nvfp4(
@@ -53,12 +50,8 @@ def _quant_weight_nvfp4(
     N: int,
     K: int,
 ):
-    weight_hf_e2m1, weight_hf_e8m0 = fusedQuantizeNv(
-        b, forward_hadamard_matrix, global_scale
-    )
-    weight_hf_scale_block = to_blocked(weight_hf_e8m0, backend="triton").view(
-        -1, K // 16
-    )
+    weight_hf_e2m1, weight_hf_e8m0 = fusedQuantizeNv(b, forward_hadamard_matrix, global_scale)
+    weight_hf_scale_block = to_blocked(weight_hf_e8m0, backend="triton").view(-1, K // 16)
     return weight_hf_e2m1, weight_hf_scale_block
 
 
@@ -71,12 +64,8 @@ def build_nvfp4_runner(cfg, a, b, forward_hadamard_matrix, dtype, device, M, N, 
 
     if cfg["no_a_quant"]:
         # Pre-quantize activation
-        input_hf_e2m1, input_hf_e8m0 = fusedQuantizeNv(
-            a, forward_hadamard_matrix, global_scale
-        )
-        input_hf_scale_block = to_blocked(input_hf_e8m0, backend="triton").view(
-            -1, K // 16
-        )
+        input_hf_e2m1, input_hf_e8m0 = fusedQuantizeNv(a, forward_hadamard_matrix, global_scale)
+        input_hf_scale_block = to_blocked(input_hf_e8m0, backend="triton").view(-1, K // 16)
 
         def run():
             return ops.cutlass_scaled_fp4_mm(
@@ -92,12 +81,8 @@ def build_nvfp4_runner(cfg, a, b, forward_hadamard_matrix, dtype, device, M, N, 
 
     # Quantize activation on-the-fly
     def run():
-        input_hf_e2m1, input_hf_e8m0 = fusedQuantizeNv(
-            a, forward_hadamard_matrix, global_scale
-        )
-        input_hf_scale_block = to_blocked(input_hf_e8m0, backend="triton").view(
-            -1, K // 16
-        )
+        input_hf_e2m1, input_hf_e8m0 = fusedQuantizeNv(a, forward_hadamard_matrix, global_scale)
+        input_hf_scale_block = to_blocked(input_hf_e8m0, backend="triton").view(-1, K // 16)
         return ops.cutlass_scaled_fp4_mm(
             input_hf_e2m1,
             weight_hf_e2m1,
@@ -157,12 +142,8 @@ def benchmark(batch_size, provider, N, K, had_size):
         )
     else:
         cfg = PROVIDER_CFGS[provider]
-        run_quant = build_nvfp4_runner(
-            cfg, a, b, forward_hadamard_matrix, dtype, device, M, N, K
-        )
-        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-            lambda: run_quant(), rep=200, quantiles=quantiles
-        )
+        run_quant = build_nvfp4_runner(cfg, a, b, forward_hadamard_matrix, dtype, device, M, N, K)
+        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(lambda: run_quant(), rep=200, quantiles=quantiles)
 
     to_tflops = lambda t_ms: (2 * M * N * K) * 1e-12 / (t_ms * 1e-3)
     return to_tflops(ms), to_tflops(max_ms), to_tflops(min_ms)

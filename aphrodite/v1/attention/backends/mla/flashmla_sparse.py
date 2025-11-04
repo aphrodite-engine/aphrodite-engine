@@ -5,22 +5,16 @@ import numpy as np
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionLayer,
-                                                   AttentionMetadata)
+from aphrodite.attention.backends.abstract import AttentionBackend, AttentionLayer, AttentionMetadata
 from aphrodite.attention.backends.utils import get_mla_dims
-from aphrodite.attention.ops.flashmla import (flash_mla_sparse_prefill,
-                                              flash_mla_with_kvcache,
-                                              get_mla_metadata)
+from aphrodite.attention.ops.flashmla import flash_mla_sparse_prefill, flash_mla_with_kvcache, get_mla_metadata
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.v1.attention.backends.mla.common import MLACommonBaseImpl
-from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
-                                                   AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata)
+from aphrodite.v1.attention.backends.utils import AttentionCGSupport, AttentionMetadataBuilder, CommonAttentionMetadata
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 if TYPE_CHECKING:
@@ -156,9 +150,7 @@ def _convert_req_index_to_global_index_kernel(
     base = tl.load(bt_ptr, mask=valid_block, other=0)
 
     # If token == -1 OR block_id OOB, output -1; else base * BLOCK_SIZE + offset
-    out_val = tl.where(
-        is_invalid_tok | (~valid_block), -1, base * BLOCK_SIZE + inblock_off
-    )
+    out_val = tl.where(is_invalid_tok | (~valid_block), -1, base * BLOCK_SIZE + inblock_off)
 
     # Store results
     out_ptr_ij = out_ptr + token_id * out_stride0 + indice_id * out_stride1
@@ -253,23 +245,15 @@ class FlashMLASparseMetadataBuilder(AttentionMetadataBuilder[FlashMLASparseMetad
         self.mla_dims = get_mla_dims(self.model_config)
         self.topk_tokens = aphrodite_config.model_config.hf_config.index_topk
         self.use_fp8_kv_cache = cache_config.cache_dtype == "fp8_ds_mla"
-        self.topk_tokens_tensor = torch.tensor(
-            [self.topk_tokens], device=device, dtype=torch.int32
-        )
-        self.max_model_len_tensor = torch.tensor(
-            [self.model_config.max_model_len], device=device, dtype=torch.int32
-        )
+        self.topk_tokens_tensor = torch.tensor([self.topk_tokens], device=device, dtype=torch.int32)
+        self.max_model_len_tensor = torch.tensor([self.model_config.max_model_len], device=device, dtype=torch.int32)
         # this is ignored by `flash_mla_with_kvcache` if indices not None
-        self.dummy_block_table = torch.empty(
-            (1, 1), dtype=torch.int32, device=self.device
-        )
+        self.dummy_block_table = torch.empty((1, 1), dtype=torch.int32, device=self.device)
 
         # Equation taken from FlashMLA/csrc/pybind.cpp
         h_q, h_k = self.num_heads, 1
         s_q = 1  # inversely proportional to s_q, so s_q = 1 is the largest
-        max_num_sm_parts = int(
-            max((sm_count // 2) / h_k // (cdiv(h_q // h_k, 2 * 64) * s_q), 1)
-        )
+        max_num_sm_parts = int(max((sm_count // 2) / h_k // (cdiv(h_q // h_k, 2 * 64) * s_q), 1))
         if current_platform.is_device_capability(100):
             max_num_sm_parts *= 2
         self.tile_scheduler_metadata_buffer = torch.empty(
@@ -301,9 +285,7 @@ class FlashMLASparseMetadataBuilder(AttentionMetadataBuilder[FlashMLASparseMetad
         num_tokens = common_attn_metadata.num_actual_tokens
         starts = np.asarray(common_attn_metadata.query_start_loc_cpu, dtype=np.int32)
         seg_lengths = np.diff(starts)
-        req_id_per_token = np.repeat(
-            np.arange(seg_lengths.shape[0], dtype=np.int32), seg_lengths
-        )
+        req_id_per_token = np.repeat(np.arange(seg_lengths.shape[0], dtype=np.int32), seg_lengths)
         # Zero-fill for cudagraphs
         self.req_id_per_token_buffer.fill_(0)
         self.req_id_per_token_buffer[: req_id_per_token.shape[0]].copy_(
@@ -324,9 +306,7 @@ class FlashMLASparseMetadataBuilder(AttentionMetadataBuilder[FlashMLASparseMetad
 
             num_sm_parts = tile_scheduler_metadata.size(0)
             # Copy to persistent buffer for full-CG support
-            tile_scheduler_metadata_buffer = self.tile_scheduler_metadata_buffer[
-                :num_sm_parts
-            ]
+            tile_scheduler_metadata_buffer = self.tile_scheduler_metadata_buffer[:num_sm_parts]
             tile_scheduler_metadata_buffer.copy_(tile_scheduler_metadata)
             self.num_splits_buffer.copy_(num_splits)
 
@@ -402,9 +382,7 @@ class FlashMLASparseImpl(MLACommonBaseImpl[FlashMLASparseMetadata]):
         attn_metadata: FlashMLASparseMetadata,
     ) -> torch.Tensor:
         num_tokens = q.shape[0]
-        kv_c_and_k_pe_cache = kv_c_and_k_pe_cache.view(
-            -1, 1, kv_c_and_k_pe_cache.shape[-1]
-        )
+        kv_c_and_k_pe_cache = kv_c_and_k_pe_cache.view(-1, 1, kv_c_and_k_pe_cache.shape[-1])
 
         # NOTE(Chen): kernel requires num_local_head to be a multiple of
         # 64 on hopper and 128 on blackwell
@@ -419,9 +397,7 @@ class FlashMLASparseImpl(MLACommonBaseImpl[FlashMLASparseMetadata]):
             q = q_padded
 
         topk_indices = topk_indices.view(num_tokens, 1, -1)
-        output = flash_mla_sparse_prefill(
-            q, kv_c_and_k_pe_cache, topk_indices, self.softmax_scale
-        )[0]
+        output = flash_mla_sparse_prefill(q, kv_c_and_k_pe_cache, topk_indices, self.softmax_scale)[0]
         output = output[:, : self.num_heads, :]
         return output
 
@@ -468,9 +444,7 @@ class FlashMLASparseImpl(MLACommonBaseImpl[FlashMLASparseMetadata]):
         assert output is not None, "Output tensor must be provided."
 
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported for MLACommonImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for MLACommonImpl")
 
         if attn_metadata is None:
             # The zero fill is required when used with DP + EP
@@ -519,13 +493,9 @@ class FlashMLASparseImpl(MLACommonBaseImpl[FlashMLASparseMetadata]):
             )
 
         if self.kv_cache_dtype != "fp8_ds_mla":
-            attn_out = self._forward_bf16_kv(
-                q, kv_cache, topk_indices_global, attn_metadata
-            )
+            attn_out = self._forward_bf16_kv(q, kv_cache, topk_indices_global, attn_metadata)
         else:
-            attn_out = self._forward_fp8_kv(
-                q, kv_cache, topk_indices_global, attn_metadata
-            )
+            attn_out = self._forward_fp8_kv(q, kv_cache, topk_indices_global, attn_metadata)
 
         self._v_up_proj(attn_out, out=output[:num_actual_toks])
         return output

@@ -39,9 +39,7 @@ def find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_
     return best_ratio
 
 
-def calculate_aspect_ratios(
-    min_num: int = MIN_CROPS, max_num: int = MAX_CROPS
-) -> list[tuple[int, int]]:
+def calculate_aspect_ratios(min_num: int = MIN_CROPS, max_num: int = MAX_CROPS) -> list[tuple[int, int]]:
     target_ratios: set[tuple[int, int]] = set(
         (i, j)
         for n in range(min_num, max_num + 1)
@@ -67,16 +65,12 @@ def count_tiles(
     target_ratios = calculate_aspect_ratios(min_num, max_num)
 
     # find the closest aspect ratio to the target
-    target_aspect_ratio = find_closest_aspect_ratio(
-        aspect_ratio, target_ratios, orig_width, orig_height, image_size
-    )
+    target_aspect_ratio = find_closest_aspect_ratio(aspect_ratio, target_ratios, orig_width, orig_height, image_size)
 
     return target_aspect_ratio
 
 
-def dynamic_preprocess(
-    image, min_num=MIN_CROPS, max_num=MAX_CROPS, image_size=640, use_thumbnail=False
-):
+def dynamic_preprocess(image, min_num=MIN_CROPS, max_num=MAX_CROPS, image_size=640, use_thumbnail=False):
     orig_width, orig_height = image.size
     aspect_ratio = orig_width / orig_height
 
@@ -84,9 +78,7 @@ def dynamic_preprocess(
     target_ratios = calculate_aspect_ratios(min_num, max_num)
 
     # find the closest aspect ratio to the target
-    target_aspect_ratio = find_closest_aspect_ratio(
-        aspect_ratio, target_ratios, orig_width, orig_height, image_size
-    )
+    target_aspect_ratio = find_closest_aspect_ratio(aspect_ratio, target_ratios, orig_width, orig_height, image_size)
 
     # calculate the target width and height
     target_width = image_size * target_aspect_ratio[0]
@@ -164,12 +156,12 @@ class DeepseekOCRProcessor(ProcessorMixin):
         self.normalize = normalize
         self.downsample_ratio = 4
 
-        self.image_transform = ImageTransform(
-            mean=image_mean, std=image_std, normalize=normalize
-        )
+        self.image_transform = ImageTransform(mean=image_mean, std=image_std, normalize=normalize)
 
         self.tokenizer = tokenizer
-        self.tokenizer.padding_side = "left"  # must set this，padding side with make a difference in batch inference # noqa: E501
+        self.tokenizer.padding_side = (
+            "left"  # must set this，padding side with make a difference in batch inference # noqa: E501
+        )
 
         # add the pad_token as special token to use 'tokenizer.pad_token'
         # and 'tokenizer.pad_token_id'
@@ -235,9 +227,7 @@ class DeepseekOCRProcessor(ProcessorMixin):
                 - num_image_tokens (List[int]): the number of image tokens
         """
 
-        assert prompt is not None and images is not None, (
-            "prompt and images must be used at the same time."
-        )
+        assert prompt is not None and images is not None, "prompt and images must be used at the same time."
 
         sft_format = prompt
 
@@ -318,9 +308,7 @@ class DeepseekOCRProcessor(ProcessorMixin):
             if image.size[0] <= 640 and image.size[1] <= 640:
                 crop_ratio = [1, 1]
             elif cropping:
-                images_crop_raw, crop_ratio = dynamic_preprocess(
-                    image, image_size=IMAGE_SIZE
-                )
+                images_crop_raw, crop_ratio = dynamic_preprocess(image, image_size=IMAGE_SIZE)
             else:
                 crop_ratio = [1, 1]
 
@@ -341,16 +329,10 @@ class DeepseekOCRProcessor(ProcessorMixin):
                 for cropped_image in images_crop_raw:
                     images_crop_list.append(self.image_transform(cropped_image))
 
-            num_queries = math.ceil(
-                (self.image_size // self.patch_size) / self.downsample_ratio
-            )
-            num_queries_base = math.ceil(
-                (self.base_size // self.patch_size) / self.downsample_ratio
-            )
+            num_queries = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
+            num_queries_base = math.ceil((self.base_size // self.patch_size) / self.downsample_ratio)
 
-            tokenized_image = (
-                [self.image_token_id] * num_queries_base + [self.image_token_id]
-            ) * num_queries_base
+            tokenized_image = ([self.image_token_id] * num_queries_base + [self.image_token_id]) * num_queries_base
             tokenized_image += [self.image_token_id]
             if num_width_tiles > 1 or num_height_tiles > 1:
                 local_row = [self.image_token_id] * (num_queries * num_width_tiles + 1)
@@ -384,9 +366,7 @@ class DeepseekOCRProcessor(ProcessorMixin):
             else:
                 masked_tokenized_str.append(self.ignore_id)
 
-        assert (
-            len(tokenized_str) == len(images_seq_mask) == len(masked_tokenized_str)
-        ), (
+        assert len(tokenized_str) == len(images_seq_mask) == len(masked_tokenized_str), (
             f"tokenized_str's length {len(tokenized_str)}, "
             f"input_ids' length {len(masked_tokenized_str)}, "
             f"images_seq_mask's length {len(images_seq_mask)}, are not equal."
@@ -397,9 +377,7 @@ class DeepseekOCRProcessor(ProcessorMixin):
         images_seq_mask = torch.tensor(images_seq_mask, dtype=torch.bool)
 
         # set input_ids < 0 | input_ids == self.image_token_id as ignore_id
-        target_ids[(input_ids < 0) | (input_ids == self.image_token_id)] = (
-            self.ignore_id
-        )
+        target_ids[(input_ids < 0) | (input_ids == self.image_token_id)] = self.ignore_id
         input_ids[input_ids < 0] = self.pad_id
 
         # Remove the ending eos token

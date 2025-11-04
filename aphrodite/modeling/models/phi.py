@@ -46,23 +46,23 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class PhiAttention(nn.Module):
@@ -97,10 +97,7 @@ class PhiAttention(nn.Module):
         )
 
         scaling = self.head_size**-0.5
-        rotary_dim = int(
-            config.partial_rotary_factor
-            * (config.hidden_size // config.num_attention_heads)
-        )
+        rotary_dim = int(config.partial_rotary_factor * (config.hidden_size // config.num_attention_heads))
         assert rotary_dim % 2 == 0
 
         # pylint: disable=C0301
@@ -137,9 +134,7 @@ class PhiAttention(nn.Module):
 
 
 class PhiMLP(nn.Module):
-    def __init__(
-        self, config: PhiConfig, quant_config: QuantizationConfig | None = None
-    ):
+    def __init__(self, config: PhiConfig, quant_config: QuantizationConfig | None = None):
         super().__init__()
 
         n_inner = getattr(config, "n_inner", None)
@@ -173,12 +168,8 @@ class PhiLayer(nn.Module):
         prefix: str = "",
     ):
         super().__init__()
-        self.input_layernorm = nn.LayerNorm(
-            config.hidden_size, eps=config.layer_norm_eps
-        )
-        self.self_attn = PhiAttention(
-            config, cache_config, quant_config, prefix=f"{prefix}.self_attn"
-        )
+        self.input_layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.self_attn = PhiAttention(config, cache_config, quant_config, prefix=f"{prefix}.self_attn")
         self.mlp = PhiMLP(config, quant_config)
 
     def forward(
@@ -208,17 +199,13 @@ class PhiModel(nn.Module):
 
         self.config = config
         self.quant_config = quant_config
-        self.embed_tokens = VocabParallelEmbedding(
-            config.vocab_size, config.hidden_size
-        )
+        self.embed_tokens = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
             lambda prefix: PhiLayer(config, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
-        self.final_layernorm = nn.LayerNorm(
-            config.hidden_size, eps=config.layer_norm_eps
-        )
+        self.final_layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
             ["hidden_states"], config.hidden_size
         )
@@ -314,9 +301,7 @@ class PhiForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
 
         self.quant_config = quant_config
 
-        self.model = PhiModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = PhiModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         self.lm_head = ParallelLMHead(
             config.vocab_size,
@@ -326,9 +311,7 @@ class PhiForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
             prefix=maybe_prefix(prefix, "lm_head"),
         )
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -340,9 +323,7 @@ class PhiForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
 

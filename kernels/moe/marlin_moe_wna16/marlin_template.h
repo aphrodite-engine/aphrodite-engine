@@ -280,7 +280,8 @@ __device__ inline void wait_negative_and_add(int* lock) {
 
 template <typename scalar_t,  // compute dtype, half or nv_float16
           const aphrodite::ScalarTypeId w_type_id,  // weight ScalarType id
-          const aphrodite::ScalarTypeId s_type_id,  // weight scale ScalarType id
+          const aphrodite::ScalarTypeId s_type_id,  // weight scale ScalarType
+                                                    // id
           const int threads,          // number of threads in a threadblock
           const int thread_m_blocks,  // number of 16x16 blocks in the m
                                       // dimension (batchsize) of the
@@ -356,8 +357,9 @@ __global__ void Marlin(
   }
 
   constexpr bool has_zp = w_type == aphrodite::kU4 || w_type == aphrodite::kU8;
-  constexpr bool is_int_type = w_type == aphrodite::kU4 || w_type == aphrodite::kU8 ||
-                               w_type == aphrodite::kU4B8 || w_type == aphrodite::kU8B128;
+  constexpr bool is_int_type =
+      w_type == aphrodite::kU4 || w_type == aphrodite::kU8 ||
+      w_type == aphrodite::kU4B8 || w_type == aphrodite::kU8B128;
   // see comments of dequant.h for more details
   constexpr bool dequant_skip_flop =
       w_type == aphrodite::kFE4M3fn ||
@@ -490,7 +492,8 @@ __global__ void Marlin(
         for (int i = 0; i < 4; i++) {
           int idx = tid4 * 4 + i;
           idx = idx < block_num_valid_tokens ? idx : 0;
-          if constexpr (w_type == aphrodite::kFE2M1f && s_type == aphrodite::kFE4M3fn) {
+          if constexpr (w_type == aphrodite::kFE2M1f &&
+                        s_type == aphrodite::kFE4M3fn) {
             sh_block_topk_weights[idx] = __hmul2(
                 global_scale, Dtype::num2num2(Dtype::float2num(
                                   topk_weights_ptr[sh_block_sorted_ids[idx]])));
@@ -528,7 +531,8 @@ __global__ void Marlin(
       expert_id = expert_ids_ptr[block_id];
     }
 
-    if constexpr (w_type == aphrodite::kFE2M1f && s_type == aphrodite::kFE4M3fn) {
+    if constexpr (w_type == aphrodite::kFE2M1f &&
+                  s_type == aphrodite::kFE4M3fn) {
       uint16_t val = scale2_ptr[expert_id];
       global_scale = Dtype::num2num2(*reinterpret_cast<scalar_t*>(&val));
     }
@@ -649,7 +653,8 @@ __global__ void Marlin(
   constexpr int s_sh_stride = 16 * thread_n_blocks / 8;
   constexpr int s_tb_groups =
       !has_act_order && group_blocks != -1 && group_blocks < thread_k_blocks
-          ? thread_k_blocks / group_blocks / (w_type == aphrodite::kFE2M1f ? 2 : 1)
+          ? thread_k_blocks / group_blocks /
+                (w_type == aphrodite::kFE2M1f ? 2 : 1)
           : 1;
   constexpr int s_sh_stage = s_tb_groups * s_sh_stride;
   int s_gl_rd_delta = s_gl_stride;
@@ -1101,7 +1106,8 @@ __global__ void Marlin(
 
           int k_blocks = cur_k / 16;
           int cur_group_id =
-              k_blocks / (group_blocks * (w_type == aphrodite::kFE2M1f ? 2 : 1));
+              k_blocks /
+              (group_blocks * (w_type == aphrodite::kFE2M1f ? 2 : 1));
 
           int4* sh_s_stage = sh_s + s_sh_stage * pipe;
 
@@ -1657,7 +1663,8 @@ __global__ void Marlin(
         res = __hmul2(res, tmp_scale);
       }
 
-      if constexpr (w_type == aphrodite::kFE2M1f && s_type == aphrodite::kFE4M3fn) {
+      if constexpr (w_type == aphrodite::kFE2M1f &&
+                    s_type == aphrodite::kFE4M3fn) {
         if (!mul_topk_weights) {
           res = __hmul2(res, global_scale);
         }

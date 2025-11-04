@@ -5,12 +5,10 @@ import ray
 import torch
 import torch.distributed as dist
 
-from aphrodite.distributed.communication_op import (  # noqa
-    tensor_model_parallel_all_reduce)
+from aphrodite.distributed.communication_op import tensor_model_parallel_all_reduce  # noqa
 from aphrodite.distributed.parallel_state import get_tp_group, graph_capture
 
-from ..utils import (ensure_model_parallel_initialized,
-                     init_test_distributed_environment, multi_process_parallel)
+from ..utils import ensure_model_parallel_initialized, init_test_distributed_environment, multi_process_parallel
 
 random.seed(42)
 test_sizes = [random.randint(1024, 2048 * 1024) for _ in range(8)]
@@ -56,12 +54,8 @@ def graph_allreduce(
             for dtype in [torch.float32, torch.float16, torch.bfloat16]:
                 with graph_capture(device=device) as graph_capture_context:
                     # use integers so result matches NCCL exactly
-                    inp1 = torch.randint(
-                        1, 16, (sz,), dtype=dtype, device=torch.cuda.current_device()
-                    )
-                    inp2 = torch.randint(
-                        1, 16, (sz,), dtype=dtype, device=torch.cuda.current_device()
-                    )
+                    inp1 = torch.randint(1, 16, (sz,), dtype=dtype, device=torch.cuda.current_device())
+                    inp2 = torch.randint(1, 16, (sz,), dtype=dtype, device=torch.cuda.current_device())
                     torch.cuda.synchronize()
                     graph = torch.cuda.CUDAGraph()
                     with torch.cuda.graph(graph, stream=graph_capture_context.stream):

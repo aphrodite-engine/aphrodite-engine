@@ -12,8 +12,7 @@ from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 if __name__ == "__main__":
     parser = FlexibleArgumentParser(
-        description="Benchmark the latency of processing a single batch of "
-        "requests till completion."
+        description="Benchmark the latency of processing a single batch of requests till completion."
     )
     parser.add_argument("filename", type=str)
 

@@ -10,18 +10,15 @@ from typing import Concatenate
 
 import torch
 from torch.distributed import ProcessGroup
-from torch.multiprocessing import (
-    spawn)  # pyright: ignore[reportPrivateImportUsage]
+from torch.multiprocessing import spawn  # pyright: ignore[reportPrivateImportUsage]
 from typing_extensions import ParamSpec
 
 from aphrodite.utils.import_utils import has_deep_ep
 from aphrodite.utils.network_utils import get_open_port
 
 if has_deep_ep():
-    from aphrodite.modeling.layers.fused_moe.deepep_ht_prepare_finalize import (
-        DeepEPHTPrepareAndFinalize)
-    from aphrodite.modeling.layers.fused_moe.deepep_ll_prepare_finalize import (
-        DeepEPLLPrepareAndFinalize)
+    from aphrodite.modeling.layers.fused_moe.deepep_ht_prepare_finalize import DeepEPHTPrepareAndFinalize
+    from aphrodite.modeling.layers.fused_moe.deepep_ll_prepare_finalize import DeepEPLLPrepareAndFinalize
 
 ## Parallel Processes Utils
 
@@ -191,9 +188,7 @@ def make_deepep_a2a(
 ):
     if deepep_ht_args is not None:
         assert deepep_ll_args is None
-        return make_deepep_ht_a2a(
-            pg, pgi, dp_size, deepep_ht_args, q_dtype, block_shape
-        )
+        return make_deepep_ht_a2a(pg, pgi, dp_size, deepep_ht_args, q_dtype, block_shape)
 
     assert deepep_ll_args is not None
     return make_deepep_ll_a2a(pg, pgi, deepep_ll_args, q_dtype, block_shape)

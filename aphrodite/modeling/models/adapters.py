@@ -10,8 +10,7 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.activation import get_act_fn
 from aphrodite.modeling.models.config import VerifyAndUpdateConfig
-from aphrodite.transformers_utils.config import (get_hf_file_bytes,
-                                                 try_get_dense_modules)
+from aphrodite.transformers_utils.config import get_hf_file_bytes, try_get_dense_modules
 
 from .interfaces_base import AphroditeModelForPooling, is_pooling_model
 
@@ -33,9 +32,7 @@ _GENERATE_SUFFIXES = [
 def _load_st_projector(model_config: "ModelConfig") -> nn.Module | None:
     """Load Sentence-Transformers Dense projection layers."""
 
-    dense_modules = try_get_dense_modules(
-        model_config.model, revision=model_config.revision
-    )
+    dense_modules = try_get_dense_modules(model_config.model, revision=model_config.revision)
 
     if dense_modules is None:
         return
@@ -62,20 +59,15 @@ def _load_st_projector(model_config: "ModelConfig") -> nn.Module | None:
     return None
 
 
-def _load_dense_weights(
-    linear: nn.Linear, folder: str, model_config: "ModelConfig"
-) -> bool:
+def _load_dense_weights(linear: nn.Linear, folder: str, model_config: "ModelConfig") -> bool:
     """Load weights using Aphrodite's weight_loader pattern."""
-    from aphrodite.modeling.model_loader.weight_utils import (
-        default_weight_loader)
+    from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 
     for filename in ["model.safetensors", "pytorch_model.bin"]:
         file_path = f"{folder}/{filename}" if folder else filename
 
         try:
-            file_bytes = get_hf_file_bytes(
-                file_path, model_config.model, model_config.revision
-            )
+            file_bytes = get_hf_file_bytes(file_path, model_config.model, model_config.revision)
             if not file_bytes:
                 continue
 
@@ -86,22 +78,16 @@ def _load_dense_weights(
             else:
                 import io
 
-                state_dict = torch.load(
-                    io.BytesIO(file_bytes), map_location="cpu", weights_only=True
-                )
+                state_dict = torch.load(io.BytesIO(file_bytes), map_location="cpu", weights_only=True)
 
             for weight_key in ["weight", "linear.weight", "dense.weight"]:
                 if weight_key in state_dict:
-                    weight_loader = getattr(
-                        linear.weight, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(linear.weight, "weight_loader", default_weight_loader)
                     weight_loader(linear.weight, state_dict[weight_key])
 
                     bias_key = weight_key.replace("weight", "bias")
                     if linear.bias is not None and bias_key in state_dict:
-                        bias_loader = getattr(
-                            linear.bias, "weight_loader", default_weight_loader
-                        )
+                        bias_loader = getattr(linear.bias, "weight_loader", default_weight_loader)
                         bias_loader(linear.bias, state_dict[bias_key])
                     return True
         except Exception:
@@ -186,11 +172,7 @@ def _create_pooling_model_cls(orig_cls: _T) -> _T:
             # TODO: Support uninitialized params tracking
 
             # We have deleted this attribute, so don't load it
-            weights = (
-                (name, data)
-                for name, data in weights
-                if not name.startswith("lm_head.")
-            )
+            weights = ((name, data) for name, data in weights if not name.startswith("lm_head."))
 
             # If `*ForCausalLM` defines `load_weights` on the inner model
             # and there are no other inner modules with parameters,
@@ -198,8 +180,7 @@ def _create_pooling_model_cls(orig_cls: _T) -> _T:
             if hasattr(self, "model") and hasattr(self.model, "load_weights"):
                 # Whether only `self.model` contains parameters
                 model_is_only_param = all(
-                    name == "model" or next(child.parameters(), None) is None
-                    for name, child in self.named_children()
+                    name == "model" or next(child.parameters(), None) is None for name, child in self.named_children()
                 )
 
                 if model_is_only_param:
@@ -279,9 +260,7 @@ def as_seq_cls_model(cls: _T) -> _T:
 
     from .utils import maybe_prefix
 
-    class ModelForSequenceClassification(
-        _create_pooling_model_cls(cls), SupportsCrossEncoding
-    ):
+    class ModelForSequenceClassification(_create_pooling_model_cls(cls), SupportsCrossEncoding):
         def _init_pooler(self, aphrodite_config: "AphroditeConfig", prefix: str = ""):
             text_config = aphrodite_config.model_config.hf_config.get_text_config()
             model_config = aphrodite_config.model_config
@@ -302,15 +281,9 @@ def as_seq_cls_model(cls: _T) -> _T:
 
             self.pooler = DispatchPooler(
                 {
-                    "token_classify": Pooler.for_token_classify(
-                        pooler_config, classifier=self.score
-                    ),
-                    "classify": Pooler.for_classify(
-                        pooler_config, classifier=self.score, act_fn="classify"
-                    ),
-                    "score": Pooler.for_classify(
-                        pooler_config, classifier=self.score, act_fn="score"
-                    ),
+                    "token_classify": Pooler.for_token_classify(pooler_config, classifier=self.score),
+                    "classify": Pooler.for_classify(pooler_config, classifier=self.score, act_fn="classify"),
+                    "score": Pooler.for_classify(pooler_config, classifier=self.score, act_fn="score"),
                 }
             )
 
@@ -326,9 +299,7 @@ def as_seq_cls_model(cls: _T) -> _T:
                 # ForSequenceClassification model.
                 return seq_cls_model_loader(self, weights)
 
-    ModelForSequenceClassification.__name__ = _get_pooling_model_name(
-        cls.__name__, "ForSequenceClassification"
-    )
+    ModelForSequenceClassification.__name__ = _get_pooling_model_name(cls.__name__, "ForSequenceClassification")
 
     return ModelForSequenceClassification  # type: ignore
 
@@ -358,13 +329,7 @@ def as_reward_model(cls: _T) -> _T:
             pooler_config = aphrodite_config.model_config.pooler_config
             assert pooler_config is not None
 
-            self.pooler = DispatchPooler(
-                {
-                    "token_classify": Pooler.for_token_classify(
-                        pooler_config=pooler_config
-                    )
-                }
-            )
+            self.pooler = DispatchPooler({"token_classify": Pooler.for_token_classify(pooler_config=pooler_config)})
 
     ModelForReward.__name__ = _get_pooling_model_name(cls.__name__, "ForReward")
 
@@ -395,14 +360,10 @@ class SequenceClassificationConfig(VerifyAndUpdateConfig):
         text_config.use_pad_token = use_pad_token
 
 
-def load_weights_using_from_2_way_softmax(
-    model, weights: Iterable[tuple[str, torch.Tensor]]
-):
+def load_weights_using_from_2_way_softmax(model, weights: Iterable[tuple[str, torch.Tensor]]):
     # refer to https://huggingface.co/Qwen/Qwen3-Reranker-0.6B/discussions/3
-    from aphrodite.modeling.layers.vocab_parallel_embedding import (
-        ParallelLMHead)
-    from aphrodite.modeling.model_loader.weight_utils import (
-        default_weight_loader)
+    from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
+    from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 
     model_config = model.aphrodite_config.model_config
     quant_config = model.aphrodite_config.quant_config
@@ -412,17 +373,13 @@ def load_weights_using_from_2_way_softmax(
     tokens = cast(list[int], tokens)
     assert len(tokens) == 2
 
-    model.lm_head = ParallelLMHead(
-        text_config.vocab_size, text_config.hidden_size, quant_config=quant_config
-    )
+    model.lm_head = ParallelLMHead(text_config.vocab_size, text_config.hidden_size, quant_config=quant_config)
     if text_config.tie_word_embeddings:
         # embed_tokens is the assumed name for input embeddings. If the model does not
         # have this attribute, we fallback to get_input_embeddings(), which is used by
         # the Transformers backend.
         embed_tokens = (
-            model.model.embed_tokens
-            if hasattr(model.model, "embed_tokens")
-            else model.model.get_input_embeddings()
+            model.model.embed_tokens if hasattr(model.model, "embed_tokens") else model.model.get_input_embeddings()
         )
         model.lm_head = model.lm_head.tie_weights(embed_tokens)
 
@@ -440,9 +397,9 @@ def load_weights_using_from_2_way_softmax(
 
     false_id = tokenizer.convert_tokens_to_ids(tokens[0])
     true_id = tokenizer.convert_tokens_to_ids(tokens[1])
-    score_weight = model.lm_head.weight.data[[true_id]].to(
+    score_weight = model.lm_head.weight.data[[true_id]].to(torch.float32) - model.lm_head.weight.data[[false_id]].to(
         torch.float32
-    ) - model.lm_head.weight.data[[false_id]].to(torch.float32)
+    )
 
     param = model.score.weight
     weight_loader = getattr(param, "weight_loader", default_weight_loader)
@@ -455,10 +412,8 @@ def load_weights_using_from_2_way_softmax(
 
 
 def load_weights_no_post_processing(model, weights: Iterable[tuple[str, torch.Tensor]]):
-    from aphrodite.modeling.layers.vocab_parallel_embedding import (
-        ParallelLMHead)
-    from aphrodite.modeling.model_loader.weight_utils import (
-        default_weight_loader)
+    from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
+    from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 
     model_config = model.aphrodite_config.model_config
     quant_config = model.aphrodite_config.quant_config
@@ -468,17 +423,13 @@ def load_weights_no_post_processing(model, weights: Iterable[tuple[str, torch.Te
     tokens = cast(list[int], tokens)
     assert len(tokens) > 0
 
-    model.lm_head = ParallelLMHead(
-        text_config.vocab_size, text_config.hidden_size, quant_config=quant_config
-    )
+    model.lm_head = ParallelLMHead(text_config.vocab_size, text_config.hidden_size, quant_config=quant_config)
     if text_config.tie_word_embeddings:
         # embed_tokens is the assumed name for input embeddings. If the model does not
         # have this attribute, we fallback to get_input_embeddings(), which is used by
         # the Transformers backend.
         embed_tokens = (
-            model.model.embed_tokens
-            if hasattr(model.model, "embed_tokens")
-            else model.model.get_input_embeddings()
+            model.model.embed_tokens if hasattr(model.model, "embed_tokens") else model.model.get_input_embeddings()
         )
         model.lm_head = model.lm_head.tie_weights(embed_tokens)
 

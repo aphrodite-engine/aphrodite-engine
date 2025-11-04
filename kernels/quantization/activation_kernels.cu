@@ -538,23 +538,23 @@ __global__ void silu_mul_fp8_quant_deep_gemm_kernel(
 }  // namespace aphrodite
 
 // Launch activation, gating, and quantize kernel.
-#define LAUNCH_ACTIVATION_GATE_KERNEL(KERNEL)                               \
-  int d = input.size(-1) / 2;                                               \
-  int64_t num_tokens = input.numel() / input.size(-1);                      \
-  dim3 grid(num_tokens, num_tokens > 16 ? num_tokens > 32 ? 1 : 2 : 4);     \
-  dim3 block(std::min(d, 512));                                             \
-  const at::cuda::OptionalCUDAGuard device_guard(device_of(input));         \
-  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();             \
-  APHRODITE_DISPATCH_FLOATING_TYPES(                                             \
-      input.scalar_type(), "act_and_mul_kernel", [&] {                      \
-        APHRODITE_DISPATCH_FP8_TYPES(                                            \
-            out.scalar_type(), "fused_add_rms_norm_kernel_fp8_type", [&] {  \
-              aphrodite::act_and_mul_quant_kernel<scalar_t, KERNEL<scalar_t>,    \
-                                             fp8_t>                         \
-                  <<<grid, block, 0, stream>>>(out.data_ptr<fp8_t>(),       \
-                                               input.data_ptr<scalar_t>(),  \
-                                               scale.data_ptr<float>(), d); \
-            });                                                             \
+#define LAUNCH_ACTIVATION_GATE_KERNEL(KERNEL)                                 \
+  int d = input.size(-1) / 2;                                                 \
+  int64_t num_tokens = input.numel() / input.size(-1);                        \
+  dim3 grid(num_tokens, num_tokens > 16 ? num_tokens > 32 ? 1 : 2 : 4);       \
+  dim3 block(std::min(d, 512));                                               \
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(input));           \
+  const cudaStream_t stream = at::cuda::getCurrentCUDAStream();               \
+  APHRODITE_DISPATCH_FLOATING_TYPES(                                          \
+      input.scalar_type(), "act_and_mul_kernel", [&] {                        \
+        APHRODITE_DISPATCH_FP8_TYPES(                                         \
+            out.scalar_type(), "fused_add_rms_norm_kernel_fp8_type", [&] {    \
+              aphrodite::act_and_mul_quant_kernel<scalar_t, KERNEL<scalar_t>, \
+                                                  fp8_t>                      \
+                  <<<grid, block, 0, stream>>>(out.data_ptr<fp8_t>(),         \
+                                               input.data_ptr<scalar_t>(),    \
+                                               scale.data_ptr<float>(), d);   \
+            });                                                               \
       });
 
 void silu_and_mul_quant(torch::Tensor& out,    // [..., d]
@@ -612,9 +612,9 @@ void persistent_masked_m_silu_mul_quant(
         GROUP_SIZE * 2 * STAGES * NUM_WARPS * 2;                               \
     dim3 grid(sms), block(THREAD_COUNT);                                       \
     const at::cuda::OptionalCUDAGuard device_guard(device_of(input));          \
-    APHRODITE_DISPATCH_FP8_TYPES(                                                   \
+    APHRODITE_DISPATCH_FP8_TYPES(                                              \
         y_q.scalar_type(), "silu_mul_fp8_quant_deep_gemm_kernel", [&] {        \
-          aphrodite::silu_mul_fp8_quant_deep_gemm_kernel<                           \
+          aphrodite::silu_mul_fp8_quant_deep_gemm_kernel<                      \
               BLOCK_COUNT, max_shared_mem_bytes, fp8_t, THREAD_COUNT, Idx_t,   \
               USE_UE8M0, GROUP_SIZE, STAGES>                                   \
               <<<grid, block, max_shared_mem_bytes + (E + 1) * 16, stream>>>(  \

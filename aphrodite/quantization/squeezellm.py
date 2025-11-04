@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import torch
 from torch.nn.parameter import Parameter
@@ -7,8 +7,7 @@ from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.linear import LinearBase
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.utils import is_hip
 
 
@@ -28,7 +27,8 @@ class SqueezeLLMConfig(QuantizationConfig):
         if self.weight_bits != 4:
             raise ValueError(
                 "Currently, only 4-bit weight quantization is supported for "
-                f"SqueezeLLM, but got {self.weight_bits} bits.")
+                f"SqueezeLLM, but got {self.weight_bits} bits."
+            )
 
         self.pack_factor = 32 // self.weight_bits
 
@@ -38,7 +38,7 @@ class SqueezeLLMConfig(QuantizationConfig):
     def get_name(self) -> QuantizationMethods:
         return "squeezellm"
 
-    def get_supported_act_dtypes(self) -> List[torch.dtype]:
+    def get_supported_act_dtypes(self) -> list[torch.dtype]:
         return [torch.half]
 
     @classmethod
@@ -46,21 +46,20 @@ class SqueezeLLMConfig(QuantizationConfig):
         return 70
 
     @staticmethod
-    def get_config_filenames() -> List[str]:
+    def get_config_filenames() -> list[str]:
         return ["quant_config.json"]
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "SqueezeLLMConfig":
+    def from_config(cls, config: dict[str, Any]) -> "SqueezeLLMConfig":
         weight_bits = cls.get_from_keys(config, ["wbits"])
         return cls(weight_bits)
 
-    def get_quant_method(self, layer: torch.nn.Module,
-                         prefix: str) -> Optional[QuantizeMethodBase]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> QuantizeMethodBase | None:
         if isinstance(layer, LinearBase):
             return SqueezeLLMLinearMethod(self)
         return
 
-    def get_scaled_act_names(self) -> List[str]:
+    def get_scaled_act_names(self) -> list[str]:
         return []
 
 
@@ -74,16 +73,22 @@ class SqueezeLLMLinearMethod(QuantizeMethodBase):
     def __init__(self, quant_config: SqueezeLLMConfig):
         self.quant_config = quant_config
 
-    def create_weights(self, layer: torch.nn.Module,
-                       input_size_per_partition: int,
-                       output_partition_sizes: List[int], input_size: int,
-                       output_size: int, params_dtype: torch.dtype,
-                       **extra_weight_attrs):
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        input_size_per_partition: int,
+        output_partition_sizes: list[int],
+        input_size: int,
+        output_size: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ):
         if input_size_per_partition % self.quant_config.pack_factor != 0:
             raise ValueError(
                 "The input size is not aligned with the quantized "
                 "weight shape. This can be caused by too large "
-                "tensor parallel size.")
+                "tensor parallel size."
+            )
 
         output_size_per_partition = sum(output_partition_sizes)
         qweight = Parameter(
@@ -95,12 +100,14 @@ class SqueezeLLMLinearMethod(QuantizeMethodBase):
             requires_grad=False,
         )
         set_weight_attrs(
-            qweight, {
+            qweight,
+            {
                 "input_dim": 0,
                 "output_dim": 1,
                 "packed_dim": 0,
                 "pack_factor": self.quant_config.pack_factor,
-            })
+            },
+        )
         lookup_table = Parameter(
             torch.empty(
                 output_size,
@@ -109,22 +116,22 @@ class SqueezeLLMLinearMethod(QuantizeMethodBase):
             ),
             requires_grad=False,
         )
-        set_weight_attrs(lookup_table, {
-            "output_dim": 0,
-        })
+        set_weight_attrs(
+            lookup_table,
+            {
+                "output_dim": 0,
+            },
+        )
 
         layer.register_parameter("qweight", qweight)
         set_weight_attrs(qweight, extra_weight_attrs)
         layer.register_parameter("lookup_table", lookup_table)
         set_weight_attrs(lookup_table, extra_weight_attrs)
 
-    def apply(self,
-              layer: torch.nn.Module,
-              x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def apply(self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
         qweight = layer.qweight
         lookup_table = layer.lookup_table
-        out_shape = x.shape[:-1] + (qweight.shape[-1], )
+        out_shape = x.shape[:-1] + (qweight.shape[-1],)
         reshaped_x = x.reshape(-1, x.shape[-1])
         if is_hip():
             out_f = torch.zeros(out_shape, dtype=torch.float)

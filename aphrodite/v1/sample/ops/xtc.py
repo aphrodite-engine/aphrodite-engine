@@ -45,7 +45,6 @@ def xtc(
             if indices_to_remove > 0:
                 # Implies the top logit and at least one other is >= threshold.
                 # Mask out above_thresh logits except the last/lowest one.
-                logits[i].scatter_(
-                    0, sorted_indices[i, :indices_to_remove], -float('inf'))
+                logits[i].scatter_(0, sorted_indices[i, :indices_to_remove], -float("inf"))
 
     return logits

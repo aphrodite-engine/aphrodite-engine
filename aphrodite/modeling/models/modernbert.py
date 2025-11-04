@@ -5,20 +5,22 @@ from torch import nn
 from transformers import ModernBertConfig
 from transformers.activations import ACT2FN
 
-from aphrodite.attention.layers.encoder_only_attention import (
-    EncoderOnlyAttention)
+from aphrodite.attention.layers.encoder_only_attention import EncoderOnlyAttention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              RowParallelLinear)
-from aphrodite.modeling.layers.pooler import (ClassifierPooler, DispatchPooler,
-                                              Pooler, PoolingMethod,
-                                              PoolingParamsUpdate, PoolingType)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, RowParallelLinear
+from aphrodite.modeling.layers.pooler import (
+    ClassifierPooler,
+    DispatchPooler,
+    Pooler,
+    PoolingMethod,
+    PoolingParamsUpdate,
+    PoolingType,
+)
 from aphrodite.modeling.layers.rotary_embedding import RotaryEmbedding
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.tasks import PoolingTask
 from aphrodite.v1.pool.metadata import PoolingMetadata
@@ -32,14 +34,8 @@ class ModernBertEmbeddings(nn.Module):
     def __init__(self, config: ModernBertConfig):
         super().__init__()
         self.config = config
-        self.tok_embeddings = VocabParallelEmbedding(
-            config.vocab_size, config.hidden_size
-        )
-        eps = (
-            getattr(config, "norm_eps", None)
-            or getattr(config, "layer_norm_eps", None)
-            or 1e-5
-        )
+        self.tok_embeddings = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
+        eps = getattr(config, "norm_eps", None) or getattr(config, "layer_norm_eps", None) or 1e-5
         self.norm = nn.LayerNorm(config.hidden_size, eps=eps, bias=config.norm_bias)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
@@ -94,11 +90,7 @@ class ModernBertAttention(nn.Module):
         sliding_window = None
         if layer_id % config.global_attn_every_n_layers != 0:
             sliding_window = config.local_attention // 2
-            rope_theta = (
-                config.local_rope_theta
-                if config.local_rope_theta is not None
-                else config.global_rope_theta
-            )
+            rope_theta = config.local_rope_theta if config.local_rope_theta is not None else config.global_rope_theta
         else:
             rope_theta = config.global_rope_theta
 
@@ -112,9 +104,7 @@ class ModernBertAttention(nn.Module):
             prefix=f"{layer_id}.attn",
             per_layer_sliding_window=sliding_window,
         )
-        self.Wo = RowParallelLinear(
-            config.hidden_size, config.hidden_size, bias=config.attention_bias
-        )
+        self.Wo = RowParallelLinear(config.hidden_size, config.hidden_size, bias=config.attention_bias)
 
     def forward(
         self,
@@ -134,13 +124,9 @@ class ModernBertMLP(nn.Module):
     def __init__(self, config: ModernBertConfig):
         super().__init__()
         self.config = config
-        self.Wi = nn.Linear(
-            config.hidden_size, int(config.intermediate_size) * 2, bias=config.mlp_bias
-        )
+        self.Wi = nn.Linear(config.hidden_size, int(config.intermediate_size) * 2, bias=config.mlp_bias)
         self.act = nn.GELU()
-        self.Wo = RowParallelLinear(
-            config.intermediate_size, config.hidden_size, bias=config.mlp_bias
-        )
+        self.Wo = RowParallelLinear(config.intermediate_size, config.hidden_size, bias=config.mlp_bias)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         input, gate = self.Wi(hidden_states).chunk(2, dim=-1)
@@ -148,21 +134,15 @@ class ModernBertMLP(nn.Module):
 
 
 class ModernBertLayer(nn.Module):
-    def __init__(
-        self, config: ModernBertConfig, prefix: str = "", layer_id: int | None = None
-    ):
+    def __init__(self, config: ModernBertConfig, prefix: str = "", layer_id: int | None = None):
         super().__init__()
         self.config = config
         if layer_id == 0:
             self.attn_norm = nn.Identity()
         else:
-            self.attn_norm = nn.LayerNorm(
-                config.hidden_size, eps=config.norm_eps, bias=config.norm_bias
-            )
+            self.attn_norm = nn.LayerNorm(config.hidden_size, eps=config.norm_eps, bias=config.norm_bias)
         self.attn = ModernBertAttention(config=config, layer_id=layer_id)
-        self.mlp_norm = nn.LayerNorm(
-            config.hidden_size, eps=config.norm_eps, bias=config.norm_bias
-        )
+        self.mlp_norm = nn.LayerNorm(config.hidden_size, eps=config.norm_eps, bias=config.norm_bias)
         self.mlp = ModernBertMLP(config)
 
     def forward(
@@ -170,9 +150,7 @@ class ModernBertLayer(nn.Module):
         hidden_states: torch.Tensor,
         position_ids: torch.Tensor,
     ) -> torch.Tensor:
-        attn_outputs = self.attn(
-            hidden_states=self.attn_norm(hidden_states), position_ids=position_ids
-        )
+        attn_outputs = self.attn(hidden_states=self.attn_norm(hidden_states), position_ids=position_ids)
         hidden_states = hidden_states + attn_outputs
         mlp_output = self.mlp(self.mlp_norm(hidden_states))
         hidden_states = hidden_states + mlp_output
@@ -184,10 +162,7 @@ class ModernBertEncoderLayer(nn.Module):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
         self.layers = nn.ModuleList(
-            [
-                ModernBertLayer(config=config, layer_id=layer_id)
-                for layer_id in range(config.num_hidden_layers)
-            ]
+            [ModernBertLayer(config=config, layer_id=layer_id) for layer_id in range(config.num_hidden_layers)]
         )
 
     def forward(
@@ -203,9 +178,7 @@ class ModernBertEncoderLayer(nn.Module):
 @support_torch_compile
 @default_pooling_type("CLS")
 class ModernBertModel(nn.Module):
-    hf_to_aphrodite_mapper = WeightsMapper(
-        orig_to_new_prefix={"layers.": "encoder_layer.layers."}
-    )
+    hf_to_aphrodite_mapper = WeightsMapper(orig_to_new_prefix={"layers.": "encoder_layer.layers."})
 
     def __init__(
         self,
@@ -217,9 +190,7 @@ class ModernBertModel(nn.Module):
         self.config = config
         self.embeddings = ModernBertEmbeddings(config)
         self.encoder_layer = ModernBertEncoderLayer(aphrodite_config)
-        self.final_norm = nn.LayerNorm(
-            config.hidden_size, eps=config.norm_eps, bias=config.norm_bias
-        )
+        self.final_norm = nn.LayerNorm(config.hidden_size, eps=config.norm_eps, bias=config.norm_bias)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embeddings.get_input_embeddings(input_ids)
@@ -247,9 +218,7 @@ class ModernBertModel(nn.Module):
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
         else:
-            hidden_states = self.embeddings(
-                input_ids=input_ids, inputs_embeds=inputs_embeds
-            )
+            hidden_states = self.embeddings(input_ids=input_ids, inputs_embeds=inputs_embeds)
 
         outputs = self.encoder_layer(
             hidden_states=hidden_states,
@@ -265,13 +234,9 @@ class ModernBertPooler(Pooler):
 
         pooling_type = PoolingType[config.classifier_pooling.upper()]
         self.pooling = PoolingMethod.from_pooling_type(pooling_type)
-        self.dense = nn.Linear(
-            config.hidden_size, config.hidden_size, config.classifier_bias
-        )
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size, config.classifier_bias)
         self.act = nn.GELU()
-        self.norm = nn.LayerNorm(
-            config.hidden_size, eps=config.norm_eps, bias=config.norm_bias
-        )
+        self.norm = nn.LayerNorm(config.hidden_size, eps=config.norm_eps, bias=config.norm_bias)
 
     def get_supported_tasks(self) -> Set[PoolingTask]:
         return self.pooling.get_supported_tasks()
@@ -306,9 +271,7 @@ class ModernBertForSequenceClassification(nn.Module, SupportsCrossEncoding):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
         self.config = config
-        self.model = ModernBertModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "modernbert")
-        )
+        self.model = ModernBertModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "modernbert"))
         self.classifier = nn.Linear(
             config.hidden_size,
             config.num_labels,
@@ -321,15 +284,9 @@ class ModernBertForSequenceClassification(nn.Module, SupportsCrossEncoding):
 
         self.pooler = DispatchPooler(
             {
-                "token_classify": Pooler.for_token_classify(
-                    pooler_config, classifier=self.classifier
-                ),
-                "classify": ClassifierPooler(
-                    pooling=self.pooling, classifier=self.classifier, act_fn="classify"
-                ),
-                "score": ClassifierPooler(
-                    pooling=self.pooling, classifier=self.classifier, act_fn="score"
-                ),
+                "token_classify": Pooler.for_token_classify(pooler_config, classifier=self.classifier),
+                "classify": ClassifierPooler(pooling=self.pooling, classifier=self.classifier, act_fn="classify"),
+                "score": ClassifierPooler(pooling=self.pooling, classifier=self.classifier, act_fn="score"),
             }
         )
 
@@ -378,9 +335,7 @@ class ModernBertPredictionHead(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.dense = nn.Linear(
-            config.hidden_size, config.hidden_size, bias=config.classifier_bias
-        )
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size, bias=config.classifier_bias)
         self.act = ACT2FN[config.classifier_activation]
         self.norm = nn.LayerNorm(
             config.hidden_size,
@@ -401,22 +356,16 @@ class ModernBertForTokenClassification(nn.Module):
         config = aphrodite_config.model_config.hf_config
         self.head_dtype = aphrodite_config.model_config.head_dtype
         self.num_labels = config.num_labels
-        self.model = ModernBertModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "modernbert")
-        )
+        self.model = ModernBertModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "modernbert"))
         self.head = ModernBertPredictionHead(config)
-        self.classifier = nn.Linear(
-            config.hidden_size, config.num_labels, dtype=self.head_dtype
-        )
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels, dtype=self.head_dtype)
 
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
 
         self.pooler = DispatchPooler(
             {
-                "token_classify": Pooler.for_token_classify(
-                    pooler_config=pooler_config
-                ),
+                "token_classify": Pooler.for_token_classify(pooler_config=pooler_config),
             }
         )
 

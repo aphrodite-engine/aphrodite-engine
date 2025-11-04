@@ -1,11 +1,9 @@
 import torch
 
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
-from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import (
-    BatchedDeepGemmExperts)
+from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import BatchedDeepGemmExperts
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.fused_batched_moe import (
-    BatchedTritonExperts)
+from aphrodite.modeling.layers.fused_moe.fused_batched_moe import BatchedTritonExperts
 from aphrodite.utils.deep_gemm import get_mk_alignment_for_contiguous_layout
 
 
@@ -41,10 +39,7 @@ class BatchedTritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
             else None
         )
 
-        assert (
-            self.batched_deep_gemm_experts is not None
-            or self.batched_triton_experts is not None
-        )
+        assert self.batched_deep_gemm_experts is not None or self.batched_triton_experts is not None
 
     @property
     def activation_formats(
@@ -53,8 +48,7 @@ class BatchedTritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
         if self.batched_triton_experts is not None:
             assert (
                 self.batched_deep_gemm_experts is None
-                or self.batched_deep_gemm_experts.activation_formats
-                == self.batched_triton_experts.activation_formats
+                or self.batched_deep_gemm_experts.activation_formats == self.batched_triton_experts.activation_formats
             )
             return self.batched_triton_experts.activation_formats
         else:
@@ -64,16 +58,12 @@ class BatchedTritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
     def supports_chunking(self) -> bool:
         bdge = self.batched_deep_gemm_experts
         bte = self.batched_triton_experts
-        return (bdge is None or bdge.supports_chunking()) and (
-            bte is None or bte.supports_chunking()
-        )
+        return (bdge is None or bdge.supports_chunking()) and (bte is None or bte.supports_chunking())
 
     def supports_expert_map(self) -> bool:
         bdge = self.batched_deep_gemm_experts
         bte = self.batched_triton_experts
-        return (bdge is None or bdge.supports_expert_map()) and (
-            bte is None or bte.supports_expert_map()
-        )
+        return (bdge is None or bdge.supports_expert_map()) and (bte is None or bte.supports_expert_map())
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
         bdge = self.batched_deep_gemm_experts
@@ -152,11 +142,7 @@ class BatchedTritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
-        experts = (
-            self.batched_deep_gemm_experts
-            if self.allow_deep_gemm
-            else self.batched_triton_experts
-        )
+        experts = self.batched_deep_gemm_experts if self.allow_deep_gemm else self.batched_triton_experts
         assert experts is not None
         experts.apply(
             output,

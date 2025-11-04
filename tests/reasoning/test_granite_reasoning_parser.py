@@ -128,16 +128,10 @@ def test_reasoning(
 ):
     output = tokenizer.tokenize(param_dict["output"])
     # decode everything to tokens
-    output_tokens: list[str] = [
-        tokenizer.convert_tokens_to_string([token]) for token in output
-    ]
-    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(
-        tokenizer
-    )
+    output_tokens: list[str] = [tokenizer.convert_tokens_to_string([token]) for token in output]
+    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, output_tokens, streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, output_tokens, streaming=streaming)
 
     assert reasoning == param_dict["reasoning_content"]
     assert content == param_dict["content"]
@@ -313,16 +307,12 @@ STREAMING_SUBCASES = [
 def test_streaming_subcases(param_dict):
     # Get all of the token IDs
     previous_token_ids = (
-        tokenizer.encode(param_dict["previous_text"])
-        if param_dict["previous_text"] is not None
-        else []
+        tokenizer.encode(param_dict["previous_text"]) if param_dict["previous_text"] is not None else []
     )
     current_token_ids = tokenizer.encode(param_dict["current_text"])
     delta_token_ids = tokenizer.encode(param_dict["delta_text"])
 
-    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(
-        tokenizer
-    )
+    parser: ReasoningParser = ReasoningParserManager.get_reasoning_parser(parser_name)(tokenizer)
 
     response = parser.extract_reasoning_content_streaming(
         previous_text=param_dict["previous_text"],

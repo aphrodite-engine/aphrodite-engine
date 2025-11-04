@@ -41,9 +41,7 @@ def resolve_defined_ops(op_names: list[str]) -> list["torch._ops.OpOverload"]:
             from aphrodite.config import CompilationConfig
 
             logger.log(
-                logging.DEBUG
-                if op_name in CompilationConfig._attention_ops
-                else logging.WARNING,
+                logging.DEBUG if op_name in CompilationConfig._attention_ops else logging.WARNING,
                 "Failed to resolve operator for CUDAGraph partition: %s",
                 op_name,
             )
@@ -71,8 +69,7 @@ def inductor_partition_rule_context(overloads: list["torch._ops.OpOverload"]):
         yield
         return
 
-    from torch._inductor.scheduler import (  # type: ignore
-        _custom_should_partition_fns, register_should_partition_rule)
+    from torch._inductor.scheduler import _custom_should_partition_fns, register_should_partition_rule  # type: ignore
 
     def _always_partition(*_args, **_kwargs):
         return True

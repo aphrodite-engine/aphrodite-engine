@@ -8,21 +8,17 @@ from collections import defaultdict
 from pathlib import PosixPath
 
 import pytest
-from transformers import (AutoModel, AutoModelForImageTextToText,
-                          AutoModelForTextToWaveform)
+from transformers import AutoModel, AutoModelForImageTextToText, AutoModelForTextToWaveform
 
 from aphrodite.platforms import current_platform
 from aphrodite.utils.func_utils import identity
 
-from ....conftest import (IMAGE_ASSETS, AphroditeRunner, AudioTestAssets,
-                          HfRunner, ImageTestAssets, VideoTestAssets)
-from ....utils import (create_new_process_for_each_test, large_gpu_mark,
-                       multi_gpu_marks)
+from ....conftest import IMAGE_ASSETS, AphroditeRunner, AudioTestAssets, HfRunner, ImageTestAssets, VideoTestAssets
+from ....utils import create_new_process_for_each_test, large_gpu_mark, multi_gpu_marks
 from ...utils import check_outputs_equal
 from .vlm_utils import custom_inputs, model_utils, runners
 from .vlm_utils.case_filtering import get_parametrized_options
-from .vlm_utils.types import (CustomTestOptions, ExpandableVLMTestArgs,
-                              VLMTestInfo, VLMTestType)
+from .vlm_utils.types import CustomTestOptions, ExpandableVLMTestArgs, VLMTestInfo, VLMTestType
 
 # This hack is needed for phi3v & paligemma models
 # ROCm Triton FA can run into shared memory issues with these models,
@@ -113,9 +109,7 @@ VLM_TEST_SETTINGS = {
         auto_cls=AutoModelForImageTextToText,
         aphrodite_output_post_proc=model_utils.paligemma_aphrodite_to_hf_output,
         dtype="bfloat16",
-        marks=[
-            pytest.mark.skip(reason="Aphrodite does not support PrefixLM attention mask")
-        ],
+        marks=[pytest.mark.skip(reason="Aphrodite does not support PrefixLM attention mask")],
     ),
     "qwen2_5_vl": VLMTestInfo(
         models=["Qwen/Qwen2.5-VL-3B-Instruct"],
@@ -186,9 +180,7 @@ VLM_TEST_SETTINGS = {
         test_type=VLMTestType.IMAGE,
         prompt_formatter=lambda vid_prompt: f"<|im_start|>user\n{vid_prompt}<|im_end|>\n<|im_start|>assistant\n",  # noqa: E501
         max_model_len=16384,
-        hf_model_kwargs=model_utils.llava_onevision_hf_model_kwargs(
-            "llava-hf/llava-onevision-qwen2-0.5b-ov-hf"
-        ),
+        hf_model_kwargs=model_utils.llava_onevision_hf_model_kwargs("llava-hf/llava-onevision-qwen2-0.5b-ov-hf"),
         auto_cls=AutoModelForImageTextToText,
         aphrodite_output_post_proc=model_utils.llava_onevision_aphrodite_to_hf_output,
         image_size_factors=[(0.25, 0.5, 1.0)],
@@ -547,9 +539,7 @@ VLM_TEST_SETTINGS = {
         prompt_formatter=lambda vid_prompt: f"<|im_start|>user\n{vid_prompt}<|im_end|>\n<|im_start|>assistant\n",  # noqa: E501
         num_video_frames=16,
         max_model_len=16384,
-        hf_model_kwargs=model_utils.llava_onevision_hf_model_kwargs(
-            "llava-hf/llava-onevision-qwen2-0.5b-ov-hf"
-        ),
+        hf_model_kwargs=model_utils.llava_onevision_hf_model_kwargs("llava-hf/llava-onevision-qwen2-0.5b-ov-hf"),
         auto_cls=AutoModelForImageTextToText,
         aphrodite_output_post_proc=model_utils.llava_onevision_aphrodite_to_hf_output,
         custom_test_opts=[
@@ -601,9 +591,7 @@ VLM_TEST_SETTINGS = {
         img_idx_to_prompt=lambda idx: "(<image>./</image>)\n",
         max_model_len=4096,
         max_num_seqs=2,
-        get_stop_token_ids=lambda tok: tok.convert_tokens_to_ids(
-            ["<|im_end|>", "<|endoftext|>"]
-        ),
+        get_stop_token_ids=lambda tok: tok.convert_tokens_to_ids(["<|im_end|>", "<|endoftext|>"]),
         hf_output_post_proc=model_utils.minicpmv_trunc_hf_output,
         patch_hf_runner=model_utils.minicpmo_26_patch_hf_runner,
         # FIXME: https://huggingface.co/openbmb/MiniCPM-o-2_6/discussions/49
@@ -616,9 +604,7 @@ VLM_TEST_SETTINGS = {
         img_idx_to_prompt=lambda idx: "(<image>./</image>)\n",
         max_model_len=4096,
         max_num_seqs=2,
-        get_stop_token_ids=lambda tok: tok.convert_tokens_to_ids(
-            ["<|im_end|>", "<|endoftext|>"]
-        ),
+        get_stop_token_ids=lambda tok: tok.convert_tokens_to_ids(["<|im_end|>", "<|endoftext|>"]),
         hf_output_post_proc=model_utils.minicpmv_trunc_hf_output,
         patch_hf_runner=model_utils.minicpmv_26_patch_hf_runner,
     ),
@@ -833,9 +819,7 @@ VLM_TEST_SETTINGS = {
         max_model_len=16384,
         max_num_seqs=2,
         auto_cls=AutoModelForImageTextToText,
-        hf_model_kwargs=model_utils.llava_onevision_hf_model_kwargs(
-            "llava-hf/llava-onevision-qwen2-0.5b-ov-hf"
-        ),
+        hf_model_kwargs=model_utils.llava_onevision_hf_model_kwargs("llava-hf/llava-onevision-qwen2-0.5b-ov-hf"),
         aphrodite_output_post_proc=model_utils.llava_onevision_aphrodite_to_hf_output,
         custom_test_opts=[
             CustomTestOptions(

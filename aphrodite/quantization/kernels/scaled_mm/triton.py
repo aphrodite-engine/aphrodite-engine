@@ -16,8 +16,7 @@ class TritonScaledMMLinearKernel(CutlassScaledMMLinearKernel):
         if current_platform.is_cpu():
             return (
                 False,
-                "TritonScaledMMLinearKernel requires Triton which is not "
-                + "currently supported on CPU.",
+                "TritonScaledMMLinearKernel requires Triton which is not " + "currently supported on CPU.",
             )
         if not c.input_symmetric:
             return (

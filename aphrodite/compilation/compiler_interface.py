@@ -26,9 +26,7 @@ class CompilerInterface:
     # This is a class-level attribute.
     name: str
 
-    def initialize_cache(
-        self, cache_dir: str, disable_cache: bool = False, prefix: str = ""
-    ):
+    def initialize_cache(self, cache_dir: str, disable_cache: bool = False, prefix: str = ""):
         """
         when the Aphrodite process uses `cache_dir` as the cache directory,
         the compiler should initialize itself with the cache directory,
@@ -175,14 +173,10 @@ class InductorStandaloneAdaptor(CompilerInterface):
 
     def compute_hash(self, aphrodite_config: AphroditeConfig) -> str:
         factors = get_inductor_factors()
-        hash_str = hashlib.md5(
-            str(factors).encode(), usedforsecurity=False
-        ).hexdigest()[:10]
+        hash_str = hashlib.md5(str(factors).encode(), usedforsecurity=False).hexdigest()[:10]
         return hash_str
 
-    def initialize_cache(
-        self, cache_dir: str, disable_cache: bool = False, prefix: str = ""
-    ):
+    def initialize_cache(self, cache_dir: str, disable_cache: bool = False, prefix: str = ""):
         self.cache_dir = cache_dir
 
     def compile(
@@ -234,9 +228,7 @@ class InductorStandaloneAdaptor(CompilerInterface):
         assert isinstance(handle[0], str)
         assert isinstance(handle[1], str)
         path = handle[1]
-        inductor_compiled_graph = torch._inductor.CompiledArtifact.load(
-            path=path, format="unpacked"
-        )
+        inductor_compiled_graph = torch._inductor.CompiledArtifact.load(path=path, format="unpacked")
         from torch._inductor.compile_fx import graph_returns_tuple
 
         returns_tuple = graph_returns_tuple(graph)
@@ -263,14 +255,10 @@ class InductorAdaptor(CompilerInterface):
 
     def compute_hash(self, aphrodite_config: AphroditeConfig) -> str:
         factors = get_inductor_factors()
-        hash_str = hashlib.md5(
-            str(factors).encode(), usedforsecurity=False
-        ).hexdigest()[:10]
+        hash_str = hashlib.md5(str(factors).encode(), usedforsecurity=False).hexdigest()[:10]
         return hash_str
 
-    def initialize_cache(
-        self, cache_dir: str, disable_cache: bool = False, prefix: str = ""
-    ):
+    def initialize_cache(self, cache_dir: str, disable_cache: bool = False, prefix: str = ""):
         self.cache_dir = cache_dir
         self.prefix = prefix
         self.base_cache_dir = cache_dir[: -len(prefix)] if prefix else cache_dir
@@ -319,8 +307,7 @@ class InductorAdaptor(CompilerInterface):
         # it to get the hash of the compiled graph directly.
 
         hash_str, file_path = None, None
-        from torch._inductor.codecache import (FxGraphCache,
-                                               compiled_fx_graph_hash)
+        from torch._inductor.codecache import FxGraphCache, compiled_fx_graph_hash
 
         if torch.__version__.startswith("2.5"):
             original_load = FxGraphCache.load
@@ -331,18 +318,13 @@ class InductorAdaptor(CompilerInterface):
                 nonlocal file_path
                 compiled_fn = inductor_compiled_graph.current_callable
                 file_path = compiled_fn.__code__.co_filename  # noqa
-                if (
-                    not file_path.startswith(self.base_cache_dir)
-                    and compiled_fn.__closure__ is not None
-                ):
+                if not file_path.startswith(self.base_cache_dir) and compiled_fn.__closure__ is not None:
                     # hooked in the align_inputs_from_check_idxs function
                     # in torch/_inductor/utils.py
                     for cell in compiled_fn.__closure__:
                         if not callable(cell.cell_contents):
                             continue
-                        if cell.cell_contents.__code__.co_filename.startswith(
-                            self.base_cache_dir
-                        ):
+                        if cell.cell_contents.__code__.co_filename.startswith(self.base_cache_dir):
                             # this is the real file path compiled from Inductor
                             file_path = cell.cell_contents.__code__.co_filename
                             break
@@ -361,10 +343,7 @@ class InductorAdaptor(CompilerInterface):
                     nonlocal file_path
                     compiled_fn = inductor_compiled_graph.current_callable
                     file_path = compiled_fn.__code__.co_filename  # noqa
-                    if (
-                        not file_path.startswith(self.base_cache_dir)
-                        and compiled_fn.__closure__ is not None
-                    ):
+                    if not file_path.startswith(self.base_cache_dir) and compiled_fn.__closure__ is not None:
                         # hooked in the align_inputs_from_check_idxs function
                         # in torch/_inductor/utils.py
                         for cell in compiled_fn.__closure__:
@@ -418,8 +397,7 @@ class InductorAdaptor(CompilerInterface):
                 )
             )
 
-            from torch._functorch._aot_autograd.autograd_cache import (
-                AOTAutogradCache)
+            from torch._functorch._aot_autograd.autograd_cache import AOTAutogradCache
 
             # torch 2.8+ on main uses _get_shape_env in AOTAutogradCache
             if hasattr(AOTAutogradCache, "_get_shape_env"):
@@ -448,19 +426,13 @@ class InductorAdaptor(CompilerInterface):
             # TODO(zou3519): we're going to replace this all with
             # standalone_compile sometime.
             if is_torch_equal_or_newer("2.6"):
-                stack.enter_context(
-                    torch._inductor.config.patch(fx_graph_remote_cache=False)
-                )
+                stack.enter_context(torch._inductor.config.patch(fx_graph_remote_cache=False))
                 # InductorAdaptor (unfortunately) requires AOTAutogradCache
                 # to be turned off to run. It will fail to acquire the hash_str
                 # and error if not.
                 # StandaloneInductorAdaptor (PyTorch 2.8+) fixes this problem.
-                stack.enter_context(
-                    torch._functorch.config.patch(enable_autograd_cache=False)
-                )
-                stack.enter_context(
-                    torch._functorch.config.patch(enable_remote_autograd_cache=False)
-                )
+                stack.enter_context(torch._functorch.config.patch(enable_autograd_cache=False))
+                stack.enter_context(torch._functorch.config.patch(enable_remote_autograd_cache=False))
 
             compiled_graph = compile_fx(
                 graph,
@@ -482,9 +454,7 @@ class InductorAdaptor(CompilerInterface):
                     "remove ~/.cache/aphrodite/torch_compile_cache and try again "
                     "to see the real issue. "
                 )
-            assert file_path is not None, (
-                "failed to get the file path of the compiled graph"
-            )
+            assert file_path is not None, "failed to get the file path of the compiled graph"
         return compiled_graph, (hash_str, file_path)
 
     def load(
@@ -500,8 +470,7 @@ class InductorAdaptor(CompilerInterface):
         assert isinstance(handle[1], str)
         hash_str = handle[0]
 
-        from torch._functorch._aot_autograd.autograd_cache import (
-            AOTAutogradCache)
+        from torch._functorch._aot_autograd.autograd_cache import AOTAutogradCache
         from torch._inductor.codecache import FxGraphCache
 
         with ExitStack() as exit_stack:
@@ -524,24 +493,17 @@ class InductorAdaptor(CompilerInterface):
             exit_stack.enter_context(self.metrics_context())
 
             if torch.__version__.startswith("2.5"):
-                inductor_compiled_graph = FxGraphCache._lookup_graph(
-                    hash_str, example_inputs, True, False
-                )
+                inductor_compiled_graph = FxGraphCache._lookup_graph(hash_str, example_inputs, True, False)
                 assert inductor_compiled_graph is not None, (
-                    "Inductor cache lookup failed. Please remove"
-                    f"the cache directory and try again."  # noqa
+                    f"Inductor cache lookup failed. Please removethe cache directory and try again."  # noqa
                 )
             elif torch.__version__ >= "2.6":
-                from torch._inductor.output_code import (
-                    CompiledFxGraphConstantsWithGm)
+                from torch._inductor.output_code import CompiledFxGraphConstantsWithGm
 
                 constants = CompiledFxGraphConstantsWithGm(graph)
-                inductor_compiled_graph, _ = FxGraphCache._lookup_graph(
-                    hash_str, example_inputs, True, None, constants
-                )
+                inductor_compiled_graph, _ = FxGraphCache._lookup_graph(hash_str, example_inputs, True, None, constants)
                 assert inductor_compiled_graph is not None, (
-                    "Inductor cache lookup failed. Please remove"
-                    f"the cache directory and try again."  # noqa
+                    f"Inductor cache lookup failed. Please removethe cache directory and try again."  # noqa
                 )
 
         # Inductor calling convention (function signature):
@@ -596,9 +558,7 @@ def set_inductor_config(config, runtime_shape):
         # for a specific batchsize, tuning triton kernel parameters
         # can be beneficial
         config["max_autotune"] = envs.APHRODITE_ENABLE_INDUCTOR_MAX_AUTOTUNE
-        config["coordinate_descent_tuning"] = (
-            envs.APHRODITE_ENABLE_INDUCTOR_COORDINATE_DESCENT_TUNING
-        )
+        config["coordinate_descent_tuning"] = envs.APHRODITE_ENABLE_INDUCTOR_COORDINATE_DESCENT_TUNING
 
 
 def set_functorch_config():

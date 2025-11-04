@@ -23,5 +23,5 @@ def min_p(
     # Identify valid tokens using threshold comparison
     valid_token_mask = probability_values >= adjusted_min_p
     # Apply mask using boolean indexing
-    logits[~valid_token_mask] = -float('inf')
+    logits[~valid_token_mask] = -float("inf")
     return logits

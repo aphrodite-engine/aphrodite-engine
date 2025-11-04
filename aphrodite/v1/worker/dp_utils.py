@@ -5,10 +5,12 @@ import torch.distributed as dist
 from aphrodite.config import ParallelConfig
 from aphrodite.distributed.parallel_state import get_dp_group
 from aphrodite.logger import init_logger
-from aphrodite.v1.worker.ubatch_utils import (UBatchSlices,
-                                              check_ubatch_thresholds,
-                                              create_ubatch_slices,
-                                              is_second_ubatch_empty)
+from aphrodite.v1.worker.ubatch_utils import (
+    UBatchSlices,
+    check_ubatch_thresholds,
+    create_ubatch_slices,
+    is_second_ubatch_empty,
+)
 
 logger = init_logger(__name__)
 
@@ -61,9 +63,7 @@ def _post_process_ubatch(tensor: torch.Tensor) -> bool:
     orig_min_num_tokens = int(orig_num_tokens_tensor.min().item())
     padded_max_num_tokens = int(padded_num_tokens_tensor.max().item())
     if is_second_ubatch_empty(orig_min_num_tokens, padded_max_num_tokens):
-        logger.debug(
-            "Aborting ubatching %s %s", orig_min_num_tokens, padded_max_num_tokens
-        )
+        logger.debug("Aborting ubatching %s %s", orig_min_num_tokens, padded_max_num_tokens)
         should_ubatch = False
     return should_ubatch
 
@@ -218,8 +218,6 @@ def coordinate_batch_across_dp(
     token_split_point = int(num_tokens_after_padding[0].item()) // 2
 
     assert num_scheduled_tokens_per_request is not None
-    ubatch_slices = create_ubatch_slices(
-        num_scheduled_tokens_per_request, token_split_point
-    )
+    ubatch_slices = create_ubatch_slices(num_scheduled_tokens_per_request, token_split_point)
 
     return (ubatch_slices, num_tokens_after_padding)

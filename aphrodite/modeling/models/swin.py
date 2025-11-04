@@ -3,15 +3,12 @@ from collections.abc import Iterable
 import torch
 import torch.nn as nn
 from transformers import SwinConfig
-from transformers.models.swin.modeling_swin import SwinEmbeddings
+from transformers.models.swin.modeling_swin import SwinEmbeddings, SwinPatchMerging
 from transformers.models.swin.modeling_swin import SwinLayer as HFSwinLayer
-from transformers.models.swin.modeling_swin import SwinPatchMerging
 from transformers.pytorch_utils import meshgrid
 
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
@@ -29,24 +26,17 @@ class SwinSelfAttention(nn.Module):
         super().__init__()
         if dim % num_heads != 0:
             raise ValueError(
-                f"The hidden size ({dim}) is not a multiple of the number of "
-                f"attention heads ({num_heads})"
+                f"The hidden size ({dim}) is not a multiple of the number of attention heads ({num_heads})"
             )
 
         self.num_attention_heads = num_heads
         self.attention_head_size = int(dim / num_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
-        self.window_size = (
-            window_size
-            if isinstance(window_size, Iterable)
-            else (window_size, window_size)
-        )
+        self.window_size = window_size if isinstance(window_size, Iterable) else (window_size, window_size)
         self.scale = self.attention_head_size**-0.5
 
         self.relative_position_bias_table = nn.Parameter(
-            torch.zeros(
-                (2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), num_heads
-            )
+            torch.zeros((2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1), num_heads)
         )
 
         # get pair-wise relative position index for each token inside the window
@@ -61,9 +51,7 @@ class SwinSelfAttention(nn.Module):
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
         relative_position_index = relative_coords.sum(-1)
 
-        self.relative_position_index = nn.Parameter(
-            relative_position_index, requires_grad=False
-        )
+        self.relative_position_index = nn.Parameter(relative_position_index, requires_grad=False)
 
         self.qkv = QKVParallelLinear(
             hidden_size=dim,
@@ -83,9 +71,7 @@ class SwinSelfAttention(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def _get_rel_pos_bias(self) -> torch.Tensor:
-        relative_position_bias = self.relative_position_bias_table[
-            self.relative_position_index.view(-1)
-        ]
+        relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)]
         relative_position_bias = relative_position_bias.view(
             self.window_size[0] * self.window_size[1],
             self.window_size[0] * self.window_size[1],
@@ -113,17 +99,11 @@ class SwinSelfAttention(nn.Module):
         attention_scores = self._get_rel_pos_bias()
         if attention_mask is not None:
             mask_shape = attention_mask.shape[0]
-            attention_mask_expanded = attention_mask.view(
-                1, mask_shape, 1, dim, dim
-            ).expand(
+            attention_mask_expanded = attention_mask.view(1, mask_shape, 1, dim, dim).expand(
                 batch_size // mask_shape, mask_shape, self.num_attention_heads, dim, dim
             )
-            attention_scores = attention_scores + attention_mask_expanded.unsqueeze(
-                1
-            ).unsqueeze(0)
-            attention_scores = attention_scores.view(
-                -1, self.num_attention_heads, dim, dim
-            )
+            attention_scores = attention_scores + attention_mask_expanded.unsqueeze(1).unsqueeze(0)
+            attention_scores = attention_scores.view(-1, self.num_attention_heads, dim, dim)
 
         context_layer = torch.nn.functional.scaled_dot_product_attention(
             query_layer,
@@ -138,9 +118,7 @@ class SwinSelfAttention(nn.Module):
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(new_context_layer_shape)
 
-        outputs = (
-            (context_layer, attention_probs) if output_attentions else (context_layer,)
-        )
+        outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
 
         return outputs
 
@@ -161,9 +139,7 @@ class SwinSelfOutput(nn.Module):
             prefix=f"{prefix}.dense",
         )
 
-    def forward(
-        self, hidden_states: torch.Tensor, input_tensor: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
         hidden_states, _ = self.dense(hidden_states)
 
         return hidden_states
@@ -188,9 +164,7 @@ class SwinAttention(nn.Module):
             quant_config=quant_config,
             prefix=f"{prefix}.self",
         )
-        self.output = SwinSelfOutput(
-            config, dim, quant_config=quant_config, prefix=f"{prefix}.output"
-        )
+        self.output = SwinSelfOutput(config, dim, quant_config=quant_config, prefix=f"{prefix}.output")
         self.pruned_heads = set()
 
     def forward(
@@ -200,9 +174,7 @@ class SwinAttention(nn.Module):
         head_mask: torch.FloatTensor | None = None,
         output_attentions: bool | None = False,
     ) -> tuple[torch.Tensor]:
-        self_outputs = self.self(
-            hidden_states, attention_mask, head_mask, output_attentions
-        )
+        self_outputs = self.self(hidden_states, attention_mask, head_mask, output_attentions)
         attention_output = self.output(self_outputs[0], hidden_states)
         outputs = (attention_output,) + self_outputs[1:]
         return outputs
@@ -281,12 +253,8 @@ class SwinLayer(HFSwinLayer):
             quant_config=quant_config,
             prefix=f"{prefix}.attention",
         )
-        self.intermediate = SwinIntermediate(
-            config, dim, quant_config=quant_config, prefix=f"{prefix}.intermediate"
-        )
-        self.output = SwinOutput(
-            config, dim, quant_config=quant_config, prefix=f"{prefix}.output"
-        )
+        self.intermediate = SwinIntermediate(config, dim, quant_config=quant_config, prefix=f"{prefix}.intermediate")
+        self.output = SwinOutput(config, dim, quant_config=quant_config, prefix=f"{prefix}.output")
 
 
 class SwinStage(nn.Module):
@@ -323,9 +291,7 @@ class SwinStage(nn.Module):
 
         # patch merging layer
         if downsample is not None:
-            self.downsample = downsample(
-                input_resolution, dim=dim, norm_layer=nn.LayerNorm
-            )
+            self.downsample = downsample(input_resolution, dim=dim, norm_layer=nn.LayerNorm)
         else:
             self.downsample = None
 
@@ -357,9 +323,7 @@ class SwinStage(nn.Module):
         if self.downsample is not None:
             height_downsampled, width_downsampled = (height + 1) // 2, (width + 1) // 2
             output_dimensions = (height, width, height_downsampled, width_downsampled)
-            hidden_states = self.downsample(
-                hidden_states_before_downsampling, input_dimensions
-            )
+            hidden_states = self.downsample(hidden_states_before_downsampling, input_dimensions)
         else:
             output_dimensions = (height, width, height, width)
 
@@ -385,12 +349,7 @@ class SwinEncoder(nn.Module):
         super().__init__()
         self.num_layers = len(config.depths)
         self.config = config
-        dpr = [
-            x.item()
-            for x in torch.linspace(
-                0, config.drop_path_rate, sum(config.depths), device="cpu"
-            )
-        ]
+        dpr = [x.item() for x in torch.linspace(0, config.drop_path_rate, sum(config.depths), device="cpu")]
         self.layers = nn.ModuleList(
             [
                 SwinStage(
@@ -402,14 +361,8 @@ class SwinEncoder(nn.Module):
                     ),
                     depth=config.depths[layer_idx],
                     num_heads=config.num_heads[layer_idx],
-                    drop_path=dpr[
-                        sum(config.depths[:layer_idx]) : sum(
-                            config.depths[: layer_idx + 1]
-                        )
-                    ],
-                    downsample=SwinPatchMerging
-                    if (layer_idx < self.num_layers - 1)
-                    else None,
+                    drop_path=dpr[sum(config.depths[:layer_idx]) : sum(config.depths[: layer_idx + 1])],
+                    downsample=SwinPatchMerging if (layer_idx < self.num_layers - 1) else None,
                     quant_config=quant_config,
                     prefix=f"{prefix}.layers.{layer_idx}",
                 )

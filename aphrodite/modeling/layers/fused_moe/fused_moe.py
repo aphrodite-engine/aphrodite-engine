@@ -13,24 +13,26 @@ import aphrodite.envs as envs
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import (
-    aphrodite_is_batch_invariant)
+from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.modeling.layers.fused_moe.config import (
-    FUSED_MOE_UNQUANTIZED_CONFIG, FusedMoEQuantConfig, _get_config_dtype_str)
+    FUSED_MOE_UNQUANTIZED_CONFIG,
+    FusedMoEQuantConfig,
+    _get_config_dtype_str,
+)
 from aphrodite.modeling.layers.fused_moe.cutlass_moe import (
     _valid_cutlass_block_scaled_grouped_gemm,
-    run_cutlass_block_scaled_fused_experts)
-from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import (
-    _valid_deep_gemm, deep_gemm_moe_fp8)
-from aphrodite.modeling.layers.fused_moe.moe_align_block_size import (
-    moe_align_block_size)
-from aphrodite.modeling.layers.fused_moe.prepare_finalize import (
-    MoEPrepareAndFinalizeNoEP)
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceNoOP)
+    run_cutlass_block_scaled_fused_experts,
+)
+from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import _valid_deep_gemm, deep_gemm_moe_fp8
+from aphrodite.modeling.layers.fused_moe.moe_align_block_size import moe_align_block_size
+from aphrodite.modeling.layers.fused_moe.prepare_finalize import MoEPrepareAndFinalizeNoEP
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceNoOP
 from aphrodite.modeling.layers.fused_moe.utils import (
-    _resize_cache, activation_without_mul, disable_inplace,
-    moe_kernel_quantize_input)
+    _resize_cache,
+    activation_without_mul,
+    disable_inplace,
+    moe_kernel_quantize_input,
+)
 from aphrodite.modeling.utils import maybe_disable_graph_partition
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.mxfp4_utils import dequant_mxfp4
@@ -38,8 +40,7 @@ from aphrodite.quantization.utils.mxfp6_utils import dequant_mxfp6
 from aphrodite.quantization.utils.ocp_mx_utils import OCP_MX_Scheme
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.deep_gemm import is_deep_gemm_e8m0_used
-from aphrodite.utils.torch_utils import (direct_register_custom_op,
-                                         is_torch_equal_or_newer)
+from aphrodite.utils.torch_utils import direct_register_custom_op, is_torch_equal_or_newer
 
 from .rocm_aiter_fused_moe import is_rocm_aiter_moe_enabled
 
@@ -188,25 +189,13 @@ def fused_moe_kernel_gptq_awq(
 
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
-    a_ptrs = a_ptr + (
-        offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak
-    )
+    a_ptrs = a_ptr + (offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak)
 
     if use_int4_w4a16:
-        b_ptrs = (
-            b_ptr
-            + off_experts * stride_be
-            + (offs_k[:, None] // 2) * stride_bk
-            + offs_bn[None, :] * stride_bn
-        )
+        b_ptrs = b_ptr + off_experts * stride_be + (offs_k[:, None] // 2) * stride_bk + offs_bn[None, :] * stride_bn
         b_shifter = (offs_k[:, None] % 2) * 4
     elif use_int8_w8a16:
-        b_ptrs = (
-            b_ptr
-            + off_experts * stride_be
-            + offs_k[:, None] * stride_bk
-            + offs_bn[None, :] * stride_bn
-        )
+        b_ptrs = b_ptr + off_experts * stride_be + offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn
 
     if not has_zp and use_int4_w4a16:
         b_zp_num = 8
@@ -253,22 +242,14 @@ def fused_moe_kernel_gptq_awq(
         if has_zp and use_int4_w4a16:
             offs_k_true = (offs_k[:, None] + BLOCK_SIZE_K * k) // group_size
             b_zp_ptrs = (
-                b_zp_ptr
-                + off_experts * stride_bze
-                + (offs_bn[None, :] // 2) * stride_bzn
-                + offs_k_true * stride_bzk
+                b_zp_ptr + off_experts * stride_bze + (offs_bn[None, :] // 2) * stride_bzn + offs_k_true * stride_bzk
             )
             b_zp = tl.load(b_zp_ptrs, mask=k_mask, other=k_other)
             b_zp = (b_zp >> b_zp_shifter) & 0xF
             b_zp = b_zp.to(tl.float32)
         elif has_zp and use_int8_w8a16:
             offs_k_true = (offs_k[:, None] + BLOCK_SIZE_K * k) // group_size
-            b_zp_ptrs = (
-                b_zp_ptr
-                + off_experts * stride_bze
-                + offs_bn[None, :] * stride_bzn
-                + offs_k_true * stride_bzk
-            )
+            b_zp_ptrs = b_zp_ptr + off_experts * stride_bze + offs_bn[None, :] * stride_bzn + offs_k_true * stride_bzk
             b_zp = tl.load(b_zp_ptrs, mask=k_mask, other=k_other)
             b_zp = b_zp.to(tl.float32)
 
@@ -426,19 +407,11 @@ def fused_moe_kernel(
 
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
-    a_ptrs = a_ptr + (
-        offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak
-    )
+    a_ptrs = a_ptr + (offs_token[:, None] // top_k * stride_am + offs_k[None, :] * stride_ak)
 
-    b_ptrs = (
-        b_ptr
-        + off_experts * stride_be
-        + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
-    )
+    b_ptrs = b_ptr + off_experts * stride_be + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
     if use_int8_w8a16:
-        b_scale_ptrs = (
-            b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
-        )
+        b_scale_ptrs = b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
         b_scale = tl.load(b_scale_ptrs)
 
     if use_fp8_w8a8 or use_int8_w8a8:
@@ -446,14 +419,10 @@ def fused_moe_kernel(
         if group_k > 0 and group_n > 0:
             a_scale_ptrs = a_scale_ptr + (offs_token // top_k) * stride_asm
             offs_bsn = offs_bn // group_n
-            b_scale_ptrs = (
-                b_scale_ptr + off_experts * stride_bse + offs_bsn * stride_bsn
-            )
+            b_scale_ptrs = b_scale_ptr + off_experts * stride_bse + offs_bsn * stride_bsn
         # channel-wise
         elif per_channel_quant:
-            b_scale_ptrs = (
-                b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
-            )
+            b_scale_ptrs = b_scale_ptr + off_experts * stride_bse + offs_bn[None, :] * stride_bsn
             b_scale = tl.load(b_scale_ptrs)
             # Load per-token scale for activations
             a_scale_ptrs = a_scale_ptr + (offs_token // top_k) * stride_asm
@@ -488,9 +457,7 @@ def fused_moe_kernel(
             if group_k > 0 and group_n > 0:
                 k_start = k * BLOCK_SIZE_K
                 offs_ks = k_start // group_k
-                a_scale = tl.load(
-                    a_scale_ptrs + offs_ks * stride_ask, mask=token_mask, other=0.0
-                )
+                a_scale = tl.load(a_scale_ptrs + offs_ks * stride_ask, mask=token_mask, other=0.0)
                 b_scale = tl.load(b_scale_ptrs + offs_ks * stride_bsk)
 
                 accumulator += tl.dot(a, b) * a_scale[:, None] * b_scale[None, :]
@@ -557,12 +524,8 @@ def invoke_fused_moe_kernel(
 
     if use_fp8_w8a8 or use_int8_w8a8:
         assert B_scale is not None
-        assert block_shape is None or triton.cdiv(
-            B.size(-2), block_shape[0]
-        ) == B_scale.size(-2)
-        assert block_shape is None or triton.cdiv(
-            B.size(-1), block_shape[1]
-        ) == B_scale.size(-1)
+        assert block_shape is None or triton.cdiv(B.size(-2), block_shape[0]) == B_scale.size(-2)
+        assert block_shape is None or triton.cdiv(B.size(-1), block_shape[1]) == B_scale.size(-1)
 
     elif use_int8_w8a16 or use_int4_w4a16:
         assert B_scale is not None
@@ -581,16 +544,9 @@ def invoke_fused_moe_kernel(
         # so num_valid_experts <= batch_size <= BLOCK_SIZE_M,
         # and we can skip some invalid blocks.
         EM = min(sorted_token_ids.size(0), A.size(0) * top_k * config["BLOCK_SIZE_M"])
-    grid = lambda META: (
-        triton.cdiv(EM, META["BLOCK_SIZE_M"])
-        * triton.cdiv(B.size(1), META["BLOCK_SIZE_N"]),
-    )
+    grid = lambda META: (triton.cdiv(EM, META["BLOCK_SIZE_M"]) * triton.cdiv(B.size(1), META["BLOCK_SIZE_N"]),)
     HAS_BIAS = B_bias is not None
-    if (
-        (use_int8_w8a16 or use_int4_w4a16)
-        and block_shape is not None
-        and block_shape[1] > 0
-    ):
+    if (use_int8_w8a16 or use_int4_w4a16) and block_shape is not None and block_shape[1] > 0:
         assert B_scale is not None and B_scale.ndim == 3
         assert B_zp is None or B_zp.ndim == 3
 
@@ -741,10 +697,7 @@ def compute_identity_kernel(
         return
 
     h = tl.load(
-        hidden_states_ptr
-        + batch_id * hidden_dim
-        + dim_offset
-        + tl.arange(0, BLOCK_SIZE),
+        hidden_states_ptr + batch_id * hidden_dim + dim_offset + tl.arange(0, BLOCK_SIZE),
         mask=(dim_offset + tl.arange(0, BLOCK_SIZE)) < hidden_dim,
     )
 
@@ -800,16 +753,14 @@ def zero_experts_compute_triton(
 
 
 # Adapted from: https://github.com/sgl-project/sglang/pull/2628
-def get_config_file_name(
-    E: int, N: int, dtype: str | None, block_shape: list[int] | None = None
-) -> str:
+def get_config_file_name(E: int, N: int, dtype: str | None, block_shape: list[int] | None = None) -> str:
     device_name = current_platform.get_device_name().replace(" ", "_")
     if "H200" in device_name:
         device_name = "H200"
     dtype_selector = "" if not dtype else f",dtype={dtype}"
-    block_shape_selector = (
-        "" if not block_shape or not all(block_shape) else f",block_shape={block_shape}"
-    ).replace(" ", "")
+    block_shape_selector = ("" if not block_shape or not all(block_shape) else f",block_shape={block_shape}").replace(
+        " ", ""
+    )
     return f"E={E},N={N},device_name={device_name}{dtype_selector}{block_shape_selector}.json"  # noqa: E501
 
 
@@ -845,22 +796,16 @@ def get_moe_configs(
     # note that we prioritize user defined config
     user_defined_config_folder = envs.APHRODITE_TUNED_CONFIG_FOLDER
     if user_defined_config_folder is not None:
-        user_defined_config_file_path = os.path.join(
-            user_defined_config_folder, json_file_name
-        )
+        user_defined_config_file_path = os.path.join(user_defined_config_folder, json_file_name)
         config_file_paths.append(user_defined_config_file_path)
 
-    default_config_file_path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), "configs", json_file_name
-    )
+    default_config_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs", json_file_name)
     config_file_paths.append(default_config_file_path)
 
     for config_file_path in config_file_paths:
         if os.path.exists(config_file_path):
             with open(config_file_path) as f:
-                logger.info(
-                    "Using configuration from %s for MoE layer.", config_file_path
-                )
+                logger.info("Using configuration from %s for MoE layer.", config_file_path)
                 # If a configuration has been found, return it
                 tuned_config = json.load(f)
                 # Delete triton_version from tuned_config
@@ -870,10 +815,7 @@ def get_moe_configs(
     # If no optimized configuration is available, we will use the default
     # configuration
     logger.warning_once(
-        (
-            "Using default MoE config. Performance might be sub-optimal! "
-            "Config file not found at %s"
-        ),
+        ("Using default MoE config. Performance might be sub-optimal! Config file not found at %s"),
         str(config_file_paths),
         scope="global",
     )
@@ -912,9 +854,7 @@ def get_moe_wna16_block_config(
 
         num_n_blocks = size_k // block_size_k
         num_k_blocks = size_n // block_size_k
-        num_m_blocks = (
-            num_valid_tokens + block_size_m - 1
-        ) / block_size_m + num_experts
+        num_m_blocks = (num_valid_tokens + block_size_m - 1) / block_size_m + num_experts
         if num_valid_tokens // real_top_k <= block_size_m:
             num_m_blocks = min(num_m_blocks, num_valid_tokens)
         num_blocks = num_m_blocks * num_n_blocks * num_k_blocks
@@ -948,14 +888,9 @@ def get_moe_wna16_block_config(
         return {"BLOCK_SIZE_N": block_size_n, "BLOCK_SIZE_K": block_size_k}
 
 
-def should_moe_wna16_use_cuda(
-    num_valid_tokens: int, group_size: int, num_experts: int, bit: int
-):
+def should_moe_wna16_use_cuda(num_valid_tokens: int, group_size: int, num_experts: int, bit: int):
     return (
-        current_platform.is_cuda()
-        and bit == 4
-        and group_size in [32, 64, 128]
-        and num_valid_tokens / num_experts <= 6
+        current_platform.is_cuda() and bit == 4 and group_size in [32, 64, 128] and num_valid_tokens / num_experts <= 6
     )
 
 
@@ -1094,23 +1029,17 @@ def fused_topk(
 
     M, _ = hidden_states.size()
 
-    topk_weights = torch.empty(
-        M, topk, dtype=torch.float32, device=hidden_states.device
-    )
+    topk_weights = torch.empty(M, topk, dtype=torch.float32, device=hidden_states.device)
     topk_ids = torch.empty(
         M,
         topk,
         dtype=torch.int32 if indices_type is None else indices_type,
         device=hidden_states.device,
     )
-    token_expert_indices = torch.empty(
-        M, topk, dtype=torch.int32, device=hidden_states.device
-    )
+    token_expert_indices = torch.empty(M, topk, dtype=torch.int32, device=hidden_states.device)
 
     topk_func = dispatch_topk_func()
-    topk_weights, topk_ids = topk_func(
-        topk_weights, topk_ids, token_expert_indices, gating_output, renormalize
-    )
+    topk_weights, topk_ids = topk_func(topk_weights, topk_ids, token_expert_indices, gating_output, renormalize)
 
     return topk_weights, topk_ids, token_expert_indices
 
@@ -1124,9 +1053,7 @@ def fused_topk_bias(
 ):
     n_routed_experts = gating_output.shape[-1]
     scores = gating_output.softmax(dim=-1)
-    scores_for_choice = scores.view(
-        -1, n_routed_experts
-    ) + e_score_correction_bias.unsqueeze(0)
+    scores_for_choice = scores.view(-1, n_routed_experts) + e_score_correction_bias.unsqueeze(0)
 
     # For batch invariance, use sorted=True to ensure deterministic expert selection
     use_sorted = aphrodite_is_batch_invariant()
@@ -1188,19 +1115,13 @@ def grouped_topk(
         # scores for expert selection but original scores for routing weights
         original_scores = scores
         scores = scores + e_score_correction_bias.unsqueeze(0)
-        group_scores = (
-            scores.view(num_token, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
-        )
+        group_scores = scores.view(num_token, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
     else:
-        group_scores = (
-            scores.view(num_token, num_expert_group, -1).max(dim=-1).values
-        )  # [n, n_group]
+        group_scores = scores.view(num_token, num_expert_group, -1).max(dim=-1).values  # [n, n_group]
 
     # For batch invariance, use sorted=True to ensure deterministic expert selection
     use_sorted = aphrodite_is_batch_invariant()
-    group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=use_sorted)[
-        1
-    ]  # [n, top_k_group]
+    group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=use_sorted)[1]  # [n, top_k_group]
     group_mask = torch.zeros_like(group_scores)  # [n, n_group]
     group_mask.scatter_(1, group_idx, 1)  # [n, n_group]
     score_mask = (
@@ -1215,9 +1136,7 @@ def grouped_topk(
         # Use original unbiased scores for the routing weights
         topk_weights = original_scores.gather(1, topk_ids)
     else:
-        topk_weights, topk_ids = torch.topk(
-            tmp_scores, k=topk, dim=-1, sorted=use_sorted
-        )
+        topk_weights, topk_ids = torch.topk(tmp_scores, k=topk, dim=-1, sorted=use_sorted)
 
     if renormalize:
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
@@ -1263,14 +1182,10 @@ def eplb_map_to_physical_and_record(
     # to deterministically choose a replica
     replica_count = logical_replica_count[topk_ids_long]
     # Flatten-position based index, reshaped back to `topk_ids` shape
-    pos_indices = torch.arange(
-        topk_ids.numel(), device=topk_ids.device, dtype=torch.long
-    ).reshape_as(topk_ids)
+    pos_indices = torch.arange(topk_ids.numel(), device=topk_ids.device, dtype=torch.long).reshape_as(topk_ids)
     # Compute pseudo-random indices by modulo
     replica_indices = (pos_indices % replica_count).unsqueeze(-1)
-    physical_ids = (
-        logical_to_physical_map[topk_ids_long].gather(-1, replica_indices).squeeze(-1)
-    )
+    physical_ids = logical_to_physical_map[topk_ids_long].gather(-1, replica_indices).squeeze(-1)
 
     topk_ids = physical_ids
 
@@ -1425,11 +1340,7 @@ direct_register_custom_op(
     op_func=inplace_fused_experts,
     mutates_args=["hidden_states"],
     fake_impl=inplace_fused_experts_fake,
-    tags=(
-        ()
-        if is_torch_equal_or_newer("2.7.0")
-        else (torch.Tag.needs_fixed_stride_order,)
-    ),
+    tags=(() if is_torch_equal_or_newer("2.7.0") else (torch.Tag.needs_fixed_stride_order,)),
 )
 
 
@@ -1520,11 +1431,7 @@ direct_register_custom_op(
     op_name="outplace_fused_experts",
     op_func=outplace_fused_experts,
     fake_impl=outplace_fused_experts_fake,
-    tags=(
-        ()
-        if is_torch_equal_or_newer("2.7.0")
-        else (torch.Tag.needs_fixed_stride_order,)
-    ),
+    tags=(() if is_torch_equal_or_newer("2.7.0") else (torch.Tag.needs_fixed_stride_order,)),
 )
 
 
@@ -1712,15 +1619,11 @@ def fused_experts_impl(
             "w_mxfp6_e3m2_a_mxfp6_e3m2",
             "w_mxfp6_e2m3_a_mxfp6_e2m3",
         }:
-            assert hidden_states.size(1) == (w1.size(2) * 4) // 3, (
-                "hidden size mismatch"
-            )
+            assert hidden_states.size(1) == (w1.size(2) * 4) // 3, "hidden size mismatch"
         else:
             raise NotImplementedError(f"Unsupported ocp_mx_scheme={ocp_mx_scheme}")
     else:
-        assert hidden_states.size(1) == w1.size(2), (
-            f"Hidden size mismatch {hidden_states.size(1)} != {w1.size(2)}"
-        )
+        assert hidden_states.size(1) == w1.size(2), f"Hidden size mismatch {hidden_states.size(1)} != {w1.size(2)}"
 
     assert topk_weights.size() == topk_ids.size(), "topk shape mismatch"
     assert hidden_states.is_contiguous(), "Hidden_states must be contiguous"
@@ -1777,9 +1680,7 @@ def fused_experts_impl(
     intermediate_cache3 = cache13[: M * top_k_num * K].view(M, top_k_num, K)
 
     # This needs separate memory since it's used concurrently with cache1
-    intermediate_cache2 = torch.empty(
-        (M * top_k_num, N // 2), device=hidden_states.device, dtype=hidden_states.dtype
-    )
+    intermediate_cache2 = torch.empty((M * top_k_num, N // 2), device=hidden_states.device, dtype=hidden_states.dtype)
 
     if hidden_states.dtype == torch.bfloat16:
         compute_type = tl.bfloat16
@@ -1810,22 +1711,14 @@ def fused_experts_impl(
             w2 = dequant_mxfp4(w2, w2_scale, hidden_states.dtype)
             w2_scale = None
         elif ocp_mx_scheme == OCP_MX_Scheme.w_mxfp6_e3m2_a_mxfp6_e3m2:
-            w1 = dequant_mxfp6(
-                w1, w1_scale, quant_dtype="fp6_e3m2", float_dtype=hidden_states.dtype
-            )
+            w1 = dequant_mxfp6(w1, w1_scale, quant_dtype="fp6_e3m2", float_dtype=hidden_states.dtype)
             w1_scale = None
-            w2 = dequant_mxfp6(
-                w2, w2_scale, quant_dtype="fp6_e3m2", float_dtype=hidden_states.dtype
-            )
+            w2 = dequant_mxfp6(w2, w2_scale, quant_dtype="fp6_e3m2", float_dtype=hidden_states.dtype)
             w2_scale = None
         elif ocp_mx_scheme == OCP_MX_Scheme.w_mxfp6_e2m3_a_mxfp6_e2m3:
-            w1 = dequant_mxfp6(
-                w1, w1_scale, quant_dtype="fp6_e2m3", float_dtype=hidden_states.dtype
-            )
+            w1 = dequant_mxfp6(w1, w1_scale, quant_dtype="fp6_e2m3", float_dtype=hidden_states.dtype)
             w1_scale = None
-            w2 = dequant_mxfp6(
-                w2, w2_scale, quant_dtype="fp6_e2m3", float_dtype=hidden_states.dtype
-            )
+            w2 = dequant_mxfp6(w2, w2_scale, quant_dtype="fp6_e2m3", float_dtype=hidden_states.dtype)
             w2_scale = None
         else:
             raise NotImplementedError(f"Unsupported ocp_mx_scheme={ocp_mx_scheme}")
@@ -1847,9 +1740,7 @@ def fused_experts_impl(
             # so the cache size and config are already set correctly and
             # do not need to be adjusted.
             intermediate_cache1 = intermediate_cache1[:tokens_in_chunk]
-            intermediate_cache2 = intermediate_cache2[
-                : tokens_in_chunk * topk_ids.size(1)
-            ]
+            intermediate_cache2 = intermediate_cache2[: tokens_in_chunk * topk_ids.size(1)]
             intermediate_cache3 = intermediate_cache3[:tokens_in_chunk]
             config = get_config_func(tokens_in_chunk)
 
@@ -1893,18 +1784,12 @@ def fused_experts_impl(
 
         # Activation function with multiplication
         if activation == "silu":
-            torch.ops._C.silu_and_mul(
-                intermediate_cache2, intermediate_cache1.view(-1, N)
-            )
+            torch.ops._C.silu_and_mul(intermediate_cache2, intermediate_cache1.view(-1, N))
         elif activation == "gelu":
-            torch.ops._C.gelu_and_mul(
-                intermediate_cache2, intermediate_cache1.view(-1, N)
-            )
+            torch.ops._C.gelu_and_mul(intermediate_cache2, intermediate_cache1.view(-1, N))
         elif activation == "swigluoai":
             # alpha = 1.702, limit = 7.0
-            torch.ops._C.swigluoai_and_mul(
-                intermediate_cache2, intermediate_cache1.view(-1, N)
-            )
+            torch.ops._C.swigluoai_and_mul(intermediate_cache2, intermediate_cache1.view(-1, N))
         # Activation function without multiplication
         elif activation == SILU_NO_MUL:
             intermediate_cache2 = F.silu(intermediate_cache1.view(-1, N))
@@ -2032,9 +1917,7 @@ class TritonExperts(mk.FusedMoEPermuteExpertsUnpermute):
             torch.float8_e4m3fn,
         ]
 
-        E, num_tokens, N, K, top_k_num = self.moe_problem_size(
-            hidden_states, w1, w2, topk_ids
-        )
+        E, num_tokens, N, K, top_k_num = self.moe_problem_size(hidden_states, w1, w2, topk_ids)
 
         if global_num_experts == -1:
             global_num_experts = E
@@ -2061,9 +1944,7 @@ class TritonExperts(mk.FusedMoEPermuteExpertsUnpermute):
 
         # Note that the output tensor might be in workspace1
         intermediate_cache1 = _resize_cache(workspace2, (num_tokens, top_k_num, N))
-        intermediate_cache2 = _resize_cache(
-            workspace13, (num_tokens * top_k_num, N // 2)
-        )
+        intermediate_cache2 = _resize_cache(workspace13, (num_tokens * top_k_num, N // 2))
         intermediate_cache3 = _resize_cache(workspace2, (num_tokens, top_k_num, K))
 
         sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
@@ -2094,9 +1975,7 @@ class TritonExperts(mk.FusedMoEPermuteExpertsUnpermute):
             B_bias=self.w1_bias,
         )
 
-        self.activation(
-            activation, intermediate_cache2, intermediate_cache1.view(-1, N)
-        )
+        self.activation(activation, intermediate_cache2, intermediate_cache1.view(-1, N))
 
         a2q_scale: torch.Tensor | None = None
 

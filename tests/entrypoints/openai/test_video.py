@@ -46,10 +46,7 @@ async def client(server):
 
 @pytest.fixture(scope="session")
 def base64_encoded_video() -> dict[str, str]:
-    return {
-        video_url: encode_video_base64(fetch_video(video_url)[0])
-        for video_url in TEST_VIDEO_URLS
-    }
+    return {video_url: encode_video_base64(fetch_video(video_url)[0]) for video_url in TEST_VIDEO_URLS}
 
 
 def dummy_messages_from_video_url(
@@ -63,10 +60,7 @@ def dummy_messages_from_video_url(
         {
             "role": "user",
             "content": [
-                *(
-                    {"type": "video_url", "video_url": {"url": video_url}}
-                    for video_url in video_urls
-                ),
+                *({"type": "video_url", "video_url": {"url": video_url}} for video_url in video_urls),
                 {"type": "text", "text": content_text},
             ],
         }
@@ -76,9 +70,7 @@ def dummy_messages_from_video_url(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
 @pytest.mark.parametrize("video_url", TEST_VIDEO_URLS)
-async def test_single_chat_session_video(
-    client: openai.AsyncOpenAI, model_name: str, video_url: str
-):
+async def test_single_chat_session_video(client: openai.AsyncOpenAI, model_name: str, video_url: str):
     messages = dummy_messages_from_video_url(video_url)
 
     # test single completion
@@ -118,9 +110,7 @@ async def test_single_chat_session_video(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
 @pytest.mark.parametrize("video_url", TEST_VIDEO_URLS)
-async def test_error_on_invalid_video_url_type(
-    client: openai.AsyncOpenAI, model_name: str, video_url: str
-):
+async def test_error_on_invalid_video_url_type(client: openai.AsyncOpenAI, model_name: str, video_url: str):
     messages = [
         {
             "role": "user",
@@ -144,9 +134,7 @@ async def test_error_on_invalid_video_url_type(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
 @pytest.mark.parametrize("video_url", TEST_VIDEO_URLS)
-async def test_single_chat_session_video_beamsearch(
-    client: openai.AsyncOpenAI, model_name: str, video_url: str
-):
+async def test_single_chat_session_video_beamsearch(client: openai.AsyncOpenAI, model_name: str, video_url: str):
     messages = dummy_messages_from_video_url(video_url)
 
     chat_completion = await client.chat.completions.create(
@@ -159,10 +147,7 @@ async def test_single_chat_session_video_beamsearch(
         extra_body=dict(use_beam_search=True),
     )
     assert len(chat_completion.choices) == 2
-    assert (
-        chat_completion.choices[0].message.content
-        != chat_completion.choices[1].message.content
-    )
+    assert chat_completion.choices[0].message.content != chat_completion.choices[1].message.content
 
 
 @pytest.mark.asyncio
@@ -174,9 +159,7 @@ async def test_single_chat_session_video_base64encoded(
     video_url: str,
     base64_encoded_video: dict[str, str],
 ):
-    messages = dummy_messages_from_video_url(
-        f"data:video/jpeg;base64,{base64_encoded_video[video_url]}"
-    )
+    messages = dummy_messages_from_video_url(f"data:video/jpeg;base64,{base64_encoded_video[video_url]}")
 
     # test single completion
     chat_completion = await client.chat.completions.create(
@@ -222,9 +205,7 @@ async def test_single_chat_session_video_base64encoded_beamsearch(
     video_url: str,
     base64_encoded_video: dict[str, str],
 ):
-    messages = dummy_messages_from_video_url(
-        f"data:video/jpeg;base64,{base64_encoded_video[video_url]}"
-    )
+    messages = dummy_messages_from_video_url(f"data:video/jpeg;base64,{base64_encoded_video[video_url]}")
 
     chat_completion = await client.chat.completions.create(
         model=model_name,
@@ -234,18 +215,13 @@ async def test_single_chat_session_video_base64encoded_beamsearch(
         extra_body=dict(use_beam_search=True),
     )
     assert len(chat_completion.choices) == 2
-    assert (
-        chat_completion.choices[0].message.content
-        != chat_completion.choices[1].message.content
-    )
+    assert chat_completion.choices[0].message.content != chat_completion.choices[1].message.content
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
 @pytest.mark.parametrize("video_url", TEST_VIDEO_URLS)
-async def test_chat_streaming_video(
-    client: openai.AsyncOpenAI, model_name: str, video_url: str
-):
+async def test_chat_streaming_video(client: openai.AsyncOpenAI, model_name: str, video_url: str):
     messages = dummy_messages_from_video_url(video_url)
 
     # test single completion
@@ -285,12 +261,8 @@ async def test_chat_streaming_video(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
-@pytest.mark.parametrize(
-    "video_urls", [TEST_VIDEO_URLS[:i] for i in range(2, len(TEST_VIDEO_URLS))]
-)
-async def test_multi_video_input(
-    client: openai.AsyncOpenAI, model_name: str, video_urls: list[str]
-):
+@pytest.mark.parametrize("video_urls", [TEST_VIDEO_URLS[:i] for i in range(2, len(TEST_VIDEO_URLS))])
+async def test_multi_video_input(client: openai.AsyncOpenAI, model_name: str, video_urls: list[str]):
     messages = dummy_messages_from_video_url(video_urls)
 
     if len(video_urls) > MAXIMUM_VIDEOS:

@@ -2,7 +2,6 @@ import functools
 import threading
 import time
 from collections import defaultdict
-from typing import Dict, List, Optional
 
 from .locks import NoOpLock
 from .page_allocator import Page, PageAllocator
@@ -11,6 +10,7 @@ from .utils import PAGE_SIZE, SANITY_CHECK
 
 try:
     from aphrodite.v1.core.dynamic_kv import vmm_ops
+
     _vmm_ops_available = True
 except ImportError:
     _vmm_ops_available = False
@@ -34,7 +34,6 @@ def synchronized(method):
 
 
 class KVCacheManager:
-
     def __init__(
         self,
         num_blocks: int,
@@ -74,14 +73,14 @@ class KVCacheManager:
         )
 
         self.num_avail_blocks = 0
-        self.avail_pages: Dict[int, Page] = {}
-        self.full_pages: Dict[int, Page] = {}
+        self.avail_pages: dict[int, Page] = {}
+        self.full_pages: dict[int, Page] = {}
 
-        self.reserved_blocks: List[int] = []
-        self.null_block: Optional[list[int]] = None
+        self.reserved_blocks: list[int] = []
+        self.null_block: list[int] | None = None
 
         self.in_shrink: bool = False
-        self.target_num_blocks: Optional[int] = None
+        self.target_num_blocks: int | None = None
         self._lock = threading.RLock() if async_sched else NoOpLock()
 
         self._post_init_done = threading.Event()
@@ -103,8 +102,7 @@ class KVCacheManager:
             total_wait = 0.0
             while not _check_kv_tensors_created():
                 if total_wait >= KV_TENSOR_WAIT_TIMEOUT:
-                    raise TimeoutError("KV tensors not created after "
-                                       f"{KV_TENSOR_WAIT_TIMEOUT} seconds")
+                    raise TimeoutError(f"KV tensors not created after {KV_TENSOR_WAIT_TIMEOUT} seconds")
 
                 time.sleep(0.001)
                 total_wait += 0.001
@@ -112,15 +110,12 @@ class KVCacheManager:
             if self.reserve_null_block:
                 self.null_block = self._alloc(1, _skip_wait=True)
                 if self.null_block != [0]:
-                    logger.error(
-                        f"Failed to reserve null block, got {self.null_block}")
-                    raise RuntimeError(
-                        "Failed to reserve null block at index 0")
+                    logger.error("Failed to reserve null block, got %s", self.null_block)
+                    raise RuntimeError("Failed to reserve null block at index 0")
 
             self.page_allocator.start_prealloc_thread()
         except Exception as e:
-            logger.error(
-                f"Error during KVCacheManager post-initialization: {e}")
+            logger.error("Error during KVCacheManager post-initialization: %s", e)
             raise
         finally:
             self._post_init_done.set()
@@ -129,28 +124,24 @@ class KVCacheManager:
         if not self._post_init_done.is_set():
             self._post_init_done.wait()
 
-    def alloc(self, need_size: int) -> Optional[List[int]]:
+    def alloc(self, need_size: int) -> list[int] | None:
         return self._alloc(need_size)
 
     @synchronized
-    def _alloc(self,
-               need_size: int,
-               _skip_wait: bool = False) -> Optional[List[int]]:
+    def _alloc(self, need_size: int, _skip_wait: bool = False) -> list[int] | None:
         if not _skip_wait:
             self._wait_post_init()
 
-        new_mem_size = self.page_allocator.mem_info_tracker.check_and_get_resize_target(
-            self.mem_size, self.num_layers)
+        new_mem_size = self.page_allocator.mem_info_tracker.check_and_get_resize_target(self.mem_size, self.num_layers)
         if new_mem_size is not None:
             self.resize(new_mem_size)
 
         if self.available_size() < need_size:
-            logger.warning(f"available_size()={self.available_size()} < "
-                           f"need_size={need_size}")
+            logger.warning("available_size()=%d < need_size=%d", self.available_size(), need_size)
             return None
 
         ret_index = []
-        page: Optional[Page] = None
+        page: Page | None = None
 
         remaining_need = need_size
 
@@ -181,7 +172,7 @@ class KVCacheManager:
         return ret_index
 
     @synchronized
-    def free(self, indices: List[int]):
+    def free(self, indices: list[int]):
         self._wait_post_init()
 
         if len(indices) == 0:
@@ -190,15 +181,14 @@ class KVCacheManager:
         if SANITY_CHECK:
             for idx in indices:
                 if idx in self.reserved_blocks:
-                    raise ValueError(f"Freed index {idx} is in "
-                                     " reserved_blocks, which is not allowed.")
+                    raise ValueError(f"Freed index {idx} is in  reserved_blocks, which is not allowed.")
 
         idx_dict = defaultdict(list)
         for idx in indices:
             page_id = self.page_allocator.get_page_id(idx, self.block_mem_size)
             idx_dict[page_id].append(idx)
 
-        pages_to_free: List[int] = []
+        pages_to_free: list[int] = []
         for page_id, idxs in idx_dict.items():
             page = None
             if page_id in self.full_pages:
@@ -209,11 +199,13 @@ class KVCacheManager:
                 if SANITY_CHECK:
                     raise ValueError(
                         f"Page {page_id} not found in avail_pages or full_pages. "
-                        f"This indicates a serious state inconsistency.")
+                        f"This indicates a serious state inconsistency."
+                    )
                 else:
                     logger.error(
-                        f"Page {page_id} not found in avail_pages or full_pages. "
-                        f"Skipping to avoid crash, but this indicates a serious bug."
+                        "Page %d not found in avail_pages or full_pages. "
+                        "Skipping to avoid crash, but this indicates a serious bug.",
+                        page_id,
                     )
                     continue
 
@@ -232,8 +224,7 @@ class KVCacheManager:
         if self.in_shrink:
             assert self.target_num_blocks is not None
             if self._get_num_alloced_blocks() <= self.target_num_blocks:
-                self.page_allocator.resize(self.target_num_blocks *
-                                           self.block_mem_size)
+                self.page_allocator.resize(self.target_num_blocks * self.block_mem_size)
                 self.in_shrink = False
                 self.target_num_blocks = None
 
@@ -265,8 +256,7 @@ class KVCacheManager:
                 self.in_shrink = False
                 self.target_num_blocks = None
             return True
-        assert (len(self.reserved_blocks) == 0
-                ), "Reserved blocks must be freed before resizing."
+        assert len(self.reserved_blocks) == 0, "Reserved blocks must be freed before resizing."
         self.in_shrink = True
         self.target_num_blocks = new_mem_size // self.block_mem_size
         self.free_reserved()
@@ -284,26 +274,25 @@ class KVCacheManager:
             blocks_from_free_pages = 0
         else:
             virtual_free_pages = self.page_allocator.get_num_free_pages()
-            physical_free_pages = self.page_allocator.get_avail_physical_pages(
-            ) + self.page_allocator.get_num_reserved_pages()
+            physical_free_pages = (
+                self.page_allocator.get_avail_physical_pages() + self.page_allocator.get_num_reserved_pages()
+            )
             free_pages = min(virtual_free_pages, physical_free_pages)
-            blocks_from_free_pages = free_pages * Page.get_num_blocks(
-                self.page_size, self.block_mem_size)
+            blocks_from_free_pages = free_pages * Page.get_num_blocks(self.page_size, self.block_mem_size)
         return avail_blocks + blocks_from_free_pages
 
     @synchronized
-    def get_mapped_memory_size(self, unit='bytes') -> float:
+    def get_mapped_memory_size(self, unit="bytes") -> float:
         """Get memory usage in specified unit (bytes, kb, mb, gb)."""
-        memory_bytes = (self.page_allocator.get_num_inuse_pages() *
-                        self.num_layers * self.page_size * 2)
+        memory_bytes = self.page_allocator.get_num_inuse_pages() * self.num_layers * self.page_size * 2
 
-        if unit == 'bytes':
+        if unit == "bytes":
             return memory_bytes
-        elif unit == 'kb':
+        elif unit == "kb":
             return memory_bytes / 1024
-        elif unit == 'mb':
+        elif unit == "mb":
             return memory_bytes / (1024**2)
-        elif unit == 'gb':
+        elif unit == "gb":
             return memory_bytes / (1024**3)
         else:
             raise ValueError(f"Unknown unit: {unit}")
@@ -313,11 +302,9 @@ class KVCacheManager:
 
     @synchronized
     def _get_num_alloced_blocks(self) -> int:
-        blocks_from_full_pages = len(self.full_pages) * Page.get_num_blocks(
-            self.page_size, self.block_mem_size)
-        blocks_from_avail_pages = len(self.avail_pages) * Page.get_num_blocks(
-            self.page_size, self.block_mem_size) - self.num_avail_blocks
+        blocks_from_full_pages = len(self.full_pages) * Page.get_num_blocks(self.page_size, self.block_mem_size)
+        blocks_from_avail_pages = (
+            len(self.avail_pages) * Page.get_num_blocks(self.page_size, self.block_mem_size) - self.num_avail_blocks
+        )
         blocks_from_reserved_blocks = len(self.reserved_blocks)
-        return (blocks_from_full_pages + blocks_from_avail_pages +
-                blocks_from_reserved_blocks)
-
+        return blocks_from_full_pages + blocks_from_avail_pages + blocks_from_reserved_blocks

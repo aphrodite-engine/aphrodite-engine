@@ -1,7 +1,6 @@
 import pytest
 
-from tests.models.utils import (CLSPoolingEmbedModelInfo, EmbedModelInfo,
-                                LASTPoolingEmbedModelInfo)
+from tests.models.utils import CLSPoolingEmbedModelInfo, EmbedModelInfo, LASTPoolingEmbedModelInfo
 
 from .mteb_utils import mteb_test_embed_models
 

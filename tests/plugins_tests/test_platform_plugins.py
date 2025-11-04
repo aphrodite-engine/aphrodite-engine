@@ -39,6 +39,5 @@ def test_oot_custom_op(monkeypatch: pytest.MonkeyPatch):
         "possibly because the custom op is not registered correctly."
     )
     assert hasattr(layer, "addition_config"), (
-        "Expected DummyRotaryEmbedding to have an 'addition_config' attribute, "
-        "which is set by the custom op."
+        "Expected DummyRotaryEmbedding to have an 'addition_config' attribute, which is set by the custom op."
     )

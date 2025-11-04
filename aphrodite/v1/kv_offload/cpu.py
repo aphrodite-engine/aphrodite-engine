@@ -20,9 +20,7 @@ class CPUOffloadingSpec(OffloadingSpec):
 
         num_cpu_blocks = self.extra_config.get("num_cpu_blocks")
         if not num_cpu_blocks:
-            raise Exception(
-                "num_cpu_blocks must be specified in kv_connector_extra_config"
-            )
+            raise Exception("num_cpu_blocks must be specified in kv_connector_extra_config")
         self.num_cpu_blocks: int = num_cpu_blocks
 
         # scheduler-side
@@ -34,13 +32,9 @@ class CPUOffloadingSpec(OffloadingSpec):
     def get_manager(self) -> OffloadingManager:
         if not self._manager:
             kv_events_config = self.aphrodite_config.kv_events_config
-            enable_events = (
-                kv_events_config is not None and kv_events_config.enable_kv_cache_events
-            )
+            enable_events = kv_events_config is not None and kv_events_config.enable_kv_cache_events
             self._manager = LRUOffloadingManager(
-                CPUBackend(
-                    block_size=self.offloaded_block_size, num_blocks=self.num_cpu_blocks
-                ),
+                CPUBackend(block_size=self.offloaded_block_size, num_blocks=self.num_cpu_blocks),
                 enable_events=enable_events,
             )
         return self._manager
@@ -50,18 +44,11 @@ class CPUOffloadingSpec(OffloadingSpec):
     ) -> Iterator[tuple[type[LoadStoreSpec], type[LoadStoreSpec], OffloadingHandler]]:
         if not self._handler:
             if not current_platform.is_cuda_alike():
-                raise Exception(
-                    "CPU Offloading is currently only supported on CUDA-alike GPUs"
-                )
+                raise Exception("CPU Offloading is currently only supported on CUDA-alike GPUs")
 
             layer_names = list(kv_caches.keys())
-            layers = get_layers_from_aphrodite_config(
-                self.aphrodite_config, AttentionLayerBase, layer_names
-            )
-            attn_backends = {
-                layer_name: layers[layer_name].get_attn_backend()
-                for layer_name in layer_names
-            }
+            layers = get_layers_from_aphrodite_config(self.aphrodite_config, AttentionLayerBase, layer_names)
+            attn_backends = {layer_name: layers[layer_name].get_attn_backend() for layer_name in layer_names}
 
             self._handler = CpuGpuOffloadingHandler(
                 attn_backends=attn_backends,

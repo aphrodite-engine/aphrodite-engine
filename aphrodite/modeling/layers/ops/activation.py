@@ -24,6 +24,7 @@ from packaging.version import Version
 
 if Version(triton.__version__) >= Version("3.0.0"):
     from triton.language.extra import libdevice
+
     triton_tanh = libdevice.tanh
     triton_erf = libdevice.erf
     triton_sqrt = libdevice.sqrt
@@ -31,6 +32,7 @@ else:
     triton_tanh = tl.math.tanh
     triton_erf = tl.math.erf
     triton_sqrt = tl.math.sqrt
+
 
 @triton.jit
 def _fg_kernel(e, g, h, n_elements, BLOCK_SIZE: tl.constexpr):
@@ -68,13 +70,10 @@ def swiglu_fg_kernel(e, g):
     n_elements = batch * num_tokens * d
     h = torch.empty((batch, num_tokens, d), dtype=e.dtype, device=e.device)
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch.cuda.device(e.device):
-        _fg_kernel[grid](
-            e.reshape(-1), g.reshape(-1), h.reshape(-1),
-            n_elements, BLOCK_SIZE=1024
-        )
+        _fg_kernel[grid](e.reshape(-1), g.reshape(-1), h.reshape(-1), n_elements, BLOCK_SIZE=1024)
 
     if squeeze:
         return h.squeeze(0)
@@ -124,9 +123,7 @@ def _approx_gelu_kernel(e, g, h, n_elements, BLOCK_SIZE: tl.constexpr):
     g_row = tl.load(g + offsets, mask=mask, other=0)
 
     s = 0.7978845608028654  # sqrt(2/pi)
-    f_row = 0.5 * e_row * (
-        triton_tanh(s * e_row * (1.0 + 0.044715 * e_row * e_row)) + 1.0
-    )
+    f_row = 0.5 * e_row * (triton_tanh(s * e_row * (1.0 + 0.044715 * e_row * e_row)) + 1.0)
     f_row = f_row.to(g_row.dtype)
     output = f_row * g_row
 
@@ -145,13 +142,10 @@ def geglu_exact_forward_kernel(e, g):
     n_elements = batch * num_tokens * d
     h = torch.empty((batch, num_tokens, d), dtype=e.dtype, device=e.device)
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch.cuda.device(e.device):
-        _exact_gelu_kernel[grid](
-            e.reshape(-1), g.reshape(-1), h.reshape(-1),
-            n_elements, BLOCK_SIZE=1024
-        )
+        _exact_gelu_kernel[grid](e.reshape(-1), g.reshape(-1), h.reshape(-1), n_elements, BLOCK_SIZE=1024)
 
     if squeeze:
         return h.squeeze(0)
@@ -170,13 +164,10 @@ def geglu_approx_forward_kernel(e, g):
     n_elements = batch * num_tokens * d
     h = torch.empty((batch, num_tokens, d), dtype=e.dtype, device=e.device)
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch.cuda.device(e.device):
-        _approx_gelu_kernel[grid](
-            e.reshape(-1), g.reshape(-1), h.reshape(-1),
-            n_elements, BLOCK_SIZE=1024
-        )
+        _approx_gelu_kernel[grid](e.reshape(-1), g.reshape(-1), h.reshape(-1), n_elements, BLOCK_SIZE=1024)
 
     if squeeze:
         return h.squeeze(0)
@@ -216,13 +207,10 @@ def gelu_new_kernel(x: torch.Tensor) -> torch.Tensor:
     n_elements = batch * num_tokens * d
     output = torch.empty_like(x)
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch.cuda.device(x.device):
-        _gelu_new_kernel[grid](
-            x.reshape(-1), output.reshape(-1),
-            n_elements, BLOCK_SIZE=1024
-        )
+        _gelu_new_kernel[grid](x.reshape(-1), output.reshape(-1), n_elements, BLOCK_SIZE=1024)
 
     if squeeze:
         return output.squeeze(0)
@@ -281,13 +269,10 @@ def fast_gelu_kernel(x: torch.Tensor) -> torch.Tensor:
     n_elements = batch * num_tokens * d
     output = torch.empty_like(x)
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch.cuda.device(x.device):
-        _fast_gelu_kernel[grid](
-            x.reshape(-1), output.reshape(-1),
-            n_elements, BLOCK_SIZE=1024
-        )
+        _fast_gelu_kernel[grid](x.reshape(-1), output.reshape(-1), n_elements, BLOCK_SIZE=1024)
 
     if squeeze:
         return output.squeeze(0)
@@ -306,13 +291,10 @@ def quick_gelu_kernel(x: torch.Tensor) -> torch.Tensor:
     n_elements = batch * num_tokens * d
     output = torch.empty_like(x)
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch.cuda.device(x.device):
-        _quick_gelu_kernel[grid](
-            x.reshape(-1), output.reshape(-1),
-            n_elements, BLOCK_SIZE=1024
-        )
+        _quick_gelu_kernel[grid](x.reshape(-1), output.reshape(-1), n_elements, BLOCK_SIZE=1024)
 
     if squeeze:
         return output.squeeze(0)
@@ -320,8 +302,7 @@ def quick_gelu_kernel(x: torch.Tensor) -> torch.Tensor:
 
 
 @triton.jit
-def _relu_squared_kernel(
-    x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+def _relu_squared_kernel(x_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
     """
     Compute Squared ReLU:
     relu2(x) = x² if x > 0 else 0
@@ -362,13 +343,10 @@ def relu_squared_kernel(x: torch.Tensor) -> torch.Tensor:
     n_elements = batch * num_tokens * d
     output = torch.empty_like(x)
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch.cuda.device(x.device):
-        _relu_squared_kernel[grid](
-            x.reshape(-1), output.reshape(-1),
-            n_elements, BLOCK_SIZE=1024
-        )
+        _relu_squared_kernel[grid](x.reshape(-1), output.reshape(-1), n_elements, BLOCK_SIZE=1024)
 
     if squeeze:
         return output.squeeze(0)

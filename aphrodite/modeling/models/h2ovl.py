@@ -12,24 +12,31 @@ from PIL import Image
 from transformers import PretrainedConfig
 
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalKwargsItems,
-                                         MultiModalUUIDDict)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (MultiModalProcessingInfo,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalKwargsItems, MultiModalUUIDDict
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    MultiModalProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 from .intern_vit import InternVisionModel
-from .internvl import (IMG_CONTEXT, IMG_END, IMG_START,
-                       BaseInternVLDummyInputsBuilder,
-                       BaseInternVLMultiModalProcessor,
-                       BaseInternVLProcessingInfo, BaseInternVLProcessor,
-                       InternVLChatModel, build_transform,
-                       find_closest_aspect_ratio, get_internvl_target_ratios)
+from .internvl import (
+    IMG_CONTEXT,
+    IMG_END,
+    IMG_START,
+    BaseInternVLDummyInputsBuilder,
+    BaseInternVLMultiModalProcessor,
+    BaseInternVLProcessingInfo,
+    BaseInternVLProcessor,
+    InternVLChatModel,
+    build_transform,
+    find_closest_aspect_ratio,
+    get_internvl_target_ratios,
+)
 
 
 def resolve_h2ovl_min_max_num(
@@ -61,8 +68,7 @@ def get_h2ovl_target_ratios(
         target_ratios = [
             ratio
             for ratio in target_ratios
-            if prior_aspect_ratio[0] % ratio[0] != 0
-            and prior_aspect_ratio[1] % ratio[1] != 0
+            if prior_aspect_ratio[0] % ratio[0] != 0 and prior_aspect_ratio[1] % ratio[1] != 0
         ]
 
     return target_ratios
@@ -206,9 +212,7 @@ def image_to_pixel_values_h2ovl(
             prior_aspect_ratio=aspect_ratio1,
         )
         # combine pixel values
-        pixel_values = torch.cat(
-            [pixel_values2[:-1], pixel_values1[:-1], pixel_values2[-1:]], 0
-        )
+        pixel_values = torch.cat([pixel_values2[:-1], pixel_values1[:-1], pixel_values2[-1:]], 0)
 
     else:
         pixel_values, _ = _preprocess_image(
@@ -270,17 +274,9 @@ class H2OVLProcessor(BaseInternVLProcessor):
         dynamic_image_size: bool | None = None,
         use_thumbnail: bool | None = None,
     ) -> tuple[int, int]:
-        min_dynamic_patch = (
-            self.min_dynamic_patch if min_dynamic_patch is None else min_dynamic_patch
-        )
-        max_dynamic_patch = (
-            self.max_dynamic_patch if max_dynamic_patch is None else max_dynamic_patch
-        )
-        dynamic_image_size = (
-            self.dynamic_image_size
-            if dynamic_image_size is None
-            else dynamic_image_size
-        )
+        min_dynamic_patch = self.min_dynamic_patch if min_dynamic_patch is None else min_dynamic_patch
+        max_dynamic_patch = self.max_dynamic_patch if max_dynamic_patch is None else max_dynamic_patch
+        dynamic_image_size = self.dynamic_image_size if dynamic_image_size is None else dynamic_image_size
         use_thumbnail = self.use_thumbnail if use_thumbnail is None else use_thumbnail
 
         return resolve_h2ovl_min_max_num(
@@ -447,9 +443,7 @@ class H2OVLMultiModalProcessor(BaseInternVLMultiModalProcessor[H2OVLProcessingIn
         num_images = len(image_num_patches)
 
         def get_replacement_internvl(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 feature_size = images.get_feature_size(item_idx)
@@ -523,9 +517,7 @@ class H2OVLChatModel(InternVLChatModel):
         if not is_mono:
             vision_feature_layer = config.select_layer
             if vision_feature_layer < 0:
-                num_hidden_layers = (
-                    config.vision_config.num_hidden_layers + vision_feature_layer + 1
-                )
+                num_hidden_layers = config.vision_config.num_hidden_layers + vision_feature_layer + 1
             else:
                 num_hidden_layers = vision_feature_layer + 1
 

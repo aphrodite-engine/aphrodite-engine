@@ -1,8 +1,7 @@
 import pytest
 import torch
 
-from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import (
-    persistent_masked_m_silu_mul_quant)
+from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import persistent_masked_m_silu_mul_quant
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import cdiv
 
@@ -50,9 +49,7 @@ def test_silu_mul_fp8_quant_deep_gemm(E, T, H, fp8_type):
     )
 
     # Run the SiLU V2 kernel
-    y_q, y_s = persistent_masked_m_silu_mul_quant(
-        y, tokens_per_expert, group_size=group_size
-    )
+    y_q, y_s = persistent_masked_m_silu_mul_quant(y, tokens_per_expert, group_size=group_size)
 
     torch.cuda.synchronize()
     fp8_info = torch.finfo(fp8_dtype)
@@ -67,9 +64,7 @@ def test_silu_mul_fp8_quant_deep_gemm(E, T, H, fp8_type):
 
     for e in range(E):
         nt = tokens_per_expert[e].item()
-        ref_s = torch.empty(
-            (T, cdiv(H, group_size)), dtype=torch.float32, device="cuda"
-        )
+        ref_s = torch.empty((T, cdiv(H, group_size)), dtype=torch.float32, device="cuda")
         ref_q = torch.empty((T, H), dtype=fp8_dtype, device="cuda")
 
         for t in range(nt):
@@ -79,17 +74,11 @@ def test_silu_mul_fp8_quant_deep_gemm(E, T, H, fp8_type):
             # process full groups
             n_full_groups = H // group_size
             if n_full_groups > 0:
-                data_grp = data[: n_full_groups * group_size].view(
-                    n_full_groups, group_size
-                )
+                data_grp = data[: n_full_groups * group_size].view(n_full_groups, group_size)
                 amax = data_grp.abs().amax(dim=1).clamp(min=eps)
                 scale = amax / fp8_max
-                scaled = data[: n_full_groups * group_size] / scale.repeat_interleave(
-                    group_size
-                )
-                ref_q_row[: n_full_groups * group_size] = scaled.clamp(
-                    fp8_min, fp8_max
-                ).to(fp8_dtype)
+                scaled = data[: n_full_groups * group_size] / scale.repeat_interleave(group_size)
+                ref_q_row[: n_full_groups * group_size] = scaled.clamp(fp8_min, fp8_max).to(fp8_dtype)
                 ref_s[t, :n_full_groups] = scale
 
             # process remainder group

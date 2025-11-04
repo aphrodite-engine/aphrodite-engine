@@ -10,12 +10,10 @@ from packaging import version
 from torch.nn.parameter import Parameter
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 
 logger = init_logger(__name__)
 
@@ -23,9 +21,7 @@ logger = init_logger(__name__)
 def torchao_version_at_least(torchao_version: str) -> bool:
     if find_spec("torchao"):
         try:
-            if version.parse(importlib.metadata.version("torchao")) >= version.parse(
-                torchao_version
-            ):
+            if version.parse(importlib.metadata.version("torchao")) >= version.parse(torchao_version):
                 return True
         except (ImportError, version.InvalidVersion):
             return False
@@ -79,10 +75,7 @@ class TorchAOConfig(QuantizationConfig):
         self.is_checkpoint_torchao_serialized = is_checkpoint_torchao_serialized
 
     def __repr__(self) -> str:
-        return (
-            f"TorchAOConfig({self.torchao_config=}, {self.skip_modules=}, "
-            f"{self.is_checkpoint_torchao_serialized=})"
-        )
+        return f"TorchAOConfig({self.torchao_config=}, {self.skip_modules=}, {self.is_checkpoint_torchao_serialized=})"
 
     def get_name(self) -> QuantizationMethods:
         return "torchao"
@@ -108,14 +101,11 @@ class TorchAOConfig(QuantizationConfig):
             from torchao.core.config import config_from_dict
         except ImportError as err:
             raise ImportError(
-                "Please install torchao>=0.10.0 via "
-                "`pip install torchao>=0.10.0` to use torchao quantization."
+                "Please install torchao>=0.10.0 via `pip install torchao>=0.10.0` to use torchao quantization."
             ) from err
 
         quant_method = cls.get_from_keys_or(config, ["quant_method"], None)
-        is_checkpoint_torchao_serialized = (
-            quant_method is not None and "torchao" in quant_method
-        )
+        is_checkpoint_torchao_serialized = quant_method is not None and "torchao" in quant_method
 
         hf_config = cls.get_from_keys_or(config, ["quant_type"], None)
         assert hf_config is not None, "quant_type must be specified"
@@ -172,9 +162,7 @@ class TorchAOConfig(QuantizationConfig):
         hf_config = {"quant_type": {"default": config_dict}}
         return cls.from_config(hf_config)
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
         if not isinstance(layer, LinearBase):
             return None
 
@@ -189,8 +177,7 @@ class TorchAOConfig(QuantizationConfig):
             c = None
             if module_fqn in module_fqn_to_config:
                 assert not module_fqn.startswith("re:"), (
-                    "module fqn should not start with"
-                    "`re:`, which is used for specifying regex"
+                    "module fqn should not start with`re:`, which is used for specifying regex"
                 )
                 c = module_fqn_to_config[module_fqn]
             else:
@@ -207,9 +194,7 @@ class TorchAOConfig(QuantizationConfig):
                     c = module_fqn_to_config.get("_default", None)
 
             if c is not None:
-                current_torchao_config = TorchAOConfig(
-                    c, self.skip_modules, self.is_checkpoint_torchao_serialized
-                )
+                current_torchao_config = TorchAOConfig(c, self.skip_modules, self.is_checkpoint_torchao_serialized)
                 return TorchAOLinearMethod(current_torchao_config)
             else:
                 return UnquantizedLinearMethod()
@@ -220,9 +205,7 @@ class TorchAOConfig(QuantizationConfig):
         return []
 
 
-def torchao_quantize_param_data(
-    param: torch.Tensor, torchao_config: Any
-) -> torch.nn.Parameter:
+def torchao_quantize_param_data(param: torch.Tensor, torchao_config: Any) -> torch.nn.Parameter:
     """Quantize a Tensor with torchao quantization specified by torchao_config
 
     Args:
@@ -242,9 +225,7 @@ def torchao_quantize_param_data(
         # linear can't be top level module since quantize_ is inplace
         # while some of our configs need to do module swap, and only non-top
         # level modules support module swap
-        dummy_linear = torch.nn.Sequential(
-            torch.nn.Linear(param.shape[1], param.shape[0], bias=False)
-        )
+        dummy_linear = torch.nn.Sequential(torch.nn.Linear(param.shape[1], param.shape[0], bias=False))
 
     dummy_linear[0].weight = param
     quantize_(dummy_linear, torchao_config)
@@ -281,9 +262,7 @@ class TorchAOLinearMethod(LinearMethodBase):
             requires_grad=False,
         )
         if self.quant_config.is_checkpoint_torchao_serialized:
-            weight = torchao_quantize_param_data(
-                weight, self.quant_config.torchao_config
-            )
+            weight = torchao_quantize_param_data(weight, self.quant_config.torchao_config)
 
         set_weight_attrs(weight, {"input_dim": 1, "output_dim": 0})
 
@@ -304,8 +283,6 @@ class TorchAOLinearMethod(LinearMethodBase):
 
         # quantize the weight on the fly if the checkpoint is not already
         # quantized by torchao
-        weight = torchao_quantize_param_data(
-            layer.weight, self.quant_config.torchao_config
-        )
+        weight = torchao_quantize_param_data(layer.weight, self.quant_config.torchao_config)
         set_weight_attrs(weight, {"input_dim": 1, "output_dim": 0})
         layer.register_parameter("weight", weight)

@@ -1,7 +1,6 @@
 import torch
 
-from aphrodite.compilation.wrapper import (
-    TorchCompileWrapperWithCustomDispatcher)
+from aphrodite.compilation.wrapper import TorchCompileWrapperWithCustomDispatcher
 from aphrodite.config import CompilationMode
 
 
@@ -16,9 +15,7 @@ class MyWrapper(TorchCompileWrapperWithCustomDispatcher):
     def __init__(self, model):
         self.model = model
         compiled_callable = torch.compile(self.forward, backend="eager")
-        super().__init__(
-            compiled_callable, compilation_mode=CompilationMode.DYNAMO_TRACE_ONCE
-        )
+        super().__init__(compiled_callable, compilation_mode=CompilationMode.DYNAMO_TRACE_ONCE)
 
     def forward(self, x: torch.Tensor, cache: torch.Tensor | None = None):
         # this is the function to be compiled

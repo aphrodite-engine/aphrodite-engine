@@ -1,18 +1,15 @@
 import os
 
 from aphrodite.platforms import PlatformEnum, current_platform
-from aphrodite.quantization.kernels.scaled_mm.aiter import (
-    AiterScaledMMLinearKernel)
-from aphrodite.quantization.kernels.scaled_mm.cpu import (
-    CPUScaledMMLinearKernel)
-from aphrodite.quantization.kernels.scaled_mm.cutlass import (
-    CutlassScaledMMLinearKernel)
+from aphrodite.quantization.kernels.scaled_mm.aiter import AiterScaledMMLinearKernel
+from aphrodite.quantization.kernels.scaled_mm.cpu import CPUScaledMMLinearKernel
+from aphrodite.quantization.kernels.scaled_mm.cutlass import CutlassScaledMMLinearKernel
 from aphrodite.quantization.kernels.scaled_mm.ScaledMMLinearKernel import (  # noqa: E501
-    ScaledMMLinearKernel, ScaledMMLinearLayerConfig)
-from aphrodite.quantization.kernels.scaled_mm.triton import (
-    TritonScaledMMLinearKernel)
-from aphrodite.quantization.kernels.scaled_mm.xla import (
-    XLAScaledMMLinearKernel)
+    ScaledMMLinearKernel,
+    ScaledMMLinearLayerConfig,
+)
+from aphrodite.quantization.kernels.scaled_mm.triton import TritonScaledMMLinearKernel
+from aphrodite.quantization.kernels.scaled_mm.xla import XLAScaledMMLinearKernel
 
 # in priority/performance order (when available)
 _POSSIBLE_KERNELS: dict[PlatformEnum, list[type[ScaledMMLinearKernel]]] = {
@@ -53,19 +50,14 @@ def choose_scaled_mm_linear_kernel(
     failure_reasons = []
     for kernel in _POSSIBLE_KERNELS[current_platform._enum]:
         if kernel.__name__ in os.environ.get("APHRODITE_DISABLED_KERNELS", "").split(","):
-            failure_reasons.append(
-                f" {kernel.__name__} disabled by environment variable"
-            )
+            failure_reasons.append(f" {kernel.__name__} disabled by environment variable")
             continue
 
         # If the current platform uses compute_capability,
         # make sure the kernel supports the compute cability.
         if compute_capability is not None:
             kernel_min_capability = kernel.get_min_capability()
-            if (
-                kernel_min_capability is not None
-                and kernel_min_capability > compute_capability
-            ):
+            if kernel_min_capability is not None and kernel_min_capability > compute_capability:
                 failure_reasons.append(
                     f"{kernel.__name__} requires capability "
                     f"{kernel_min_capability}, current compute capability "
@@ -77,11 +69,8 @@ def choose_scaled_mm_linear_kernel(
         if can_implement:
             return kernel
         else:
-            failure_reasons.append(
-                f" {kernel.__name__} cannot implement due to: {failure_reason}"
-            )
+            failure_reasons.append(f" {kernel.__name__} cannot implement due to: {failure_reason}")
 
     raise ValueError(
-        "Failed to find a kernel that can implement the "
-        "ScaledMM linear layer. Reasons: \n" + "\n".join(failure_reasons)
+        "Failed to find a kernel that can implement the ScaledMM linear layer. Reasons: \n" + "\n".join(failure_reasons)
     )

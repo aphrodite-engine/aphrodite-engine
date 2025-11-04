@@ -73,9 +73,7 @@ async def test_prithvi_mae_plugin_online(
     # verify the output is formatted as expected for this plugin
     plugin_data = parsed_response.data
 
-    assert all(
-        plugin_data.get(attr) for attr in ["type", "format", "data", "request_id"]
-    )
+    assert all(plugin_data.get(attr) for attr in ["type", "format", "data", "request_id"])
 
     # We just check that the output is a valid base64 string.
     # Raises an exception and fails the test if the string is corrupted.
@@ -108,9 +106,7 @@ def test_prithvi_mae_plugin_offline(aphrodite_runner, model_name: str):
     output = pooler_output[0].outputs
 
     # verify the output is formatted as expected for this plugin
-    assert all(
-        hasattr(output, attr) for attr in ["type", "format", "data", "request_id"]
-    )
+    assert all(hasattr(output, attr) for attr in ["type", "format", "data", "request_id"])
 
     # We just check that the output is a valid base64 string.
     # Raises an exception and fails the test if the string is corrupted.

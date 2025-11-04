@@ -15,14 +15,12 @@
 # limitations under the License.
 """Exaone model configuration"""
 
-from typing import Dict
-
 from transformers.configuration_utils import PretrainedConfig
 from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
-EXAONE_PRETRAINED_CONFIG_ARCHIVE_MAP: Dict[str, str] = {}
+EXAONE_PRETRAINED_CONFIG_ARCHIVE_MAP: dict[str, str] = {}
 
 
 class ExaoneConfig(PretrainedConfig):
@@ -183,7 +181,6 @@ class ExaoneConfig(PretrainedConfig):
         self.rotary_expand_length = kwargs.pop("rotary_expand_length", None)
         self.rotary_base = kwargs.pop("rotary_base", 10000.0)
         self.use_qkv_fuse = kwargs.pop("use_qkv_fuse", False)
-        self.rescale_before_lm_head = kwargs.pop("rescale_before_lm_head",
-                                                 (rotary_pct == 0.25))
+        self.rescale_before_lm_head = kwargs.pop("rescale_before_lm_head", (rotary_pct == 0.25))
         if self.use_rotary_pos:
             self.use_absolute_pos = False

@@ -9,8 +9,7 @@ from aphrodite.modeling.models.llama import LlamaForCausalLM
 from aphrodite.utils.torch_utils import cuda_device_count_stateless
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from tests.utils import wait_for_gpu_memory_to_clear
-from tests.v1.shutdown.utils import (SHUTDOWN_TEST_THRESHOLD_BYTES,
-                                     SHUTDOWN_TEST_TIMEOUT_SEC)
+from tests.v1.shutdown.utils import SHUTDOWN_TEST_THRESHOLD_BYTES, SHUTDOWN_TEST_TIMEOUT_SEC
 
 MODELS = ["hmellor/tiny-random-LlamaForCausalLM"]
 
@@ -28,9 +27,7 @@ def evil_method(self, *args, **kwargs):
 @pytest.mark.parametrize("model", MODELS)
 @pytest.mark.parametrize("tensor_parallel_size", [2, 1])
 @pytest.mark.parametrize("failing_method", ["forward", "load_weights"])
-def test_async_llm_startup_error(
-    monkeypatch, model: str, tensor_parallel_size: int, failing_method: str
-) -> None:
+def test_async_llm_startup_error(monkeypatch, model: str, tensor_parallel_size: int, failing_method: str) -> None:
     """Test that AsyncLLM propagates an __init__ error & frees memory.
     Test profiling (forward()) and load weights failures.
     AsyncLLM always uses an MP client.
@@ -41,9 +38,7 @@ def test_async_llm_startup_error(
     # Monkeypatch an error in the model.
     monkeypatch.setattr(LlamaForCausalLM, failing_method, evil_method)
 
-    engine_args = AsyncEngineArgs(
-        model=model, enforce_eager=True, tensor_parallel_size=tensor_parallel_size
-    )
+    engine_args = AsyncEngineArgs(model=model, enforce_eager=True, tensor_parallel_size=tensor_parallel_size)
 
     # Confirm we get an exception.
     with pytest.raises(Exception, match="initialization failed"):
@@ -88,9 +83,7 @@ def test_llm_startup_error(
 
         with pytest.raises(
             Exception,
-            match="initialization failed"
-            if enable_multiprocessing
-            else "Simulated Error in startup!",
+            match="initialization failed" if enable_multiprocessing else "Simulated Error in startup!",
         ):
             _ = LLM(
                 model=model,

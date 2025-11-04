@@ -5,11 +5,9 @@ import torch.nn as nn
 from transformers import PretrainedConfig
 
 from aphrodite.config.lora import LoRAConfig
-from aphrodite.distributed import (get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.platforms import current_platform
 
 from .base import BaseLayerWithLoRA
@@ -87,9 +85,7 @@ class LogitsProcessorWithLoRA(BaseLayerWithLoRA):
     ) -> None:
         # TODO: Verify if this condition can be further relaxed
         if 32000 < self.base_layer.vocab_size > 257024:
-            raise ValueError(
-                "When using LoRA, vocab size must be 32000 >= vocab_size <= 257024"
-            )
+            raise ValueError("When using LoRA, vocab size must be 32000 >= vocab_size <= 257024")
         self.lora_a_stacked = torch.zeros(
             (
                 max_loras,
@@ -105,9 +101,7 @@ class LogitsProcessorWithLoRA(BaseLayerWithLoRA):
                 max_loras,
                 1,
                 # Pad for kernel compatibility
-                math.ceil(
-                    self.base_layer.vocab_size / lora_config.lora_vocab_padding_size
-                )
+                math.ceil(self.base_layer.vocab_size / lora_config.lora_vocab_padding_size)
                 * lora_config.lora_vocab_padding_size,
                 lora_config.max_lora_rank,
             ),
@@ -140,12 +134,8 @@ class LogitsProcessorWithLoRA(BaseLayerWithLoRA):
         embeddings_tensor: torch.Tensor | None,
     ):
         self.reset_lora(index)
-        self.lora_a_stacked[index, 0, : lora_a.shape[0], : lora_a.shape[1]].copy_(
-            lora_a, non_blocking=True
-        )
-        self.lora_b_stacked[index, 0, : lora_b.shape[0], : lora_b.shape[1]].copy_(
-            lora_b, non_blocking=True
-        )
+        self.lora_a_stacked[index, 0, : lora_a.shape[0], : lora_a.shape[1]].copy_(lora_a, non_blocking=True)
+        self.lora_b_stacked[index, 0, : lora_b.shape[0], : lora_b.shape[1]].copy_(lora_b, non_blocking=True)
         if embeddings_tensor is not None:
             self.embeddings_tensors[
                 index,
@@ -218,8 +208,7 @@ class LogitsProcessorWithLoRA(BaseLayerWithLoRA):
 
         logits[
             :,
-            self.base_layer.org_vocab_size : self.base_layer.org_vocab_size
-            + lora_logits.shape[1],
+            self.base_layer.org_vocab_size : self.base_layer.org_vocab_size + lora_logits.shape[1],
         ] = lora_logits
 
         lora_output: torch.Tensor | None = self.punica_wrapper.add_lora_logits(

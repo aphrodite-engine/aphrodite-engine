@@ -7,29 +7,24 @@ import torch
 from torch import nn
 
 from aphrodite.attention.backends.abstract import AttentionMetadata
-from aphrodite.config import (CacheConfig, ModelConfig,
-                              get_current_aphrodite_config)
-from aphrodite.distributed import (divide, get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size,
-                                   tensor_model_parallel_all_gather,
-                                   tensor_model_parallel_all_reduce)
+from aphrodite.config import CacheConfig, ModelConfig, get_current_aphrodite_config
+from aphrodite.distributed import (
+    divide,
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+    tensor_model_parallel_all_gather,
+    tensor_model_parallel_all_reduce,
+)
 from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.modeling._custom_op import CustomOp
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, MergedColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.mamba.abstract import MambaBase
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
-from aphrodite.modeling.layers.mamba.ops.causal_conv1d import (
-    causal_conv1d_fn, causal_conv1d_update)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
+from aphrodite.modeling.layers.mamba.ops.causal_conv1d import causal_conv1d_fn, causal_conv1d_update
 from aphrodite.modeling.layers.mamba.ops.layernorm_gated import rms_norm_gated
-from aphrodite.modeling.layers.mamba.ops.mamba_ssm import (
-    selective_state_update)
-from aphrodite.modeling.layers.mamba.ops.ssd_combined import (
-    mamba_chunk_scan_combined_varlen)
-from aphrodite.modeling.model_loader.weight_utils import (
-    LoaderFunction, composed_weight_loader, sharded_weight_loader)
+from aphrodite.modeling.layers.mamba.ops.mamba_ssm import selective_state_update
+from aphrodite.modeling.layers.mamba.ops.ssd_combined import mamba_chunk_scan_combined_varlen
+from aphrodite.modeling.model_loader.weight_utils import LoaderFunction, composed_weight_loader, sharded_weight_loader
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.torch_utils import direct_register_custom_op
@@ -65,9 +60,7 @@ class Mixer2RMSNormGated(CustomOp):
         else:
             # Avoid checkpoint mismatch by skipping unused parameter
             self.register_parameter("weight", None)
-        assert self.full_hidden_size % self.tp_size == 0, (
-            "Tensor parallel world size must divide hidden size."
-        )
+        assert self.full_hidden_size % self.tp_size == 0, "Tensor parallel world size must divide hidden size."
 
     def forward_native(
         self,
@@ -254,18 +247,13 @@ class MambaMixer2(MambaBase, CustomOp):
         self.tp_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
 
-        assert num_heads % self.tp_size == 0, (
-            "Tensor parallel world size must divide num heads."
-        )
+        assert num_heads % self.tp_size == 0, "Tensor parallel world size must divide num heads."
 
         assert (n_groups % self.tp_size) == 0 or n_groups == 1, (
-            "If tensor parallel world size does not divide num_groups, "
-            "then num_groups must equal 1."
+            "If tensor parallel world size does not divide num_groups, then num_groups must equal 1."
         )
 
-        assert (
-            (n_groups % self.tp_size == 0) or self.tp_size == 1 or quant_config is None
-        ), (
+        assert (n_groups % self.tp_size == 0) or self.tp_size == 1 or quant_config is None, (
             "Tensor parallel currently supported for quantized models only "
             "if tensor parallel world size divides num groups."
         )
@@ -283,9 +271,7 @@ class MambaMixer2(MambaBase, CustomOp):
             # - for TP we shard conv_dim by sharding on n_groups,
             # - but if n_groups cannot divide tp_size, we need to
             #   extend some extra groups
-            groups = MambaStateShapeCalculator.extra_groups_for_head_shards(
-                n_groups, self.tp_size
-            )
+            groups = MambaStateShapeCalculator.extra_groups_for_head_shards(n_groups, self.tp_size)
             self.n_groups = n_groups + groups
 
         self.groups_ssm_state_size = self.n_groups * self.ssm_state_size
@@ -426,9 +412,7 @@ class MambaMixer2(MambaBase, CustomOp):
         self.use_rms_norm = use_rms_norm
 
         set_weight_attrs(self.D, {"weight_loader": sharded_weight_loader(0)})
-        a_weight_loader = composed_weight_loader(
-            sharded_weight_loader(0), lambda x: -torch.exp(x.float())
-        )
+        a_weight_loader = composed_weight_loader(sharded_weight_loader(0), lambda x: -torch.exp(x.float()))
         set_weight_attrs(self.A, {"weight_loader": a_weight_loader})
         set_weight_attrs(self.dt_bias, {"weight_loader": sharded_weight_loader(0)})
 
@@ -441,9 +425,7 @@ class MambaMixer2(MambaBase, CustomOp):
             prefix=f"{prefix}.out_proj",
         )
 
-        self.norm = Mixer2RMSNormGated(
-            intermediate_size, n_groups, self.use_rms_norm, eps=rms_norm_eps
-        )
+        self.norm = Mixer2RMSNormGated(intermediate_size, n_groups, self.use_rms_norm, eps=rms_norm_eps)
 
         compilation_config = get_current_aphrodite_config().compilation_config
         if prefix in compilation_config.static_forward_context:
@@ -526,9 +508,7 @@ class MambaMixer2(MambaBase, CustomOp):
             dim=-1,
         )
 
-        conv_weights = self.conv1d.weight.view(
-            self.conv1d.weight.size(0), self.conv1d.weight.size(2)
-        )
+        conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0), self.conv1d.weight.size(2))
 
         # - get hidden_states, B and C after depthwise convolution.
         split_hidden_states_B_C_fn = lambda hidden_states_B_C: torch.split(
@@ -543,9 +523,7 @@ class MambaMixer2(MambaBase, CustomOp):
 
         if attn_metadata is None:
             # profile run
-            hidden_states_B_C = (
-                hidden_states_B_C.transpose(0, 1).clone().transpose(0, 1)
-            ).contiguous()
+            hidden_states_B_C = (hidden_states_B_C.transpose(0, 1).clone().transpose(0, 1)).contiguous()
             hidden_states, _B, _C = split_hidden_states_B_C_fn(hidden_states_B_C)
             hidden_states = self.norm(hidden_states, gate)
             out, _ = self.out_proj(hidden_states)
@@ -581,24 +559,18 @@ class MambaMixer2(MambaBase, CustomOp):
         if prefix_caching_enabled:
             # If prefix caching is enabled, retrieve the relevant variables
             # for prefill and decode
-            block_idx_last_computed_token_d, block_idx_last_computed_token_p = (
-                torch.split(
-                    attn_metadata.block_idx_last_computed_token,
-                    [num_decodes, num_prefills],
-                    dim=0,
-                )
+            block_idx_last_computed_token_d, block_idx_last_computed_token_p = torch.split(
+                attn_metadata.block_idx_last_computed_token,
+                [num_decodes, num_prefills],
+                dim=0,
             )
-            block_idx_last_scheduled_token_d, block_idx_last_scheduled_token_p = (
-                torch.split(
-                    attn_metadata.block_idx_last_scheduled_token,
-                    [num_decodes, num_prefills],
-                    dim=0,
-                )
+            block_idx_last_scheduled_token_d, block_idx_last_scheduled_token_p = torch.split(
+                attn_metadata.block_idx_last_scheduled_token,
+                [num_decodes, num_prefills],
+                dim=0,
             )
             # Prefill-only variables:
-            block_idx_first_scheduled_token_p = (
-                attn_metadata.block_idx_first_scheduled_token_p
-            )
+            block_idx_first_scheduled_token_p = attn_metadata.block_idx_first_scheduled_token_p
             num_computed_tokens_p = attn_metadata.num_computed_tokens_p
         else:
             block_idx_last_computed_token_d = None
@@ -639,9 +611,7 @@ class MambaMixer2(MambaBase, CustomOp):
             #   are provided (which are pointers into
             #   "state_indices_tensor_p"), it will write additional cache
             #   states aligned at "block_size_to_align".
-            x = hidden_states_B_C_p.transpose(
-                0, 1
-            )  # this is the form that causal-conv see
+            x = hidden_states_B_C_p.transpose(0, 1)  # this is the form that causal-conv see
             hidden_states_B_C_p = causal_conv1d_fn(
                 x,
                 conv_weights,
@@ -677,9 +647,7 @@ class MambaMixer2(MambaBase, CustomOp):
 
             # NOTE: final output is an in-place update of out tensor
             varlen_states = mamba_chunk_scan_combined_varlen(
-                hidden_states_p.view(
-                    num_prefill_tokens, self.num_heads // self.tp_size, self.head_dim
-                ),
+                hidden_states_p.view(num_prefill_tokens, self.num_heads // self.tp_size, self.head_dim),
                 dt_p,
                 self.A,
                 B_p.view(num_prefill_tokens, self.n_groups // self.tp_size, -1),
@@ -709,19 +677,13 @@ class MambaMixer2(MambaBase, CustomOp):
                 # Save state for sequences with more than just final state
                 for seq_idx in range(num_prefills):
                     # Block index for the first scheduled token
-                    block_idx_first_scheduled_token = block_idx_first_scheduled_token_p[
-                        seq_idx
-                    ]
+                    block_idx_first_scheduled_token = block_idx_first_scheduled_token_p[seq_idx]
 
                     # Block index for the last scheduled token
-                    block_idx_last_scheduled_token = block_idx_last_scheduled_token_p[
-                        seq_idx
-                    ]
+                    block_idx_last_scheduled_token = block_idx_last_scheduled_token_p[seq_idx]
 
                     # Number of blocks that need to be written
-                    n_blocks_to_fill = (
-                        block_idx_last_scheduled_token - block_idx_first_scheduled_token
-                    )
+                    n_blocks_to_fill = block_idx_last_scheduled_token - block_idx_first_scheduled_token
 
                     # Skip sequences that don't have any blocks to fill
                     if n_blocks_to_fill == 0:
@@ -744,21 +706,16 @@ class MambaMixer2(MambaBase, CustomOp):
 
                     # Calculate the number of computed tokens that were not
                     # already cached
-                    num_unaligned_computed_tokens = (
-                        num_computed_tokens_p[seq_idx] % mamba_block_size
-                    )
+                    num_unaligned_computed_tokens = num_computed_tokens_p[seq_idx] % mamba_block_size
 
                     if num_unaligned_computed_tokens > 0:
                         # If the number of computed tokens is not block aligned,
                         # then we need to shift the index accordingly
-                        first_aligned_chunk -= (
-                            num_unaligned_computed_tokens // chunk_size
-                        )
+                        first_aligned_chunk -= num_unaligned_computed_tokens // chunk_size
 
                     # Get states to write
                     from_where = varlen_states[
-                        first_aligned_chunk : first_aligned_chunk
-                        + n_blocks_to_fill * chunk_stride : chunk_stride
+                        first_aligned_chunk : first_aligned_chunk + n_blocks_to_fill * chunk_stride : chunk_stride
                     ]
 
                     # Write the states
@@ -766,9 +723,7 @@ class MambaMixer2(MambaBase, CustomOp):
 
                 # For all seqs, store the last state (note: might be partial):
                 ssm_state[
-                    state_indices_tensor_p.gather(
-                        1, block_idx_last_scheduled_token_p.unsqueeze(1)
-                    ).squeeze(1)
+                    state_indices_tensor_p.gather(1, block_idx_last_scheduled_token_p.unsqueeze(1)).squeeze(1)
                 ] = varlen_states[last_chunk_indices_p]
 
             else:
@@ -814,18 +769,14 @@ class MambaMixer2(MambaBase, CustomOp):
             # 3. State Space Model sequence transformation
             n_groups = self.n_groups // self.tp_size
             A_d = (
-                self.A[:, None, ...][:, :, None]
-                .expand(-1, self.head_dim, self.ssm_state_size)
-                .to(dtype=torch.float32)
+                self.A[:, None, ...][:, :, None].expand(-1, self.head_dim, self.ssm_state_size).to(dtype=torch.float32)
             )
             dt_d = dt_d[:, :, None].expand(-1, -1, self.head_dim)
             dt_bias = self.dt_bias[:, None, ...].expand(-1, self.head_dim)
             D_d = self.D[:, None, ...].expand(-1, self.head_dim)
             B_d = B_d.view(-1, n_groups, B_d.shape[1] // n_groups)
             C_d = C_d.view(-1, n_groups, C_d.shape[1] // n_groups)
-            hidden_states_d = hidden_states_d.view(
-                -1, self.num_heads // self.tp_size, self.head_dim
-            )
+            hidden_states_d = hidden_states_d.view(-1, self.num_heads // self.tp_size, self.head_dim)
 
             # - the hidden is reshaped into (bs, num_heads, head_dim)
             # - mamba_cache_params.ssm_state's slots will be selected
@@ -881,8 +832,7 @@ class MambaMixer2(MambaBase, CustomOp):
         return "mamba2"
 
     def get_attn_backend(self) -> type["AttentionBackend"]:
-        from aphrodite.v1.attention.backends.mamba2_attn import (
-            Mamba2AttentionBackend)
+        from aphrodite.v1.attention.backends.mamba2_attn import Mamba2AttentionBackend
 
         return Mamba2AttentionBackend
 

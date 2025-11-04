@@ -4,6 +4,7 @@ Launch the Aphrodite server with the following command:
 aphrodite run llava-hf/llava-1.5-7b-hf \
     --chat-template template_llava.jinja
 """
+
 import base64
 import os
 
@@ -26,33 +27,28 @@ model = models.data[0].id
 def encode_image_base64_from_file(image_path: str) -> str:
     """Encode an image from a local file to base64 format."""
 
-    with open(image_path, 'rb') as image_file:
-        result = base64.b64encode(image_file.read()).decode('utf-8')
+    with open(image_path, "rb") as image_file:
+        result = base64.b64encode(image_file.read()).decode("utf-8")
 
     return result
 
 
-image_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                          "../vision/burg.jpg")
+image_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "../vision/burg.jpg")
 image_base64 = encode_image_base64_from_file(image_path=image_path)
 
 chat_completion_from_base64 = client.chat.completions.create(
-    messages=[{
-        "role":
-        "user",
-        "content": [
-            {
-                "type": "text",
-                "text": "What's in this image?"
-            },
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{image_base64}"
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
                 },
-            },
-        ],
-    }],
+            ],
+        }
+    ],
     model=model,
 )
 

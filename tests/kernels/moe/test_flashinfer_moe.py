@@ -2,26 +2,21 @@ import pytest
 import torch
 
 from aphrodite import _custom_ops as ops
-from aphrodite.config import (AphroditeConfig, ParallelConfig,
-                              set_current_aphrodite_config)
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import (
-    FlashInferExperts, is_valid_flashinfer_cutlass_fused_moe)
+    FlashInferExperts,
+    is_valid_flashinfer_cutlass_fused_moe,
+)
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
-from aphrodite.modeling.layers.fused_moe.modular_kernel import (
-    FusedMoEModularKernel)
-from aphrodite.modeling.layers.fused_moe.prepare_finalize import (
-    MoEPrepareAndFinalizeNoEP)
+from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
+from aphrodite.modeling.layers.fused_moe.prepare_finalize import MoEPrepareAndFinalizeNoEP
 from aphrodite.platforms import current_platform
 from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe
 from tests.kernels.moe.utils import make_test_quant_config
-from tests.kernels.quantization.nvfp4_utils import (FLOAT4_E2M1_MAX,
-                                                    FLOAT8_E4M3_MAX,
-                                                    dequantize_nvfp4_to_dtype)
+from tests.kernels.quantization.nvfp4_utils import FLOAT4_E2M1_MAX, FLOAT8_E4M3_MAX, dequantize_nvfp4_to_dtype
 from tests.kernels.utils import torch_moe
 
-if not has_flashinfer_cutlass_fused_moe() or not current_platform.has_device_capability(
-    100
-):
+if not has_flashinfer_cutlass_fused_moe() or not current_platform.has_device_capability(100):
     pytest.skip(
         "Requires flashinfer_cutlass_fused_moe and nvfp4 support",
         allow_module_level=True,
@@ -44,13 +39,9 @@ MNK_FACTORS = [
 @pytest.mark.parametrize("topk", [1, 6, 8])
 @pytest.mark.parametrize("dtype", [torch.bfloat16])
 @torch.inference_mode()
-def test_flashinfer_fp4_moe_no_graph(
-    m: int, n: int, k: int, e: int, topk: int, dtype: torch.dtype
-):
+def test_flashinfer_fp4_moe_no_graph(m: int, n: int, k: int, e: int, topk: int, dtype: torch.dtype):
     current_platform.seed_everything(7)
-    with set_current_aphrodite_config(
-        AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))
-    ):
+    with set_current_aphrodite_config(AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))):
         a = torch.randn((m, k), device="cuda", dtype=dtype) / 10
 
         quant_blocksize = 16
@@ -84,9 +75,7 @@ def test_flashinfer_fp4_moe_no_graph(
         )
 
         # Reference check:
-        a_global_scale = (
-            (FLOAT8_E4M3_MAX * FLOAT4_E2M1_MAX) / torch.amax(a.flatten(), dim=-1)
-        ).to(torch.float32)
+        a_global_scale = ((FLOAT8_E4M3_MAX * FLOAT4_E2M1_MAX) / torch.amax(a.flatten(), dim=-1)).to(torch.float32)
         a_fp4, a_scale_interleaved = ops.scaled_fp4_quant(a, a_global_scale)
         _, m_k = a_fp4.shape
         a_in_dtype = dequantize_nvfp4_to_dtype(
@@ -121,9 +110,7 @@ def test_flashinfer_fp4_moe_no_graph(
 
         torch_output = torch_moe(a_in_dtype, w1_d, w2_d, score, topk)
 
-        torch.testing.assert_close(
-            torch_output, flashinfer_output, atol=1e-1, rtol=1e-1
-        )
+        torch.testing.assert_close(torch_output, flashinfer_output, atol=1e-1, rtol=1e-1)
 
 
 if __name__ == "__main__":

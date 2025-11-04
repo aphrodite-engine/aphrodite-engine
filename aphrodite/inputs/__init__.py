@@ -1,9 +1,23 @@
-from .data import (DataPrompt, DecoderOnlyInputs, EmbedsInputs, EmbedsPrompt,
-                   EncoderDecoderInputs, ExplicitEncoderDecoderPrompt,
-                   ProcessorInputs, PromptType, SingletonInputs,
-                   SingletonPrompt, TextPrompt, TokenInputs, TokensPrompt,
-                   build_explicit_enc_dec_prompt, embeds_inputs,
-                   to_enc_dec_tuple_list, token_inputs, zip_enc_dec_prompts)
+from .data import (
+    DataPrompt,
+    DecoderOnlyInputs,
+    EmbedsInputs,
+    EmbedsPrompt,
+    EncoderDecoderInputs,
+    ExplicitEncoderDecoderPrompt,
+    ProcessorInputs,
+    PromptType,
+    SingletonInputs,
+    SingletonPrompt,
+    TextPrompt,
+    TokenInputs,
+    TokensPrompt,
+    build_explicit_enc_dec_prompt,
+    embeds_inputs,
+    to_enc_dec_tuple_list,
+    token_inputs,
+    zip_enc_dec_prompts,
+)
 
 __all__ = [
     "DataPrompt",

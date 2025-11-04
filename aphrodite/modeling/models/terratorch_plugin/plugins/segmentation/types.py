@@ -2,10 +2,11 @@
 
 import os
 from pathlib import Path
-from typing import Any, Literal, Optional, Union
-from typing_extensions import Self
+from typing import Any, Literal
 
 from pydantic import BaseModel, model_validator
+from typing_extensions import Self
+
 
 class PluginConfig(BaseModel):
     output_path: str = None
@@ -23,8 +24,9 @@ class PluginConfig(BaseModel):
                 raise ValueError(f"The path: {self.output_path} is not writable")
         else:
             raise ValueError(f"The path: {self.output_path} does not exist")
-                
+
         return self
+
 
 class TiledInferenceParameters(BaseModel):
     # Used in Aphrodite plugin
@@ -34,8 +36,8 @@ class TiledInferenceParameters(BaseModel):
     w_stride: int = None
     average_patches: bool = None
 
-class RequestData(BaseModel):
 
+class RequestData(BaseModel):
     data_format: Literal["b64_json", "path", "url"]
     """
     Data type for the input image.
@@ -53,17 +55,16 @@ class RequestData(BaseModel):
     Input image data
     """
 
-    indices: Optional[list[int]] = None
+    indices: list[int] | None = None
     """
     Indices for bands to be processed in the input file
     """
 
 
-MultiModalPromptType = Union[RequestData]
+MultiModalPromptType = RequestData
 
 
 class RequestOutput(BaseModel):
-    
     data_format: Literal["b64_json", "path"]
     """
     Data type for the output image.
@@ -75,7 +76,7 @@ class RequestOutput(BaseModel):
     Output image data
     """
 
-    request_id: Optional[str] = None
+    request_id: str | None = None
     """
     The Aphrodite request ID if applicable
     """

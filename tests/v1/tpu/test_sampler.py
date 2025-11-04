@@ -88,14 +88,10 @@ def test_logprobs(model_name: str, n_prompts: int):
         max_model_len=128,
         max_num_batched_tokens=128,
     )
-    prompts = [
-        "Write a short story about a robot that dreams for the first time."
-    ] * n_prompts
+    prompts = ["Write a short story about a robot that dreams for the first time."] * n_prompts
     greedy_sampling_params = SamplingParams(temperature=0.0, max_tokens=64, logprobs=4)
     regular_sampling_params = SamplingParams(temperature=0.4, max_tokens=64, logprobs=4)
-    topkp_sampling_params = SamplingParams(
-        temperature=0.4, max_tokens=64, logprobs=4, top_k=12, top_p=0.5
-    )
+    topkp_sampling_params = SamplingParams(temperature=0.4, max_tokens=64, logprobs=4, top_k=12, top_p=0.5)
 
     for sp in [greedy_sampling_params, regular_sampling_params, topkp_sampling_params]:
         output = llm.generate(prompts, sp)

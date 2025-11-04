@@ -9,20 +9,14 @@ import torch
 from torch.nn.parameter import Parameter
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
-                                                        FusedMoEQuantConfig)
-from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-    fused_marlin_moe)
-from aphrodite.modeling.layers.fused_moe.layer import (FusedMoE,
-                                                       FusedMoEMethodBase)
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              set_weight_attrs)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import fused_marlin_moe
+from aphrodite.modeling.layers.fused_moe.layer import FusedMoE, FusedMoEMethodBase
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.quantization.utils import replace_parameter
-from aphrodite.quantization.utils.marlin_utils import (
-    apply_rtn_marlin_linear, marlin_make_workspace_new)
+from aphrodite.quantization.utils.marlin_utils import apply_rtn_marlin_linear, marlin_make_workspace_new
 from aphrodite.scalar_type import scalar_types
 
 logger = init_logger(__name__)
@@ -56,14 +50,10 @@ class RTNConfig(QuantizationConfig):
                 f"supported for RTN, but got {self.weight_bits} bits."
             )
 
-        self.quant_type = (
-            scalar_types.uint8b128 if self.weight_bits == 8 else scalar_types.uint4b8
-        )
+        self.quant_type = scalar_types.uint8b128 if self.weight_bits == 8 else scalar_types.uint4b8
 
     def __repr__(self) -> str:
-        return (
-            f"RTNConfig(weight_bits={self.weight_bits}, group_size={self.group_size})"
-        )
+        return f"RTNConfig(weight_bits={self.weight_bits}, group_size={self.group_size})"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -87,9 +77,7 @@ class RTNConfig(QuantizationConfig):
         group_size = cls.get_from_keys(config, ["group_size"])
         return cls(weight_bits, group_size)
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
         if isinstance(layer, LinearBase):
             return RTNLinearMethod(self)
         elif isinstance(layer, FusedMoE):
@@ -102,9 +90,7 @@ class RTNTensor:
     overloading the copy_ method.
     """
 
-    def __init__(
-        self, data: torch.Tensor, scale: torch.Tensor, quant_config: RTNConfig
-    ) -> None:
+    def __init__(self, data: torch.Tensor, scale: torch.Tensor, quant_config: RTNConfig) -> None:
         self.data = data
         self.scale = scale
         self.quant_config = quant_config
@@ -151,9 +137,7 @@ class RTNParameter(Parameter):
     def __new__(cls, data: torch.Tensor, **kwargs):
         return super().__new__(cls, data=data, requires_grad=False)
 
-    def __init__(
-        self, data: torch.Tensor, scale: torch.Tensor, quant_config: RTNConfig
-    ) -> None:
+    def __init__(self, data: torch.Tensor, scale: torch.Tensor, quant_config: RTNConfig) -> None:
         self.scale = scale
         self.quant_config = quant_config
 
@@ -184,15 +168,11 @@ class RTNLinearMethod(LinearMethodBase):
     ):
         output_size_per_partition = sum(output_partition_sizes)
         num_groups_per_col = (
-            input_size_per_partition // self.quant_config.group_size
-            if self.quant_config.group_size != -1
-            else 1
+            input_size_per_partition // self.quant_config.group_size if self.quant_config.group_size != -1 else 1
         )
 
         scale = Parameter(
-            torch.empty(
-                output_size_per_partition, num_groups_per_col, dtype=params_dtype
-            ),
+            torch.empty(output_size_per_partition, num_groups_per_col, dtype=params_dtype),
             requires_grad=False,
         )
         factor = 1 if self.quant_config.weight_bits == 8 else 2
@@ -266,11 +246,7 @@ class RTNMoEMethod(FusedMoEMethodBase):
         factor = 1 if self.quant_config.weight_bits == 8 else 2
 
         # Fused gate_up_proj (column parallel)
-        num_groups_per_col = (
-            hidden_size // self.quant_config.group_size
-            if self.quant_config.group_size != -1
-            else 1
-        )
+        num_groups_per_col = hidden_size // self.quant_config.group_size if self.quant_config.group_size != -1 else 1
         w13_scale = Parameter(
             torch.empty(
                 num_experts,
@@ -297,14 +273,10 @@ class RTNMoEMethod(FusedMoEMethodBase):
 
         # down_proj (row parallel)
         num_groups_per_col = (
-            intermediate_size_per_partition // self.quant_config.group_size
-            if self.quant_config.group_size != -1
-            else 1
+            intermediate_size_per_partition // self.quant_config.group_size if self.quant_config.group_size != -1 else 1
         )
         w2_scale = Parameter(
-            torch.zeros(
-                num_experts, hidden_size, num_groups_per_col, dtype=params_dtype
-            ),
+            torch.zeros(num_experts, hidden_size, num_groups_per_col, dtype=params_dtype),
             requires_grad=False,
         )
         layer.register_parameter("w2_scale", w2_scale)
@@ -326,23 +298,17 @@ class RTNMoEMethod(FusedMoEMethodBase):
         """Repack weights and scales for Marlin kernels."""
         weight_bits = self.quant_config.weight_bits
 
-        w13_weight, w13_scale = repack_weights(
-            layer.w13_weight, layer.w13_scale, weight_bits
-        )
+        w13_weight, w13_scale = repack_weights(layer.w13_weight, layer.w13_scale, weight_bits)
         replace_parameter(layer, "w13_weight", w13_weight)
         replace_parameter(layer, "w13_scale", w13_scale)
 
-        w2_weight, w2_scale = repack_weights(
-            layer.w2_weight, layer.w2_scale, weight_bits
-        )
+        w2_weight, w2_scale = repack_weights(layer.w2_weight, layer.w2_scale, weight_bits)
         replace_parameter(layer, "w2_weight", w2_weight)
         replace_parameter(layer, "w2_scale", w2_scale)
 
         init_workspace(layer.w13_weight.device)
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         return None
 
     def apply(
@@ -407,9 +373,7 @@ class RTNMoEMethod(FusedMoEMethodBase):
         )
 
 
-def rtn_quantize(
-    tensor: torch.Tensor, num_bits: int, group_size: int
-) -> tuple[torch.Tensor, torch.Tensor]:
+def rtn_quantize(tensor: torch.Tensor, num_bits: int, group_size: int) -> tuple[torch.Tensor, torch.Tensor]:
     """Quantize a tensor using per-group static scaling factor.
 
     Args:
@@ -425,11 +389,7 @@ def rtn_quantize(
         tensor = tensor.unsqueeze(0)
 
     q_range = 2**num_bits
-    num_groups = (
-        tensor.shape[1] * tensor.shape[2] // group_size
-        if group_size != -1
-        else tensor.shape[1]
-    )
+    num_groups = tensor.shape[1] * tensor.shape[2] // group_size if group_size != -1 else tensor.shape[1]
     """Calculate a scaling factor per input group.
     """
     input_flat = tensor.reshape(tensor.shape[0], num_groups, -1)
@@ -453,9 +413,7 @@ def rtn_quantize(
         """Pack two 4-bit values into each byte.
         """
         inputs_q = (inputs_q[:, :, 1::2] << 4) | (inputs_q[:, :, ::2] & 0xF)
-        inputs_q = inputs_q.reshape(
-            tensor.shape[0], tensor.shape[1] // 2, tensor.shape[2]
-        )
+        inputs_q = inputs_q.reshape(tensor.shape[0], tensor.shape[1] // 2, tensor.shape[2])
         inputs_q = inputs_q.contiguous()
 
     if not batch_present:
@@ -485,9 +443,7 @@ def rtn_dequantize(tensor: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     if num_bits == 4:
         input_dim *= 2
 
-    data = torch.empty(
-        (batch, input_dim, output_dim), dtype=scale.dtype, device=tensor.device
-    )
+    data = torch.empty((batch, input_dim, output_dim), dtype=scale.dtype, device=tensor.device)
 
     if num_bits == 8:
         data.copy_(tensor)
@@ -497,9 +453,7 @@ def rtn_dequantize(tensor: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
         """
         tensor = tensor.reshape(batch, input_dim, output_dim // 2)
         for i in range(2):
-            data[:, :, i::2] = ((tensor << 4 * (1 - i)) >> 4).to(
-                torch.int8
-            ) - q_range // 2
+            data[:, :, i::2] = ((tensor << 4 * (1 - i)) >> 4).to(torch.int8) - q_range // 2
     """Scale each input group with its scaling factor.
     """
     scale = scale.reshape(batch, num_groups, -1)
@@ -575,9 +529,7 @@ def pack_for_marlin(weight, scale, qbits):
     res = w
     res = res.reshape((batch, -1, _perm.numel()))[:, :, _perm].reshape(res.shape)
     if qbits == 4:
-        q = torch.zeros(
-            (batch, res.shape[1], res.shape[2] // 2), dtype=torch.int8, device=w.device
-        )
+        q = torch.zeros((batch, res.shape[1], res.shape[2] // 2), dtype=torch.int8, device=w.device)
         for i in range(2):
             q |= res[:, :, i::2] << 4 * i
         q = q.reshape(batch, -1, n).contiguous()
@@ -629,9 +581,7 @@ def repack_weights(qweight, scale, weight_bits):
     """Marlin kernels expect tensors in int32 format in a certain shape
     """
     qweight_repacked = repack_8bit_into_32bit(qweight_packed.to(torch.uint8))
-    qweight_reshaped = qweight_repacked.reshape(
-        qweight.shape[0], qweight.shape[2] // 16, -1
-    )
+    qweight_reshaped = qweight_repacked.reshape(qweight.shape[0], qweight.shape[2] // 16, -1)
     if not batch_present:
         qweight_reshaped = qweight_reshaped.squeeze(0)
         scale_packed = scale_packed.squeeze(0)

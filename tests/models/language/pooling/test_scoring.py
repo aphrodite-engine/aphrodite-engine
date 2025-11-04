@@ -35,9 +35,7 @@ def test_cross_encoder_1_to_1(aphrodite_runner, hf_runner, model_name):
     with hf_runner(model_name, dtype=DTYPE, is_cross_encoder=True) as hf_model:
         hf_outputs = hf_model.predict([text_pair]).tolist()
 
-    with aphrodite_runner(
-        model_name, runner="pooling", dtype=DTYPE, max_model_len=None
-    ) as aphrodite_model:
+    with aphrodite_runner(model_name, runner="pooling", dtype=DTYPE, max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(text_pair[0], text_pair[1])
 
     assert len(aphrodite_outputs) == 1
@@ -55,9 +53,7 @@ def test_cross_encoder_1_to_N(aphrodite_runner, hf_runner, model_name):
     with hf_runner(model_name, dtype=DTYPE, is_cross_encoder=True) as hf_model:
         hf_outputs = hf_model.predict(text_pairs).tolist()
 
-    with aphrodite_runner(
-        model_name, runner="pooling", dtype=DTYPE, max_model_len=None
-    ) as aphrodite_model:
+    with aphrodite_runner(model_name, runner="pooling", dtype=DTYPE, max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(TEXTS_1[0], TEXTS_2)
 
     assert len(aphrodite_outputs) == 2
@@ -76,9 +72,7 @@ def test_cross_encoder_N_to_N(aphrodite_runner, hf_runner, model_name):
     with hf_runner(model_name, dtype=DTYPE, is_cross_encoder=True) as hf_model:
         hf_outputs = hf_model.predict(text_pairs).tolist()
 
-    with aphrodite_runner(
-        model_name, runner="pooling", dtype=DTYPE, max_model_len=None
-    ) as aphrodite_model:
+    with aphrodite_runner(model_name, runner="pooling", dtype=DTYPE, max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(TEXTS_1, TEXTS_2)
 
     assert len(aphrodite_outputs) == 2
@@ -96,15 +90,11 @@ def emb_model_name(request):
 def test_embedding_1_to_1(aphrodite_runner, hf_runner, emb_model_name):
     text_pair = [TEXTS_1[0], TEXTS_2[0]]
 
-    with hf_runner(
-        emb_model_name, dtype=DTYPE, is_sentence_transformer=True
-    ) as hf_model:
+    with hf_runner(emb_model_name, dtype=DTYPE, is_sentence_transformer=True) as hf_model:
         hf_embeddings = hf_model.encode(text_pair)
         hf_outputs = [F.cosine_similarity(*map(torch.tensor, hf_embeddings), dim=0)]
 
-    with aphrodite_runner(
-        emb_model_name, runner="pooling", dtype=DTYPE, max_model_len=None
-    ) as aphrodite_model:
+    with aphrodite_runner(emb_model_name, runner="pooling", dtype=DTYPE, max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(text_pair[0], text_pair[1])
 
     assert len(aphrodite_outputs) == 1
@@ -119,18 +109,11 @@ def test_embedding_1_to_N(aphrodite_runner, hf_runner, emb_model_name):
         [TEXTS_1[0], TEXTS_2[1]],
     ]
 
-    with hf_runner(
-        emb_model_name, dtype=DTYPE, is_sentence_transformer=True
-    ) as hf_model:
+    with hf_runner(emb_model_name, dtype=DTYPE, is_sentence_transformer=True) as hf_model:
         hf_embeddings = [hf_model.encode(text_pair) for text_pair in text_pairs]
-        hf_outputs = [
-            F.cosine_similarity(*map(torch.tensor, pair), dim=0)
-            for pair in hf_embeddings
-        ]
+        hf_outputs = [F.cosine_similarity(*map(torch.tensor, pair), dim=0) for pair in hf_embeddings]
 
-    with aphrodite_runner(
-        emb_model_name, runner="pooling", dtype=DTYPE, max_model_len=None
-    ) as aphrodite_model:
+    with aphrodite_runner(emb_model_name, runner="pooling", dtype=DTYPE, max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(TEXTS_1[0], TEXTS_2)
 
     assert len(aphrodite_outputs) == 2
@@ -146,18 +129,11 @@ def test_embedding_N_to_N(aphrodite_runner, hf_runner, emb_model_name):
         [TEXTS_1[1], TEXTS_2[1]],
     ]
 
-    with hf_runner(
-        emb_model_name, dtype=DTYPE, is_sentence_transformer=True
-    ) as hf_model:
+    with hf_runner(emb_model_name, dtype=DTYPE, is_sentence_transformer=True) as hf_model:
         hf_embeddings = [hf_model.encode(text_pair) for text_pair in text_pairs]
-        hf_outputs = [
-            F.cosine_similarity(*map(torch.tensor, pair), dim=0)
-            for pair in hf_embeddings
-        ]
+        hf_outputs = [F.cosine_similarity(*map(torch.tensor, pair), dim=0) for pair in hf_embeddings]
 
-    with aphrodite_runner(
-        emb_model_name, runner="pooling", dtype=DTYPE, max_model_len=None
-    ) as aphrodite_model:
+    with aphrodite_runner(emb_model_name, runner="pooling", dtype=DTYPE, max_model_len=None) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.score(TEXTS_1, TEXTS_2)
 
     assert len(aphrodite_outputs) == 2

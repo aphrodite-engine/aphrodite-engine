@@ -8,9 +8,7 @@ from PIL import Image
 from .base import MediaIO
 
 
-def rescale_image_size(
-    image: Image.Image, size_factor: float, transpose: int = -1
-) -> Image.Image:
+def rescale_image_size(image: Image.Image, size_factor: float, transpose: int = -1) -> Image.Image:
     """Rescale the dimensions of an image by a constant factor."""
     new_width = int(image.width * size_factor)
     new_height = int(image.height * size_factor)
@@ -65,10 +63,7 @@ class ImageMediaIO(MediaIO[Image.Image]):
             and len(rgba_bg) == 3
             and all(isinstance(c, int) and 0 <= c <= 255 for c in rgba_bg)
         ):
-            raise ValueError(
-                "rgba_background_color must be a list or tuple of 3 integers "
-                "in the range [0, 255]."
-            )
+            raise ValueError("rgba_background_color must be a list or tuple of 3 integers in the range [0, 255].")
         self.rgba_background_color = rgba_bg
 
     def _convert_image_mode(self, image: Image.Image) -> Image.Image:

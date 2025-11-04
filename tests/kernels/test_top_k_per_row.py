@@ -28,9 +28,7 @@ def create_random_logits(
     return logits
 
 
-def create_row_boundaries(
-    seq_len: int, vocab_size: int
-) -> tuple[torch.Tensor, torch.Tensor]:
+def create_row_boundaries(seq_len: int, vocab_size: int) -> tuple[torch.Tensor, torch.Tensor]:
     """Create row start and end indices for testing."""
     row_starts = torch.zeros(seq_len, dtype=torch.int32, device="cuda")
     row_ends = torch.arange(1, seq_len + 1, device="cuda", dtype=torch.int32)
@@ -134,9 +132,9 @@ def test_top_k_per_row(
     torch_indices = torch_indices.masked_fill(~mask, -1)
 
     # Compare results
-    assert compare_top_k_results(
-        logits, indices, torch_indices, row_starts, row_ends, top_k
-    ), "CUDA top_k_per_row results don't match torch.topk"
+    assert compare_top_k_results(logits, indices, torch_indices, row_starts, row_ends, top_k), (
+        "CUDA top_k_per_row results don't match torch.topk"
+    )
 
 
 @pytest.mark.parametrize("top_k", TOP_K_VALUES)
@@ -157,9 +155,7 @@ def test_top_k_per_row_decode(
     # Create test data
     num_rows = batch_size * next_n
     vocab_size = 20000
-    seq_lens = torch.randint(
-        vocab_size, (batch_size,), dtype=torch.int32, device="cuda"
-    )
+    seq_lens = torch.randint(vocab_size, (batch_size,), dtype=torch.int32, device="cuda")
     row_starts = torch.zeros(num_rows, dtype=torch.int32, device="cuda")
     row_indices = torch.arange(num_rows, device="cuda") // next_n
     next_n_offset = torch.arange(num_rows, device="cuda") % next_n
@@ -190,6 +186,6 @@ def test_top_k_per_row_decode(
     torch_indices = torch_indices.masked_fill(~mask, -1)
 
     # Compare results
-    assert compare_top_k_results(
-        logits, indices, torch_indices, row_starts, row_ends, top_k
-    ), "CUDA top_k_per_row results don't match torch.topk"
+    assert compare_top_k_results(logits, indices, torch_indices, row_starts, row_ends, top_k), (
+        "CUDA top_k_per_row results don't match torch.topk"
+    )

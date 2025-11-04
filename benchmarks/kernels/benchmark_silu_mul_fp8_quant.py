@@ -16,10 +16,10 @@ from collections.abc import Callable
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-
 from aphrodite.model_executor.layers.fused_moe.batched_deep_gemm_moe import (
     persistent_masked_m_silu_mul_quant,
 )
+
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.deep_gemm import is_deep_gemm_e8m0_used
@@ -81,9 +81,7 @@ def _silu_mul_fp8_quant_deep_gemm(
     base_ys_offset = e * stride_ys_e + g * stride_ys_g
 
     for t in tl.range(0, n_tokens, num_stages=NUM_STAGES):
-        gate = tl.load(
-            input_ptr + base_gate_offset + t * stride_i_t, mask=mask, other=0.0
-        ).to(tl.float32)
+        gate = tl.load(input_ptr + base_gate_offset + t * stride_i_t, mask=mask, other=0.0).to(tl.float32)
         up = tl.load(input_ptr + base_up_offset + t * stride_i_t, mask=mask, other=0.0)
 
         gate = gate * (1.0 / (1.0 + tl.exp(-gate)))
@@ -122,9 +120,7 @@ def silu_mul_fp8_quant_deep_gemm_triton(
     H = H2 // 2
     G = (H + group_size - 1) // group_size
     assert H % group_size == 0, "H must be divisible by group_size"
-    assert tokens_per_expert.ndim == 1 and tokens_per_expert.shape[0] == E, (
-        "tokens_per_expert must be shape (E,)"
-    )
+    assert tokens_per_expert.ndim == 1 and tokens_per_expert.shape[0] == E, "tokens_per_expert must be shape (E,)"
     tokens_per_expert = tokens_per_expert.to(device=y.device, dtype=torch.int32)
 
     # allocate outputs
@@ -245,9 +241,7 @@ def benchmark(
     # Warmup
     y, tokens_per_expert = data_sets[0]
     for _ in range(num_warmups):
-        kernel(
-            y, tokens_per_expert, num_parallel_tokens=num_parallel_tokens, group_size=G
-        )
+        kernel(y, tokens_per_expert, num_parallel_tokens=num_parallel_tokens, group_size=G)
     torch.cuda.synchronize()
 
     start_event = torch.cuda.Event(enable_timing=True)
@@ -304,9 +298,7 @@ def benchmark(
     )
 
 
-def create_comparison_plot(
-    ratios, silu_v2_times, triton_times, config_labels, strategy_name, id
-):
+def create_comparison_plot(ratios, silu_v2_times, triton_times, config_labels, strategy_name, id):
     fig, ax = plt.subplots(1, 1, figsize=(18, 6))
 
     # Configure x-axis positions
@@ -315,9 +307,7 @@ def create_comparison_plot(
 
     # Execution Time plot (lower is better)
     ax.bar(x, silu_v2_times, width, label="SiLU V2 (CUDA)", alpha=0.8, color="blue")
-    ax.bar(
-        x + width, triton_times, width, label="Triton Kernel", alpha=0.8, color="green"
-    )
+    ax.bar(x + width, triton_times, width, label="Triton Kernel", alpha=0.8, color="green")
 
     # Add speedup labels over each bar trio
     for i in range(len(x)):
@@ -337,9 +327,7 @@ def create_comparison_plot(
 
     ax.set_xlabel("Configuration")
     ax.set_ylabel("% Utilization")
-    ax.set_title(
-        f"Memory Bandwidth Utilization (%) - {strategy_name}\n(Higher is Better)"
-    )
+    ax.set_title(f"Memory Bandwidth Utilization (%) - {strategy_name}\n(Higher is Better)")
     ax.set_xticks(x)
     ax.set_xticklabels(config_labels, rotation=45, ha="right")
     ax.legend()
@@ -423,9 +411,7 @@ def create_combined_plot(all_results):
 
         ax.set_xlabel("Configuration")
         ax.set_ylabel("% Utilization")
-        ax.set_title(
-            f"Memory Bandwidth Utilization (%) - {strategy_name}\n(Higher is Better)"
-        )
+        ax.set_title(f"Memory Bandwidth Utilization (%) - {strategy_name}\n(Higher is Better)")
         ax.set_xticks(x)
         ax.set_xticklabels(config_labels, rotation=45, ha="right")
         ax.legend()
@@ -525,11 +511,7 @@ for id, strategy in enumerate(strategies):
             triton_v2_ratio = time_ms_triton / time_ms_silu_v2
             ratios.append(triton_v2_ratio)
 
-            print(
-                f"Completed: {config_label}:"
-                f" V2: {time_ms_silu_v2:.3f}ms,"
-                f" Triton: {time_ms_triton:.3f}ms"
-            )
+            print(f"Completed: {config_label}: V2: {time_ms_silu_v2:.3f}ms, Triton: {time_ms_triton:.3f}ms")
 
         all_silu_v2_results.append(silu_v2_results)
         all_triton_results.append(triton_results)
@@ -558,19 +540,14 @@ for id, strategy in enumerate(strategies):
         triton_time = triton_results[i][0]
         triton_v2_speedup = triton_time / v2_time
         config_label = f"E={E:3d},T={T:4d},H={H:4d}"
-        print(
-            f"{config_label:<20} {v2_time:8.5f} {triton_time:10.5f} "
-            f"{triton_v2_speedup:8.2f}x"
-        )
+        print(f"{config_label:<20} {v2_time:8.5f} {triton_time:10.5f} {triton_v2_speedup:8.2f}x")
 
 
 def create_total_tokens_plot(all_results):
     num_strategies = len(all_results)
     num_configs = len(configs)
 
-    fig, axs = plt.subplots(
-        num_strategies, num_configs * 2, figsize=(32, 8 * num_strategies)
-    )
+    fig, axs = plt.subplots(num_strategies, num_configs * 2, figsize=(32, 8 * num_strategies))
 
     # Add main title to the entire figure
     fig.suptitle(
@@ -612,12 +589,8 @@ def create_total_tokens_plot(all_results):
             triton_v2_ratios = [ratio for ratio in ratios]
 
             # Extract bandwidth percentages for all implementations
-            v2_bandwidth_percentages = [
-                result[3] for result in all_silu_v2_results[config_idx]
-            ]
-            triton_bandwidth_percentages = [
-                result[3] for result in all_triton_results[config_idx]
-            ]
+            v2_bandwidth_percentages = [result[3] for result in all_silu_v2_results[config_idx]]
+            triton_bandwidth_percentages = [result[3] for result in all_triton_results[config_idx]]
 
             # Plot speedup ratios vs total tokens (left plot)
             ax_speedup.plot(
@@ -663,9 +636,7 @@ def create_total_tokens_plot(all_results):
                 fontweight="bold",
             )
             ax_bandwidth.set_xlabel("Total Tokens", fontweight="bold", fontsize=11)
-            ax_bandwidth.set_ylabel(
-                "% of Peak Bandwidth", fontweight="bold", fontsize=11
-            )
+            ax_bandwidth.set_ylabel("% of Peak Bandwidth", fontweight="bold", fontsize=11)
             ax_bandwidth.legend(prop={"weight": "bold"})
             ax_bandwidth.grid(True, alpha=0.3)
 
@@ -673,10 +644,7 @@ def create_total_tokens_plot(all_results):
             for ax in [ax_speedup, ax_bandwidth]:
                 ax.set_xticks(total_tokens_values)
                 ax.set_xticklabels(
-                    [
-                        f"{tt // 1000}K" if tt >= 1000 else str(tt)
-                        for tt in total_tokens_values
-                    ],
+                    [f"{tt // 1000}K" if tt >= 1000 else str(tt) for tt in total_tokens_values],
                     fontweight="bold",
                 )
                 # Make tick labels bold

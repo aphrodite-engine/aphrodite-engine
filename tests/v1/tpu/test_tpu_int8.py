@@ -14,9 +14,7 @@ from ...models.registry import HF_EXAMPLE_MODELS
 MODELS = ["Qwen/Qwen2.5-0.5B-Instruct"]
 
 
-@pytest.mark.skipif(
-    not current_platform.is_tpu(), reason="TPU Int8 is only enabled for TPUs."
-)
+@pytest.mark.skipif(not current_platform.is_tpu(), reason="TPU Int8 is only enabled for TPUs.")
 @pytest.mark.parametrize("model", MODELS)
 @pytest.mark.parametrize("dtype", ["bfloat16"])
 @pytest.mark.parametrize("max_tokens", [10])
@@ -43,9 +41,7 @@ def test_model_tpu_int8(
     model_info = HF_EXAMPLE_MODELS.find_hf_info(model)
     model_info.check_transformers_version(on_fail="skip")
 
-    activation_scheme = hf_overrides.get("quantization_config", {}).get(
-        "activation_scheme"
-    )
+    activation_scheme = hf_overrides.get("quantization_config", {}).get("activation_scheme")
     quantize_activation = activation_scheme == "dynamic"
 
     # Allows using apply_model

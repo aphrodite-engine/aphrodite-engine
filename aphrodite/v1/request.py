@@ -10,8 +10,7 @@ from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.multimodal.inputs import MultiModalFeatureSpec
 from aphrodite.utils import length_from_prompt_token_ids_or_embeds
-from aphrodite.v1.engine import (EngineCoreEvent, EngineCoreEventType,
-                                 EngineCoreRequest, FinishReason)
+from aphrodite.v1.engine import EngineCoreEvent, EngineCoreEventType, EngineCoreRequest, FinishReason
 from aphrodite.v1.structured_output.request import StructuredOutputRequest
 from aphrodite.v1.utils import ConstantList
 
@@ -46,9 +45,7 @@ class Request:
         # Because of LoRA, the eos token id can be different for each request.
         self.eos_token_id = eos_token_id
         self.lora_request = lora_request
-        self.structured_output_request = StructuredOutputRequest.from_sampling_params(
-            sampling_params
-        )
+        self.structured_output_request = StructuredOutputRequest.from_sampling_params(sampling_params)
         self.arrival_time = arrival_time if arrival_time is not None else time.time()
 
         self.status = RequestStatus.WAITING
@@ -69,22 +66,16 @@ class Request:
                 self.status = RequestStatus.WAITING_FOR_FSM
 
             if sampling_params.extra_args is not None:
-                self.kv_transfer_params = sampling_params.extra_args.get(
-                    "kv_transfer_params"
-                )
+                self.kv_transfer_params = sampling_params.extra_args.get("kv_transfer_params")
         else:
             raise ValueError("sampling_params and pooling_params can't both be unset")
 
         self.prompt_token_ids = prompt_token_ids
         self.prompt_embeds = prompt_embeds
-        self.num_prompt_tokens = length_from_prompt_token_ids_or_embeds(
-            prompt_token_ids, prompt_embeds
-        )
+        self.num_prompt_tokens = length_from_prompt_token_ids_or_embeds(prompt_token_ids, prompt_embeds)
         self._output_token_ids: list[int] = []
         self._all_token_ids: list[int] = (
-            self.prompt_token_ids.copy()
-            if self.prompt_token_ids is not None
-            else [0] * self.num_prompt_tokens
+            self.prompt_token_ids.copy() if self.prompt_token_ids is not None else [0] * self.num_prompt_tokens
         )
         self.num_output_placeholders = 0  # Used in async scheduling.
         self.spec_token_ids: list[int] = []

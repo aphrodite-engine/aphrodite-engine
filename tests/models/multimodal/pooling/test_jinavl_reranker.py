@@ -32,17 +32,13 @@ def aphrodite_reranker(
     if query_type == "text":
         query = query_strs
     elif query_type == "image":
-        query = ScoreMultiModalParam(
-            content=[create_image_param(url) for url in query_strs]
-        )
+        query = ScoreMultiModalParam(content=[create_image_param(url) for url in query_strs])
 
     documents: list[str] | ScoreMultiModalParam
     if doc_type == "text":
         documents = document_strs
     elif doc_type == "image":
-        documents = ScoreMultiModalParam(
-            content=[create_image_param(url) for url in document_strs]
-        )
+        documents = ScoreMultiModalParam(content=[create_image_param(url) for url in document_strs])
 
     with aphrodite_runner(
         model_name,
@@ -81,9 +77,7 @@ def hf_reranker(
         auto_cls=AutoModel,
         model_kwargs={"key_mapping": checkpoint_to_hf_mapper},
     ) as hf_model:
-        return hf_model.model.compute_score(
-            data_pairs, max_length=2048, query_type=query_type, doc_type=doc_type
-        )
+        return hf_model.model.compute_score(data_pairs, max_length=2048, query_type=query_type, doc_type=doc_type)
 
 
 # Visual Documents Reranking
@@ -96,12 +90,8 @@ def test_model_text_image(hf_runner, aphrodite_runner, model_name, dtype):
         "https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/paper-11.png",
     ]
 
-    hf_outputs = hf_reranker(
-        hf_runner, model_name, dtype, query, documents, "text", "image"
-    )
-    aphrodite_outputs = aphrodite_reranker(
-        aphrodite_runner, model_name, dtype, query, documents, "text", "image"
-    )
+    hf_outputs = hf_reranker(hf_runner, model_name, dtype, query, documents, "text", "image")
+    aphrodite_outputs = aphrodite_reranker(aphrodite_runner, model_name, dtype, query, documents, "text", "image")
 
     assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.02)
     assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.02)
@@ -125,12 +115,8 @@ def test_model_text_text(hf_runner, aphrodite_runner, model_name, dtype):
         lower computational requirements.""",  # noqa: E501
         "数据提取么？为什么不用正则啊，你用正则不就全解决了么？",
     ]
-    hf_outputs = hf_reranker(
-        hf_runner, model_name, dtype, query, documents, "text", "text"
-    )
-    aphrodite_outputs = aphrodite_reranker(
-        aphrodite_runner, model_name, dtype, query, documents, "text", "text"
-    )
+    hf_outputs = hf_reranker(hf_runner, model_name, dtype, query, documents, "text", "text")
+    aphrodite_outputs = aphrodite_reranker(aphrodite_runner, model_name, dtype, query, documents, "text", "text")
 
     assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.02)
     assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.02)
@@ -140,9 +126,7 @@ def test_model_text_text(hf_runner, aphrodite_runner, model_name, dtype):
 @pytest.mark.parametrize("model_name", [model_name])
 @pytest.mark.parametrize("dtype", ["half"])
 def test_model_image_text(hf_runner, aphrodite_runner, model_name, dtype):
-    query = [
-        "https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/paper-11.png"
-    ]
+    query = ["https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/paper-11.png"]
     documents = [
         """We present ReaderLM-v2, a compact 1.5 billion parameter language model designed for efficient
         web content extraction. Our model processes documents up to 512K tokens, transforming messy HTML
@@ -157,12 +141,8 @@ def test_model_image_text(hf_runner, aphrodite_runner, model_name, dtype):
         "数据提取么？为什么不用正则啊，你用正则不就全解决了么？",
     ]
 
-    hf_outputs = hf_reranker(
-        hf_runner, model_name, dtype, query, documents, "image", "text"
-    )
-    aphrodite_outputs = aphrodite_reranker(
-        aphrodite_runner, model_name, dtype, query, documents, "image", "text"
-    )
+    hf_outputs = hf_reranker(hf_runner, model_name, dtype, query, documents, "image", "text")
+    aphrodite_outputs = aphrodite_reranker(aphrodite_runner, model_name, dtype, query, documents, "image", "text")
 
     assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.02)
     assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.02)
@@ -172,20 +152,14 @@ def test_model_image_text(hf_runner, aphrodite_runner, model_name, dtype):
 @pytest.mark.parametrize("model_name", [model_name])
 @pytest.mark.parametrize("dtype", ["half"])
 def test_model_image_image(hf_runner, aphrodite_runner, model_name, dtype):
-    query = [
-        "https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/paper-11.png"
-    ]
+    query = ["https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/paper-11.png"]
     documents = [
         "https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/handelsblatt-preview.png",
         "https://raw.githubusercontent.com/jina-ai/multimodal-reranker-test/main/paper-11.png",
     ]
 
-    hf_outputs = hf_reranker(
-        hf_runner, model_name, dtype, query, documents, "image", "image"
-    )
-    aphrodite_outputs = aphrodite_reranker(
-        aphrodite_runner, model_name, dtype, query, documents, "image", "image"
-    )
+    hf_outputs = hf_reranker(hf_runner, model_name, dtype, query, documents, "image", "image")
+    aphrodite_outputs = aphrodite_reranker(aphrodite_runner, model_name, dtype, query, documents, "image", "image")
 
     assert hf_outputs[0] == pytest.approx(aphrodite_outputs[0], rel=0.02)
     assert hf_outputs[1] == pytest.approx(aphrodite_outputs[1], rel=0.02)

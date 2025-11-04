@@ -4,9 +4,8 @@ from typing import Annotated, Final, Literal, Protocol, TypeAlias, TypeVar
 
 import torch
 import torch.nn as nn
-from transformers import BatchFeature, CLIPVisionConfig
+from transformers import BatchFeature, CLIPVisionConfig, PretrainedConfig, SiglipVisionConfig
 from transformers import LlavaConfig as HfLlavaConfig
-from transformers import PretrainedConfig, SiglipVisionConfig
 from transformers.image_utils import ImageInput, get_image_size, to_numpy_array
 from transformers.models.llava import LlavaProcessor
 from transformers.processing_utils import ProcessingKwargs, Unpack
@@ -15,20 +14,19 @@ from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.models.llava import LlavaDummyInputsBuilder
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import BaseMultiModalProcessorCache
-from aphrodite.multimodal.inputs import (MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             InputProcessingContext,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.inputs import MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    InputProcessingContext,
+    PromptReplacement,
+    PromptUpdate,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
@@ -36,10 +34,8 @@ from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 from .clip import CLIPVisionModel
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
 from .siglip import SiglipVisionModel
-from .utils import (AutoWeightsLoader, init_aphrodite_registered_model,
-                    maybe_prefix)
-from .vision import (VisionEncoderInfo, get_num_selected_vision_tokens,
-                     get_vision_encoder_info)
+from .utils import AutoWeightsLoader, init_aphrodite_registered_model, maybe_prefix
+from .vision import VisionEncoderInfo, get_num_selected_vision_tokens, get_vision_encoder_info
 
 
 class TarsierImagePixelInputs(TensorSchema):
@@ -96,10 +92,7 @@ class TarsierProcessor(LlavaProcessor):
     def __call__(
         self,
         images: ImageInput = None,
-        text: TextInput
-        | PreTokenizedInput
-        | list[TextInput]
-        | list[PreTokenizedInput] = None,
+        text: TextInput | PreTokenizedInput | list[TextInput] | list[PreTokenizedInput] = None,
         audio=None,
         videos=None,
         **kwargs: Unpack[TarsierProcessorKwargs],
@@ -113,18 +106,14 @@ class TarsierProcessor(LlavaProcessor):
             **kwargs,
         )
         if images is not None:
-            image_inputs = self.image_processor(
-                images, **output_kwargs["images_kwargs"]
-            )
+            image_inputs = self.image_processor(images, **output_kwargs["images_kwargs"])
         else:
             image_inputs = {}
 
         if isinstance(text, str):
             text = [text]
         elif not isinstance(text, list) and not isinstance(text[0], str):
-            raise ValueError(
-                "Invalid input text. Please provide a string, or a list of strings"
-            )
+            raise ValueError("Invalid input text. Please provide a string, or a list of strings")
 
         # try to expand inputs in processing if we have the necessary parts
         prompt_strings = text
@@ -133,25 +122,19 @@ class TarsierProcessor(LlavaProcessor):
             pixel_values = image_inputs["pixel_values"]
             height, width = get_image_size(to_numpy_array(pixel_values[0]))
             num_image_tokens = (
-                (height // self.patch_size) * (width // self.patch_size + 1)
-                + self.num_additional_image_tokens
-                + 1
+                (height // self.patch_size) * (width // self.patch_size + 1) + self.num_additional_image_tokens + 1
             )
             if self.vision_feature_select_strategy == "default":
                 num_image_tokens -= 1
 
             prompt_strings = []
             for sample in text:
-                sample = sample.replace(
-                    self.image_token, self.image_token * num_image_tokens
-                )
+                sample = sample.replace(self.image_token, self.image_token * num_image_tokens)
                 prompt_strings.append(sample)
 
         return_tensors = output_kwargs["text_kwargs"].pop("return_tensors", None)
         text_inputs = self.tokenizer(prompt_strings, **output_kwargs["text_kwargs"])
-        return BatchFeature(
-            data={**text_inputs, **image_inputs}, tensor_type=return_tensors
-        )
+        return BatchFeature(data={**text_inputs, **image_inputs}, tensor_type=return_tensors)
 
 
 class TarsierMultiModalProjector(nn.Module):
@@ -284,9 +267,7 @@ class TarsierMultiModalProcessor(BaseMultiModalProcessor[_I_Tarsier]):
         image_token_id = hf_config.image_token_index  # The <IMAGE> token ID
 
         def get_replacement(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 num_projected_patches = images.get_feature_size(item_idx)
@@ -348,17 +329,11 @@ def init_vision_tower_for_tarsier(
         return feature_layer_index
 
     if isinstance(feature_layers, int):
-        num_hidden_layers_to_init = _get_layer_index(
-            feature_layers, base_num_hidden_layers
-        )
+        num_hidden_layers_to_init = _get_layer_index(feature_layers, base_num_hidden_layers)
     elif isinstance(feature_layers, (list, tuple)):
-        num_hidden_layers_to_init = max(
-            _get_layer_index(idx, base_num_hidden_layers) for idx in feature_layers
-        )
+        num_hidden_layers_to_init = max(_get_layer_index(idx, base_num_hidden_layers) for idx in feature_layers)
     else:
-        raise TypeError(
-            f"vision_layer_feature type: {type(feature_layers)} is not supported"
-        )
+        raise TypeError(f"vision_layer_feature type: {type(feature_layers)} is not supported")
 
     if isinstance(vision_config, CLIPVisionConfig):
         return CLIPVisionModel(
@@ -438,13 +413,9 @@ class TarsierForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP)
             persistent=False,
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> TarsierImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> TarsierImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
 
@@ -476,9 +447,7 @@ class TarsierForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP)
             feature_select_strategy=self.config.vision_feature_select_strategy,
         )
 
-    def _add_tarsier_split_tokens(
-        self, projected_image_features: torch.Tensor
-    ) -> torch.Tensor:
+    def _add_tarsier_split_tokens(self, projected_image_features: torch.Tensor) -> torch.Tensor:
         """
         Implements Tarsier's `add_split_tokens` logic.
         """
@@ -487,9 +456,7 @@ class TarsierForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP)
         num_width_patches = num_projected_patches // num_height_patches
         device = projected_image_features.device
         embedding_layer = self.language_model.model.embed_tokens
-        image_newline_emb = embedding_layer(
-            self.image_newline_idx_tensor.to(device)
-        ).squeeze(0)
+        image_newline_emb = embedding_layer(self.image_newline_idx_tensor.to(device)).squeeze(0)
         image_new_emb = embedding_layer(self.image_new_idx_tensor.to(device)).squeeze(0)
         try:
             current_image_features_grid = projected_image_features.view(
@@ -507,17 +474,13 @@ class TarsierForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP)
                 f"derived num_height_patches={num_height_patches}. "
             ) from e
 
-        image_newline_expanded = image_newline_emb.expand(
-            (num_images, num_height_patches, 1, embed_dim)
-        )
+        image_newline_expanded = image_newline_emb.expand((num_images, num_height_patches, 1, embed_dim))
         features_with_newlines = torch.cat(
             [current_image_features_grid, image_newline_expanded],
             dim=2,  # Concatenate along width dim
         )
         new_num_patches_after_newline = num_projected_patches + num_height_patches
-        features_with_newlines_flat = features_with_newlines.view(
-            num_images, new_num_patches_after_newline, embed_dim
-        )
+        features_with_newlines_flat = features_with_newlines.view(num_images, new_num_patches_after_newline, embed_dim)
         image_new_expanded = image_new_emb.expand((num_images, 1, embed_dim))
         final_image_features = torch.cat(
             [features_with_newlines_flat, image_new_expanded],
@@ -531,18 +494,13 @@ class TarsierForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP)
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
         assert self.vision_tower is not None
         pixel_values = inputs["pixel_values"]
-        image_features_selected = self._image_pixels_to_features(
-            self.vision_tower, pixel_values
-        )  # type: ignore
+        image_features_selected = self._image_pixels_to_features(self.vision_tower, pixel_values)  # type: ignore
         if isinstance(image_features_selected, torch.Tensor):
             projected_features = self.multi_modal_projector(image_features_selected)
             final_features = self._add_tarsier_split_tokens(projected_features)
             return final_features
         else:
-            raise TypeError(
-                f"_image_pixels_to_features type:"
-                f" {type(image_features_selected)} is not supported"
-            )
+            raise TypeError(f"_image_pixels_to_features type: {type(image_features_selected)} is not supported")
 
     def _process_image_input(
         self,
@@ -553,10 +511,7 @@ class TarsierForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP)
             if isinstance(projected_features, torch.Tensor):
                 return self._add_tarsier_split_tokens(projected_features)
             else:
-                raise ValueError(
-                    "Incorrect type of image_embeds. "
-                    f"Got type: {type(projected_features)}. "
-                )
+                raise ValueError(f"Incorrect type of image_embeds. Got type: {type(projected_features)}. ")
         assert self.vision_tower is not None
         return self._process_image_pixels(image_input)
 

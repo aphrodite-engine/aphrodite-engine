@@ -21,13 +21,8 @@ APHRODITE_LOGGING_LEVEL = envs.APHRODITE_LOGGING_LEVEL
 APHRODITE_LOGGING_PREFIX = envs.APHRODITE_LOGGING_PREFIX
 APHRODITE_LOGGING_STREAM = envs.APHRODITE_LOGGING_STREAM
 
-_FORMAT = (
-    f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s "
-    "[%(fileinfo)-15s:%(lineno)4d] %(message)s"
-)
-_FORMAT_INFO = (
-    f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
-)
+_FORMAT = f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s [%(fileinfo)-15s:%(lineno)4d] %(message)s"
+_FORMAT_INFO = f"{APHRODITE_LOGGING_PREFIX}%(levelname)s %(asctime)s %(message)s"
 _DATE_FORMAT = "%m-%d %H:%M:%S"
 
 DEFAULT_LOGGING_CONFIG = {
@@ -102,9 +97,7 @@ class _AphroditeLogger(Logger):
         `intel_extension_for_pytorch.utils._logger`.
     """
 
-    def debug_once(
-        self, msg: str, *args: Hashable, scope: LogScope = "process"
-    ) -> None:
+    def debug_once(self, msg: str, *args: Hashable, scope: LogScope = "process") -> None:
         """
         As [`debug`][logging.Logger.debug], but subsequent calls with
         the same message are silently dropped.
@@ -122,9 +115,7 @@ class _AphroditeLogger(Logger):
             return
         _print_info_once(self, msg, *args)
 
-    def warning_once(
-        self, msg: str, *args: Hashable, scope: LogScope = "process"
-    ) -> None:
+    def warning_once(self, msg: str, *args: Hashable, scope: LogScope = "process") -> None:
         """
         As [`warning`][logging.Logger.warning], but subsequent calls with
         the same message are silently dropped.

@@ -2,12 +2,12 @@
 import time
 
 import torch
-
-from aphrodite import _custom_ops as ops
 from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
     per_token_group_quant_fp8,
     w8a8_triton_block_scaled_mm,
 )
+
+from aphrodite import _custom_ops as ops
 from aphrodite.triton_utils import triton
 from aphrodite.utils.deep_gemm import (
     calc_diff,
@@ -56,9 +56,7 @@ def benchmark_shape(
 
     # === DeepGEMM Implementation ===
     def deepgemm_gemm():
-        fp8_gemm_nt(
-            (A_deepgemm, A_scale_deepgemm), (B_deepgemm, B_scale_deepgemm), C_deepgemm
-        )
+        fp8_gemm_nt((A_deepgemm, A_scale_deepgemm), (B_deepgemm, B_scale_deepgemm), C_deepgemm)
         return C_deepgemm
 
     # === Aphrodite Triton Implementation ===
@@ -97,14 +95,8 @@ def benchmark_shape(
         print(f"DeepGEMM vs Reference difference: {deepgemm_diff:.6f}")
         print(f"Aphrodite Triton vs Reference difference: {aphrodite_triton_diff:.6f}")
         print(f"Aphrodite CUTLASS vs Reference difference: {aphrodite_cutlass_diff:.6f}")
-        print(
-            "Aphrodite Triton vs DeepGEMM difference: "
-            f"{calc_diff(C_aphrodite_triton, C_deepgemm):.6f}"
-        )
-        print(
-            "Aphrodite CUTLASS vs DeepGEMM difference: "
-            f"{calc_diff(C_aphrodite_cutlass, C_deepgemm):.6f}"
-        )
+        print(f"Aphrodite Triton vs DeepGEMM difference: {calc_diff(C_aphrodite_triton, C_deepgemm):.6f}")
+        print(f"Aphrodite CUTLASS vs DeepGEMM difference: {calc_diff(C_aphrodite_cutlass, C_deepgemm):.6f}")
 
     # Benchmark implementations
     implementations = {
@@ -141,9 +133,7 @@ def benchmark_shape(
             "tflops": tflops,
             "gb_s": gb_s,
             "diff": {
-                "DeepGEMM": 0.0
-                if name == "DeepGEMM"
-                else calc_diff(func(), C_deepgemm),
+                "DeepGEMM": 0.0 if name == "DeepGEMM" else calc_diff(func(), C_deepgemm),
                 "Reference": deepgemm_diff
                 if name == "DeepGEMM"
                 else (aphrodite_triton_diff if name == "Aphrodite Triton" else aphrodite_cutlass_diff),
@@ -160,17 +150,12 @@ def benchmark_shape(
             speedup = baseline / data["time_ms"]
             benchmark_results["implementations"][name]["speedup_vs_deepgemm"] = speedup
             if verbose:
-                print(
-                    f"DeepGEMM is {1 / speedup:.2f}x "
-                    f"{'faster' if 1 / speedup > 1 else 'slower'} than {name}"
-                )
+                print(f"DeepGEMM is {1 / speedup:.2f}x {'faster' if 1 / speedup > 1 else 'slower'} than {name}")
 
     aphrodite_triton_time = benchmark_results["implementations"]["Aphrodite Triton"]["time_ms"]
     aphrodite_cutlass_time = benchmark_results["implementations"]["Aphrodite CUTLASS"]["time_ms"]
     cutlass_vs_triton = aphrodite_triton_time / aphrodite_cutlass_time
-    benchmark_results["implementations"]["Aphrodite CUTLASS"]["speedup_vs_triton"] = (
-        cutlass_vs_triton
-    )
+    benchmark_results["implementations"]["Aphrodite CUTLASS"]["speedup_vs_triton"] = cutlass_vs_triton
     if verbose:
         print(
             f"Aphrodite CUTLASS is {cutlass_vs_triton:.2f}x "
@@ -191,10 +176,7 @@ def print_table(headers, rows, title=None):
         print(f"\n{title}")
 
     # Calculate column widths based on headers and data
-    widths = [
-        max(len(str(h)), max(len(str(row[i])) for row in rows))
-        for i, h in enumerate(headers)
-    ]
+    widths = [max(len(str(h)), max(len(str(row[i])) for row in rows)) for i, h in enumerate(headers)]
 
     # Create separator line
     separator = "+-" + "-+-".join("-" * w for w in widths) + "-+"
@@ -360,9 +342,7 @@ def run_benchmarks(verbose: bool = False):
     print("\n===== AVERAGE PERFORMANCE =====")
 
     implementations = ["DeepGEMM", "Aphrodite Triton", "Aphrodite CUTLASS"]
-    avg_metrics = {
-        impl: {"tflops": 0, "gb_s": 0, "time_ms": 0} for impl in implementations
-    }
+    avg_metrics = {impl: {"tflops": 0, "gb_s": 0, "time_ms": 0} for impl in implementations}
 
     for result in all_results:
         for impl in implementations:
@@ -379,9 +359,7 @@ def run_benchmarks(verbose: bool = False):
         avg_tflops = avg_metrics[impl]["tflops"] / num_shapes
         avg_mem_bw = avg_metrics[impl]["gb_s"] / num_shapes
         avg_time = avg_metrics[impl]["time_ms"] / num_shapes
-        avg_rows.append(
-            [impl, f"{avg_tflops:.2f}", f"{avg_mem_bw:.2f}", f"{avg_time:.2f}"]
-        )
+        avg_rows.append([impl, f"{avg_tflops:.2f}", f"{avg_mem_bw:.2f}", f"{avg_time:.2f}"])
 
     print_table(avg_headers, avg_rows)
 
@@ -399,9 +377,7 @@ def run_benchmarks(verbose: bool = False):
 
         avg_speedups["DeepGEMM vs Aphrodite Triton"] += aphrodite_triton_time / deepgemm_time
         avg_speedups["DeepGEMM vs Aphrodite CUTLASS"] += aphrodite_cutlass_time / deepgemm_time
-        avg_speedups["Aphrodite CUTLASS vs Aphrodite Triton"] += (
-            aphrodite_triton_time / aphrodite_cutlass_time
-        )
+        avg_speedups["Aphrodite CUTLASS vs Aphrodite Triton"] += aphrodite_triton_time / aphrodite_cutlass_time
 
     print("\n===== AVERAGE SPEEDUPS =====")
     speedup_headers = ["Comparison", "Speedup"]

@@ -1,6 +1,5 @@
 import json
 from collections.abc import AsyncGenerator
-from typing import Optional
 
 from fastapi import Request
 
@@ -19,6 +18,7 @@ logger = init_logger(__name__)
 # Global cache for generation tracking
 gen_cache: dict = {}
 
+
 class OpenAIServingKobold(OpenAIServing):
     """Serving class for KoboldAI API compatibility."""
 
@@ -27,15 +27,10 @@ class OpenAIServingKobold(OpenAIServing):
         engine_client: EngineClient,
         models: OpenAIServingModels,
         *,
-        request_logger: Optional[RequestLogger] = None,
+        request_logger: RequestLogger | None = None,
         **kwargs,
     ) -> None:
-        super().__init__(
-            engine_client=engine_client,
-            models=models,
-            request_logger=request_logger,
-            **kwargs
-        )
+        super().__init__(engine_client=engine_client, models=models, request_logger=request_logger, **kwargs)
 
         self._initialize_badwordsids()
 
@@ -44,64 +39,46 @@ class OpenAIServingKobold(OpenAIServing):
         and tokenizer."""
         self.badwordsids: list[int] = []
 
-        hf_config = getattr(self.model_config, 'hf_config', None)
-        if hf_config and hasattr(hf_config, 'bad_words_ids'
-        ) and hf_config.bad_words_ids:
+        hf_config = getattr(self.model_config, "hf_config", None)
+        if hf_config and hasattr(hf_config, "bad_words_ids") and hf_config.bad_words_ids:
             self.badwordsids = list(hf_config.bad_words_ids)
             return
 
         # Fallback: extract from tokenizer vocabulary
         try:
-            tokenizer_name = getattr(self.model_config, 'tokenizer', None) or \
-                           getattr(self.model_config, 'model', None)
+            tokenizer_name = getattr(self.model_config, "tokenizer", None) or getattr(self.model_config, "model", None)
             if tokenizer_name:
-                trust_remote_code = getattr(
-                    self.model_config, 'trust_remote_code', False)
-                revision = getattr(self.model_config, 'revision', None)
+                trust_remote_code = getattr(self.model_config, "trust_remote_code", False)
+                revision = getattr(self.model_config, "revision", None)
 
-                tokenizer = get_tokenizer(
-                    tokenizer_name,
-                    trust_remote_code=trust_remote_code,
-                    revision=revision
-                )
+                tokenizer = get_tokenizer(tokenizer_name, trust_remote_code=trust_remote_code, revision=revision)
 
                 if tokenizer:
                     vocab = tokenizer.get_vocab()
-                    bracket_tokens = [
-                        v for k, v in vocab.items()
-                        if any(c in str(k) for c in "[]")
-                    ]
+                    bracket_tokens = [v for k, v in vocab.items() if any(c in str(k) for c in "[]")]
                     self.badwordsids = bracket_tokens
 
-                    pad_token_id = getattr(tokenizer, 'pad_token_id', None)
-                    if (
-                        pad_token_id is not None and pad_token_id in
-                        self.badwordsids
-                    ):
+                    pad_token_id = getattr(tokenizer, "pad_token_id", None)
+                    if pad_token_id is not None and pad_token_id in self.badwordsids:
                         self.badwordsids.remove(pad_token_id)
 
-                    eos_token_id = getattr(tokenizer, 'eos_token_id', None)
-                    if (
-                        eos_token_id is not None and eos_token_id not in
-                        self.badwordsids
-                    ):
+                    eos_token_id = getattr(tokenizer, "eos_token_id", None)
+                    if eos_token_id is not None and eos_token_id not in self.badwordsids:
                         self.badwordsids.append(eos_token_id)
 
         except Exception as e:
-            logger.warning(
-                f"Could not initialize badwordsids from tokenizer: {e}")
+            logger.warning("Could not initialize badwordsids from tokenizer: %s", e)
             self.badwordsids = []
 
     async def create_kobold_response(
         self,
         request: KAIGenerationInputSchema,
-        raw_request: Optional[Request] = None,
+        raw_request: Request | None = None,
     ):
         """Create non-streaming response for KoboldAI API."""
 
         tokenizer = await self.engine_client.get_tokenizer()
-        sampling_params, input_tokens = self._prepare_engine_payload(
-            request, tokenizer)
+        sampling_params, input_tokens = self._prepare_engine_payload(request, tokenizer)
 
         results_generator = self.engine_client.generate(
             {
@@ -116,7 +93,7 @@ class OpenAIServingKobold(OpenAIServing):
         previous_output = ""
         async for res in results_generator:
             final_res = res
-            new_chunk = res.outputs[0].text[len(previous_output):]
+            new_chunk = res.outputs[0].text[len(previous_output) :]
             previous_output += new_chunk
             # Update cache for streaming compatibility
             if request.genkey:
@@ -126,9 +103,7 @@ class OpenAIServingKobold(OpenAIServing):
         if request.genkey:
             del gen_cache[request.genkey]
 
-        return {
-            "results": [{"text": output.text} for output in final_res.outputs]
-        }
+        return {"results": [{"text": output.text} for output in final_res.outputs]}
 
     async def check_generation(self, genkey: str) -> str:
         """Check the current generation status for a given genkey."""
@@ -141,13 +116,12 @@ class OpenAIServingKobold(OpenAIServing):
     async def create_kobold_stream(
         self,
         request: KAIGenerationInputSchema,
-        raw_request: Optional[Request] = None,
+        raw_request: Request | None = None,
     ) -> AsyncGenerator[str, None]:
         """Create streaming response for KoboldAI API."""
 
         tokenizer = await self.engine_client.get_tokenizer()
-        sampling_params, input_tokens = self._prepare_engine_payload(
-            request, tokenizer)
+        sampling_params, input_tokens = self._prepare_engine_payload(request, tokenizer)
 
         results_generator = self.engine_client.generate(
             {
@@ -160,11 +134,9 @@ class OpenAIServingKobold(OpenAIServing):
 
         previous_output = ""
         async for res in results_generator:
-            new_chunk = res.outputs[0].text[len(previous_output):]
+            new_chunk = res.outputs[0].text[len(previous_output) :]
             previous_output += new_chunk
-            yield (
-                f"event: message\ndata: {json.dumps({'token': new_chunk})}\n\n"
-            )
+            yield (f"event: message\ndata: {json.dumps({'token': new_chunk})}\n\n")
 
     def _prepare_engine_payload(
         self,
@@ -176,8 +148,7 @@ class OpenAIServingKobold(OpenAIServing):
         if not kai_payload.genkey:
             kai_payload.genkey = f"kai-{random_uuid()}"
 
-        kai_payload.top_k = (
-            kai_payload.top_k if kai_payload.top_k != 0.0 else -1)
+        kai_payload.top_k = kai_payload.top_k if kai_payload.top_k != 0.0 else -1
         kai_payload.tfs = max(_SAMPLING_EPS, kai_payload.tfs or 0.0)
         if (kai_payload.temperature or 0.0) < _SAMPLING_EPS:
             kai_payload.n = 1
@@ -200,21 +171,15 @@ class OpenAIServingKobold(OpenAIServing):
             eta_cutoff=kai_payload.eta_cutoff or 0.0,
             epsilon_cutoff=kai_payload.eps_cutoff or 0.0,
             stop=kai_payload.stop_sequence,
-            include_stop_str_in_output=
-            kai_payload.include_stop_str_in_output or False,
-            custom_token_bans=(
-                self.badwordsids if getattr(
-                    kai_payload, 'use_default_badwordsids', True
-                ) else []),
+            include_stop_str_in_output=kai_payload.include_stop_str_in_output or False,
+            custom_token_bans=(self.badwordsids if getattr(kai_payload, "use_default_badwordsids", True) else []),
             max_tokens=kai_payload.max_length,
             seed=kai_payload.sampler_seed,
             xtc_probability=kai_payload.xtc_probability or 0.0,
-            xtc_threshold=kai_payload.xtc_threshold or 0.0
+            xtc_threshold=kai_payload.xtc_threshold or 0.0,
         )
 
-        max_input_tokens = max(
-            1, kai_payload.max_context_length - kai_payload.max_length)
-        input_tokens = (
-            tokenizer(kai_payload.prompt).input_ids[-max_input_tokens:])
+        max_input_tokens = max(1, kai_payload.max_context_length - kai_payload.max_length)
+        input_tokens = tokenizer(kai_payload.prompt).input_ids[-max_input_tokens:]
 
         return sampling_params, input_tokens

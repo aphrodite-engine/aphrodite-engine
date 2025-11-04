@@ -8,28 +8,24 @@ from torch.nn.parameter import Parameter
 from aphrodite import envs
 from aphrodite.config import get_current_aphrodite_config
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe import (FusedMoE, FusedMoEConfig,
-                                                 FusedMoEMethodBase)
+from aphrodite.modeling.layers.fused_moe import FusedMoE, FusedMoEConfig, FusedMoEMethodBase
 from aphrodite.modeling.layers.fused_moe import modular_kernel as mk
 from aphrodite.modeling.layers.fused_moe.config import (
-    FusedMoEQuantConfig, mxfp4_mxfp8_moe_quant_config,
-    mxfp4_w4a16_moe_quant_config, ocp_mx_moe_quant_config)
-from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-    BatchedMarlinExperts, MarlinExperts, fused_marlin_moe)
-from aphrodite.modeling.layers.fused_moe.gpt_oss_triton_kernels_moe import (
-    OAITritonExperts)
+    FusedMoEQuantConfig,
+    mxfp4_mxfp8_moe_quant_config,
+    mxfp4_w4a16_moe_quant_config,
+    ocp_mx_moe_quant_config,
+)
+from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import BatchedMarlinExperts, MarlinExperts, fused_marlin_moe
+from aphrodite.modeling.layers.fused_moe.gpt_oss_triton_kernels_moe import OAITritonExperts
 from aphrodite.modeling.layers.fused_moe.trtllm_moe import TrtLlmGenExperts
-from aphrodite.modeling.layers.linear import (LinearBase,
-                                              UnquantizedLinearMethod)
+from aphrodite.modeling.layers.linear import LinearBase, UnquantizedLinearMethod
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
-from aphrodite.quantization.utils.marlin_utils_fp4 import (
-    prepare_moe_fp4_layer_for_marlin)
-from aphrodite.quantization.utils.mxfp4_utils import (_can_support_mxfp4,
-                                                      _swizzle_mxfp4)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
+from aphrodite.quantization.utils.marlin_utils_fp4 import prepare_moe_fp4_layer_for_marlin
+from aphrodite.quantization.utils.mxfp4_utils import _can_support_mxfp4, _swizzle_mxfp4
 from aphrodite.quantization.utils.quant_utils import is_layer_skipped
 from aphrodite.scalar_type import scalar_types
 from aphrodite.utils.flashinfer import has_flashinfer
@@ -105,8 +101,7 @@ def get_mxfp4_backend(with_lora_support: bool) -> Mxfp4Backend:
             )
             return Mxfp4Backend.SM100_FI_MXFP4_BF16
         elif (
-            current_platform.is_device_capability(100)
-            or current_platform.is_device_capability(90)
+            current_platform.is_device_capability(100) or current_platform.is_device_capability(90)
         ) and not has_flashinfer():
             logger.warning_once(
                 "MXFP4 MoE is enabled on Hopper/Blackwell but FlashInfer "
@@ -158,11 +153,8 @@ class Mxfp4Config(QuantizationConfig):
     def get_config_filenames(cls) -> list[str]:
         return []
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
-        from aphrodite.attention.layer import (
-            Attention)  # Avoid circular import
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
+        from aphrodite.attention.layer import Attention  # Avoid circular import
 
         if isinstance(layer, LinearBase):
             if self.ignored_layers and is_layer_skipped(
@@ -185,9 +177,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         self.topk_indices_dtype = None
         self.moe = moe
         self.mxfp4_backend = get_mxfp4_backend(moe.is_lora_enabled)
-        self.max_capture_size = (
-            get_current_aphrodite_config().compilation_config.max_cudagraph_capture_size
-        )
+        self.max_capture_size = get_current_aphrodite_config().compilation_config.max_cudagraph_capture_size
 
         assert self.mxfp4_backend != Mxfp4Backend.NONE, (
             f"get_mxfp4_backend(with_lora_support={moe.is_lora_enabled}) found"
@@ -229,17 +219,13 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             # In down_proj
             #    n = hidden_size
             #    k = intermediate_size_per_partition_after_pad
-            intermediate_size_per_partition_after_pad = round_up(
-                intermediate_size_per_partition, 128
-            )
+            intermediate_size_per_partition_after_pad = round_up(intermediate_size_per_partition, 128)
             hidden_size = round_up(hidden_size, 256)
 
             layer.params_dtype = params_dtype
             layer.num_experts = num_experts
             layer.hidden_size = hidden_size
-            layer.intermediate_size_per_partition = (
-                intermediate_size_per_partition_after_pad
-            )
+            layer.intermediate_size_per_partition = intermediate_size_per_partition_after_pad
         elif (
             self.mxfp4_backend == Mxfp4Backend.SM100_FI_MXFP4_MXFP8_TRTLLM
             or self.mxfp4_backend == Mxfp4Backend.SM100_FI_MXFP4_BF16
@@ -247,27 +233,19 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             # pad the intermediate size to be a multiple of 2 * mxfp4_block
             # for to hold non-uniform sharded tensor as well as swizzling
             # other padding to increase performance
-            intermediate_size_per_partition_after_pad = round_up(
-                intermediate_size_per_partition, 256
-            )
+            intermediate_size_per_partition_after_pad = round_up(intermediate_size_per_partition, 256)
             hidden_size = round_up(hidden_size, 256)
         elif (
             self.mxfp4_backend == Mxfp4Backend.SM100_FI_MXFP4_MXFP8_CUTLASS
             or self.mxfp4_backend == Mxfp4Backend.SM90_FI_MXFP4_BF16
         ):
-            intermediate_size_per_partition_after_pad = round_up(
-                intermediate_size_per_partition, 128
-            )
+            intermediate_size_per_partition_after_pad = round_up(intermediate_size_per_partition, 128)
             hidden_size = round_up(hidden_size, 128)
         elif current_platform.is_rocm():
-            intermediate_size_per_partition_after_pad = round_up(
-                intermediate_size_per_partition, 256
-            )
+            intermediate_size_per_partition_after_pad = round_up(intermediate_size_per_partition, 256)
             hidden_size = round_up(hidden_size, 256)
         else:
-            intermediate_size_per_partition_after_pad = round_up(
-                intermediate_size_per_partition, 64
-            )
+            intermediate_size_per_partition_after_pad = round_up(intermediate_size_per_partition, 64)
 
         self.intermediate_size = intermediate_size_per_partition_after_pad
         self.hidden_size = hidden_size
@@ -350,10 +328,8 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             self.mxfp4_backend == Mxfp4Backend.SM100_FI_MXFP4_MXFP8_TRTLLM
             or self.mxfp4_backend == Mxfp4Backend.SM100_FI_MXFP4_BF16
         ):
-            from flashinfer.fp4_quantization import (
-                nvfp4_block_scale_interleave)
-            from flashinfer.fused_moe.core import (
-                get_w2_permute_indices_with_cache)
+            from flashinfer.fp4_quantization import nvfp4_block_scale_interleave
+            from flashinfer.fused_moe.core import get_w2_permute_indices_with_cache
 
             layer.gemm1_alpha = Parameter(
                 torch.tensor([1.702] * self.num_experts, dtype=torch.float32).cuda(),
@@ -390,8 +366,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             assert (
                 layer.w2_weight_scale.dim() == 3
                 and layer.w2_weight_scale.shape[1] == self.hidden_size
-                and layer.w2_weight_scale.shape[2]
-                == self.intermediate_size // sf_block_size
+                and layer.w2_weight_scale.shape[2] == self.intermediate_size // sf_block_size
             )
             assert (
                 layer.w13_bias.dim() == 2
@@ -451,9 +426,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                     epilogue_tile_m,
                 )
                 gemm1_weights_mxfp4_shuffled.append(
-                    w13_weight[i]
-                    .view(torch.uint8)[permute_indices.to(w13_weight.device)]
-                    .contiguous()
+                    w13_weight[i].view(torch.uint8)[permute_indices.to(w13_weight.device)].contiguous()
                 )
                 # w13 scale shuffling
                 permute_sf_indices = get_w2_permute_indices_with_cache(
@@ -465,9 +438,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                 gemm1_scales_mxfp4_shuffled.append(
                     nvfp4_block_scale_interleave(
                         w13_weight_scale[i]
-                        .view(torch.uint8)[
-                            permute_sf_indices.to(w13_weight_scale.device)
-                        ]
+                        .view(torch.uint8)[permute_sf_indices.to(w13_weight_scale.device)]
                         .contiguous()
                     )
                 )
@@ -478,10 +449,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                     epilogue_tile_m,
                 )
                 gemm1_bias_shuffled.append(
-                    w13_bias[i]
-                    .clone()
-                    .reshape(-1, 1)[permute_bias_indices.to(w13_bias.device)]
-                    .contiguous()
+                    w13_bias[i].clone().reshape(-1, 1)[permute_bias_indices.to(w13_bias.device)].contiguous()
                 )
                 # w2 weight shuffling
                 permute_indices = get_w2_permute_indices_with_cache(
@@ -490,9 +458,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                     epilogue_tile_m,
                 )
                 gemm2_weights_mxfp4_shuffled.append(
-                    w2_weight[i]
-                    .view(torch.uint8)[permute_indices.to(w2_weight.device)]
-                    .contiguous()
+                    w2_weight[i].view(torch.uint8)[permute_indices.to(w2_weight.device)].contiguous()
                 )
                 # w2 scale shuffling
                 permute_sf_indices = get_w2_permute_indices_with_cache(
@@ -503,11 +469,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                 )
                 gemm2_scales_mxfp4_shuffled.append(
                     nvfp4_block_scale_interleave(
-                        w2_weight_scale[i]
-                        .view(torch.uint8)[
-                            permute_sf_indices.to(w2_weight_scale.device)
-                        ]
-                        .contiguous()
+                        w2_weight_scale[i].view(torch.uint8)[permute_sf_indices.to(w2_weight_scale.device)].contiguous()
                     )
                 )
                 # w2 bias shuffling
@@ -517,10 +479,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                     epilogue_tile_m,
                 )
                 gemm2_bias_shuffled.append(
-                    w2_bias[i]
-                    .clone()
-                    .reshape(-1, 1)[permute_indices.to(w2_bias.device)]
-                    .contiguous()
+                    w2_bias[i].clone().reshape(-1, 1)[permute_indices.to(w2_bias.device)].contiguous()
                 )
 
             w13_weight = torch.stack(gemm1_weights_mxfp4_shuffled)
@@ -598,8 +557,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             assert (
                 layer.w2_weight_scale.dim() == 3
                 and layer.w2_weight_scale.shape[1] == self.hidden_size
-                and layer.w2_weight_scale.shape[2]
-                == self.intermediate_size // sf_block_size
+                and layer.w2_weight_scale.shape[2] == self.intermediate_size // sf_block_size
             )
             assert (
                 layer.w13_bias.dim() == 2
@@ -635,35 +593,23 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                 from flashinfer import block_scale_interleave
 
                 orig_shape = w13_scale_swapped.shape
-                w13_scale_interleaved = block_scale_interleave(
-                    w13_scale_swapped.view(torch.uint8)
-                ).reshape(orig_shape)
+                w13_scale_interleaved = block_scale_interleave(w13_scale_swapped.view(torch.uint8)).reshape(orig_shape)
 
                 w2_s = layer.w2_weight_scale.data
                 orig_shape = w2_s.shape
-                w2_scale_interleaved = block_scale_interleave(
-                    w2_s.view(torch.uint8)
-                ).reshape(orig_shape)
+                w2_scale_interleaved = block_scale_interleave(w2_s.view(torch.uint8)).reshape(orig_shape)
 
                 layer.w13_weight = Parameter(w13_weight_swapped, requires_grad=False)
-                layer.w13_weight_scale = Parameter(
-                    w13_scale_interleaved, requires_grad=False
-                )
+                layer.w13_weight_scale = Parameter(w13_scale_interleaved, requires_grad=False)
                 layer.w13_bias = Parameter(w13_bias_swapped, requires_grad=False)
-                layer.w2_weight_scale = Parameter(
-                    w2_scale_interleaved, requires_grad=False
-                )
+                layer.w2_weight_scale = Parameter(w2_scale_interleaved, requires_grad=False)
             elif self.mxfp4_backend == Mxfp4Backend.SM90_FI_MXFP4_BF16:
 
                 def _interleave_mxfp4_cutlass_sm90(w):
                     w_shape = w.shape
-                    w_interleaved = w.reshape(
-                        w_shape[0], w_shape[1], (w_shape[2] // 4), 4
-                    )
+                    w_interleaved = w.reshape(w_shape[0], w_shape[1], (w_shape[2] // 4), 4)
                     w_interleaved = w_interleaved.permute(0, 2, 1, 3)
-                    w_interleaved = w_interleaved.reshape(
-                        w_shape[0], w_shape[2] // 4, w_shape[1] * 4
-                    )
+                    w_interleaved = w_interleaved.reshape(w_shape[0], w_shape[2] // 4, w_shape[1] * 4)
                     return w_interleaved
 
                 w31_scales = w13_scale_swapped.to(torch.uint8).view(torch.uint8)
@@ -673,18 +619,10 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                 w2_scales = w2_weight_scale.to(torch.uint8).view(torch.uint8)
                 w2_scales_interleaved = _interleave_mxfp4_cutlass_sm90(w2_scales)
 
-                layer.w13_weight = torch.nn.Parameter(
-                    torch.cat([w3_w, w1_w], dim=1), requires_grad=False
-                )
-                layer.w13_bias = torch.nn.Parameter(
-                    w13_bias_swapped, requires_grad=False
-                )
-                layer.w13_weight_scale = torch.nn.Parameter(
-                    w31_scales_interleaved, requires_grad=False
-                )
-                layer.w2_weight_scale = torch.nn.Parameter(
-                    w2_scales_interleaved, requires_grad=False
-                )
+                layer.w13_weight = torch.nn.Parameter(torch.cat([w3_w, w1_w], dim=1), requires_grad=False)
+                layer.w13_bias = torch.nn.Parameter(w13_bias_swapped, requires_grad=False)
+                layer.w13_weight_scale = torch.nn.Parameter(w31_scales_interleaved, requires_grad=False)
+                layer.w2_weight_scale = torch.nn.Parameter(w2_scales_interleaved, requires_grad=False)
         elif self.mxfp4_backend == Mxfp4Backend.TRITON:
             from triton_kernels.matmul_ogs import FlexCtx, PrecisionConfig
 
@@ -705,19 +643,11 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             else:
                 num_warps = 8
 
-            w13_weight, w13_flex, w13_scale = _swizzle_mxfp4(
-                layer.w13_weight, layer.w13_weight_scale, num_warps
-            )
-            w2_weight, w2_flex, w2_scale = _swizzle_mxfp4(
-                layer.w2_weight, layer.w2_weight_scale, num_warps
-            )
+            w13_weight, w13_flex, w13_scale = _swizzle_mxfp4(layer.w13_weight, layer.w13_weight_scale, num_warps)
+            w2_weight, w2_flex, w2_scale = _swizzle_mxfp4(layer.w2_weight, layer.w2_weight_scale, num_warps)
 
-            self.w13_precision_config = PrecisionConfig(
-                weight_scale=w13_scale, flex_ctx=FlexCtx(rhs_data=w13_flex)
-            )
-            self.w2_precision_config = PrecisionConfig(
-                weight_scale=w2_scale, flex_ctx=FlexCtx(rhs_data=w2_flex)
-            )
+            self.w13_precision_config = PrecisionConfig(weight_scale=w13_scale, flex_ctx=FlexCtx(rhs_data=w13_flex))
+            self.w2_precision_config = PrecisionConfig(weight_scale=w2_scale, flex_ctx=FlexCtx(rhs_data=w2_flex))
 
             self.w13_weight_triton_tensor = w13_weight
             self.w2_weight_triton_tensor = w2_weight
@@ -731,9 +661,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         else:
             raise ValueError(f"Unsupported backend: {self.mxfp4_backend}")
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         if self.mxfp4_backend == Mxfp4Backend.MARLIN:
             return mxfp4_w4a16_moe_quant_config(
                 w1_bias=layer.w13_bias,
@@ -783,10 +711,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         prepare_finalize: mk.FusedMoEPrepareAndFinalize,
         layer: torch.nn.Module,
     ) -> mk.FusedMoEPermuteExpertsUnpermute:
-        if (
-            prepare_finalize.activation_format
-            == mk.FusedMoEActivationFormat.BatchedExperts
-        ):
+        if prepare_finalize.activation_format == mk.FusedMoEActivationFormat.BatchedExperts:
             if self.mxfp4_backend == Mxfp4Backend.MARLIN:
                 max_num_tokens_per_rank = prepare_finalize.max_num_tokens_per_rank()
                 assert max_num_tokens_per_rank is not None
@@ -798,8 +723,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
                 )
             else:
                 raise NotImplementedError(
-                    f"Incompatible Mxfp4 backend ({self.mxfp4_backend}) for "
-                    "EP batched experts format"
+                    f"Incompatible Mxfp4 backend ({self.mxfp4_backend}) for EP batched experts format"
                 )
         else:
             assert self.moe_quant_config is not None
@@ -821,9 +745,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             elif self.mxfp4_backend == Mxfp4Backend.TRITON:
                 return OAITritonExperts(self.moe_quant_config)
             else:
-                raise NotImplementedError(
-                    f"Incompatible Mxfp4 backend ({self.mxfp4_backend}) for EP"
-                )
+                raise NotImplementedError(f"Incompatible Mxfp4 backend ({self.mxfp4_backend}) for EP")
 
     def _route_and_experts(
         self,
@@ -868,14 +790,8 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             logical_replica_count=logical_replica_count,
         )
 
-        w13_weight = (
-            self.w13_weight_triton_tensor
-            if layer.w13_weight is None
-            else layer.w13_weight
-        )
-        w2_weight = (
-            self.w2_weight_triton_tensor if layer.w2_weight is None else layer.w2_weight
-        )
+        w13_weight = self.w13_weight_triton_tensor if layer.w13_weight is None else layer.w13_weight
+        w2_weight = self.w2_weight_triton_tensor if layer.w2_weight is None else layer.w2_weight
         assert all([w is not None for w in [w13_weight, w2_weight]])
 
         return self.fused_experts(
@@ -1116,7 +1032,8 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             return output
         elif self.mxfp4_backend == Mxfp4Backend.TRITON:
             from aphrodite.modeling.layers.fused_moe.gpt_oss_triton_kernels_moe import (  # noqa: E501
-                triton_kernel_moe_forward)
+                triton_kernel_moe_forward,
+            )
 
             return triton_kernel_moe_forward(
                 hidden_states=x,

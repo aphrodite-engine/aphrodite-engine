@@ -10,11 +10,8 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.cuda_graph import CUDAGraphWrapper
 from aphrodite.config import AphroditeConfig, CUDAGraphMode
 from aphrodite.distributed import get_ep_group
-from aphrodite.distributed.device_communicators.pynccl_allocator import (
-    set_graph_pool_id)
-from aphrodite.forward_context import (DPMetadata, create_forward_context,
-                                       get_forward_context,
-                                       override_forward_context)
+from aphrodite.distributed.device_communicators.pynccl_allocator import set_graph_pool_id
+from aphrodite.forward_context import DPMetadata, create_forward_context, get_forward_context, override_forward_context
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 from aphrodite.utils.import_utils import has_deep_gemm
@@ -63,9 +60,7 @@ class SMControlContextManager:
                 A function that sets the number of SMs for computation.
         """
 
-        assert current_platform.is_cuda(), (
-            "SM control is currently only supported on CUDA"
-        )
+        assert current_platform.is_cuda(), "SM control is currently only supported on CUDA"
 
         props = torch.cuda.get_device_properties(torch.cuda.current_device())
         total_sms = props.multi_processor_count
@@ -106,9 +101,7 @@ class UBatchWrapper:
         self.cudagraph_wrapper = None
         self.graph_pool = None
         if runtime_mode is not CUDAGraphMode.NONE:
-            self.cudagraph_wrapper = CUDAGraphWrapper(
-                runnable, aphrodite_config, runtime_mode=runtime_mode
-            )
+            self.cudagraph_wrapper = CUDAGraphWrapper(runnable, aphrodite_config, runtime_mode=runtime_mode)
             self.graph_pool = current_platform.get_global_graph_pool()
 
         self.sm_control = self._create_sm_control_context(aphrodite_config)
@@ -147,10 +140,7 @@ class UBatchWrapper:
         # allow accessing the attributes of the runnable.
         if hasattr(self.runnable, key):
             return getattr(self.runnable, key)
-        raise AttributeError(
-            f"Attribute {key} not exists in the runnable of "
-            f"cudagraph wrapper: {self.runnable}"
-        )
+        raise AttributeError(f"Attribute {key} not exists in the runnable of cudagraph wrapper: {self.runnable}")
 
     def unwrap(self) -> Callable:
         # in case we need to access the original runnable.
@@ -333,8 +323,7 @@ class UBatchWrapper:
                     positions=sliced_positions,
                     inputs_embeds=sliced_inputs_embeds,
                     intermediate_tensors=sliced_intermediate_tensors,
-                    num_tokens=ubatch_slice.token_slice.stop
-                    - ubatch_slice.token_slice.start,
+                    num_tokens=ubatch_slice.token_slice.stop - ubatch_slice.token_slice.start,
                 )
             )
 
@@ -356,9 +345,7 @@ class UBatchWrapper:
         else:
             sliced_positions = positions[tokens_slice]
         sliced_inputs_embeds = inputs_embeds[tokens_slice] if inputs_embeds else None
-        sliced_intermediate_tensors = (
-            intermediate_tensors[tokens_slice] if intermediate_tensors else None
-        )
+        sliced_intermediate_tensors = intermediate_tensors[tokens_slice] if intermediate_tensors else None
 
         return (
             sliced_input_ids,
@@ -393,9 +380,7 @@ class UBatchWrapper:
                 return self.cudagraph_wrapper(*args, **kwargs)
 
         attn_metadata = forward_context.attn_metadata
-        num_tokens = (
-            ubatch_slices[0].token_slice.stop - ubatch_slices[0].token_slice.start
-        ) * 2
+        num_tokens = (ubatch_slices[0].token_slice.stop - ubatch_slices[0].token_slice.start) * 2
         input_ids = kwargs["input_ids"]
         positions = kwargs["positions"]
         intermediate_tensors = kwargs["intermediate_tensors"]
@@ -406,23 +391,16 @@ class UBatchWrapper:
 
         # We shouldn't be here unless we are running with multiple DP ranks
         assert dp_metadata is not None
-        num_tokens_per_ubatch = (
-            ubatch_slices[0].token_slice.stop - ubatch_slices[0].token_slice.start
-        )
+        num_tokens_per_ubatch = ubatch_slices[0].token_slice.stop - ubatch_slices[0].token_slice.start
         dp_size = self.aphrodite_config.parallel_config.data_parallel_size
-        ubatch_num_tokens_across_dp = torch.tensor(
-            [num_tokens_per_ubatch] * dp_size, device="cpu", dtype=torch.int32
-        )
+        ubatch_num_tokens_across_dp = torch.tensor([num_tokens_per_ubatch] * dp_size, device="cpu", dtype=torch.int32)
         ubatch_dp_metadata = DPMetadata.make(
             self.aphrodite_config.parallel_config,
             num_tokens_per_ubatch,
             ubatch_num_tokens_across_dp,
         )
 
-        if (
-            num_tokens not in self.cudagraphs
-            and cudagraph_runtime_mode is CUDAGraphMode.FULL
-        ):
+        if num_tokens not in self.cudagraphs and cudagraph_runtime_mode is CUDAGraphMode.FULL:
             ubatch_metadata = self._make_ubatch_metadata(
                 ubatch_slices=ubatch_slices,
                 attn_metadata=attn_metadata,
@@ -437,10 +415,7 @@ class UBatchWrapper:
             )
             with self.sm_control:
                 return self._capture_ubatches(ubatch_metadata, self.model)
-        elif (
-            num_tokens in self.cudagraphs
-            and cudagraph_runtime_mode is CUDAGraphMode.FULL
-        ):
+        elif num_tokens in self.cudagraphs and cudagraph_runtime_mode is CUDAGraphMode.FULL:
             cudagraph_metadata = self.cudagraphs[num_tokens]
             cudagraph_metadata.cudagraph.replay()
             return cudagraph_metadata.outputs

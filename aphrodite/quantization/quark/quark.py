@@ -5,18 +5,14 @@ import torch
 
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.fused_moe import FusedMoE
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (  # noqa: E501
-    QuantizationConfig, QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase  # noqa: E501
 from aphrodite.quantization.kv_cache import BaseKVCacheMethod
 from aphrodite.quantization.quark.quark_moe import QuarkMoEMethod  # noqa: E501
-from aphrodite.quantization.quark.schemes import (QuarkOCP_MX, QuarkScheme,
-                                                  QuarkW8A8Fp8, QuarkW8A8Int8)
-from aphrodite.quantization.quark.utils import (deep_compare,
-                                                should_ignore_layer)
+from aphrodite.quantization.quark.schemes import QuarkOCP_MX, QuarkScheme, QuarkW8A8Fp8, QuarkW8A8Int8
+from aphrodite.quantization.quark.utils import deep_compare, should_ignore_layer
 
 __all__ = ["QuarkLinearMethod"]
 
@@ -52,17 +48,12 @@ class QuarkConfig(QuantizationConfig):
     def get_name(self) -> QuantizationMethods:
         return "quark"
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
-        from aphrodite.attention.layer import (
-            Attention)  # Avoid circular import
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
+        from aphrodite.attention.layer import Attention  # Avoid circular import
 
         # Check if the layer is skipped for quantization.
         exclude_layers = cast(list[str], self.quant_config.get("exclude"))
-        if should_ignore_layer(
-            prefix, ignore=exclude_layers, fused_mapping=self.packed_modules_mapping
-        ):
+        if should_ignore_layer(prefix, ignore=exclude_layers, fused_mapping=self.packed_modules_mapping):
             return UnquantizedLinearMethod()
         if isinstance(layer, LinearBase):
             scheme = self.get_scheme(layer=layer, layer_name=prefix)
@@ -79,10 +70,7 @@ class QuarkConfig(QuantizationConfig):
     def from_config(cls, config: dict[str, Any]) -> "QuarkConfig":
         export_config = config.get("export")
         if export_config is None:
-            raise ValueError(
-                "The export key should be included in "
-                "the configurations of Quark quantized model"
-            )
+            raise ValueError("The export key should be included in the configurations of Quark quantized model")
         kv_cache_group = cast(list[str], export_config.get("kv_cache_group"))
         pack_method = cast(str, export_config.get("pack_method"))
 
@@ -108,10 +96,7 @@ class QuarkConfig(QuantizationConfig):
                     "configuration."
                 )
 
-            q_configs = [
-                cast(dict[str, Any], layer_quant_config.get(name))
-                for name in kv_cache_group
-            ]
+            q_configs = [cast(dict[str, Any], layer_quant_config.get(name)) for name in kv_cache_group]
             if not all(deep_compare(q_config, q_configs[0]) for q_config in q_configs):
                 raise ValueError(
                     "The quantization method used for kv_cache should "
@@ -171,10 +156,7 @@ class QuarkConfig(QuantizationConfig):
             return False
 
         # Confirm weight scheme is supported
-        is_fp8_dtype = (
-            weight_quant.get("dtype") == "fp8_e4m3"
-            and input_quant.get("dtype") == "fp8_e4m3"
-        )
+        is_fp8_dtype = weight_quant.get("dtype") == "fp8_e4m3" and input_quant.get("dtype") == "fp8_e4m3"
         is_static_weight = not weight_quant.get("is_dynamic")
         is_per_tensor_or_channel_weight = weight_quant.get("qscheme") in [
             "per_tensor",
@@ -201,18 +183,13 @@ class QuarkConfig(QuantizationConfig):
         if weight_quant is None or input_quant is None:
             return False
 
-        is_int8_dtype = (
-            weight_quant.get("dtype") == "int8" and input_quant.get("dtype") == "int8"
-        )
+        is_int8_dtype = weight_quant.get("dtype") == "int8" and input_quant.get("dtype") == "int8"
 
         is_tensor = (
-            weight_quant.get("qscheme") in ["per_tensor", "per_channel"]
-            and input_quant.get("qscheme") == "per_tensor"
+            weight_quant.get("qscheme") in ["per_tensor", "per_channel"] and input_quant.get("qscheme") == "per_tensor"
         )
 
-        is_static = not weight_quant.get("is_dynamic") and not input_quant.get(
-            "is_dynamic"
-        )
+        is_static = not weight_quant.get("is_dynamic") and not input_quant.get("is_dynamic")
 
         is_weight_symmetric = weight_quant.get("symmetric") is True
 
@@ -227,17 +204,11 @@ class QuarkConfig(QuantizationConfig):
     ) -> bool:
         # Confirm weights and input quantized.
         if weight_quant is None or input_quant is None:
-            logger.debug(
-                "Quark model is not in OCP MX format: "
-                "weight_quant or input_quant not set"
-            )
+            logger.debug("Quark model is not in OCP MX format: weight_quant or input_quant not set")
             return False
 
         # Input and weight qscheme needs to be per group.
-        if (
-            weight_quant.get("qscheme") != "per_group"
-            or input_quant.get("qscheme") != "per_group"
-        ):
+        if weight_quant.get("qscheme") != "per_group" or input_quant.get("qscheme") != "per_group":
             logger.debug("Quark model is not in OCP MX format: not per_group")
             return False
 
@@ -247,10 +218,7 @@ class QuarkConfig(QuantizationConfig):
             return False
 
         # Activations and weight scales need to be in e8m0 format.
-        if (
-            weight_quant.get("scale_format") != "e8m0"
-            or input_quant.get("scale_format") != "e8m0"
-        ):
+        if weight_quant.get("scale_format") != "e8m0" or input_quant.get("scale_format") != "e8m0":
             logger.debug("Quark model is not in OCP MX format: not scale_format e8m0")
             return False
 
@@ -261,32 +229,20 @@ class QuarkConfig(QuantizationConfig):
             "fp6_e3m2",
             "fp6_e2m3",
         } or input_quant.get("dtype") not in {"fp4", "fp6_e3m2", "fp6_e2m3"}:
-            logger.debug(
-                "Quark model is not in OCP MX format: dtype not fp4, fp6_e3m2, fp6_e2m3"
-            )
+            logger.debug("Quark model is not in OCP MX format: dtype not fp4, fp6_e3m2, fp6_e2m3")
             return False
 
         return True
 
-    def _find_matched_config(
-        self, layer_name: str, module: torch.nn.Module
-    ) -> dict[str, Any]:
+    def _find_matched_config(self, layer_name: str, module: torch.nn.Module) -> dict[str, Any]:
         proj_name = layer_name.split(".")[-1]
         if proj_name in self.packed_modules_mapping:
             shard_proj_names = self.packed_modules_mapping[proj_name]
 
             # Convert fused_name --> [shard_names]
-            shard_names = [
-                layer_name.replace(proj_name, shard_proj_name)
-                for shard_proj_name in shard_proj_names
-            ]
-            shard_configs = [
-                self._find_matched_config(shard_name, module)
-                for shard_name in shard_names
-            ]
-            if not all(
-                deep_compare(q_config, shard_configs[0]) for q_config in shard_configs
-            ):
+            shard_names = [layer_name.replace(proj_name, shard_proj_name) for shard_proj_name in shard_proj_names]
+            shard_configs = [self._find_matched_config(shard_name, module) for shard_name in shard_names]
+            if not all(deep_compare(q_config, shard_configs[0]) for q_config in shard_configs):
                 raise ValueError(
                     f"Found a different quantization configuration for "
                     f"{shard_proj_names} in {layer_name}. Aphrodite "
@@ -294,38 +250,29 @@ class QuarkConfig(QuantizationConfig):
                 )
             return shard_configs[0]
         else:
-            layer_quant_config = cast(
-                dict[str, Any], self.quant_config.get("layer_quant_config")
-            )
+            layer_quant_config = cast(dict[str, Any], self.quant_config.get("layer_quant_config"))
             for name_pattern in layer_quant_config:
                 if fnmatch.fnmatch(layer_name, name_pattern):
                     return layer_quant_config[name_pattern]
 
             layer_type = cast(str, type(module))
-            layer_type_quant_config = cast(
-                dict[str, Any], self.quant_config.get("layer_type_quant_config")
-            )
+            layer_type_quant_config = cast(dict[str, Any], self.quant_config.get("layer_type_quant_config"))
             if layer_type in layer_type_quant_config:
                 return layer_type_quant_config[layer_type]
 
-            global_quant_config = cast(
-                dict[str, Any], self.quant_config.get("global_quant_config")
-            )
+            global_quant_config = cast(dict[str, Any], self.quant_config.get("global_quant_config"))
             return global_quant_config
 
     def _get_scheme_from_config(self, config: dict[str, Any]) -> "QuarkScheme":
         if config.get("output_tensors") or config.get("bias"):
             raise NotImplementedError(
-                "Currently, Quark models with output_tensors "
-                "and bias quantized are not supported"
+                "Currently, Quark models with output_tensors and bias quantized are not supported"
             )
         weight_config = cast(dict[str, Any], config.get("weight"))
         input_config = cast(dict[str, Any], config.get("input_tensors"))
 
         if self._is_fp8_w8a8(weight_config, input_config):
-            is_fp8_w8a8_supported = self._check_scheme_supported(
-                QuarkW8A8Fp8.get_min_capability(), error=False
-            )
+            is_fp8_w8a8_supported = self._check_scheme_supported(QuarkW8A8Fp8.get_min_capability(), error=False)
             if is_fp8_w8a8_supported:
                 return QuarkW8A8Fp8(weight_config, input_config)
         elif self._is_static_tensor_w8a8(weight_config, input_config):
@@ -339,9 +286,7 @@ class QuarkConfig(QuantizationConfig):
             return QuarkOCP_MX(weight_config, input_config)
 
         raise NotImplementedError(
-            "No quark compatible scheme was found. "
-            f"Weight config: {weight_config}, "
-            f"Input config: {input_config}"
+            f"No quark compatible scheme was found. Weight config: {weight_config}, Input config: {input_config}"
         )
 
     def get_scheme(self, layer: torch.nn.Module, layer_name: str) -> "QuarkScheme":
@@ -451,8 +396,7 @@ class QuarkKVCacheMethod(BaseKVCacheMethod):
         dtype = kv_cache_config.get("dtype")
         if dtype != "fp8_e4m3":
             raise NotImplementedError(
-                "Currently supported kv cache quantization is "
-                f"dtype=fp8_e4m3, however received {dtype}"
+                f"Currently supported kv cache quantization is dtype=fp8_e4m3, however received {dtype}"
             )
 
         qscheme = kv_cache_config.get("qscheme")

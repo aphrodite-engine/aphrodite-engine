@@ -4,14 +4,12 @@ from typing import Annotated, Literal, TypeAlias
 import torch
 import torch.nn as nn
 from transformers import BatchFeature, PretrainedConfig
-from transformers.models.llava_next.modeling_llava_next import (
-    get_anyres_image_grid_shape, unpad_image)
+from transformers.models.llava_next.modeling_llava_next import get_anyres_image_grid_shape, unpad_image
 
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import MultiModalFieldConfig
 from aphrodite.quantization import QuantizationConfig
@@ -19,13 +17,11 @@ from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .clip import CLIPVisionModel
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
-from .llava import (BaseLlavaMultiModalProcessor, LlavaDummyInputsBuilder,
-                    init_vision_tower_for_llava)
+from .llava import BaseLlavaMultiModalProcessor, LlavaDummyInputsBuilder, init_vision_tower_for_llava
 from .llava_next import LlavaNextProcessingInfo
 from .pixtral import PixtralHFVisionModel
 from .siglip import SiglipVisionModel
-from .utils import (AutoWeightsLoader, init_aphrodite_registered_model,
-                    maybe_prefix)
+from .utils import AutoWeightsLoader, init_aphrodite_registered_model, maybe_prefix
 
 
 class MiniMaxVL01ImagePixelInputs(TensorSchema):
@@ -63,9 +59,7 @@ class MiniMaxVL01ImageEmbeddingInputs(TensorSchema):
     data: Annotated[torch.Tensor, TensorShape("bn", "ifs", "hs")]
 
 
-MiniMaxVL01ImageInputs: TypeAlias = (
-    MiniMaxVL01ImagePixelInputs | MiniMaxVL01ImageEmbeddingInputs
-)
+MiniMaxVL01ImageInputs: TypeAlias = MiniMaxVL01ImagePixelInputs | MiniMaxVL01ImageEmbeddingInputs
 
 
 class MiniMaxVL01MultiModalProjector(nn.Module):
@@ -122,9 +116,7 @@ class MiniMaxVL01ProcessingInfo(LlavaNextProcessingInfo):
         return {"image": None}
 
 
-class MiniMaxVL01MultiModalProcessor(
-    BaseLlavaMultiModalProcessor[MiniMaxVL01ProcessingInfo]
-):
+class MiniMaxVL01MultiModalProcessor(BaseLlavaMultiModalProcessor[MiniMaxVL01ProcessingInfo]):
     def _call_hf_processor(
         self,
         prompt: str,
@@ -146,9 +138,7 @@ class MiniMaxVL01MultiModalProcessor(
             image_sizes = processed_outputs["image_sizes"]
             assert len(pixel_values) == len(image_sizes)
 
-            processed_outputs["pixel_values"] = [
-                p[:, :h, :w] for p, (h, w) in zip(pixel_values, image_sizes)
-            ]
+            processed_outputs["pixel_values"] = [p[:, :h, :w] for p, (h, w) in zip(pixel_values, image_sizes)]
 
         return processed_outputs
 
@@ -221,9 +211,7 @@ class MiniMaxVL01ForConditionalGeneration(nn.Module, SupportsMultiModal, Support
         if self.config.pad_token_id is not None:
             self.pad_token_id = self.config.pad_token_id
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
     def get_language_model(self) -> torch.nn.Module:
         return self.language_model
@@ -236,37 +224,25 @@ class MiniMaxVL01ForConditionalGeneration(nn.Module, SupportsMultiModal, Support
         # NOTE: we skip the step to select the vision feature layer since
         # this is already done inside the vision tower
         feature_select_strategy = self.config.vision_feature_select_strategy
-        return tuple(
-            vision_tower(p, feature_select_strategy=feature_select_strategy)
-            for p in pixel_values
-        )
+        return tuple(vision_tower(p, feature_select_strategy=feature_select_strategy) for p in pixel_values)
 
     # adapted from https://huggingface.co/MiniMaxAI/MiniMax-VL-01/blob/main/modeling_minimax_vl_01.py#L616-L631
-    def pack_image_features(
-        self, image_features: list[torch.Tensor], image_sizes: torch.Tensor
-    ):
+    def pack_image_features(self, image_features: list[torch.Tensor], image_sizes: torch.Tensor):
         new_image_features = []
         for image_idx, image_feature in enumerate(image_features):
             if image_feature.shape[0] > 1:
                 base_image_feature = image_feature[0]
                 image_feature = image_feature[1:]
-                height = width = (
-                    self.config.vision_config.image_size
-                    // self.config.vision_config.patch_size
-                )
+                height = width = self.config.vision_config.image_size // self.config.vision_config.patch_size
                 if height * width != base_image_feature.shape[0]:
-                    raise ValueError(
-                        "The number of patches is not consistent with the image size."
-                    )
+                    raise ValueError("The number of patches is not consistent with the image size.")
                 num_patch_height, num_patch_width = get_anyres_image_grid_shape(
                     image_sizes[image_idx],
                     self.config.image_grid_pinpoints,
                     self.config.vision_config.image_size,
                 )
 
-                image_feature = image_feature.view(
-                    num_patch_height, num_patch_width, height, width, -1
-                )
+                image_feature = image_feature.view(num_patch_height, num_patch_width, height, width, -1)
                 image_feature = image_feature.permute(4, 0, 2, 1, 3).contiguous()
                 image_feature = image_feature.flatten(1, 2).flatten(2, 3)
                 image_feature = unpad_image(image_feature, image_sizes[image_idx])
@@ -274,9 +250,7 @@ class MiniMaxVL01ForConditionalGeneration(nn.Module, SupportsMultiModal, Support
                 image_feature = torch.cat(
                     (
                         image_feature,
-                        self.image_newline[:, None, None]
-                        .expand(*image_feature.shape[:-1], 1)
-                        .to(image_feature.dtype),
+                        self.image_newline[:, None, None].expand(*image_feature.shape[:-1], 1).to(image_feature.dtype),
                     ),
                     dim=-1,
                 )
@@ -284,9 +258,7 @@ class MiniMaxVL01ForConditionalGeneration(nn.Module, SupportsMultiModal, Support
                 image_feature = torch.cat((base_image_feature, image_feature), dim=0)
             else:
                 image_feature = image_feature[0]
-                image_feature = torch.cat(
-                    (image_feature, self.image_newline[None].to(image_feature)), dim=0
-                )
+                image_feature = torch.cat((image_feature, self.image_newline[None].to(image_feature)), dim=0)
             new_image_features.append(image_feature)
         return new_image_features
 
@@ -319,9 +291,7 @@ class MiniMaxVL01ForConditionalGeneration(nn.Module, SupportsMultiModal, Support
         image_sizes = image_input.get("image_sizes")
         return self.pack_image_features(image_embeds, image_sizes)
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> MiniMaxVL01ImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> MiniMaxVL01ImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_sizes = kwargs.pop("image_sizes", None)
         image_embeds = kwargs.pop("image_embeds", None)

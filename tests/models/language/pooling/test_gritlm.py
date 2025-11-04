@@ -66,9 +66,7 @@ async def run_client_embeddings(
 
 
 def gritlm_instruction(instruction):
-    return (
-        "<|user|>\n" + instruction + "\n<|embed|>\n" if instruction else "<|embed|>\n"
-    )
+    return "<|user|>\n" + instruction + "\n<|embed|>\n" if instruction else "<|embed|>\n"
 
 
 def get_test_data():

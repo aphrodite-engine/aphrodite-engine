@@ -13,8 +13,7 @@ from aphrodite.inputs import PromptType
 from aphrodite.v1.engine.async_llm import AsyncLLM
 from aphrodite.v1.engine.core_client import DPAsyncMPClient
 from aphrodite.v1.metrics.loggers import StatLoggerBase
-from aphrodite.v1.metrics.stats import (IterationStats, MultiModalCacheStats,
-                                        SchedulerStats)
+from aphrodite.v1.metrics.stats import IterationStats, MultiModalCacheStats, SchedulerStats
 
 DP_SIZE = int(os.getenv("DP_SIZE", 2))
 
@@ -73,9 +72,7 @@ async def generate(
 @pytest.mark.parametrize("data_parallel_backend", ["mp", "ray"])
 @pytest.mark.parametrize("async_scheduling", [True, False])
 @pytest.mark.asyncio
-async def test_load(
-    output_kind: RequestOutputKind, data_parallel_backend: str, async_scheduling: bool
-):
+async def test_load(output_kind: RequestOutputKind, data_parallel_backend: str, async_scheduling: bool):
     if async_scheduling and data_parallel_backend == "ray":
         # TODO(NickLucche) Re-enable when async scheduling is supported
         pytest.skip("Async scheduling is not supported with ray")
@@ -107,9 +104,7 @@ async def test_load(
 
         engine_args.data_parallel_backend = data_parallel_backend
         engine_args.async_scheduling = async_scheduling
-        engine = AsyncLLM.from_engine_args(
-            engine_args, stat_loggers=[SimpleStatsLogger]
-        )
+        engine = AsyncLLM.from_engine_args(engine_args, stat_loggers=[SimpleStatsLogger])
         after.callback(engine.shutdown)
 
         NUM_REQUESTS = 100
@@ -120,13 +115,7 @@ async def test_load(
         # Create concurrent requests.
         tasks = []
         for request_id in request_ids:
-            tasks.append(
-                asyncio.create_task(
-                    generate(
-                        engine, request_id, prompt, output_kind, NUM_EXPECTED_TOKENS
-                    )
-                )
-            )
+            tasks.append(asyncio.create_task(generate(engine, request_id, prompt, output_kind, NUM_EXPECTED_TOKENS)))
             # Short sleep to ensure that requests are distributed.
             await asyncio.sleep(0.01)
         # Confirm that we got all the EXPECTED tokens from the requests.
@@ -136,8 +125,7 @@ async def test_load(
         for task in done:
             num_generated_tokens, request_id = await task
             assert num_generated_tokens == NUM_EXPECTED_TOKENS, (
-                f"{request_id} generated {num_generated_tokens} but "
-                f"expected {NUM_EXPECTED_TOKENS}"
+                f"{request_id} generated {num_generated_tokens} but expected {NUM_EXPECTED_TOKENS}"
             )
 
         assert not engine.output_processor.has_unfinished_requests()

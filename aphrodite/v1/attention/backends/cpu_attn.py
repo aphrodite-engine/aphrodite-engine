@@ -5,17 +5,21 @@ import numpy as np
 import torch
 from torch.nn.functional import scaled_dot_product_attention
 
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionImpl,
-                                                   AttentionLayer,
-                                                   AttentionMetadata,
-                                                   AttentionType,
-                                                   is_quantized_kv_cache)
+from aphrodite.attention.backends.abstract import (
+    AttentionBackend,
+    AttentionImpl,
+    AttentionLayer,
+    AttentionMetadata,
+    AttentionType,
+    is_quantized_kv_cache,
+)
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata,
-                                                   split_decodes_and_prefills)
+from aphrodite.v1.attention.backends.utils import (
+    AttentionMetadataBuilder,
+    CommonAttentionMetadata,
+    split_decodes_and_prefills,
+)
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 try:
@@ -76,9 +80,7 @@ class TorchSDPABackend(AttentionBackend):
         head_size: int,
         cache_dtype_str: str = "auto",
     ) -> tuple[int, ...]:
-        return _get_paged_attn_impl().get_kv_cache_shape(
-            num_blocks, block_size, num_kv_heads, head_size
-        )
+        return _get_paged_attn_impl().get_kv_cache_shape(num_blocks, block_size, num_kv_heads, head_size)
 
     @staticmethod
     def use_cascade_attention(*args, **kwargs) -> bool:
@@ -212,10 +214,7 @@ class TorchSDPAMetadata(AttentionMetadata):
         * Appropriate sequence lengths tensor for key & value
         """
 
-        if (
-            attn_type == AttentionType.DECODER
-            or attn_type == AttentionType.ENCODER_ONLY
-        ):
+        if attn_type == AttentionType.DECODER or attn_type == AttentionType.ENCODER_ONLY:
             seq_lens_q = self.seq_lens
             seq_lens_kv = self.seq_lens
         elif attn_type == AttentionType.ENCODER:
@@ -246,10 +245,7 @@ class TorchSDPAMetadata(AttentionMetadata):
         * Appropriate attention bias value given the attention type
         """
 
-        if (
-            attn_type == AttentionType.DECODER
-            or attn_type == AttentionType.ENCODER_ONLY
-        ):
+        if attn_type == AttentionType.DECODER or attn_type == AttentionType.ENCODER_ONLY:
             return self.attn_bias
         elif attn_type == AttentionType.ENCODER:
             return self.encoder_attn_bias
@@ -275,10 +271,7 @@ class TorchSDPAMetadata(AttentionMetadata):
                     encoder/decoder cross-attention
         """
 
-        if (
-            attn_type == AttentionType.DECODER
-            or attn_type == AttentionType.ENCODER_ONLY
-        ):
+        if attn_type == AttentionType.DECODER or attn_type == AttentionType.ENCODER_ONLY:
             self.attn_bias = attn_bias
         elif attn_type == AttentionType.ENCODER:
             self.encoder_attn_bias = attn_bias
@@ -315,10 +308,7 @@ class TorchSDPAMetadata(AttentionMetadata):
         * Appropriate block tables (or None)
         """
 
-        if (
-            attn_type == AttentionType.DECODER
-            or attn_type == AttentionType.ENCODER_ONLY
-        ):
+        if attn_type == AttentionType.DECODER or attn_type == AttentionType.ENCODER_ONLY:
             # Decoder self-attention
             # Choose max_seq_len based on whether we are in prompt_run
             return (
@@ -378,20 +368,14 @@ class TorchSDPAMetadataBuilderV1(AttentionMetadataBuilder[TorchSDPAMetadata]):
         query_start_loc_cpu = common_attn_metadata.query_start_loc_cpu
         query_start_loc_np = query_start_loc_cpu.numpy()
 
-        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
-            split_decodes_and_prefills(
-                common_attn_metadata,
-                decode_threshold=self.reorder_batch_threshold,
-                require_uniform=True,
-            )
+        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
+            common_attn_metadata,
+            decode_threshold=self.reorder_batch_threshold,
+            require_uniform=True,
         )
 
-        max_prefill_seq_len = (
-            seq_lens_np[num_decodes:num_reqs].max().item() if num_prefills > 0 else 0
-        )
-        max_decode_seq_len = (
-            seq_lens_np[:num_decodes].max().item() if num_prefills < num_reqs else 0
-        )
+        max_prefill_seq_len = seq_lens_np[num_decodes:num_reqs].max().item() if num_prefills > 0 else 0
+        max_decode_seq_len = seq_lens_np[:num_decodes].max().item() if num_prefills < num_reqs else 0
         self.seq_start_loc_np[0] = 0
         np.cumsum(seq_lens_np, out=self.seq_start_loc_np[1 : num_reqs + 1])
 
@@ -413,12 +397,8 @@ class TorchSDPAMetadataBuilderV1(AttentionMetadataBuilder[TorchSDPAMetadata]):
             chunked_prefill=self.scheduler_config.chunked_prefill_enabled,
             max_query_len=max_query_len,
             prefill_max_seq_len=max_prefill_seq_len,
-            prefill_query_start_loc=query_start_loc_cpu[
-                num_decodes : num_reqs + 1
-            ],  # prefill
-            prefill_seq_start_loc=self.seq_start_loc_cpu[
-                num_decodes : num_reqs + 1
-            ],  # prefill
+            prefill_query_start_loc=query_start_loc_cpu[num_decodes : num_reqs + 1],  # prefill
+            prefill_seq_start_loc=self.seq_start_loc_cpu[num_decodes : num_reqs + 1],  # prefill
             prefill_block_tables=block_table_tensor[num_decodes:num_reqs],  # prefill
             query_start_loc=query_start_loc_cpu[: num_reqs + 1],  # for logits index
         )
@@ -443,10 +423,7 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
         if kv_sharing_target_layer_name is not None:
             raise NotImplementedError("KV sharing is not supported in V0.")
         if logits_soft_cap is not None:
-            logger.warning_once(
-                "Torch SPDA does not support logits soft cap. "
-                "Outputs may be slightly off."
-            )
+            logger.warning_once("Torch SPDA does not support logits soft cap. Outputs may be slightly off.")
         self.paged_attn_impl = _get_paged_attn_impl()
         self.num_heads = num_heads
         self.head_size = head_size
@@ -459,15 +436,10 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
         self.kv_cache_dtype = kv_cache_dtype
 
         self.num_queries_per_kv = self.num_heads // self.num_kv_heads
-        self.need_mask = (
-            self.alibi_slopes is not None or self.sliding_window is not None
-        )
+        self.need_mask = self.alibi_slopes is not None or self.sliding_window is not None
 
         if is_quantized_kv_cache(kv_cache_dtype) and not _use_ipex:
-            raise NotImplementedError(
-                "Torch SDPA backend FP8 KV cache requires "
-                "intel_extension_for_pytorch support."
-            )
+            raise NotImplementedError("Torch SDPA backend FP8 KV cache requires intel_extension_for_pytorch support.")
         self.attn_type = attn_type
 
     def forward(
@@ -497,29 +469,18 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
             shape = [num_tokens, num_heads * head_size]
         """
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported"
-                " for TorchSDPABackendImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for TorchSDPABackendImpl")
 
         # For warming-up
         if attn_metadata is None:
             return query
 
         attn_type = self.attn_type
-        if attn_type == AttentionType.ENCODER and (
-            not attn_metadata.is_all_encoder_attn_metadata_set
-        ):
+        if attn_type == AttentionType.ENCODER and (not attn_metadata.is_all_encoder_attn_metadata_set):
+            raise AttributeError("Encoder attention requires setting encoder metadata attributes.")
+        elif attn_type == AttentionType.ENCODER_DECODER and (not attn_metadata.is_all_cross_attn_metadata_set):
             raise AttributeError(
-                "Encoder attention requires setting encoder metadata attributes."
-            )
-        elif attn_type == AttentionType.ENCODER_DECODER and (
-            not attn_metadata.is_all_cross_attn_metadata_set
-        ):
-            raise AttributeError(
-                "Encoder/decoder cross-attention "
-                "requires setting cross-attention "
-                "metadata attributes."
+                "Encoder/decoder cross-attention requires setting cross-attention metadata attributes."
             )
 
         # Reshape the query, key, and value tensors.
@@ -539,9 +500,7 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
             # Even if there are no new key/value pairs to cache,
             # we still need to break out key_cache and value_cache
             # i.e. for later use by paged attention
-            key_cache, value_cache = self.paged_attn_impl.split_kv_cache(
-                kv_cache, self.num_kv_heads, self.head_size
-            )
+            key_cache, value_cache = self.paged_attn_impl.split_kv_cache(kv_cache, self.num_kv_heads, self.head_size)
 
             if (key is not None) and (value is not None):
                 if attn_type == AttentionType.ENCODER_DECODER:
@@ -588,9 +547,7 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
         if prefill_meta := attn_metadata.prefill_metadata:
             if not prefill_meta.prefill_metadata.chunked_prefill:  # type: ignore
                 assert attn_metadata.seq_lens is not None
-                self._run_sdpa_forward(
-                    output, query, key, value, prefill_meta, attn_type=attn_type
-                )
+                self._run_sdpa_forward(output, query, key, value, prefill_meta, attn_type=attn_type)
             else:
                 # prefix-enabled attention
                 assert not self.need_mask
@@ -612,9 +569,7 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
                     self.alibi_slopes,
                 )
         if decode_meta := attn_metadata.decode_metadata:
-            assert attn_type != AttentionType.ENCODER_ONLY, (
-                "Encoder-only models should not have decode metadata."
-            )
+            assert attn_type != AttentionType.ENCODER_ONLY, "Encoder-only models should not have decode metadata."
             # Decoding run.
             (
                 seq_lens_arg,
@@ -660,9 +615,7 @@ class TorchSDPABackendImpl(AttentionImpl[TorchSDPAMetadata]):
                 )
             elif self.sliding_window is not None:
                 assert attn_metadata.seq_lens is not None
-                attn_masks = _make_sliding_window_bias(
-                    attn_metadata.seq_lens, self.sliding_window, query.dtype
-                )
+                attn_masks = _make_sliding_window_bias(attn_metadata.seq_lens, self.sliding_window, query.dtype)
             else:
                 seq_lens, _ = attn_metadata.get_seq_lens(attn_type)
                 attn_masks = [None] * len(seq_lens)
@@ -723,11 +676,7 @@ def _make_alibi_bias(
         num_heads = alibi_slopes.shape[0]
         bias = bias[None, :].repeat((num_heads, 1, 1))
         bias.mul_(alibi_slopes[:, None, None]).unsqueeze_(0)
-        inf_mask = (
-            torch.empty((1, seq_len, seq_len), dtype=bias.dtype)
-            .fill_(-torch.inf)
-            .triu_(diagonal=1)
-        )
+        inf_mask = torch.empty((1, seq_len, seq_len), dtype=bias.dtype).fill_(-torch.inf).triu_(diagonal=1)
         attn_biases.append((bias + inf_mask).to(dtype))
 
     return attn_biases
@@ -889,9 +838,7 @@ class _IPEXPagedAttention(_PagedAttention):
         v_scale: torch.Tensor,
         *args,
     ) -> None:
-        ipex_modules.PagedAttention.reshape_and_cache(
-            key, value, key_cache, value_cache, slot_mapping.flatten().int()
-        )
+        ipex_modules.PagedAttention.reshape_and_cache(key, value, key_cache, value_cache, slot_mapping.flatten().int())
 
     @staticmethod
     def forward_decode(

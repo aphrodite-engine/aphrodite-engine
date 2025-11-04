@@ -4,14 +4,14 @@ import torch
 from compressed_tensors.quantization import QuantizationStrategy
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          ChannelQuantScaleParameter,
-                                          ModelWeightParameter,
-                                          PerTensorScaleParameter)
-from aphrodite.quantization.compressed_tensors.schemes import (
-    CompressedTensorsScheme)
-from aphrodite.quantization.kernels.scaled_mm import (
-    ScaledMMLinearLayerConfig, choose_scaled_mm_linear_kernel)
+from aphrodite.modeling.parameter import (
+    BaseAphroditeParameter,
+    ChannelQuantScaleParameter,
+    ModelWeightParameter,
+    PerTensorScaleParameter,
+)
+from aphrodite.quantization.compressed_tensors.schemes import CompressedTensorsScheme
+from aphrodite.quantization.kernels.scaled_mm import ScaledMMLinearLayerConfig, choose_scaled_mm_linear_kernel
 
 logger = init_logger(__name__)
 
@@ -19,9 +19,7 @@ logger = init_logger(__name__)
 class CompressedTensorsW8A8Int8(CompressedTensorsScheme):
     _kernel_backends_being_used: set[str] = set()
 
-    def __init__(
-        self, strategy: str, is_static_input_scheme: bool, input_symmetric: bool
-    ):
+    def __init__(self, strategy: str, is_static_input_scheme: bool, input_symmetric: bool):
         self.strategy = strategy
         self.is_static_input_scheme = is_static_input_scheme
         self.input_symmetric = input_symmetric
@@ -56,9 +54,7 @@ class CompressedTensorsW8A8Int8(CompressedTensorsScheme):
 
         # WEIGHT
         weight = ModelWeightParameter(
-            data=torch.empty(
-                sum(output_partition_sizes), input_size_per_partition, dtype=torch.int8
-            ),
+            data=torch.empty(sum(output_partition_sizes), input_size_per_partition, dtype=torch.int8),
             input_dim=1,
             output_dim=0,
             weight_loader=weight_loader,
@@ -83,9 +79,7 @@ class CompressedTensorsW8A8Int8(CompressedTensorsScheme):
 
         # INPUT SCALE
         if self.is_static_input_scheme:
-            input_scale = BaseAphroditeParameter(
-                data=torch.empty(1, dtype=torch.float32), weight_loader=weight_loader
-            )
+            input_scale = BaseAphroditeParameter(data=torch.empty(1, dtype=torch.float32), weight_loader=weight_loader)
             layer.register_parameter("input_scale", input_scale)
 
             if not self.input_symmetric:
@@ -111,7 +105,5 @@ class CompressedTensorsW8A8Int8(CompressedTensorsScheme):
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         self.kernel.process_weights_after_loading(layer)
 
-    def apply_weights(
-        self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None
-    ) -> torch.Tensor:
+    def apply_weights(self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None) -> torch.Tensor:
         return self.kernel.apply_weights(layer, x, bias)

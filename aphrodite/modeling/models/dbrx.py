@@ -8,25 +8,27 @@ from transformers import DbrxConfig
 from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.fused_moe import FusedMoE
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsPP
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class DbrxRouter(nn.Module):
@@ -111,9 +113,7 @@ class DbrxExperts(FusedMoE):
                     loaded_weight,
                     [-1, self.intermediate_size * self.tp_size, self.d_model],
                 )
-                param_data[:, shard_size : 2 * shard_size, :] = loaded_weight[
-                    :, shard, :
-                ]
+                param_data[:, shard_size : 2 * shard_size, :] = loaded_weight[:, shard, :]
             elif param_name.endswith("weight_scale"):
                 param_data[:, 1] = loaded_weight
             else:
@@ -259,9 +259,7 @@ class DbrxFusedNormAttention(nn.Module):
     ):
         super().__init__()
         self.d_model = config.d_model
-        self.attn = DbrxAttention(
-            config, cache_config, quant_config, prefix=f"{prefix}.attn"
-        )
+        self.attn = DbrxAttention(config, cache_config, quant_config, prefix=f"{prefix}.attn")
         self.norm_1 = nn.LayerNorm(self.d_model)
         self.norm_2 = nn.LayerNorm(self.d_model)
 
@@ -374,15 +372,11 @@ class DbrxModel(nn.Module):
         loaded_params: set[str] = set()
 
         for name, loaded_weight in weights:
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -424,9 +418,7 @@ class DbrxForCausalLM(nn.Module, SupportsPP):
             raise ValueError("tie_word_embeddings is not supported for Dbrx models.")
         self.quant_config = quant_config
         self.unpadded_vocab_size = config.vocab_size
-        self.transformer = DbrxModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "transformer")
-        )
+        self.transformer = DbrxModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "transformer"))
         self.lm_head = ParallelLMHead(
             config.vocab_size,
             config.d_model,
@@ -435,12 +427,8 @@ class DbrxForCausalLM(nn.Module, SupportsPP):
             quant_config=quant_config,
             prefix=maybe_prefix(prefix, "lm_head"),
         )
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
-        self.make_empty_intermediate_tensors = (
-            self.transformer.make_empty_intermediate_tensors
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
+        self.make_empty_intermediate_tensors = self.transformer.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.transformer.get_input_embeddings(input_ids)
@@ -452,9 +440,7 @@ class DbrxForCausalLM(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.transformer(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.transformer(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

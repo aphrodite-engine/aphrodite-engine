@@ -1,24 +1,29 @@
 from collections.abc import Callable
 
 import torch
-from compressed_tensors.quantization import (QuantizationArgs,
-                                             QuantizationStrategy)
+from compressed_tensors.quantization import QuantizationArgs, QuantizationStrategy
 from torch.nn import Parameter
 
-from aphrodite.modeling.parameter import (BlockQuantScaleParameter,
-                                          ChannelQuantScaleParameter,
-                                          PerTensorScaleParameter)
-from aphrodite.quantization.compressed_tensors.schemes import (
-    CompressedTensorsScheme)
+from aphrodite.modeling.parameter import BlockQuantScaleParameter, ChannelQuantScaleParameter, PerTensorScaleParameter
+from aphrodite.quantization.compressed_tensors.schemes import CompressedTensorsScheme
 from aphrodite.quantization.utils.fp8_utils import (
-    W8A8BlockFp8LinearOp, check_aiter_fp8_linear_support,
-    create_fp8_input_scale, create_fp8_scale_parameter,
-    create_fp8_weight_parameter, maybe_post_process_fp8_weight_block,
-    process_fp8_weight_block_strategy, process_fp8_weight_channel_strategy,
-    process_fp8_weight_tensor_strategy, validate_fp8_block_shape)
+    W8A8BlockFp8LinearOp,
+    check_aiter_fp8_linear_support,
+    create_fp8_input_scale,
+    create_fp8_scale_parameter,
+    create_fp8_weight_parameter,
+    maybe_post_process_fp8_weight_block,
+    process_fp8_weight_block_strategy,
+    process_fp8_weight_channel_strategy,
+    process_fp8_weight_tensor_strategy,
+    validate_fp8_block_shape,
+)
 from aphrodite.quantization.utils.quant_utils import GroupShape
 from aphrodite.quantization.utils.w8a8_utils import (
-    Fp8LinearOp, cutlass_block_fp8_supported, maybe_create_device_identity)
+    Fp8LinearOp,
+    cutlass_block_fp8_supported,
+    maybe_create_device_identity,
+)
 
 __all__ = ["CompressedTensorsW8A8Fp8"]
 
@@ -40,11 +45,7 @@ class CompressedTensorsW8A8Fp8(CompressedTensorsScheme):
         if self.weight_block_size is not None:
             self.act_q_group_shape = GroupShape(1, self.weight_block_size[0])
         else:
-            self.act_q_group_shape = (
-                GroupShape.PER_TENSOR
-                if is_static_input_scheme
-                else GroupShape.PER_TOKEN
-            )
+            self.act_q_group_shape = GroupShape.PER_TENSOR if is_static_input_scheme else GroupShape.PER_TOKEN
 
         self.cutlass_block_fp8_supported = cutlass_block_fp8_supported()
         self.use_aiter_and_is_supported = check_aiter_fp8_linear_support()
@@ -100,9 +101,7 @@ class CompressedTensorsW8A8Fp8(CompressedTensorsScheme):
             )
 
         # WEIGHT
-        weight = create_fp8_weight_parameter(
-            output_size_per_partition, input_size_per_partition, weight_loader
-        )
+        weight = create_fp8_weight_parameter(output_size_per_partition, input_size_per_partition, weight_loader)
         layer.register_parameter("weight", weight)
 
         # WEIGHT SCALE
@@ -138,9 +137,7 @@ class CompressedTensorsW8A8Fp8(CompressedTensorsScheme):
 
         elif self.strategy == QuantizationStrategy.BLOCK:
             assert self.is_static_input_scheme is False
-            weight, weight_scale = process_fp8_weight_block_strategy(
-                layer.weight, layer.weight_scale
-            )
+            weight, weight_scale = process_fp8_weight_block_strategy(layer.weight, layer.weight_scale)
             input_scale = None
 
         else:

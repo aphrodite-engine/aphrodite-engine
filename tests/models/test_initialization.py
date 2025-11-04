@@ -5,13 +5,11 @@ import pytest
 
 from aphrodite import LLM
 from aphrodite.utils.mem_constants import GiB_bytes
-from aphrodite.v1.core.kv_cache_utils import (
-    generate_scheduler_kv_cache_config, get_kv_cache_configs)
+from aphrodite.v1.core.kv_cache_utils import generate_scheduler_kv_cache_config, get_kv_cache_configs
 from aphrodite.v1.engine.core import EngineCore as V1EngineCore
 
 from ..utils import create_new_process_for_each_test
-from .registry import (_TRANSFORMERS_BACKEND_MODELS, AUTO_EXAMPLE_MODELS,
-                       HF_EXAMPLE_MODELS, HfExampleModels)
+from .registry import _TRANSFORMERS_BACKEND_MODELS, AUTO_EXAMPLE_MODELS, HF_EXAMPLE_MODELS, HfExampleModels
 from .utils import dummy_hf_overrides
 
 # This minimal list of model architectures is smaller than the total list of
@@ -38,15 +36,11 @@ MINIMAL_MODEL_ARCH_LIST = [
 # This list is the complement of the minimal list above. The intention is that
 # this list of models is only tested in a "special case" i.e. most PRs should
 # not test these models
-OTHER_MODEL_ARCH_LIST = set(HF_EXAMPLE_MODELS.get_supported_archs()) - set(
-    MINIMAL_MODEL_ARCH_LIST
-)
+OTHER_MODEL_ARCH_LIST = set(HF_EXAMPLE_MODELS.get_supported_archs()) - set(MINIMAL_MODEL_ARCH_LIST)
 
 
 @create_new_process_for_each_test()
-def can_initialize(
-    model_arch: str, monkeypatch: pytest.MonkeyPatch, EXAMPLE_MODELS: HfExampleModels
-):
+def can_initialize(model_arch: str, monkeypatch: pytest.MonkeyPatch, EXAMPLE_MODELS: HfExampleModels):
     """The reason for using create_new_process_for_each_test is to avoid
     the WARNING:
         "We must use the 'spawn' multiprocessing start method. Overriding
@@ -80,9 +74,7 @@ def can_initialize(
         return 1, 0, scheduler_kv_cache_config
 
     if model_arch == "MiniMaxVL01ForConditionalGeneration":
-        pytest.skip(
-            "pickle error when loading `transformers.models.auto.CONFIG_MAPPING`"
-        )
+        pytest.skip("pickle error when loading `transformers.models.auto.CONFIG_MAPPING`")
 
     with (
         patch.object(V1EngineCore, "_initialize_kv_caches", _initialize_kv_caches_v1),
@@ -118,9 +110,7 @@ def can_initialize(
             # these tests seem to produce leftover memory
             gpu_memory_utilization=0.80,
             load_format="dummy",
-            model_impl="transformers"
-            if model_arch in _TRANSFORMERS_BACKEND_MODELS
-            else "aphrodite",
+            model_impl="transformers" if model_arch in _TRANSFORMERS_BACKEND_MODELS else "aphrodite",
             hf_overrides=hf_overrides_fn,
             max_num_seqs=model_info.max_num_seqs,
         )

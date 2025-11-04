@@ -1,8 +1,5 @@
 import torch
 import torch.utils.benchmark as benchmark
-from benchmark_shapes import WEIGHT_SHAPES
-
-from aphrodite import _custom_ops as ops
 from aphrodite.model_executor.layers.quantization.gptq_marlin_24 import (
     GPTQ_MARLIN_24_MAX_PARALLEL,
     GPTQ_MARLIN_24_MIN_THREAD_N,
@@ -40,6 +37,9 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     quantize_weights,
     sort_weights,
 )
+from benchmark_shapes import WEIGHT_SHAPES
+
+from aphrodite import _custom_ops as ops
 from aphrodite.scalar_type import ScalarType, scalar_types
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
@@ -76,18 +76,11 @@ def bench_run(
         return
 
     marlin_24_supported = (
-        quant_type in GPTQ_MARLIN_24_SUPPORTED_QUANT_TYPES
-        and group_size in GPTQ_MARLIN_24_SUPPORTED_GROUP_SIZES
+        quant_type in GPTQ_MARLIN_24_SUPPORTED_QUANT_TYPES and group_size in GPTQ_MARLIN_24_SUPPORTED_GROUP_SIZES
     )
-    repack_supported = (
-        quant_type in GPTQ_MARLIN_24_SUPPORTED_QUANT_TYPES
-        and group_size in MARLIN_SUPPORTED_GROUP_SIZES
-    )
+    repack_supported = quant_type in GPTQ_MARLIN_24_SUPPORTED_QUANT_TYPES and group_size in MARLIN_SUPPORTED_GROUP_SIZES
     allspark_supported = (
-        quant_type in ALLSPARK_SUPPORTED_QUANT_TYPES
-        and group_size == -1
-        and not act_order
-        and is_k_full
+        quant_type in ALLSPARK_SUPPORTED_QUANT_TYPES and group_size == -1 and not act_order and is_k_full
     )
 
     def gen_marlin_params():
@@ -96,9 +89,7 @@ def bench_run(
         if quant_type == scalar_types.float4_e2m1f:
             if group_size != 16 or act_order:
                 return
-            marlin_w_ref, marlin_q_w, marlin_s, marlin_s2 = rand_marlin_weight_fp4_like(
-                b.T, group_size
-            )
+            marlin_w_ref, marlin_q_w, marlin_s, marlin_s2 = rand_marlin_weight_fp4_like(b.T, group_size)
         elif quant_type == scalar_types.float8_e4m3fn:
             if group_size not in [-1, 128] or act_order:
                 return
@@ -106,12 +97,10 @@ def bench_run(
         elif group_size == 16:
             return
         elif has_zp:
-            marlin_w_ref, marlin_q_w, marlin_s, marlin_zp = awq_marlin_quantize(
-                b, quant_type, group_size
-            )
+            marlin_w_ref, marlin_q_w, marlin_s, marlin_zp = awq_marlin_quantize(b, quant_type, group_size)
         else:
-            marlin_w_ref, marlin_q_w, marlin_s, marlin_g_idx, marlin_sort_indices, _ = (
-                marlin_quantize(b, quant_type, group_size, act_order)
+            marlin_w_ref, marlin_q_w, marlin_s, marlin_g_idx, marlin_sort_indices, _ = marlin_quantize(
+                b, quant_type, group_size, act_order
             )
         return (
             marlin_w_ref,
@@ -126,8 +115,8 @@ def bench_run(
     def gen_marlin_24_params():
         marlin_24_w_ref = marlin_24_q_w_comp = marlin_24_meta = marlin_24_s = None
         if marlin_24_supported:
-            (marlin_24_w_ref, marlin_24_q_w_comp, marlin_24_meta, marlin_24_s) = (
-                marlin_24_quantize(b, quant_type, group_size)
+            (marlin_24_w_ref, marlin_24_q_w_comp, marlin_24_meta, marlin_24_s) = marlin_24_quantize(
+                b, quant_type, group_size
             )
         return (marlin_24_w_ref, marlin_24_q_w_comp, marlin_24_meta, marlin_24_s)
 
@@ -135,9 +124,7 @@ def bench_run(
         q_w_gptq = None
         repack_sort_indices = None
         if repack_supported:
-            (w_ref, q_w, s, g_idx, rand_perm) = gptq_quantize_weights(
-                b, quant_type, group_size, act_order
-            )
+            (w_ref, q_w, s, g_idx, rand_perm) = gptq_quantize_weights(b, quant_type, group_size, act_order)
             q_w_gptq = gptq_pack(q_w, quant_type.size_bits, size_k, size_n)
 
             # For act_order, sort the "weights" and "g_idx"
@@ -148,9 +135,7 @@ def bench_run(
         return q_w_gptq, repack_sort_indices
 
     def gen_allspark_params():
-        qw_reorder = s_reorder = zp_reorder = sm_count = sm_version = (
-            CUBLAS_M_THRESHOLD
-        ) = None
+        qw_reorder = s_reorder = zp_reorder = sm_count = sm_version = CUBLAS_M_THRESHOLD = None
         nonlocal allspark_supported
         if allspark_supported:
             properties = torch.cuda.get_device_properties(b.device.index)
@@ -163,9 +148,7 @@ def bench_run(
                 w_ref, qw, s, zp = quantize_weights(b, quant_type, group_size, has_zp)
                 qw = qw.to(torch.uint8)
 
-                qw_reorder, s_reorder, zp_reorder = ops.allspark_repack_weight(
-                    qw, s, zp, has_zp
-                )
+                qw_reorder, s_reorder, zp_reorder = ops.allspark_repack_weight(qw, s, zp, has_zp)
                 CUBLAS_M_THRESHOLD = ALLSPARK_AMPERE_M_CUBLAS_THRESHOLD
         return (
             qw_reorder,
@@ -185,21 +168,13 @@ def bench_run(
         marlin_g_idx,
         marlin_sort_indices,
     ) = gen_marlin_params()
-    marlin_24_w_ref, marlin_24_q_w_comp, marlin_24_meta, marlin_24_s = (
-        gen_marlin_24_params()
-    )
+    marlin_24_w_ref, marlin_24_q_w_comp, marlin_24_meta, marlin_24_s = gen_marlin_24_params()
     q_w_gptq, repack_sort_indices = gen_repack_params()
-    qw_reorder, s_reorder, zp_reorder, sm_count, sm_version, CUBLAS_M_THRESHOLD = (
-        gen_allspark_params()
-    )
+    qw_reorder, s_reorder, zp_reorder, sm_count, sm_version, CUBLAS_M_THRESHOLD = gen_allspark_params()
 
     # Prepare
-    marlin_workspace = MarlinWorkspace(
-        size_n, GPTQ_MARLIN_MIN_THREAD_N, GPTQ_MARLIN_MAX_PARALLEL
-    )
-    marlin_24_workspace = MarlinWorkspace(
-        size_n, GPTQ_MARLIN_24_MIN_THREAD_N, GPTQ_MARLIN_24_MAX_PARALLEL
-    )
+    marlin_workspace = MarlinWorkspace(size_n, GPTQ_MARLIN_MIN_THREAD_N, GPTQ_MARLIN_MAX_PARALLEL)
+    marlin_24_workspace = MarlinWorkspace(size_n, GPTQ_MARLIN_24_MIN_THREAD_N, GPTQ_MARLIN_24_MAX_PARALLEL)
 
     globals = {
         # Gen params
@@ -330,34 +305,19 @@ def main(args):
                 continue
 
             for act_order in ACT_ORDER_OPTS:
-                if (
-                    len(args.limit_act_order) > 0
-                    and act_order not in args.limit_act_order
-                ):
+                if len(args.limit_act_order) > 0 and act_order not in args.limit_act_order:
                     continue
 
                 for is_k_full in K_FULL_OPTS:
-                    if (
-                        len(args.limit_k_full) > 0
-                        and is_k_full not in args.limit_k_full
-                    ):
+                    if len(args.limit_k_full) > 0 and is_k_full not in args.limit_k_full:
                         continue
 
                     for quant_type in query_marlin_supported_quant_types():
-                        if (
-                            len(args.limit_num_bits) > 0
-                            and quant_type.size_bits not in args.limit_num_bits
-                        ):
+                        if len(args.limit_num_bits) > 0 and quant_type.size_bits not in args.limit_num_bits:
                             continue
 
-                        for group_size in (
-                            MARLIN_SUPPORTED_GROUP_SIZES
-                            + FP4_MARLIN_SUPPORTED_GROUP_SIZES
-                        ):
-                            if (
-                                len(args.limit_group_size) > 0
-                                and group_size not in args.limit_group_size
-                            ):
+                        for group_size in MARLIN_SUPPORTED_GROUP_SIZES + FP4_MARLIN_SUPPORTED_GROUP_SIZES:
+                            if len(args.limit_group_size) > 0 and group_size not in args.limit_group_size:
                                 continue
 
                             # For act_order, the group_size must be less than
@@ -386,9 +346,7 @@ def main(args):
 #   python benchmark_marlin.py --batch-sizes 1 16 32 --limit-k 4096 --limit-n 4096 --limit-group-size 128 --limit-num-bits 4 --limit-act-order 0 --limit-k-full 1 # noqa E501
 #
 if __name__ == "__main__":
-    parser = FlexibleArgumentParser(
-        description="Benchmark Marlin across specified models/shapes/batches"
-    )
+    parser = FlexibleArgumentParser(description="Benchmark Marlin across specified models/shapes/batches")
     parser.add_argument(
         "--models",
         nargs="+",
@@ -396,9 +354,7 @@ if __name__ == "__main__":
         default=DEFAULT_MODELS,
         choices=WEIGHT_SHAPES.keys(),
     )
-    parser.add_argument(
-        "--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES
-    )
+    parser.add_argument("--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES)
     parser.add_argument("--limit-k", nargs="+", type=int, default=[])
     parser.add_argument("--limit-n", nargs="+", type=int, default=[])
     parser.add_argument("--limit-group-size", nargs="+", type=int, default=[])

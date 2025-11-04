@@ -57,9 +57,7 @@ class BatchUpdate:
 
 class LogitsProcessor(ABC):
     @abstractmethod
-    def __init__(
-        self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool
-    ) -> None:
+    def __init__(self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool) -> None:
         raise NotImplementedError
 
     @abstractmethod

@@ -17,23 +17,25 @@ from transformers.image_processing_utils_fast import BaseImageProcessorFast
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.internvl import (
-    BaseInternVLDummyInputsBuilder, BaseInternVLMultiModalProcessor,
-    BaseInternVLProcessingInfo, InternVLImageEmbeddingInputs,
-    InternVLImageInputs, InternVLImagePixelInputs, InternVLProcessor)
+    BaseInternVLDummyInputsBuilder,
+    BaseInternVLMultiModalProcessor,
+    BaseInternVLProcessingInfo,
+    InternVLImageEmbeddingInputs,
+    InternVLImageInputs,
+    InternVLImagePixelInputs,
+    InternVLProcessor,
+)
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.image import convert_image_mode
 from aphrodite.multimodal.processing import PromptUpdateDetails
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.awq import AWQConfig
-from aphrodite.transformers_utils.processor import (
-    cached_image_processor_from_config)
+from aphrodite.transformers_utils.processor import cached_image_processor_from_config
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP)
-from .utils import (AutoWeightsLoader, init_aphrodite_registered_model,
-                    maybe_prefix)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
+from .utils import AutoWeightsLoader, init_aphrodite_registered_model, maybe_prefix
 
 IMG_START = "<img>"
 IMG_END = "</img>"
@@ -44,9 +46,7 @@ def build_transform(input_size: int):
     return T.Compose(
         [
             T.Lambda(lambda img: convert_image_mode(img, "RGB")),
-            T.Resize(
-                (input_size, input_size), interpolation=T.InterpolationMode.BICUBIC
-            ),
+            T.Resize((input_size, input_size), interpolation=T.InterpolationMode.BICUBIC),
             T.ToTensor(),
         ]
     )
@@ -68,9 +68,7 @@ def find_closest_aspect_ratio(
     for rw, rh in target_ratios:
         target_aspect_ratio = rw / rh
         size_factor = min((rw * rh * image_size * image_size) / area, 0.6)
-        ratio_closeness = min(
-            target_aspect_ratio / aspect_ratio, aspect_ratio / target_aspect_ratio
-        )
+        ratio_closeness = min(target_aspect_ratio / aspect_ratio, aspect_ratio / target_aspect_ratio)
         factor = size_factor * ratio_closeness
 
         if factor > best_factor:
@@ -219,9 +217,7 @@ class NemotronVLProcessor(InternVLProcessor):
             dynamic_image_size = True
         assert isinstance(dynamic_image_size, bool)
 
-        self.num_image_token = int(
-            (image_size // patch_size) ** 2 * (config.downsample_ratio**2)
-        )
+        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.image_size = image_size
         self.min_dynamic_patch = min_dynamic_patch
         self.max_dynamic_patch = max_dynamic_patch
@@ -296,18 +292,14 @@ class NemotronVLProcessor(InternVLProcessor):
             )
             image_inputs = {
                 "pixel_values_flat": torch.cat(pixel_values_lst),
-                "image_num_patches": torch.tensor(
-                    [len(item) for item in pixel_values_lst]
-                ),
+                "image_num_patches": torch.tensor([len(item) for item in pixel_values_lst]),
             }
 
             for pixel_values in pixel_values_lst:
                 num_patches = pixel_values.shape[0]
                 feature_size = num_patches * self.num_image_token
                 image_repl = self.get_image_repl(feature_size, num_patches)
-                NVL_IMAGE_CONTEXT = image_repl.full.replace(
-                    "<image>", "<NVL_IMG_CONTEXT>"
-                )
+                NVL_IMAGE_CONTEXT = image_repl.full.replace("<image>", "<NVL_IMG_CONTEXT>")
                 text = [t.replace("<image>", NVL_IMAGE_CONTEXT, 1) for t in text]
             text = [t.replace("<NVL_IMG_CONTEXT>", IMG_CONTEXT) for t in text]
         return text, image_inputs
@@ -371,9 +363,7 @@ class LlamaNemotronVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, Suppor
         image_size = config.force_image_size or config.vision_config.image_size
         patch_size = config.vision_config.patch_size
         self.patch_size = patch_size
-        self.num_image_token = int(
-            (image_size // patch_size) ** 2 * (config.downsample_ratio**2)
-        )
+        self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.downsample_ratio = config.downsample_ratio
         self.ps_version = config.ps_version
 
@@ -395,21 +385,15 @@ class LlamaNemotronVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, Suppor
         self.img_context_token_id = None
 
         self.visual_token_mask = None
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _patch_quant_config(
-        self, config: PretrainedConfig, quant_config: QuantizationConfig
-    ):
+    def _patch_quant_config(self, config: PretrainedConfig, quant_config: QuantizationConfig):
         # the awq models from OpenGVLab missing `modules_to_not_convert`
         # patch the quant_config to add `modules_to_not_convert` back
         if isinstance(quant_config, AWQConfig):
             text_config = config.text_config
             llm_quant_config = getattr(text_config, "quantization_config", None)
-            if (not quant_config.modules_to_not_convert) and (
-                llm_quant_config is not None
-            ):
+            if (not quant_config.modules_to_not_convert) and (llm_quant_config is not None):
                 quant_config.modules_to_not_convert.append("vision_model")
 
     def _init_vision_model(
@@ -427,9 +411,7 @@ class LlamaNemotronVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, Suppor
         llm_hidden_size = config.text_config.hidden_size
 
         return nn.Sequential(
-            nn.LayerNorm(
-                vit_hidden_size * int(1 / self.downsample_ratio) ** 2, bias=True
-            ),
+            nn.LayerNorm(vit_hidden_size * int(1 / self.downsample_ratio) ** 2, bias=True),
             nn.Linear(
                 vit_hidden_size * int(1 / self.downsample_ratio) ** 2,
                 vision_projection_hidden_size,
@@ -469,9 +451,7 @@ class LlamaNemotronVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, Suppor
         vit_embeds = self.mlp1(vit_embeds)
         return vit_embeds
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> InternVLImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> InternVLImageInputs | None:
         pixel_values_flat = kwargs.pop("pixel_values_flat", None)
         image_num_patches = kwargs.pop("image_num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)
@@ -526,9 +506,7 @@ class LlamaNemotronVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, Suppor
         # by the size of each embedding.
         feature_size = image_embeds.shape[1]
         image_embeds = image_embeds.view(-1, self.config.text_config.hidden_size)
-        image_feature_sizes = [
-            num_patches * feature_size for num_patches in num_patches
-        ]
+        image_feature_sizes = [num_patches * feature_size for num_patches in num_patches]
         return image_embeds.split(image_feature_sizes)
 
     def _parse_and_validate_multimodal_inputs(self, **kwargs: object) -> dict:
@@ -537,10 +515,7 @@ class LlamaNemotronVLChatModel(nn.Module, SupportsMultiModal, SupportsPP, Suppor
         # Preserve the order of modalities if there are multiple of them
         # from the order of kwargs.
         for input_key in kwargs:
-            if (
-                input_key in ("pixel_values_flat", "image_embeds")
-                and "images" not in modalities
-            ):
+            if input_key in ("pixel_values_flat", "image_embeds") and "images" not in modalities:
                 modalities["images"] = self._parse_and_validate_image_input(**kwargs)
 
         return modalities

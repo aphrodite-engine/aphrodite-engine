@@ -3,10 +3,16 @@ import random
 import pytest
 import torch
 
-from aphrodite.modeling.layers.activation import (FastGELU, FatreluAndMul,
-                                                  GeluAndMul, MulAndSilu,
-                                                  NewGELU, QuickGELU,
-                                                  SiluAndMul, SwigluOAIAndMul)
+from aphrodite.modeling.layers.activation import (
+    FastGELU,
+    FatreluAndMul,
+    GeluAndMul,
+    MulAndSilu,
+    NewGELU,
+    QuickGELU,
+    SiluAndMul,
+    SwigluOAIAndMul,
+)
 from aphrodite.platforms import current_platform
 from tests.kernels.allclose_default import get_default_atol, get_default_rtol
 from tests.kernels.utils import opcheck
@@ -78,9 +84,7 @@ def test_act_and_mul(
         def _get_rtol(output) -> float:
             return rtol[output.dtype]
 
-        torch.testing.assert_close(
-            out, ref_out, atol=get_default_atol(out), rtol=_get_rtol(out)
-        )
+        torch.testing.assert_close(out, ref_out, atol=get_default_atol(out), rtol=_get_rtol(out))
     else:
         # The SiluAndMul, MulAndSilu, GELU and FatReLU implementations are
         # equivalent to the native PyTorch implementations, so we can do exact
@@ -127,9 +131,7 @@ def test_activation(
     fn = activation[1]
     out = layer(x)
     ref_out = layer.forward_native(x)
-    torch.testing.assert_close(
-        out, ref_out, atol=get_default_atol(out), rtol=get_default_rtol(out)
-    )
+    torch.testing.assert_close(out, ref_out, atol=get_default_atol(out), rtol=get_default_rtol(out))
 
     out = torch.empty_like(x)
     opcheck(fn, (out, x))

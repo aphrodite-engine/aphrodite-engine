@@ -3,13 +3,10 @@ import torch
 
 from aphrodite import _custom_ops as ops
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
-from aphrodite.modeling.layers.fused_moe.config import (
-    fp8_w8a8_moe_quant_config)
-from aphrodite.modeling.layers.fused_moe.cutlass_moe import (
-    CutlassBatchedExpertsFp8)
+from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
+from aphrodite.modeling.layers.fused_moe.cutlass_moe import CutlassBatchedExpertsFp8
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
-from aphrodite.modeling.layers.fused_moe.modular_kernel import (
-    FusedMoEModularKernel)
+from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import cdiv
 from tests.kernels.utils import torch_experts
@@ -19,9 +16,12 @@ from .parallel_utils import ProcessGroupInfo, parallel_launch
 
 try:
     from pplx_kernels import AllToAll
-    from pplx_kernels.nvshmem import (nvshmem_alloc_empty_unique_id,
-                                      nvshmem_finalize, nvshmem_get_unique_id,
-                                      nvshmem_init)
+    from pplx_kernels.nvshmem import (
+        nvshmem_alloc_empty_unique_id,
+        nvshmem_finalize,
+        nvshmem_get_unique_id,
+        nvshmem_init,
+    )
 
     has_pplx = True
 except ImportError:
@@ -70,8 +70,7 @@ def pplx_cutlass_moe(
     per_out_ch: bool,
     group_name: str | None,
 ):
-    from aphrodite.modeling.layers.fused_moe.pplx_prepare_finalize import (
-        PplxPrepareAndFinalize)
+    from aphrodite.modeling.layers.fused_moe.pplx_prepare_finalize import PplxPrepareAndFinalize
 
     assert torch.cuda.current_device() == pgi.local_rank
 
@@ -126,18 +125,10 @@ def pplx_cutlass_moe(
         num_dispatchers=num_dispatchers,
     )
 
-    ab_strides1 = torch.full(
-        (num_local_experts,), hidden_dim, device="cuda", dtype=torch.int64
-    )
-    ab_strides2 = torch.full(
-        (num_local_experts,), intermediate_dim, device="cuda", dtype=torch.int64
-    )
-    c_strides1 = torch.full(
-        (num_local_experts,), 2 * intermediate_dim, device="cuda", dtype=torch.int64
-    )
-    c_strides2 = torch.full(
-        (num_local_experts,), hidden_dim, device="cuda", dtype=torch.int64
-    )
+    ab_strides1 = torch.full((num_local_experts,), hidden_dim, device="cuda", dtype=torch.int64)
+    ab_strides2 = torch.full((num_local_experts,), intermediate_dim, device="cuda", dtype=torch.int64)
+    c_strides1 = torch.full((num_local_experts,), 2 * intermediate_dim, device="cuda", dtype=torch.int64)
+    c_strides2 = torch.full((num_local_experts,), hidden_dim, device="cuda", dtype=torch.int64)
 
     experts = CutlassBatchedExpertsFp8(
         num_local_experts,
@@ -152,9 +143,7 @@ def pplx_cutlass_moe(
             per_out_ch_quant=per_out_ch,
             w1_scale=chunk_by_rank(w1_scale, rank, world_size),
             w2_scale=chunk_by_rank(w2_scale, rank, world_size),
-            a1_scale=chunk_by_rank(a1_scale, rank, world_size)
-            if per_act_token
-            else a1_scale[rank],
+            a1_scale=chunk_by_rank(a1_scale, rank, world_size) if per_act_token else a1_scale[rank],
         ),
     )
 
@@ -165,9 +154,7 @@ def pplx_cutlass_moe(
 
     a_chunk = chunk_by_rank(a, rank, world_size).to(device)
     chunk_topk_weight = chunk_by_rank(topk_weights, rank, world_size).to(device)
-    chunk_topk_ids = (
-        chunk_by_rank(topk_ids, rank, world_size).to(torch.uint32).to(device)
-    )
+    chunk_topk_ids = chunk_by_rank(topk_ids, rank, world_size).to(torch.uint32).to(device)
 
     out = fused_cutlass_experts(
         a_chunk,
@@ -212,11 +199,7 @@ def _pplx_moe(
 ):
     try:
         if use_internode:
-            uid = (
-                nvshmem_get_unique_id()
-                if pgi.rank == 0
-                else nvshmem_alloc_empty_unique_id()
-            )
+            uid = nvshmem_get_unique_id() if pgi.rank == 0 else nvshmem_alloc_empty_unique_id()
             torch.distributed.broadcast(uid, src=0)
             nvshmem_init(uid, pgi.rank, pgi.world_size)
         else:
@@ -225,9 +208,7 @@ def _pplx_moe(
             group_name = cpu_group.group_name
 
         with set_current_aphrodite_config(aphrodite_config):
-            torch_output = torch_experts(
-                a_full, w1_full, w2_full, topk_weights, topk_ids
-            )
+            torch_output = torch_experts(a_full, w1_full, w2_full, topk_weights, topk_ids)
             pplx_output = pplx_cutlass_moe(
                 pgi,
                 dp_size,
@@ -245,9 +226,7 @@ def _pplx_moe(
                 group_name,
             )
 
-            torch_output = chunk_by_rank(torch_output, pgi.rank, pgi.world_size).to(
-                pplx_output.device
-            )
+            torch_output = chunk_by_rank(torch_output, pgi.rank, pgi.world_size).to(pplx_output.device)
 
         # Uncomment if more debugging is needed
         # print("PPLX OUT:", pplx_output)
@@ -270,9 +249,7 @@ def _pplx_moe(
 @pytest.mark.parametrize("use_internode", [False])
 @multi_gpu_test(num_gpus=2)
 @pytest.mark.skipif(
-    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(
-        current_platform.get_device_capability()
-    ),
+    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(current_platform.get_device_capability()),
     reason="Grouped gemm is not supported on this GPU type.",
 )
 @requires_pplx
@@ -305,12 +282,8 @@ def test_cutlass_moe_pplx(
         w2_scale = torch.empty((e, k_b_scales, 1), device="cuda", dtype=torch.float32)
 
         for expert in range(e):
-            w1_q[expert], w1_scale[expert] = ops.scaled_fp8_quant(
-                w1[expert], use_per_token_if_dynamic=per_out_ch
-            )
-            w2_q[expert], w2_scale[expert] = ops.scaled_fp8_quant(
-                w2[expert], use_per_token_if_dynamic=per_out_ch
-            )
+            w1_q[expert], w1_scale[expert] = ops.scaled_fp8_quant(w1[expert], use_per_token_if_dynamic=per_out_ch)
+            w2_q[expert], w2_scale[expert] = ops.scaled_fp8_quant(w2[expert], use_per_token_if_dynamic=per_out_ch)
 
         w1_d = torch.empty_like(w1)
         w2_d = torch.empty_like(w2)
@@ -322,12 +295,7 @@ def test_cutlass_moe_pplx(
         topk_weights, topk_ids, _ = fused_topk(a, score, topk, renormalize=False)
 
         world_size, dp_size = world_dp_size
-        a_scale1 = (
-            torch.randn(
-                (m if per_act_token else 1, 1), device="cuda", dtype=torch.float32
-            )
-            / 10.0
-        )
+        a_scale1 = torch.randn((m if per_act_token else 1, 1), device="cuda", dtype=torch.float32) / 10.0
         if not per_act_token:
             a_scale1 = a_scale1.repeat(world_size, 1)
 

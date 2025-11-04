@@ -1,9 +1,13 @@
 import torch
 
 from aphrodite.quantization.compressed_tensors.compressed_tensors import (  # noqa: E501
-    CompressedTensorsScheme, CompressedTensorsW4A4Fp4)
+    CompressedTensorsScheme,
+    CompressedTensorsW4A4Fp4,
+)
 from aphrodite.quantization.compressed_tensors.transform.linear import (  # noqa: E501
-    CompressedTensorsLinearTransformMethod, TransformTuple)
+    CompressedTensorsLinearTransformMethod,
+    TransformTuple,
+)
 
 __all__ = ["is_qutlass_fp4_scheme", "QutlassNvFP4LinearMethod"]
 

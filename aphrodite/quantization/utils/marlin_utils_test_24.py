@@ -79,14 +79,10 @@ def sparse_semi_structured_from_dense_cutlass(dense):
 
     if meta_dtype == torch.int32:
         if m % 16 != 0:
-            raise RuntimeError(
-                f"Number of rows of dense matrix {m} must be divisible by 16"
-            )
+            raise RuntimeError(f"Number of rows of dense matrix {m} must be divisible by 16")
     else:
         if m % 32 != 0:
-            raise RuntimeError(
-                f"Number of rows of dense matrix {m} must be divisible by 32"
-            )
+            raise RuntimeError(f"Number of rows of dense matrix {m} must be divisible by 32")
     if k % (4 * quadbits_per_meta_elem) != 0:
         raise RuntimeError(
             f"Number of columns of dense matrix {k} must be divisible by {4 * quadbits_per_meta_elem}"  # noqa: E501
@@ -157,12 +153,7 @@ def sparse_semi_structured_from_dense_cutlass(dense):
     meta_n = meta_4.view((-1, meta_ncols, quadbits_per_meta_elem)).to(meta_dtype)
 
     if quadbits_per_meta_elem == 4:
-        meta = (
-            meta_n[:, :, 0]
-            | (meta_n[:, :, 1] << 4)
-            | (meta_n[:, :, 2] << 8)
-            | (meta_n[:, :, 3] << 12)
-        )
+        meta = meta_n[:, :, 0] | (meta_n[:, :, 1] << 4) | (meta_n[:, :, 2] << 8) | (meta_n[:, :, 3] << 12)
     elif quadbits_per_meta_elem == 8:
         meta = (
             meta_n[:, :, 0]
@@ -177,9 +168,7 @@ def sparse_semi_structured_from_dense_cutlass(dense):
 
     # Reorder meta tensor elements.
     meta_reordered = meta.new_empty((m * meta_ncols,))  # type: ignore[possibly-undefined]
-    meta_offsets = _calculate_meta_reordering_scatter_offsets(
-        m, meta_ncols, meta_dtype, device
-    )
+    meta_offsets = _calculate_meta_reordering_scatter_offsets(m, meta_ncols, meta_dtype, device)
     meta_reordered.scatter_(0, meta_offsets, meta.view(-1))
 
     return (sparse, meta_reordered.view(m, meta_ncols))
@@ -226,9 +215,7 @@ def sparse_semi_structured_to_dense_cutlass(sparse, meta_reordered):
         )
 
     # Undo meta tensor elements reordering.
-    meta_offsets = _calculate_meta_reordering_scatter_offsets(
-        m, meta_ncols, meta_dtype, device
-    )
+    meta_offsets = _calculate_meta_reordering_scatter_offsets(m, meta_ncols, meta_dtype, device)
     meta = torch.gather(meta_reordered.view(-1), 0, meta_offsets).view(m, meta_ncols)
 
     # Unpack sparse tensor back to original dense tensor, using
@@ -270,18 +257,16 @@ def sparse_semi_structured_to_dense_cutlass(sparse, meta_reordered):
         meta_2[:, :, 14] = (meta >> 28) & 0b11
         meta_2[:, :, 15] = (meta >> 30) & 0b11
 
-    dense_offsets = meta_2.view(-1) + (
-        torch.arange(0, 2 * m * k // ksparse, device=device) * 4
-    ).view(-1, 1).repeat(1, 2).view(-1)
+    dense_offsets = meta_2.view(-1) + (torch.arange(0, 2 * m * k // ksparse, device=device) * 4).view(-1, 1).repeat(
+        1, 2
+    ).view(-1)
 
     dense = torch.zeros((m * 2 * k,), dtype=sparse.dtype, device=device)
     if sparse.dtype != torch.float:
         # dense.scatter_(0, dense_offsets, sparse.view(-1))
         dense.scatter_(0, dense_offsets, sparse.reshape(-1))
     else:
-        dense.view(torch.half).scatter_(
-            0, dense_offsets, sparse.view(torch.half).view(-1)
-        )
+        dense.view(torch.half).scatter_(0, dense_offsets, sparse.view(torch.half).view(-1))
 
     return dense.view(m, 2 * k)
 
@@ -302,9 +287,7 @@ def mask_creator(tensor):
     mask = None
     # for i, tensor in enumerate(tensors):
     if tensor.numel() % M != 0:
-        raise ValueError(
-            f"Tensor of size {tensor.shape} can't be evenly divided into {M} groups"
-        )
+        raise ValueError(f"Tensor of size {tensor.shape} can't be evenly divided into {M} groups")
 
     num_groups = tensor.numel() // M
 
@@ -413,9 +396,7 @@ def get_weight_perm_24(num_bits: int):
     return perm
 
 
-def marlin_permute_scales_24(
-    s: torch.Tensor, size_k: int, size_n: int, group_size: int
-) -> torch.Tensor:
+def marlin_permute_scales_24(s: torch.Tensor, size_k: int, size_n: int, group_size: int) -> torch.Tensor:
     scale_perm, scale_perm_single = get_scale_perms_24()
     if group_size < size_k and group_size != -1:
         s = s.reshape((-1, len(scale_perm)))[:, scale_perm]
@@ -442,9 +423,7 @@ def marlin_24_quantize(
     w_24, mask_24 = inject_24(w, size_k, size_n)
 
     # Quantize
-    w_24_ref, q_w_24, s, g_idx, rand_perm = gptq_quantize_weights(
-        w_24, quant_type, group_size, act_order=False
-    )
+    w_24_ref, q_w_24, s, g_idx, rand_perm = gptq_quantize_weights(w_24, quant_type, group_size, act_order=False)
 
     # Compress quantized weight
     q_w_24_comp, meta = compress_quantized_24_weight(q_w_24, size_k, size_n, quant_type)
@@ -452,9 +431,7 @@ def marlin_24_quantize(
 
     # Reformat to marlin
     weight_perm = get_weight_perm_24(quant_type.size_bits)
-    marlin_24_q_w_comp = marlin_weights(
-        q_w_24_comp, size_k_comp, size_n, quant_type.size_bits, weight_perm
-    )
+    marlin_24_q_w_comp = marlin_weights(q_w_24_comp, size_k_comp, size_n, quant_type.size_bits, weight_perm)
     marlin_24_s = marlin_permute_scales_24(s, size_k, size_n, group_size)
 
     # Create result

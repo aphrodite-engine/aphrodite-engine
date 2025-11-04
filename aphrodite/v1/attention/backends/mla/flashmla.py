@@ -3,21 +3,24 @@ from typing import ClassVar
 
 import torch
 
-from aphrodite.attention.backends.abstract import (AttentionLayer,
-                                                   AttentionType, MultipleOf)
-from aphrodite.attention.ops.flashmla import (flash_mla_with_kvcache,
-                                              get_mla_metadata,
-                                              is_flashmla_dense_supported)
+from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, MultipleOf
+from aphrodite.attention.ops.flashmla import flash_mla_with_kvcache, get_mla_metadata, is_flashmla_dense_supported
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import (
-    aphrodite_is_batch_invariant)
+from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.v1.attention.backends.mla.common import (
-    MLACommonBackend, MLACommonDecodeMetadata, MLACommonImpl,
-    MLACommonMetadata, MLACommonMetadataBuilder, QueryLenSupport)
+    MLACommonBackend,
+    MLACommonDecodeMetadata,
+    MLACommonImpl,
+    MLACommonMetadata,
+    MLACommonMetadataBuilder,
+    QueryLenSupport,
+)
 from aphrodite.v1.attention.backends.utils import (
-    AttentionCGSupport, reshape_attn_output_for_spec_decode,
-    reshape_query_for_spec_decode)
+    AttentionCGSupport,
+    reshape_attn_output_for_spec_decode,
+    reshape_query_for_spec_decode,
+)
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 logger = init_logger(__name__)
@@ -69,13 +72,9 @@ class FlashMLAMetadataBuilder(MLACommonMetadataBuilder[FlashMLAMetadata]):
         aphrodite_config: AphroditeConfig,
         device: torch.device,
     ):
-        super().__init__(
-            kv_cache_spec, layer_names, aphrodite_config, device, FlashMLAMetadata
-        )
+        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device, FlashMLAMetadata)
 
-        self.num_q_heads = aphrodite_config.model_config.get_num_attention_heads(
-            aphrodite_config.parallel_config
-        )
+        self.num_q_heads = aphrodite_config.model_config.get_num_attention_heads(aphrodite_config.parallel_config)
 
         self.cg_buf_tile_scheduler_metadata = None
         self.cg_buf_num_splits = None
@@ -129,9 +128,7 @@ class FlashMLAMetadataBuilder(MLACommonMetadataBuilder[FlashMLAMetadata]):
             sm_parts = tile_scheduler_metadata.size(0)
             # Metadata per-SM, upper bound on size (<= #SMs, TileMetadataSize)
             assert sm_parts <= self.cg_buf_tile_scheduler_metadata.size(0)
-            tile_scheduler_metadata_view = self.cg_buf_tile_scheduler_metadata[
-                :sm_parts
-            ]
+            tile_scheduler_metadata_view = self.cg_buf_tile_scheduler_metadata[:sm_parts]
             tile_scheduler_metadata_view.copy_(tile_scheduler_metadata)
             tile_scheduler_metadata = tile_scheduler_metadata_view
 
@@ -194,16 +191,12 @@ class FlashMLAImpl(MLACommonImpl[FlashMLAMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "FlashMLAImpl does not support one of the following: "
-                "alibi_slopes, sliding_window, logits_soft_cap"
+                "FlashMLAImpl does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and "
-                "encoder/decoder cross-attention "
-                "are not implemented for "
-                "FlashMLAImpl"
+                "Encoder self-attention and encoder/decoder cross-attention are not implemented for FlashMLAImpl"
             )
 
     def _forward_decode(

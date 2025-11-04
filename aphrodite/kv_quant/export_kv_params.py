@@ -1,20 +1,15 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from pathlib import Path
-from typing import Union
 
 import fire
 import numpy as np
 import torch
 
 
-def _export_sym(key_stats: dict,
-                value_stats: dict,
-                bits: int,
-                out_dir: Union[str, Path],
-                tp: int = 1) -> None:
+def _export_sym(key_stats: dict, value_stats: dict, bits: int, out_dir: str | Path, tp: int = 1) -> None:
     """Export symmetric quantization parameters to specified directory."""
-    keys_absmax = key_stats['absmax']
-    values_absmax = value_stats['absmax']
+    keys_absmax = key_stats["absmax"]
+    values_absmax = value_stats["absmax"]
     for layer_idx, name in enumerate(keys_absmax.keys()):
         k_absmax = keys_absmax[name]
         v_absmax = values_absmax[name]
@@ -27,26 +22,22 @@ def _export_sym(key_stats: dict,
         for i in range(tp):
             # quant: q = f / scale
             # dequant: f = q * scale
-            k_s = mp_k_absmax[i].max() / (2**(bits - 1) - 1)
-            v_s = mp_v_absmax[i].max() / (2**(bits - 1) - 1)
+            k_s = mp_k_absmax[i].max() / (2 ** (bits - 1) - 1)
+            v_s = mp_v_absmax[i].max() / (2 ** (bits - 1) - 1)
 
             kv_qparams = np.array([k_s, v_s], dtype=np.float32)
-            out_path = out_dir / f'layers.{layer_idx}.past_kv_scale.{i}.weight'  # noqa: E501
+            out_path = out_dir / f"layers.{layer_idx}.past_kv_scale.{i}.weight"  # noqa: E501
             kv_qparams.tofile(out_path)
-            print(f'Layer {layer_idx} MP {i} qparam: {k_s} \t{v_s}')
+            print(f"Layer {layer_idx} MP {i} qparam: {k_s} \t{v_s}")
 
 
-def _export_asym(key_stats: dict,
-                 value_stats: dict,
-                 bits: int,
-                 out_dir: Union[str, Path],
-                 tp: int = 1) -> None:
+def _export_asym(key_stats: dict, value_stats: dict, bits: int, out_dir: str | Path, tp: int = 1) -> None:
     """Export asymmetric quantization parameters to specified directory."""
-    keys_min = key_stats['min']
-    values_min = value_stats['min']
+    keys_min = key_stats["min"]
+    values_min = value_stats["min"]
 
-    keys_max = key_stats['max']
-    values_max = value_stats['max']
+    keys_max = key_stats["max"]
+    values_max = value_stats["max"]
     for layer_idx, name in enumerate(keys_min.keys()):
         k_max = keys_max[name]
         v_max = values_max[name]
@@ -79,19 +70,13 @@ def _export_asym(key_stats: dict,
             k_zp = (k_max + k_min) / 2
             v_zp = (v_max + v_min) / 2
 
-            kv_qparams = np.array([k_scale, k_zp, v_scale, v_zp],
-                                  dtype=np.float32)
-            out_path = out_dir / f'layers.{layer_idx}.past_kv_scale.{i}.weight'
+            kv_qparams = np.array([k_scale, k_zp, v_scale, v_zp], dtype=np.float32)
+            out_path = out_dir / f"layers.{layer_idx}.past_kv_scale.{i}.weight"
             kv_qparams.tofile(out_path)
-            print(f'Layer {layer_idx} MP {i} qparam: '
-                  f'\t{k_scale} \t{k_zp} \t{v_scale} \t{v_zp}')
+            print(f"Layer {layer_idx} MP {i} qparam: \t{k_scale} \t{k_zp} \t{v_scale} \t{v_zp}")
 
 
-def main(work_dir: str,
-         kv_params_dir: str,
-         kv_bits: int = 8,
-         kv_sym: bool = False,
-         num_tp: int = 1) -> None:
+def main(work_dir: str, kv_params_dir: str, kv_bits: int = 8, kv_sym: bool = False, num_tp: int = 1) -> None:
     """Main function to export key and value stats.
     Args:
         work_dir (Union[str, Path]): Directory path where the stats are saved.
@@ -109,8 +94,8 @@ def main(work_dir: str,
     tm_dir = Path(kv_params_dir)
     tm_dir.mkdir(parents=True, exist_ok=True)
 
-    key_stats = torch.load(work_dir / 'key_stats.pth')
-    value_stats = torch.load(work_dir / 'value_stats.pth')
+    key_stats = torch.load(work_dir / "key_stats.pth")
+    value_stats = torch.load(work_dir / "value_stats.pth")
 
     if kv_sym:
         _export_sym(key_stats, value_stats, kv_bits, tm_dir, num_tp)
@@ -118,5 +103,5 @@ def main(work_dir: str,
         _export_asym(key_stats, value_stats, kv_bits, tm_dir, num_tp)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     fire.Fire(main)

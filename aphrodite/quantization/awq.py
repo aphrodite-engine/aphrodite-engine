@@ -6,12 +6,9 @@ from safetensors.torch import _TYPES as _SAFETENSORS_TO_TORCH_DTYPE
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.fused_moe.layer import FusedMoE
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod)
-from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
-                                          PackedAphroditeParameter)
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod
+from aphrodite.modeling.parameter import GroupQuantScaleParameter, PackedAphroditeParameter
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.quantization.utils.quant_utils import is_layer_skipped
 from aphrodite.transformers_utils.config import get_safetensors_params_metadata
 
@@ -43,8 +40,7 @@ class AWQConfig(QuantizationConfig):
 
         if self.weight_bits != 4:
             raise ValueError(
-                "Currently, only 4-bit weight quantization is supported for "
-                f"AWQ, but got {self.weight_bits} bits."
+                f"Currently, only 4-bit weight quantization is supported for AWQ, but got {self.weight_bits} bits."
             )
         self.pack_factor = 32 // self.weight_bits
 
@@ -80,9 +76,7 @@ class AWQConfig(QuantizationConfig):
         weight_bits = cls.get_from_keys(config, ["w_bit", "bits"])
         group_size = cls.get_from_keys(config, ["q_group_size", "group_size"])
         zero_point = cls.get_from_keys(config, ["zero_point"])
-        modules_to_not_convert = cls.get_from_keys_or(
-            config, ["modules_to_not_convert"], None
-        )
+        modules_to_not_convert = cls.get_from_keys_or(config, ["modules_to_not_convert"], None)
         return cls(weight_bits, group_size, zero_point, modules_to_not_convert)
 
     def get_quant_method(
@@ -105,8 +99,7 @@ class AWQConfig(QuantizationConfig):
 
             if not check_moe_marlin_supports_layer(layer, self.group_size):
                 logger.warning_once(
-                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. "
-                    "Falling back to Moe WNA16 kernels."
+                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. Falling back to Moe WNA16 kernels."
                 )
                 config = {
                     "quant_method": "awq",
@@ -115,9 +108,7 @@ class AWQConfig(QuantizationConfig):
                     "zero_point": self.zero_point,
                     "lm_head": False,
                 }
-                return MoeWNA16Config.from_config(config).get_quant_method(
-                    layer, prefix
-                )
+                return MoeWNA16Config.from_config(config).get_quant_method(layer, prefix)
             marlin_compatible_config_dict = {
                 "quant_method": "awq",
                 "bits": self.weight_bits,
@@ -126,17 +117,13 @@ class AWQConfig(QuantizationConfig):
                 "lm_head": False,
                 "modules_to_not_convert": self.modules_to_not_convert,
             }
-            awq_marlin_config = AWQMarlinConfig.from_config(
-                marlin_compatible_config_dict
-            )
+            awq_marlin_config = AWQMarlinConfig.from_config(marlin_compatible_config_dict)
             return AWQMoEMethod(awq_marlin_config, layer.moe_config)
         return None
 
     def apply_aphrodite_mapper(self, hf_to_aphrodite_mapper: "WeightsMapper"):
         if self.modules_to_not_convert:
-            self.modules_to_not_convert = hf_to_aphrodite_mapper.apply_list(
-                self.modules_to_not_convert
-            )
+            self.modules_to_not_convert = hf_to_aphrodite_mapper.apply_list(self.modules_to_not_convert)
 
     def maybe_update_config(self, model_name: str, revision: str | None = None):
         if self.modules_to_not_convert:
@@ -148,8 +135,7 @@ class AWQConfig(QuantizationConfig):
         quant_layers: set[str] = {
             param_name.rsplit(".", 1)[0]
             for param_name, info in metadata.items()
-            if (dtype := info.get("dtype", None))
-            and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
+            if (dtype := info.get("dtype", None)) and _SAFETENSORS_TO_TORCH_DTYPE[dtype] not in unquant_dtypes
         }
         self.modules_to_not_convert = list(layers - quant_layers)
 

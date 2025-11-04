@@ -6,8 +6,12 @@ from flashinfer.decode import trtllm_batch_decode_with_kv_cache_mla
 from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType
 from aphrodite.logger import init_logger
 from aphrodite.v1.attention.backends.mla.common import (
-    MLACommonBackend, MLACommonImpl, MLACommonMetadata,
-    MLACommonMetadataBuilder, QueryLenSupport)
+    MLACommonBackend,
+    MLACommonImpl,
+    MLACommonMetadata,
+    MLACommonMetadataBuilder,
+    QueryLenSupport,
+)
 from aphrodite.v1.attention.backends.utils import AttentionCGSupport
 
 logger = init_logger(__name__)
@@ -74,16 +78,12 @@ class FlashInferMLAImpl(MLACommonImpl[MLACommonMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "FlashInferMLAImpl does not support one of the following: "
-                "alibi_slopes, sliding_window, logits_soft_cap"
+                "FlashInferMLAImpl does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and "
-                "encoder/decoder cross-attention "
-                "are not implemented for "
-                "FlashInferMLAImpl"
+                "Encoder self-attention and encoder/decoder cross-attention are not implemented for FlashInferMLAImpl"
             )
 
         self._workspace_buffer = g_fi_workspace

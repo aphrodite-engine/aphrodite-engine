@@ -7,10 +7,8 @@ import ctypes
 import torch
 import torch.distributed as dist
 
-from aphrodite.distributed.device_communicators.cuda_wrapper import (
-    CudaRTLibrary)
-from aphrodite.distributed.device_communicators.custom_all_reduce import (  # noqa
-    CustomAllreduce)
+from aphrodite.distributed.device_communicators.cuda_wrapper import CudaRTLibrary
+from aphrodite.distributed.device_communicators.custom_all_reduce import CustomAllreduce  # noqa
 
 # create a cpu process group for communicating metadata (ipc handle)
 dist.init_process_group(backend="gloo")
@@ -48,9 +46,7 @@ for p in pointers:
     lib.cudaMemcpy(host_data, pointer, buffer_size_in_bytes)
     for i in range(buffer_size_in_bytes):
         assert ord(host_data[i]) == byte_value, (
-            f"Rank {rank} failed"
-            f" to verify buffer {p}. Expected {byte_value}, "
-            f"got {ord(host_data[i])}"
+            f"Rank {rank} failed to verify buffer {p}. Expected {byte_value}, got {ord(host_data[i])}"
         )
 
 print(f"Rank {rank} verified all buffers")

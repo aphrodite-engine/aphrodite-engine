@@ -1,9 +1,7 @@
 import regex as re
 
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParserManager)
-from aphrodite.endpoints.openai.tool_parsers.hermes_tool_parser import (
-    Hermes2ProToolParser)
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.hermes_tool_parser import Hermes2ProToolParser
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 
@@ -23,16 +21,12 @@ class LongcatFlashToolParser(Hermes2ProToolParser):
         self.tool_call_start_token_ids = self.model_tokenizer.encode(
             self.tool_call_start_token, add_special_tokens=False
         )
-        self.tool_call_end_token_ids = self.model_tokenizer.encode(
-            self.tool_call_end_token, add_special_tokens=False
-        )
+        self.tool_call_end_token_ids = self.model_tokenizer.encode(self.tool_call_end_token, add_special_tokens=False)
 
         self.tool_call_start_token_array = [
-            self.model_tokenizer.decode([token_id])
-            for token_id in self.tool_call_start_token_ids
+            self.model_tokenizer.decode([token_id]) for token_id in self.tool_call_start_token_ids
         ]
 
         self.tool_call_end_token_array = [
-            self.model_tokenizer.decode([token_id])
-            for token_id in self.tool_call_end_token_ids
+            self.model_tokenizer.decode([token_id]) for token_id in self.tool_call_end_token_ids
         ]

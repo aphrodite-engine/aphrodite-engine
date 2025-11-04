@@ -10,10 +10,8 @@ import torch.distributed as dist
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
-from aphrodite.utils.network_utils import (get_distributed_init_method, get_ip,
-                                           get_open_port)
-from aphrodite.v1.engine import (ReconfigureDistributedRequest,
-                                 ReconfigureRankType)
+from aphrodite.utils.network_utils import get_distributed_init_method, get_ip, get_open_port
+from aphrodite.v1.engine import ReconfigureDistributedRequest, ReconfigureRankType
 from aphrodite.v1.executor.abstract import Executor
 from aphrodite.v1.outputs import AsyncModelRunnerOutput
 from aphrodite.v1.serial_utils import run_method
@@ -38,9 +36,7 @@ class UniProcExecutor(Executor):
 
         self.async_output_thread: ThreadPoolExecutor | None = None
         if self.max_concurrent_batches > 1:
-            self.async_output_thread = ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="WorkerAsyncOutput"
-            )
+            self.async_output_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="WorkerAsyncOutput")
 
         self.driver_worker.init_worker(all_kwargs=[kwargs])
         self.driver_worker.init_device()
@@ -90,14 +86,9 @@ class UniProcExecutor(Executor):
         # it's running.
         return
 
-    def reinitialize_distributed(
-        self, reconfig_request: ReconfigureDistributedRequest
-    ) -> None:
+    def reinitialize_distributed(self, reconfig_request: ReconfigureDistributedRequest) -> None:
         self.driver_worker.reinitialize_distributed(reconfig_request)
-        if (
-            reconfig_request.new_data_parallel_rank
-            == ReconfigureRankType.SHUTDOWN_CURRENT_RANK
-        ):
+        if reconfig_request.new_data_parallel_rank == ReconfigureRankType.SHUTDOWN_CURRENT_RANK:
             self.shutdown()
 
     def shutdown(self) -> None:
@@ -126,8 +117,7 @@ class ExecutorWithExternalLauncher(UniProcExecutor):
         """Initialize the worker and load the model."""
         if envs.APHRODITE_USE_V1:
             assert not envs.APHRODITE_ENABLE_V1_MULTIPROCESSING, (
-                "To get deterministic execution in V1, "
-                "please set APHRODITE_ENABLE_V1_MULTIPROCESSING=0"
+                "To get deterministic execution in V1, please set APHRODITE_ENABLE_V1_MULTIPROCESSING=0"
             )
         super()._init_executor()
 

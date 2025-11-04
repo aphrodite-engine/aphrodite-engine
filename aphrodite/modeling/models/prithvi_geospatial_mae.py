@@ -15,7 +15,7 @@
 """Inference-only IBM/NASA Prithvi Geospatial model."""
 
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -27,21 +27,20 @@ from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.utils import AutoWeightsLoader
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (ImageItem, ModalityData,
-                                         MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalInputs,
-                                         MultiModalKwargsItems,
-                                         PlaceholderRange)
-from aphrodite.multimodal.parse import (DictEmbeddingItems, ModalityDataItems,
-                                        MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo, PromptUpdate)
+from aphrodite.multimodal.inputs import (
+    ImageItem,
+    ModalityData,
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalInputs,
+    MultiModalKwargsItems,
+    PlaceholderRange,
+)
+from aphrodite.multimodal.parse import DictEmbeddingItems, ModalityDataItems, MultiModalDataItems, MultiModalDataParser
+from aphrodite.multimodal.processing import BaseMultiModalProcessor, BaseProcessingInfo, PromptUpdate
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 
-from .interfaces import (IsAttentionFree, MultiModalEmbeddings,
-                         SupportsMultiModal)
+from .interfaces import IsAttentionFree, MultiModalEmbeddings, SupportsMultiModal
 from .interfaces_base import default_pooling_type
 
 
@@ -59,19 +58,16 @@ def _prithvi_field_config(hf_inputs: Mapping[str, torch.Tensor]):
     # TODO (christian-pinto): enable support for multi patch requests
     # in tandem with Aphrodite batching.
     return dict(
-        pixel_values=MultiModalFieldConfig.shared(batch_size=1,
-                                                  modality="image"),
-        location_coords=MultiModalFieldConfig.shared(batch_size=1,
-                                                     modality="image"),
+        pixel_values=MultiModalFieldConfig.shared(batch_size=1, modality="image"),
+        location_coords=MultiModalFieldConfig.shared(batch_size=1, modality="image"),
     )
 
 
 class PrithviGeoSpatialMAEMultiModalDataParser(MultiModalDataParser):
-
     def _parse_image_data(
         self,
-        data: Union[dict[str, torch.Tensor], ModalityData[ImageItem]],
-    ) -> Optional[ModalityDataItems[Any, Any]]:
+        data: dict[str, torch.Tensor] | ModalityData[ImageItem],
+    ) -> ModalityDataItems[Any, Any] | None:
         if isinstance(data, dict):
             return DictEmbeddingItems(
                 data,
@@ -84,14 +80,11 @@ class PrithviGeoSpatialMAEMultiModalDataParser(MultiModalDataParser):
 
 
 class PrithviGeoSpatialMAEProcessingInfo(BaseProcessingInfo):
-
-    def get_supported_mm_limits(self) -> Mapping[str, Optional[int]]:
+    def get_supported_mm_limits(self) -> Mapping[str, int | None]:
         return {"image": None}
 
 
-class PrithviGeoSpatialMAEInputBuilder(
-        BaseDummyInputsBuilder[PrithviGeoSpatialMAEProcessingInfo]):
-
+class PrithviGeoSpatialMAEInputBuilder(BaseDummyInputsBuilder[PrithviGeoSpatialMAEProcessingInfo]):
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         return ""
 
@@ -104,8 +97,7 @@ class PrithviGeoSpatialMAEInputBuilder(
         # The size of pixel_values might change in the cases where we resize
         # the input but never exceeds the dimensions below.
         image_data = {
-            "pixel_values": torch.full((6, 512, 512), 1.0,
-                                       dtype=torch.float16),
+            "pixel_values": torch.full((6, 512, 512), 1.0, dtype=torch.float16),
             "location_coords": torch.full((1, 2), 1.0, dtype=torch.float16),
         }
 
@@ -113,7 +105,6 @@ class PrithviGeoSpatialMAEInputBuilder(
 
 
 class PrithviGeoSpatialMAEMultiModalProcessor(BaseMultiModalProcessor):
-
     def _get_data_parser(self) -> MultiModalDataParser:
         return PrithviGeoSpatialMAEMultiModalDataParser()
 
@@ -134,11 +125,11 @@ class PrithviGeoSpatialMAEMultiModalProcessor(BaseMultiModalProcessor):
 
     def apply(
         self,
-        prompt: Union[str, list[int]],
+        prompt: str | list[int],
         mm_data: MultiModalDataDict,
         hf_processor_mm_kwargs: Mapping[str, object],
-        tokenization_kwargs: Optional[Mapping[str, object]] = None,
-        mm_hash_overrides: Optional[dict[str, list[str]]] = None,
+        tokenization_kwargs: Mapping[str, object] | None = None,
+        mm_hash_overrides: dict[str, list[str]] | None = None,
     ) -> MultiModalInputs:
         if "image" in mm_data:
             image_data = mm_data["image"]
@@ -148,17 +139,18 @@ class PrithviGeoSpatialMAEMultiModalProcessor(BaseMultiModalProcessor):
 
         mm_items = self._to_mm_items(mm_data)
         tokenization_kwargs = tokenization_kwargs or {}
-        mm_hashes = (mm_hash_overrides if mm_hash_overrides is not None else
-                     self._hash_mm_items(mm_items, hf_processor_mm_kwargs,
-                                         tokenization_kwargs))
+        mm_hashes = (
+            mm_hash_overrides
+            if mm_hash_overrides is not None
+            else self._hash_mm_items(mm_items, hf_processor_mm_kwargs, tokenization_kwargs)
+        )
         mm_placeholders = {"image": [PlaceholderRange(offset=0, length=0)]}
 
         mm_processed_data = BatchFeature(image_data)
 
         mm_kwargs = MultiModalKwargsItems.from_hf_inputs(
             mm_processed_data,
-            self._get_mm_fields_config(mm_processed_data,
-                                       hf_processor_mm_kwargs),
+            self._get_mm_fields_config(mm_processed_data, hf_processor_mm_kwargs),
         )
 
         return MultiModalInputs(
@@ -184,13 +176,13 @@ class PrithviGeoSpatialMAE(nn.Module, IsAttentionFree, SupportsMultiModal):
     is_pooling_model = True
 
     @classmethod
-    def get_placeholder_str(cls, modality: str, i: int) -> Optional[str]:
+    def get_placeholder_str(cls, modality: str, i: int) -> str | None:
         if modality.startswith("image"):
             return None
 
         raise ValueError("Only image modality is supported")
 
-    def _instantiate_model(self, config: dict) -> Optional[nn.Module]:
+    def _instantiate_model(self, config: dict) -> nn.Module | None:
         # We might be able/need to support different tasks with this same model
         if config["task_args"]["task"] == "SemanticSegmentationTask":
             from terratorch.cli_tools import SemanticSegmentationTask
@@ -220,31 +212,27 @@ class PrithviGeoSpatialMAE(nn.Module, IsAttentionFree, SupportsMultiModal):
         # the actual model is dynamically instantiated using terratorch
         # allowing us to perform changes to the model architecture
         # at startup time (e.g., change the model decoder class.)
-        self.model = self._instantiate_model(
-            aphrodite_config.model_config.hf_config.to_dict()["pretrained_cfg"])
+        self.model = self._instantiate_model(aphrodite_config.model_config.hf_config.to_dict()["pretrained_cfg"])
         if self.model is None:
             raise ValueError(
-                "Unsupported task. "
-                "Only SemanticSegmentationTask is supported for now "
-                "by PrithviGeospatialMAE.")
+                "Unsupported task. Only SemanticSegmentationTask is supported for now by PrithviGeospatialMAE."
+            )
 
         pooler_config = aphrodite_config.model_config.pooler_config
         assert pooler_config is not None
 
         self.pooler = DispatchPooler(
-            {"encode": Pooler.for_encode(pooler_config)}, )
+            {"encode": Pooler.for_encode(pooler_config)},
+        )
 
-    def _parse_and_validate_multimodal_data(
-            self, **kwargs) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def _parse_and_validate_multimodal_data(self, **kwargs) -> tuple[torch.Tensor, torch.Tensor | None]:
         pixel_values = kwargs.pop("pixel_values", None)
         if not isinstance(pixel_values, torch.Tensor):
-            raise ValueError(f"Incorrect type of pixel_values. "
-                             f"Got type: {type(pixel_values)}")
+            raise ValueError(f"Incorrect type of pixel_values. Got type: {type(pixel_values)}")
 
         location_coords = kwargs.pop("location_coords", None)
         if not isinstance(location_coords, torch.Tensor):
-            raise ValueError(f"Incorrect type of location_coords. "
-                             f"Got type: {type(location_coords)}")
+            raise ValueError(f"Incorrect type of location_coords. Got type: {type(location_coords)}")
         location_coords = torch.unbind(location_coords, dim=0)[0]
         if location_coords.shape == torch.Size([0]):
             location_coords = None
@@ -254,7 +242,7 @@ class PrithviGeoSpatialMAE(nn.Module, IsAttentionFree, SupportsMultiModal):
     def get_input_embeddings(
         self,
         input_ids: torch.Tensor,
-        multimodal_embeddings: Optional[MultiModalEmbeddings] = None,
+        multimodal_embeddings: MultiModalEmbeddings | None = None,
     ) -> torch.Tensor:
         # We do not really use any input tokens and therefore no embeddings
         # to be calculated. However, due to the mandatory token ids in
@@ -264,21 +252,18 @@ class PrithviGeoSpatialMAE(nn.Module, IsAttentionFree, SupportsMultiModal):
 
     def forward(
         self,
-        input_ids: Optional[torch.Tensor],
+        input_ids: torch.Tensor | None,
         positions: torch.Tensor,
-        intermediate_tensors: Optional[IntermediateTensors] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        intermediate_tensors: IntermediateTensors | None = None,
+        inputs_embeds: torch.Tensor | None = None,
         **kwargs: object,
     ):
-        pixel_values, location_coords = (
-            self._parse_and_validate_multimodal_data(**kwargs))
-        model_output = self.model(pixel_values,
-                                  location_coords=location_coords)
+        pixel_values, location_coords = self._parse_and_validate_multimodal_data(**kwargs)
+        model_output = self.model(pixel_values, location_coords=location_coords)
 
         return model_output.output
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         params_list = []
         model_buffers = dict(self.named_buffers())
         loaded_buffers = []
@@ -298,8 +283,7 @@ class PrithviGeoSpatialMAE(nn.Module, IsAttentionFree, SupportsMultiModal):
                         if "_timm_module." in name:
                             name = name.replace("_timm_module.", "")
                         buffer = model_buffers[name]
-                        weight_loader = getattr(buffer, "weight_loader",
-                                                default_weight_loader)
+                        weight_loader = getattr(buffer, "weight_loader", default_weight_loader)
                         weight_loader(buffer, weight)
                         loaded_buffers.append(name)
                     else:

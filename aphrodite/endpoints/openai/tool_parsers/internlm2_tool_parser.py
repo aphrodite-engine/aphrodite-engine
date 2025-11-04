@@ -5,15 +5,17 @@ import partial_json_parser
 from partial_json_parser.core.options import Allow
 
 from aphrodite.endpoints.chat_utils import make_tool_call_id
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaFunctionCall,
-                                                 DeltaMessage, DeltaToolCall,
-                                                 ExtractedToolCallInformation,
-                                                 FunctionCall, ToolCall)
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParser, ToolParserManager)
-from aphrodite.endpoints.openai.tool_parsers.utils import (
-    extract_intermediate_diff)
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    DeltaFunctionCall,
+    DeltaMessage,
+    DeltaToolCall,
+    ExtractedToolCallInformation,
+    FunctionCall,
+    ToolCall,
+)
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.utils import extract_intermediate_diff
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
@@ -103,9 +105,7 @@ class Internlm2ToolParser(ToolParser):
                                 index=self.current_tool_id,
                                 type="function",
                                 id=make_tool_call_id(),
-                                function=DeltaFunctionCall(
-                                    name=function_name
-                                ).model_dump(exclude_none=True),
+                                function=DeltaFunctionCall(name=function_name).model_dump(exclude_none=True),
                             )
                         ]
                     )
@@ -116,9 +116,7 @@ class Internlm2ToolParser(ToolParser):
             # now we know we're on the same tool call and we're streaming
             # arguments
             else:
-                prev_arguments = self.get_arguments(
-                    self.prev_tool_call_arr[self.current_tool_id]
-                )
+                prev_arguments = self.get_arguments(self.prev_tool_call_arr[self.current_tool_id])
                 cur_arguments = self.get_arguments(tool_call_arr)
 
                 # not arguments generated
@@ -126,24 +124,18 @@ class Internlm2ToolParser(ToolParser):
                     delta = None
                 # will never happen
                 elif not cur_arguments and prev_arguments:
-                    logger.error(
-                        "INVARIANT - impossible to have arguments reset mid-arguments"
-                    )
+                    logger.error("INVARIANT - impossible to have arguments reset mid-arguments")
                     delta = None
                 # first time to get parameters
                 elif cur_arguments and not prev_arguments:
                     cur_arguments_json = json.dumps(cur_arguments, ensure_ascii=False)
 
-                    arguments_delta = cur_arguments_json[
-                        : cur_arguments_json.index(delta_text) + len(delta_text)
-                    ]
+                    arguments_delta = cur_arguments_json[: cur_arguments_json.index(delta_text) + len(delta_text)]
                     delta = DeltaMessage(
                         tool_calls=[
                             DeltaToolCall(
                                 index=self.current_tool_id,
-                                function=DeltaFunctionCall(
-                                    arguments=arguments_delta
-                                ).model_dump(exclude_none=True),
+                                function=DeltaFunctionCall(arguments=arguments_delta).model_dump(exclude_none=True),
                             )
                         ]
                     )
@@ -153,17 +145,13 @@ class Internlm2ToolParser(ToolParser):
                     cur_args_json = json.dumps(cur_arguments, ensure_ascii=False)
                     prev_args_json = json.dumps(prev_arguments, ensure_ascii=False)
 
-                    argument_diff = extract_intermediate_diff(
-                        cur_args_json, prev_args_json
-                    )
+                    argument_diff = extract_intermediate_diff(cur_args_json, prev_args_json)
 
                     delta = DeltaMessage(
                         tool_calls=[
                             DeltaToolCall(
                                 index=self.current_tool_id,
-                                function=DeltaFunctionCall(
-                                    arguments=argument_diff
-                                ).model_dump(exclude_none=True),
+                                function=DeltaFunctionCall(arguments=argument_diff).model_dump(exclude_none=True),
                             )
                         ]
                     )
@@ -177,9 +165,7 @@ class Internlm2ToolParser(ToolParser):
             return delta
         except Exception:
             logger.exception("Error trying to handle streaming tool call.")
-            logger.debug(
-                "Skipping chunk as a result of tool streaming extraction error"
-            )
+            logger.debug("Skipping chunk as a result of tool streaming extraction error")
             return None
 
     def extract_tool_calls(
@@ -203,19 +189,13 @@ class Internlm2ToolParser(ToolParser):
             )
 
             if not tools or name not in [t.function.name for t in tools]:
-                ExtractedToolCallInformation(
-                    tools_called=False, tool_calls=[], content=text
-                )
+                ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=text)
 
-            tool_calls = [
-                ToolCall(function=FunctionCall(name=name, arguments=parameters))
-            ]
+            tool_calls = [ToolCall(function=FunctionCall(name=name, arguments=parameters))]
             return ExtractedToolCallInformation(
                 tools_called=True,
                 tool_calls=tool_calls,
                 content=text if len(text) > 0 else None,
             )
 
-        return ExtractedToolCallInformation(
-            tools_called=False, tool_calls=[], content=text
-        )
+        return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=text)

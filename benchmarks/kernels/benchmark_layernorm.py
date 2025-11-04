@@ -1,8 +1,8 @@
 import time
 
 import torch
-
 from aphrodite.model_executor.layers.layernorm import RMSNorm
+
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
@@ -62,9 +62,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-tokens", type=int, default=4096)
     parser.add_argument("--hidden-size", type=int, default=8192)
     parser.add_argument("--add-residual", action="store_true")
-    parser.add_argument(
-        "--dtype", type=str, choices=["half", "bfloat16", "float"], default="half"
-    )
+    parser.add_argument("--dtype", type=str, choices=["half", "bfloat16", "float"], default="half")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--num-warmup-iters", type=int, default=5)
@@ -72,8 +70,7 @@ if __name__ == "__main__":
         "--num-iters",
         type=int,
         default=100,
-        help="Number of benchmark iterations. "
-        "If --profile is set, this number is ignored",
+        help="Number of benchmark iterations. If --profile is set, this number is ignored",
     )
 
     args = parser.parse_args()

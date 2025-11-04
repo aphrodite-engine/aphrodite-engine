@@ -22,9 +22,7 @@ def has_non_english_chars(text: str) -> bool:
     return not text.isascii()
 
 
-def content_is_valid(
-    content: str, min_content_len: int | None, max_content_len: int | None
-) -> bool:
+def content_is_valid(content: str, min_content_len: int | None, max_content_len: int | None) -> bool:
     if min_content_len and len(content) < min_content_len:
         return False
 
@@ -34,9 +32,7 @@ def content_is_valid(
     return has_non_english_chars(content)
 
 
-def print_stats(
-    conversations: "list[dict[Any, Any]]", tokenizer: AutoTokenizer | None = None
-) -> None:
+def print_stats(conversations: "list[dict[Any, Any]]", tokenizer: AutoTokenizer | None = None) -> None:
     # Collect statistics
     stats = []
 
@@ -205,9 +201,7 @@ def convert_sharegpt_to_openai(
 
         # Convert each message in the conversation, up to max_turns if specified
         for i, turn in enumerate(conversations):
-            assert "from" in turn and "value" in turn, (
-                f"Invalid conversation ID {conv_id} - missing 'from' or 'value'"
-            )
+            assert "from" in turn and "value" in turn, f"Invalid conversation ID {conv_id} - missing 'from' or 'value'"
 
             role = None
             turn_from = turn["from"]
@@ -219,9 +213,7 @@ def convert_sharegpt_to_openai(
             elif turn_from == "system":
                 role = "system"
 
-            assert role is not None, (
-                f"Invalid conversation ID {conv_id} - 'from'='{turn_from}' is invalid"
-            )
+            assert role is not None, f"Invalid conversation ID {conv_id} - 'from'='{turn_from}' is invalid"
 
             if i == 0 and role != "user":
                 # If the first message is from assistant (gpt), skip it.
@@ -245,18 +237,14 @@ def convert_sharegpt_to_openai(
 
             for m in messages:
                 # Make sure that turns alternate between user and assistant
-                if (user_turn and m["role"] != "user") or (
-                    not user_turn and m["role"] != "assistant"
-                ):
+                if (user_turn and m["role"] != "user") or (not user_turn and m["role"] != "assistant"):
                     valid_messages = False
                     break
 
                 user_turn = not user_turn
 
                 content = m["content"]
-                valid_messages = content_is_valid(
-                    content, min_content_len, max_content_len
-                )
+                valid_messages = content_is_valid(content, min_content_len, max_content_len)
                 if not valid_messages:
                     break
 
@@ -286,16 +274,10 @@ def convert_sharegpt_to_openai(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Convert ShareGPT dataset to OpenAI API format"
-    )
+    parser = argparse.ArgumentParser(description="Convert ShareGPT dataset to OpenAI API format")
     parser.add_argument("input_file", help="Path to the input ShareGPT JSON file")
-    parser.add_argument(
-        "output_file", help="Path to the output OpenAI format JSON file"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=0, help="Seed for random number generators"
-    )
+    parser.add_argument("output_file", help="Path to the output OpenAI format JSON file")
+    parser.add_argument("--seed", type=int, default=0, help="Seed for random number generators")
     parser.add_argument(
         "--max-items",
         type=int,

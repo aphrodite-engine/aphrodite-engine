@@ -12,22 +12,19 @@ from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from aphrodite.multimodal.cache import processor_cache_from_config
-from aphrodite.multimodal.inputs import (MultiModalFeatureSpec,
-                                         MultiModalUUIDDict)
+from aphrodite.multimodal.inputs import MultiModalFeatureSpec, MultiModalUUIDDict
 from aphrodite.multimodal.processing import EncDecMultiModalProcessor
 from aphrodite.multimodal.utils import argsort_mm_positions
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils import length_from_prompt_token_ids_or_embeds
 from aphrodite.v1.engine import EngineCoreRequest
 from aphrodite.v1.metrics.stats import MultiModalCacheStats
-from aphrodite.v1.structured_output.backend_guidance import (
-    validate_guidance_grammar)
+from aphrodite.v1.structured_output.backend_guidance import validate_guidance_grammar
 from aphrodite.v1.structured_output.backend_lm_format_enforcer import (
-    validate_structured_output_request_lm_format_enforcer)
-from aphrodite.v1.structured_output.backend_outlines import (
-    validate_structured_output_request_outlines)
-from aphrodite.v1.structured_output.backend_xgrammar import (
-    validate_xgrammar_grammar)
+    validate_structured_output_request_lm_format_enforcer,
+)
+from aphrodite.v1.structured_output.backend_outlines import validate_structured_output_request_outlines
+from aphrodite.v1.structured_output.backend_xgrammar import validate_xgrammar_grammar
 
 logger = init_logger(__name__)
 
@@ -80,8 +77,7 @@ class Processor:
                 num_logprobs = self.model_config.get_vocab_size()
             if num_logprobs > max_logprobs:
                 raise ValueError(
-                    f"Requested sample logprobs of {num_logprobs}, "
-                    f"which is greater than max allowed: {max_logprobs}"
+                    f"Requested sample logprobs of {num_logprobs}, which is greater than max allowed: {max_logprobs}"
                 )
 
         # Validate prompt logprobs.
@@ -144,9 +140,7 @@ class Processor:
             raise ValueError("Aphrodite V1 does not yet support best_of.")
         # Logits processors not supported.
         if params.logits_processors:
-            raise ValueError(
-                "Aphrodite V1 does not support per request user provided logits processors."
-            )
+            raise ValueError("Aphrodite V1 does not support per request user provided logits processors.")
 
     def _validate_params(
         self,
@@ -183,11 +177,7 @@ class Processor:
             for modality, items in mm_data.items():
                 if modality in mm_uuids:
                     data_len = len(items) if isinstance(items, list) else 1
-                    uuid_len = (
-                        len(mm_uuids[modality])
-                        if isinstance(mm_uuids[modality], list)
-                        else 1
-                    )
+                    uuid_len = len(mm_uuids[modality]) if isinstance(mm_uuids[modality], list) else 1
                     if uuid_len != data_len:
                         raise ValueError(
                             f"multi_modal_uuids for modality '{modality}' "
@@ -197,8 +187,7 @@ class Processor:
                         )
                 else:
                     raise ValueError(
-                        f"multi_modal_uuids for modality '{modality}' must "
-                        "be provided if multi_modal_data is provided."
+                        f"multi_modal_uuids for modality '{modality}' must be provided if multi_modal_data is provided."
                     )
 
         # Handle explicit encoder/decoder prompts or singleton prompt
@@ -218,9 +207,7 @@ class Processor:
 
         # LoRA request passed in while LoRA is not enabled
         if not self.lora_config:
-            raise ValueError(
-                f"Got lora_request {lora_request} but LoRA is not enabled!"
-            )
+            raise ValueError(f"Got lora_request {lora_request} but LoRA is not enabled!")
 
         if self.tokenizer is not None:
             logger.warning_once(
@@ -247,9 +234,7 @@ class Processor:
             # to a specific backend based on `auto` behavior in a previous
             # request. We remember that it was set as a result of `auto`
             # using the `_backend_was_auto` field set in the params.
-            if backend != _backend and not (
-                backend == "auto" and params.structured_outputs._backend_was_auto
-            ):
+            if backend != _backend and not (backend == "auto" and params.structured_outputs._backend_was_auto):
                 raise ValueError(
                     "Request-level structured output backend selection is not "
                     f"supported. The request specified '{_backend}', but Aphrodite "
@@ -260,10 +245,7 @@ class Processor:
             params.structured_outputs._backend = backend
 
         # Request content validation
-        if (
-            isinstance(params.structured_outputs.choice, list)
-            and not params.structured_outputs.choice
-        ):
+        if isinstance(params.structured_outputs.choice, list) and not params.structured_outputs.choice:
             # It is invalid for choice to be an empty list
             raise ValueError(
                 f"Choice '{params.structured_outputs.choice}' cannot be an empty list"  # noqa: E501
@@ -352,13 +334,8 @@ class Processor:
         self._validate_params(params)
 
         data_parallel_size = self.aphrodite_config.parallel_config.data_parallel_size
-        if data_parallel_rank is not None and not (
-            0 <= data_parallel_rank < data_parallel_size
-        ):
-            raise ValueError(
-                f"data_parallel_rank {data_parallel_rank} "
-                f"is out of range [0, {data_parallel_size})."
-            )
+        if data_parallel_rank is not None and not (0 <= data_parallel_rank < data_parallel_size):
+            raise ValueError(f"data_parallel_rank {data_parallel_rank} is out of range [0, {data_parallel_size}).")
 
         if arrival_time is None:
             arrival_time = time.time()
@@ -382,9 +359,7 @@ class Processor:
             # if provided.
             self._validate_multi_modal_uuids(prompt)
             if isinstance(prompt, dict):
-                mm_uuids = cast(
-                    MultiModalUUIDDict | None, prompt.get("multi_modal_uuids")
-                )
+                mm_uuids = cast(MultiModalUUIDDict | None, prompt.get("multi_modal_uuids"))
             else:
                 mm_uuids = None
 
@@ -425,13 +400,9 @@ class Processor:
             sampling_params = params.clone()
             # If unset max tokens, then generate up to the max_model_len.
             if sampling_params.max_tokens is None:
-                seq_len = length_from_prompt_token_ids_or_embeds(
-                    prompt_token_ids, prompt_embeds
-                )
+                seq_len = length_from_prompt_token_ids_or_embeds(prompt_token_ids, prompt_embeds)
                 sampling_params.max_tokens = self.model_config.max_model_len - seq_len
-            sampling_params.update_from_generation_config(
-                self.generation_config_fields, eos_token_id
-            )
+            sampling_params.update_from_generation_config(self.generation_config_fields, eos_token_id)
             if self.tokenizer is not None:
                 sampling_params.update_from_tokenizer(self.tokenizer)
         else:
@@ -477,9 +448,7 @@ class Processor:
             trace_headers=trace_headers,
         )
 
-    def _validate_model_inputs(
-        self, encoder_inputs: SingletonInputs | None, decoder_inputs: SingletonInputs
-    ):
+    def _validate_model_inputs(self, encoder_inputs: SingletonInputs | None, decoder_inputs: SingletonInputs):
         if encoder_inputs is not None:
             self._validate_model_input(encoder_inputs, prompt_type="encoder")
 
@@ -493,16 +462,8 @@ class Processor:
     ):
         model_config = self.model_config
 
-        prompt_ids = (
-            None
-            if prompt_inputs["type"] == "embeds"
-            else prompt_inputs["prompt_token_ids"]
-        )
-        prompt_embeds = (
-            prompt_inputs["prompt_embeds"]
-            if prompt_inputs["type"] == "embeds"
-            else None
-        )
+        prompt_ids = None if prompt_inputs["type"] == "embeds" else prompt_inputs["prompt_token_ids"]
+        prompt_embeds = prompt_inputs["prompt_embeds"] if prompt_inputs["type"] == "embeds" else None
         prompt_len = length_from_prompt_token_ids_or_embeds(prompt_ids, prompt_embeds)
         if not prompt_ids:
             if prompt_type == "encoder" and model_config.is_multimodal_model:
@@ -526,9 +487,7 @@ class Processor:
 
             # Here we take the max of the two to determine if a token id is
             # truly out-of-vocabulary.
-            if max_input_id > max(
-                tokenizer.max_token_id, self.model_config.get_vocab_size() - 1
-            ):
+            if max_input_id > max(tokenizer.max_token_id, self.model_config.get_vocab_size() - 1):
                 raise ValueError(f"Token id {max_input_id} is out of vocabulary")
 
         max_prompt_len = self.model_config.max_model_len
@@ -552,10 +511,7 @@ class Processor:
                     "of images, and possibly their aspect ratios as well."
                 )
             else:
-                suggestion = (
-                    "Make sure that `max_model_len` is no smaller than the "
-                    "number of text tokens."
-                )
+                suggestion = "Make sure that `max_model_len` is no smaller than the number of text tokens."
 
             raise ValueError(
                 f"The {prompt_type} prompt (length {prompt_len}) is "

@@ -19,9 +19,7 @@ def test_bert_models(
     with aphrodite_runner(model, max_model_len=None, dtype=dtype) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.token_classify(example_prompts)
 
-    with hf_runner(
-        model, dtype=dtype, auto_cls=AutoModelForTokenClassification
-    ) as hf_model:
+    with hf_runner(model, dtype=dtype, auto_cls=AutoModelForTokenClassification) as hf_model:
         tokenizer = hf_model.tokenizer
         hf_outputs = []
         for prompt in example_prompts:
@@ -50,9 +48,7 @@ def test_modernbert_models(
     with aphrodite_runner(model, max_model_len=None, dtype=dtype) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.token_classify(example_prompts)
 
-    with hf_runner(
-        model, dtype=dtype, auto_cls=AutoModelForTokenClassification
-    ) as hf_model:
+    with hf_runner(model, dtype=dtype, auto_cls=AutoModelForTokenClassification) as hf_model:
         tokenizer = hf_model.tokenizer
         hf_outputs = []
         for prompt in example_prompts:

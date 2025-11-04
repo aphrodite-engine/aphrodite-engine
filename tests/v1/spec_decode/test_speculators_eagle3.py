@@ -22,9 +22,7 @@ from aphrodite.modeling.models.interfaces import supports_eagle3
         ),
     ],
 )
-def test_eagle3_speculators_model(
-    aphrodite_runner, example_prompts, model_path, monkeypatch
-):
+def test_eagle3_speculators_model(aphrodite_runner, example_prompts, model_path, monkeypatch):
     """
     Test Eagle3 speculators models properly initialize speculative decoding.
 
@@ -51,13 +49,10 @@ def test_eagle3_speculators_model(
 
         spec_config = aphrodite_config.speculative_config
         assert spec_config.num_speculative_tokens > 0, (
-            f"Expected positive speculative tokens, "
-            f"got {spec_config.num_speculative_tokens}"
+            f"Expected positive speculative tokens, got {spec_config.num_speculative_tokens}"
         )
 
-        assert spec_config.model == model_path, (
-            f"Draft model should be {model_path}, got {spec_config.model}"
-        )
+        assert spec_config.model == model_path, f"Draft model should be {model_path}, got {spec_config.model}"
 
         aphrodite_outputs = aphrodite_model.generate_greedy(example_prompts, max_tokens=20)
         assert aphrodite_outputs, f"No outputs generated for speculators model {model_path}"

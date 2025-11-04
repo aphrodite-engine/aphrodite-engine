@@ -16,9 +16,7 @@ from typing import Any
 
 import torch
 from torch.distributed import ProcessGroup, TCPStore
-from torch.distributed.distributed_c10d import (Backend, PrefixStore,
-                                                _get_default_timeout,
-                                                _unregister_process_group)
+from torch.distributed.distributed_c10d import Backend, PrefixStore, _get_default_timeout, _unregister_process_group
 from torch.distributed.rendezvous import rendezvous
 
 import aphrodite.envs as envs
@@ -31,9 +29,7 @@ logger = init_logger(__name__)
 # We prefer to use os.sched_yield as it results in tighter polling loops,
 # measured to be around 3e-7 seconds. However on earlier versions of Python
 # os.sched_yield() does not release the GIL, so we fall back to time.sleep(0)
-USE_SCHED_YIELD = (sys.version_info[:3] >= (3, 11, 1)) or (
-    sys.version_info[:2] == (3, 10) and sys.version_info[2] >= 8
-)
+USE_SCHED_YIELD = (sys.version_info[:3] >= (3, 11, 1)) or (sys.version_info[:2] == (3, 10) and sys.version_info[2] >= 8)
 
 
 def sched_yield():
@@ -45,9 +41,7 @@ def sched_yield():
 
 def ensure_divisibility(numerator, denominator):
     """Ensure that numerator is divisible by the denominator."""
-    assert numerator % denominator == 0, "{} is not divisible by {}".format(
-        numerator, denominator
-    )
+    assert numerator % denominator == 0, "{} is not divisible by {}".format(numerator, denominator)
 
 
 def divide(numerator, denominator):
@@ -85,9 +79,7 @@ def split_tensor_along_last_dim(
     return tensor_list
 
 
-def get_pp_indices(
-    num_hidden_layers: int, pp_rank: int, pp_size: int
-) -> tuple[int, int]:
+def get_pp_indices(num_hidden_layers: int, pp_rank: int, pp_size: int) -> tuple[int, int]:
     """Try to evenly distribute layers across partitions.
 
     If the number of layers is not divisible by the number of partitions,
@@ -106,9 +98,7 @@ def get_pp_indices(
         try:
             partitions = [int(layer) for layer in partition_list_str.split(",")]
         except ValueError as err:
-            raise ValueError(
-                "Invalid partition string: {}".format(partition_list_str)
-            ) from err
+            raise ValueError("Invalid partition string: {}".format(partition_list_str)) from err
         if len(partitions) != pp_size:
             raise ValueError(f"{len(partitions)=} does not match {pp_size=}.")
         if sum(partitions) != num_hidden_layers:
@@ -186,9 +176,7 @@ class StatelessProcessGroup:
 
     def recv_obj(self, src: int) -> Any:
         """Receive an object from a source rank."""
-        obj = pickle.loads(
-            self.store.get(f"send_to/{self.rank}/{self.recv_src_counter[src]}")
-        )
+        obj = pickle.loads(self.store.get(f"send_to/{self.rank}/{self.recv_src_counter[src]}"))
         self.recv_src_counter[src] += 1
         return obj
 
@@ -318,9 +306,7 @@ class StatelessProcessGroup:
         while len(processes_departed) < self.world_size:
             # Check for timeout
             if time.time() - start_time > timeout:
-                raise RuntimeError(
-                    f"Barrier departure timed out after {timeout:.2f} seconds"
-                )
+                raise RuntimeError(f"Barrier departure timed out after {timeout:.2f} seconds")
 
             # Check for each process
             for i in range(self.world_size):
@@ -422,7 +408,7 @@ def init_gloo_process_group(
     different torch versions.
     """
     from aphrodite.utils.system_utils import suppress_c_lib_output
-    
+
     with suppress_c_lib_output():
         if is_torch_equal_or_newer("2.6"):
             pg = ProcessGroup(
@@ -440,9 +426,7 @@ def init_gloo_process_group(
             )
         from torch.distributed.distributed_c10d import ProcessGroupGloo
 
-        backend_class = ProcessGroupGloo(
-            prefix_store, group_rank, group_size, timeout=timeout
-        )
+        backend_class = ProcessGroupGloo(prefix_store, group_rank, group_size, timeout=timeout)
         backend_type = ProcessGroup.BackendType.GLOO
         device = torch.device("cpu")
         if is_torch_equal_or_newer("2.6"):
@@ -492,9 +476,7 @@ def stateless_init_torch_distributed_process_group(
     backend = Backend(backend)  # it is basically string
     timeout = _get_default_timeout(backend)
 
-    store, rank, world_size = next(
-        rendezvous(init_method, rank, world_size, timeout=timeout)
-    )
+    store, rank, world_size = next(rendezvous(init_method, rank, world_size, timeout=timeout))
     store.set_timeout(timeout)
 
     group_rank = rank

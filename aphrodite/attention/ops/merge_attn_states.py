@@ -26,20 +26,11 @@ def merge_attn_states(
             return headdim % 4 == 0
         return headdim % 8 == 0
 
-    if (
-        current_platform.is_cuda()
-        and supported_dtypes(output)
-        and supported_headdim(output)
-    ):
+    if current_platform.is_cuda() and supported_dtypes(output) and supported_headdim(output):
         from aphrodite._custom_ops import merge_attn_states
 
-        return merge_attn_states(
-            output, prefix_output, prefix_lse, suffix_output, suffix_lse, output_lse
-        )
+        return merge_attn_states(output, prefix_output, prefix_lse, suffix_output, suffix_lse, output_lse)
     else:
-        from aphrodite.attention.ops.triton_merge_attn_states import (
-            merge_attn_states)
+        from aphrodite.attention.ops.triton_merge_attn_states import merge_attn_states
 
-        return merge_attn_states(
-            output, prefix_output, prefix_lse, suffix_output, suffix_lse, output_lse
-        )
+        return merge_attn_states(output, prefix_output, prefix_lse, suffix_output, suffix_lse, output_lse)

@@ -55,8 +55,7 @@ class XPUPlatform(Platform):
 
         set_kv_cache_layout("NHD")
         logger.info(
-            "Setting APHRODITE_KV_CACHE_LAYOUT to 'NHD' for XPU; "
-            "only NHD layout is supported by XPU attention kernels."
+            "Setting APHRODITE_KV_CACHE_LAYOUT to 'NHD' for XPU; only NHD layout is supported by XPU attention kernels."
         )
 
         from aphrodite.attention.backends.registry import _Backend
@@ -76,8 +75,7 @@ class XPUPlatform(Platform):
             return FLASH_ATTN
         elif selected_backend:
             raise ValueError(
-                f"Invalid attention backend for {cls.device_name}, "
-                f"with use_v1: {use_v1} use_mla: {use_mla}"
+                f"Invalid attention backend for {cls.device_name}, with use_v1: {use_v1} use_mla: {use_mla}"
             )
 
         logger.info("Using Flash Attention backend on V1 engine.", scope="global")
@@ -131,9 +129,7 @@ class XPUPlatform(Platform):
         if compilation_config.compile_sizes is None:
             compilation_config.compile_sizes = []
 
-        assert compilation_config.cudagraph_mode == CUDAGraphMode.NONE, (
-            "CUDA graph mode should be NONE on XPU"
-        )
+        assert compilation_config.cudagraph_mode == CUDAGraphMode.NONE, "CUDA graph mode should be NONE on XPU"
 
         if aphrodite_config.lora_config is not None:
             compilation_config.mode = CompilationMode.NONE
@@ -155,25 +151,21 @@ class XPUPlatform(Platform):
             # fork is not supported for xpu start new process.
             if envs.APHRODITE_WORKER_MULTIPROC_METHOD != "spawn":
                 os.environ["APHRODITE_WORKER_MULTIPROC_METHOD"] = "spawn"
-                logger.warning(
-                    "Please use spawn as start method if you want to use mp."
-                )
+                logger.warning("Please use spawn as start method if you want to use mp.")
         elif (
             parallel_config.distributed_executor_backend != "ray"
             and parallel_config.distributed_executor_backend != "uni"
             and parallel_config.distributed_executor_backend != "external_launcher"
         ):
             logger.warning(
-                "%s is not supported on XPU, fallback to ray distributed"
-                " executor backend.",
+                "%s is not supported on XPU, fallback to ray distributed executor backend.",
                 parallel_config.distributed_executor_backend,
             )
             parallel_config.distributed_executor_backend = "ray"
 
         if model_config and model_config.use_mla:
             logger.info(
-                "MLA is enabled on a non-GPU platform; forcing chunked "
-                "prefill and prefix caching to be disabled."
+                "MLA is enabled on a non-GPU platform; forcing chunked prefill and prefix caching to be disabled."
             )
             aphrodite_config.scheduler_config.enable_chunked_prefill = False
             aphrodite_config.scheduler_config.chunked_prefill_enabled = False
@@ -195,9 +187,7 @@ class XPUPlatform(Platform):
         return True
 
     @classmethod
-    def get_current_memory_usage(
-        cls, device: torch.types.Device | None = None
-    ) -> float:
+    def get_current_memory_usage(cls, device: torch.types.Device | None = None) -> float:
         torch.xpu.reset_peak_memory_stats(device)
         return torch.xpu.max_memory_allocated(device)
 

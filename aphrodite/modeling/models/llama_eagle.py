@@ -9,8 +9,7 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.llama import LlamaDecoderLayer, LlamaForCausalLM
 from aphrodite.quantization.base_config import QuantizationConfig
@@ -78,9 +77,7 @@ class LlamaModel(nn.Module):
                 for i in range(self.config.num_hidden_layers)
             ]
         )
-        self.fc = torch.nn.Linear(
-            self.config.hidden_size * 2, self.config.hidden_size, bias=False
-        )
+        self.fc = torch.nn.Linear(self.config.hidden_size * 2, self.config.hidden_size, bias=False)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -144,17 +141,11 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
         if getattr(self.config, "draft_vocab_size", None) is None:
             base_vocab_size = getattr(self.config, "vocab_size", None)
             self.config.draft_vocab_size = base_vocab_size
-        target_layer_num = aphrodite_config.model_config.get_num_layers(
-            aphrodite_config.parallel_config
-        )
-        self.model = LlamaModel(
-            aphrodite_config=aphrodite_config, prefix="model", start_layer_id=target_layer_num
-        )
+        target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
+        self.model = LlamaModel(aphrodite_config=aphrodite_config, prefix="model", start_layer_id=target_layer_num)
 
         logit_scale = getattr(self.config, "logit_scale", 1.0)
-        self.logits_processor = LogitsProcessor(
-            self.config.vocab_size, scale=logit_scale
-        )
+        self.logits_processor = LogitsProcessor(self.config.vocab_size, scale=logit_scale)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -167,9 +158,7 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
         inputs_embeds: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if inputs_embeds is not None:
-            raise NotImplementedError(
-                f"{type(self).__name__} does not support multimodal inputs yet."
-            )
+            raise NotImplementedError(f"{type(self).__name__} does not support multimodal inputs yet.")
         return self.model(input_ids, positions, hidden_states)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):

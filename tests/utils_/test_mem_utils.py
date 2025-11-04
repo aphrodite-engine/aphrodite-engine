@@ -10,8 +10,7 @@ from ..utils import create_new_process_for_each_test
 def test_memory_profiling():
     # Fake out some model loading + inference memory usage to test profiling
     # Memory used by other processes will show up as cuda usage outside of torch
-    from aphrodite.distributed.device_communicators.cuda_wrapper import (
-        CudaRTLibrary)
+    from aphrodite.distributed.device_communicators.cuda_wrapper import CudaRTLibrary
 
     lib = CudaRTLibrary()
     # 512 MiB allocation outside of this instance
@@ -33,9 +32,7 @@ def test_memory_profiling():
         return current_non_torch
 
     with (
-        memory_profiling(
-            baseline_snapshot=baseline_snapshot, weights_memory=weights_memory
-        ) as result,
+        memory_profiling(baseline_snapshot=baseline_snapshot, weights_memory=weights_memory) as result,
         monitor(measure_current_non_torch) as monitored_values,
     ):
         # make a memory spike, 1 GiB

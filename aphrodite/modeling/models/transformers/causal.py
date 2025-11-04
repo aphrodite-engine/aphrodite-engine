@@ -17,8 +17,7 @@ from typing import TYPE_CHECKING
 
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
-from aphrodite.modeling.models.interfaces_base import (
-    AphroditeModelForTextGeneration)
+from aphrodite.modeling.models.interfaces_base import AphroditeModelForTextGeneration
 from aphrodite.modeling.models.utils import PPMissingLayer, maybe_prefix
 
 if TYPE_CHECKING:
@@ -30,9 +29,7 @@ if TYPE_CHECKING:
 class CausalMixin(AphroditeModelForTextGeneration):
     def __init__(self, *, aphrodite_config: "AphroditeConfig", prefix: str = ""):
         # Skip AphroditeModelForTextGeneration.__init__ and call the next class in MRO
-        super(AphroditeModelForTextGeneration, self).__init__(
-            aphrodite_config=aphrodite_config, prefix=prefix
-        )
+        super(AphroditeModelForTextGeneration, self).__init__(aphrodite_config=aphrodite_config, prefix=prefix)
 
         # Tell `Base.load_weights` to skip
         # `lm_head` if the model has tied word embeddings
@@ -48,14 +45,10 @@ class CausalMixin(AphroditeModelForTextGeneration):
                 prefix=maybe_prefix(prefix, "lm_head"),
             )
             if self.text_config.tie_word_embeddings:
-                self.lm_head = self.lm_head.tie_weights(
-                    self.model.get_input_embeddings()
-                )
+                self.lm_head = self.lm_head.tie_weights(self.model.get_input_embeddings())
 
             logit_scale = getattr(self.text_config, "logit_scale", 1.0)
-            self.logits_processor = LogitsProcessor(
-                self.unpadded_vocab_size, self.text_config.vocab_size, logit_scale
-            )
+            self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, self.text_config.vocab_size, logit_scale)
         else:
             self.lm_head = PPMissingLayer()
 

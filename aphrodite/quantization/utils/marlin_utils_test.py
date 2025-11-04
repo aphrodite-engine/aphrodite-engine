@@ -5,18 +5,14 @@ import torch
 
 from aphrodite.scalar_type import ScalarType
 
-from .marlin_utils import (GPTQ_MARLIN_TILE, marlin_permute_scales,
-                           marlin_zero_points)
-from .quant_utils import (get_pack_factor, gptq_quantize_weights,
-                          quantize_weights, sort_weights)
+from .marlin_utils import GPTQ_MARLIN_TILE, marlin_permute_scales, marlin_zero_points
+from .quant_utils import get_pack_factor, gptq_quantize_weights, quantize_weights, sort_weights
 
 
 class MarlinWorkspace:
     def __init__(self, out_features, min_thread_n, max_parallel):
-        assert out_features % min_thread_n == 0, (
-            "out_features = {} is indivisible by min_thread_n = {}".format(
-                out_features, min_thread_n
-            )
+        assert out_features % min_thread_n == 0, "out_features = {} is indivisible by min_thread_n = {}".format(
+            out_features, min_thread_n
         )
 
         max_workspace_size = (out_features // min_thread_n) * max_parallel
@@ -104,9 +100,7 @@ def marlin_quantize(
     assert group_size <= size_k
 
     # Quantize (and apply act_order if provided)
-    w_ref, q_w, s, g_idx, rand_perm = gptq_quantize_weights(
-        w, quant_type, group_size, act_order, test_perm
-    )
+    w_ref, q_w, s, g_idx, rand_perm = gptq_quantize_weights(w, quant_type, group_size, act_order, test_perm)
 
     # For act_order, sort the "weights" and "g_idx" so that group ids are
     # increasing

@@ -29,9 +29,7 @@ class OffloadingSpec(ABC):
         self.extra_config = kv_transfer_config.kv_connector_extra_config
 
         self.gpu_block_size = aphrodite_config.cache_config.block_size
-        self.offloaded_block_size = int(
-            self.extra_config.get("block_size", self.gpu_block_size)
-        )
+        self.offloaded_block_size = int(self.extra_config.get("block_size", self.gpu_block_size))
 
         assert self.offloaded_block_size % self.gpu_block_size == 0
 

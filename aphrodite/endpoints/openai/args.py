@@ -15,10 +15,8 @@ from pydantic.dataclasses import dataclass
 
 import aphrodite.envs as envs
 from aphrodite.config import config
-from aphrodite.endpoints.chat_utils import (ChatTemplateContentFormatOption,
-                                            validate_chat_template)
-from aphrodite.endpoints.constants import (
-    H11_MAX_HEADER_COUNT_DEFAULT, H11_MAX_INCOMPLETE_EVENT_SIZE_DEFAULT)
+from aphrodite.endpoints.chat_utils import ChatTemplateContentFormatOption, validate_chat_template
+from aphrodite.endpoints.constants import H11_MAX_HEADER_COUNT_DEFAULT, H11_MAX_INCOMPLETE_EVENT_SIZE_DEFAULT
 from aphrodite.endpoints.openai.serving_models import LoRAModulePath
 from aphrodite.endpoints.openai.tool_parsers import ToolParserManager
 from aphrodite.engine.args_tools import AsyncEngineArgs, optional_type
@@ -26,7 +24,6 @@ from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 
 class LoRAParserAction(argparse.Action):
-
     def __call__(
         self,
         parser: argparse.ArgumentParser,
@@ -52,12 +49,9 @@ class LoRAParserAction(argparse.Action):
                     lora = LoRAModulePath(**lora_dict)
                     lora_list.append(lora)
                 except json.JSONDecodeError:
-                    parser.error(
-                        f"Invalid JSON format for --lora-modules: {item}")
+                    parser.error(f"Invalid JSON format for --lora-modules: {item}")
                 except TypeError as e:
-                    parser.error(
-                        f"Invalid fields for --lora-modules: {item} - {str(e)}"
-                    )
+                    parser.error(f"Invalid fields for --lora-modules: {item} - {str(e)}")
         setattr(namespace, self.dest, lora_list)
 
 
@@ -65,15 +59,14 @@ class LoRAParserAction(argparse.Action):
 @dataclass
 class FrontendArgs:
     """Arguments for the OpenAI-compatible frontend server."""
+
     host: str | None = None
     """Host name."""
     port: int = 2242
     """Port number."""
     uds: str | None = None
     """Unix domain socket path. If set, host and port arguments are ignored."""
-    uvicorn_log_level: Literal[
-        "debug", "info", "warning", "error", "critical", "trace"
-    ] = "info"
+    uvicorn_log_level: Literal["debug", "info", "warning", "error", "critical", "trace"] = "info"
     """Log level for uvicorn."""
     disable_uvicorn_access_log: bool = False
     """Disable uvicorn access log."""
@@ -215,8 +208,7 @@ class FrontendArgs:
         # Special case: Tool call parser shows built-in options.
         valid_tool_parsers = list(ToolParserManager.tool_parsers.keys())
         parsers_str = ",".join(valid_tool_parsers)
-        frontend_kwargs["tool_call_parser"]["metavar"] = (
-            f"{{{parsers_str}}} or name registered in --tool-parser-plugin")
+        frontend_kwargs["tool_call_parser"]["metavar"] = f"{{{parsers_str}}} or name registered in --tool-parser-plugin"
 
         frontend_group = parser.add_argument_group(
             title="Frontend",
@@ -235,26 +227,18 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
     register all arguments instead of manually enumerating them here. This
     avoids code duplication and keeps the argument definitions in one place.
     """
-    parser.add_argument("model_tag",
-                        type=str,
-                        nargs="?",
-                        help="The model tag to serve "
-                        "(optional if specified in config)")
+    parser.add_argument(
+        "model_tag", type=str, nargs="?", help="The model tag to serve (optional if specified in config)"
+    )
 
     parser.add_argument(
         "--headless",
         action="store_true",
         default=False,
-        help="Run in headless mode. See multi-node data parallel "
-        "documentation for more details.")
-    parser.add_argument("--api-server-count",
-                        "-asc",
-                        type=int,
-                        default=1,
-                        help="How many API server processes to run.")
-    parser.add_argument(
-        "--config",
-        help="Read CLI options from a config file.")
+        help="Run in headless mode. See multi-node data parallel documentation for more details.",
+    )
+    parser.add_argument("--api-server-count", "-asc", type=int, default=1, help="How many API server processes to run.")
+    parser.add_argument("--config", help="Read CLI options from a config file.")
     parser = FrontendArgs.add_cli_args(parser)
     parser = AsyncEngineArgs.add_cli_args(parser)
 
@@ -271,8 +255,7 @@ def validate_parsed_serve_args(args: argparse.Namespace):
 
     # Enable auto tool needs a tool call parser to be valid
     if args.enable_auto_tool_choice and not args.tool_call_parser:
-        raise TypeError("Error: --enable-auto-tool-choice requires "
-                        "--tool-call-parser")
+        raise TypeError("Error: --enable-auto-tool-choice requires --tool-call-parser")
 
     # Inline model loading requires dev mode
     if args.enable_inline_model_loading and not envs.APHRODITE_SERVER_DEV_MODE:
@@ -283,6 +266,5 @@ def validate_parsed_serve_args(args: argparse.Namespace):
 
 
 def create_parser_for_docs() -> FlexibleArgumentParser:
-    parser_for_docs = FlexibleArgumentParser(
-        prog="-m aphrodite.endpoints.openai.api_server")
+    parser_for_docs = FlexibleArgumentParser(prog="-m aphrodite.endpoints.openai.api_server")
     return make_arg_parser(parser_for_docs)

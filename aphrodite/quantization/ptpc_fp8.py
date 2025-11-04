@@ -5,15 +5,12 @@ from torch.nn.parameter import Parameter
 
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (LinearBase,
-                                              UnquantizedLinearMethod)
+from aphrodite.modeling.layers.linear import LinearBase, UnquantizedLinearMethod
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizeMethodBase
-from aphrodite.quantization.fp8 import (Fp8Config, Fp8KVCacheMethod,
-                                        Fp8LinearMethod)
-from aphrodite.quantization.utils.quant_utils import (GroupShape,
-                                                      is_layer_skipped)
+from aphrodite.quantization.fp8 import Fp8Config, Fp8KVCacheMethod, Fp8LinearMethod
+from aphrodite.quantization.utils.quant_utils import GroupShape, is_layer_skipped
 from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp
 
 ACTIVATION_SCHEMES = ["static", "dynamic"]
@@ -55,11 +52,8 @@ class PTPCFp8Config(Fp8Config):
         ignored_layers = cls.get_from_keys_or(config, ["ignored_layers"], None)
         return cls(activation_scheme=activation_scheme, ignored_layers=ignored_layers)
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
-        from aphrodite.attention.layer import (
-            Attention)  # Avoid circular import
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
+        from aphrodite.attention.layer import Attention  # Avoid circular import
 
         if isinstance(layer, LinearBase):
             if is_layer_skipped(prefix, self.ignored_layers):
@@ -87,15 +81,11 @@ class PTPCFp8LinearMethod(Fp8LinearMethod):
     """
 
     def __init__(self, quant_config: PTPCFp8Config):
-        assert current_platform.is_rocm(), (
-            "PTPCFp8LinearMethod is only supported on ROCm."
-        )
+        assert current_platform.is_rocm(), "PTPCFp8LinearMethod is only supported on ROCm."
         super().__init__(quant_config=quant_config)
         # Force weight quantization
         self.quant_config.is_checkpoint_fp8_serialized = False
-        self.fp8_linear = Fp8LinearOp(
-            act_quant_static=False, act_quant_group_shape=GroupShape.PER_TOKEN
-        )
+        self.fp8_linear = Fp8LinearOp(act_quant_static=False, act_quant_group_shape=GroupShape.PER_TOKEN)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         layer.weight = torch.nn.Parameter(layer.weight.data, requires_grad=False)
@@ -104,14 +94,10 @@ class PTPCFp8LinearMethod(Fp8LinearMethod):
             f"Currently torch._scaled_mm (hipBLASLt) rowwise gemm only support output dtype of bfloat16. {str(layer.weight.data.dtype)} is specified."  # noqa: E501
         )
         # Quantize the weights.
-        qweight, weight_scale = ops.scaled_fp8_quant(
-            layer.weight, scale=None, use_per_token_if_dynamic=True
-        )
+        qweight, weight_scale = ops.scaled_fp8_quant(layer.weight, scale=None, use_per_token_if_dynamic=True)
 
         # Update the layer with the new values.
-        layer.weight = Parameter(
-            qweight.t(), requires_grad=False
-        )  # Pretranspose the weight
+        layer.weight = Parameter(qweight.t(), requires_grad=False)  # Pretranspose the weight
         layer.weight_scale = Parameter(weight_scale, requires_grad=False)
         layer.input_scale = None
 

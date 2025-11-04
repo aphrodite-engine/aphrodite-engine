@@ -47,9 +47,7 @@ def get_test_prompts(mm_enabled: bool):
             placeholders = [
                 {
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"{APHRODITE_S3_BUCKET_URL}/{VLM_IMAGES_DIR}/stop_sign.jpg"
-                    },
+                    "image_url": {"url": f"{APHRODITE_S3_BUCKET_URL}/{VLM_IMAGES_DIR}/stop_sign.jpg"},
                 }
             ]
             prompt = [
@@ -162,14 +160,11 @@ def test_speculators_model_integration(
 
     spec_config = spec_llm.llm_engine.aphrodite_config.speculative_config
     assert spec_config.num_speculative_tokens > 0, (
-        f"Expected positive speculative tokens, "
-        f"got {spec_config.num_speculative_tokens}"
+        f"Expected positive speculative tokens, got {spec_config.num_speculative_tokens}"
     )
 
     # Verify draft model is set to the speculator model
-    assert spec_config.model == model_path, (
-        f"Draft model should be {model_path}, got {spec_config.model}"
-    )
+    assert spec_config.model == model_path, f"Draft model should be {model_path}, got {spec_config.model}"
 
     # Extract verifier model for reference run
     verifier_model = spec_llm.llm_engine.aphrodite_config.model_config.model
@@ -186,16 +181,11 @@ def test_speculators_model_integration(
     cleanup_dist_env_and_memory()
 
     # Compare outputs
-    matches = sum(
-        1
-        for ref, spec in zip(ref_outputs, spec_outputs)
-        if ref.outputs[0].text == spec.outputs[0].text
-    )
+    matches = sum(1 for ref, spec in zip(ref_outputs, spec_outputs) if ref.outputs[0].text == spec.outputs[0].text)
 
     # Heuristic: expect at least 66% of prompts to match exactly
     assert matches >= int(0.66 * len(ref_outputs)), (
-        f"Only {matches}/{len(ref_outputs)} outputs matched. "
-        f"Expected at least {int(0.66 * len(ref_outputs))} matches."
+        f"Only {matches}/{len(ref_outputs)} outputs matched. Expected at least {int(0.66 * len(ref_outputs))} matches."
     )
 
 
@@ -211,9 +201,7 @@ def test_speculators_model_integration(
                 1,
             ),
             False,
-            marks=pytest.mark.skip(
-                reason="Skipping due to its head_dim not being a a multiple of 32"
-            ),
+            marks=pytest.mark.skip(reason="Skipping due to its head_dim not being a a multiple of 32"),
         ),
         (
             (
@@ -306,19 +294,14 @@ def test_eagle_correctness(
             m.setenv("APHRODITE_ATTENTION_BACKEND", attn_backend)
 
         if attn_backend == "TRITON_ATTN" and not current_platform.is_rocm():
-            pytest.skip(
-                "TRITON_ATTN does not support "
-                "multi-token eagle spec decode on current platform"
-            )
+            pytest.skip("TRITON_ATTN does not support multi-token eagle spec decode on current platform")
 
         if attn_backend == "FLASH_ATTN" and current_platform.is_rocm():
             m.setenv("APHRODITE_ROCM_USE_AITER", "1")
 
         method, model_name, spec_model_name, tp_size = model_setup
 
-        ref_llm = LLM(
-            model=model_name, max_model_len=2048, tensor_parallel_size=tp_size
-        )
+        ref_llm = LLM(model=model_name, max_model_len=2048, tensor_parallel_size=tp_size)
         ref_outputs = ref_llm.chat(test_prompts, sampling_config)
         del ref_llm
         torch.cuda.empty_cache()

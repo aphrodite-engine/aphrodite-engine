@@ -51,9 +51,7 @@ def test_parse_raw_single_batch_token_consistent(token_input: list[int]):
 
 @pytest.mark.parametrize("inputs_slice", INPUTS_SLICES)
 def test_parse_raw_single_batch_string_slice(inputs_slice: slice):
-    assert parse_raw_prompts(STRING_INPUTS)[inputs_slice] == parse_raw_prompts(
-        STRING_INPUTS[inputs_slice]
-    )
+    assert parse_raw_prompts(STRING_INPUTS)[inputs_slice] == parse_raw_prompts(STRING_INPUTS[inputs_slice])
 
 
 @pytest.mark.parametrize(
@@ -69,13 +67,9 @@ def test_zip_enc_dec_prompts(mm_processor_kwargs, expected_mm_kwargs):
     """Test mm_processor_kwargs init for zipping enc/dec prompts."""
     encoder_prompts = ["An encoder prompt", "Another encoder prompt"]
     decoder_prompts = ["A decoder prompt", "Another decoder prompt"]
-    zipped_prompts = zip_enc_dec_prompts(
-        encoder_prompts, decoder_prompts, mm_processor_kwargs
-    )
+    zipped_prompts = zip_enc_dec_prompts(encoder_prompts, decoder_prompts, mm_processor_kwargs)
     assert len(zipped_prompts) == len(encoder_prompts) == len(decoder_prompts)
-    for enc, dec, exp_kwargs, zipped in zip(
-        encoder_prompts, decoder_prompts, expected_mm_kwargs, zipped_prompts
-    ):
+    for enc, dec, exp_kwargs, zipped in zip(encoder_prompts, decoder_prompts, expected_mm_kwargs, zipped_prompts):
         assert isinstance(zipped, dict)
         assert len(zipped.keys()) == 3
         assert zipped["encoder_prompt"] == enc

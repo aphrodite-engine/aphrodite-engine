@@ -32,9 +32,7 @@ def test_splade_pooler_matches_reference_formula(B, T, H, V):
         ],
         dtype=torch.long,
     )
-    meta = types.SimpleNamespace(
-        prompt_lens=prompt_lens_tenser, prompt_token_ids=token_ids
-    )
+    meta = types.SimpleNamespace(prompt_lens=prompt_lens_tenser, prompt_token_ids=token_ids)
 
     # MLM head (prefer BertMLMHead, fallback to Linear if unavailable)
     try:

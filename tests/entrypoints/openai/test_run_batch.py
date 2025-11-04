@@ -230,8 +230,6 @@ def test_reasoning_parser():
             assert line_dict["error"] is None
 
             # Check that reasoning_content is present and not empty
-            reasoning_content = line_dict["response"]["body"]["choices"][0]["message"][
-                "reasoning_content"
-            ]
+            reasoning_content = line_dict["response"]["body"]["choices"][0]["message"]["reasoning_content"]
             assert reasoning_content is not None
             assert len(reasoning_content) > 0

@@ -2,10 +2,8 @@ from dataclasses import dataclass
 
 import aphrodite.envs as envs
 from aphrodite.logger import init_logger
-from aphrodite.quantization.utils.flashinfer_fp4_moe import (
-    is_flashinfer_fp4_cutlass_moe_available)
-from aphrodite.quantization.utils.marlin_utils_fp4 import (
-    is_fp4_marlin_supported)
+from aphrodite.quantization.utils.flashinfer_fp4_moe import is_flashinfer_fp4_cutlass_moe_available
+from aphrodite.quantization.utils.marlin_utils_fp4 import is_fp4_marlin_supported
 from aphrodite.quantization.utils.quant_utils import cutlass_fp4_supported
 
 __all__ = ["detect_nvfp4_moe_support", "NvFp4Support"]
@@ -29,9 +27,7 @@ def detect_nvfp4_moe_support(class_name: str = "") -> NvFp4Support:
     allow_flashinfer = cutlass_supported and is_flashinfer_fp4_cutlass_moe_available()
 
     if allow_flashinfer:
-        _logger.info_once(
-            "Using FlashInfer kernels for %s.", class_name or "NVFP4 path"
-        )
+        _logger.info_once("Using FlashInfer kernels for %s.", class_name or "NVFP4 path")
     else:
         if envs.APHRODITE_USE_FLASHINFER_MOE_FP4:
             _logger.warning_once(
@@ -46,8 +42,7 @@ def detect_nvfp4_moe_support(class_name: str = "") -> NvFp4Support:
             _logger.info_once("Falling back to Marlin FP4 MoE kernel.")
         else:
             raise ValueError(
-                "Current platform does not support NVFP4 quantization. "
-                "Please use Blackwell GPUs or enable FlashInfer."
+                "Current platform does not support NVFP4 quantization. Please use Blackwell GPUs or enable FlashInfer."
             )
 
     return NvFp4Support(

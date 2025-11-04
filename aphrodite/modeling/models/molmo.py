@@ -10,8 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from transformers import (BatchFeature, PretrainedConfig, ProcessorMixin,
-                          TensorType)
+from transformers import BatchFeature, PretrainedConfig, ProcessorMixin, TensorType
 from transformers.image_utils import ImageInput
 from transformers.tokenization_utils_base import TextInput
 
@@ -21,44 +20,50 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.config.multimodal import BaseDummyOptions
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size,
-                                   split_tensor_along_last_dim,
-                                   tensor_model_parallel_all_gather)
-from aphrodite.modeling.layers.activation import (MulAndSilu, QuickGELU,
-                                                  SiluAndMul)
+from aphrodite.distributed import (
+    get_pp_group,
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+    split_tensor_along_last_dim,
+    tensor_model_parallel_all_gather,
+)
+from aphrodite.modeling.layers.activation import MulAndSilu, QuickGELU, SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptIndexTargets,
-                                             PromptInsertion, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptIndexTargets,
+    PromptInsertion,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
-from .interfaces import (MultiModalEmbeddings, SupportsLoRA,
-                         SupportsMultiModal, SupportsPP, SupportsQuant)
-from .utils import (AutoWeightsLoader, WeightsMapper, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP, SupportsQuant
+from .utils import (
+    AutoWeightsLoader,
+    WeightsMapper,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 # TODO: hard-coded for now. Consider making it configurable.
 VIT_LAYERS = [-2, -9]
@@ -202,13 +207,9 @@ class MultiHeadDotProductAttention(nn.Module):
         )
 
         self.scale = self.head_dim**-0.5
-        self.attn = MultiHeadAttention(
-            self.num_heads, self.head_dim, self.scale, num_kv_heads=self.num_kv_heads
-        )
+        self.attn = MultiHeadAttention(self.num_heads, self.head_dim, self.scale, num_kv_heads=self.num_kv_heads)
 
-    def forward(
-        self, inputs_q: torch.Tensor, inputs_kv: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def forward(self, inputs_q: torch.Tensor, inputs_kv: torch.Tensor | None = None) -> torch.Tensor:
         if inputs_kv is not None:
             inputs_k = inputs_kv
             inputs_v = inputs_kv
@@ -262,10 +263,7 @@ class BlockCollection(nn.Module):
     ):
         super().__init__()
         self.resblocks = nn.ModuleList(
-            [
-                ResidualAttentionBlock(config, quant_config)
-                for _ in range(config.image_num_layers)
-            ]
+            [ResidualAttentionBlock(config, quant_config) for _ in range(config.image_num_layers)]
         )
 
     def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
@@ -293,9 +291,7 @@ class VisionTransformer(nn.Module):
         self.patch_num = config.image_num_patch
         self.class_embedding = nn.Parameter(torch.randn(config.image_emb_dim) * scale)
         self.num_prefix_tokens: int = NUM_PREFIX_TOKENS
-        self.positional_embedding = nn.Parameter(
-            torch.randn(config.image_num_pos, config.image_emb_dim) * scale
-        )
+        self.positional_embedding = nn.Parameter(torch.randn(config.image_num_pos, config.image_emb_dim) * scale)
         image_patch_size = config.image_patch_size
         self.patch_embedding = nn.Linear(
             image_patch_size * image_patch_size * 3,
@@ -335,9 +331,7 @@ class VisionTransformer(nn.Module):
         x = x + torch.cat([cls_emb[None, :, :], pos_emb[None, :, :]], dim=1).to(x.dtype)
         return x
 
-    def forward(
-        self, x: torch.Tensor, patch_num: int | None = None
-    ) -> list[torch.Tensor]:
+    def forward(self, x: torch.Tensor, patch_num: int | None = None) -> list[torch.Tensor]:
         """
         : param x: (batch_size, num_patch, n_pixels)
         """
@@ -348,9 +342,7 @@ class VisionTransformer(nn.Module):
         x = self.patch_embedding(x)
 
         # class embeddings and positional embeddings
-        x = torch.cat(
-            [_expand_token(self.class_embedding, x.shape[0]).to(x.dtype), x], dim=1
-        )
+        x = torch.cat([_expand_token(self.class_embedding, x.shape[0]).to(x.dtype), x], dim=1)
         x = self.add_pos_emb(x, patch_num)
 
         x = self.pre_ln(x)
@@ -406,9 +398,7 @@ class MolmoAttention(nn.Module):
         self.q_norm: nn.Module | None = None
         if config.attention_layer_norm:
             self.tp_rank = get_tensor_model_parallel_rank()
-            self.k_norm = RMSNorm(
-                self.total_num_kv_heads * self.head_dim, eps=config.layer_norm_eps
-            )
+            self.k_norm = RMSNorm(self.total_num_kv_heads * self.head_dim, eps=config.layer_norm_eps)
             self.q_norm = RMSNorm(config.hidden_size, eps=config.layer_norm_eps)
 
         # Rotary embeddings.
@@ -437,9 +427,7 @@ class MolmoAttention(nn.Module):
             quant_config=quant_config,
         )
 
-    def _apply_qk_norm(
-        self, q: torch.Tensor, k: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _apply_qk_norm(self, q: torch.Tensor, k: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         if self.tp_size > 1:
             q = tensor_model_parallel_all_gather(q.contiguous())
             k = tensor_model_parallel_all_gather(k.contiguous())
@@ -555,9 +543,7 @@ class MolmoDecoderLayer(nn.Module):
     ) -> None:
         super().__init__()
         # Attention block.
-        self.self_attn = MolmoAttention(
-            config, cache_config, quant_config, prefix=f"{prefix}.self_attn"
-        )
+        self.self_attn = MolmoAttention(config, cache_config, quant_config, prefix=f"{prefix}.self_attn")
 
         # MLP block.
         self.mlp = LanguageModelMLP(config, quant_config=quant_config)
@@ -565,9 +551,7 @@ class MolmoDecoderLayer(nn.Module):
         # LayerNorm
         assert config.layer_norm_type == "rms"
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.layer_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def forward(
         self,
@@ -634,9 +618,7 @@ class MolmoVisionBackbone(nn.Module, SupportsQuant):
         )
         self.image_vit = VisionTransformer(vision_config, quant_config=quant_config)
         self.num_prefix_tokens = self.image_vit.num_prefix_tokens
-        assert self.num_prefix_tokens in {0, 1}, (
-            "Only 0 or 1 prefix tokens are supported"
-        )
+        assert self.num_prefix_tokens in {0, 1}, "Only 0 or 1 prefix tokens are supported"
         self.image_pooling_2d = MultiHeadDotProductAttention(
             vision_config, nlayers=len(self.vit_layers), quant_config=quant_config
         )
@@ -698,14 +680,10 @@ class MolmoVisionBackbone(nn.Module, SupportsQuant):
         assert image_masks is not None
         pad_embed = self.pad_embed[:, None, None, None, :]
         all_pad = image_masks == 0
-        partial_pad = torch.logical_and(image_masks < 1, torch.logical_not(all_pad)).to(
-            dtype=torch.float32
-        )
+        partial_pad = torch.logical_and(image_masks < 1, torch.logical_not(all_pad)).to(dtype=torch.float32)
         all_pad = all_pad.to(dtype=torch.float32)
         image_features = image_features + pad_embed[0] * torch.unsqueeze(all_pad, -1)
-        image_features = image_features + pad_embed[1] * torch.unsqueeze(
-            partial_pad, -1
-        )
+        image_features = image_features + pad_embed[1] * torch.unsqueeze(partial_pad, -1)
 
         image_features = image_features.to(og_dtype)
 
@@ -793,14 +771,10 @@ class MolmoModel(nn.Module, SupportsQuant):
             quant_config=quant_config,
         )
 
-        decoder_layer = (
-            MolmoDecoderNormAfterLayer if config.norm_after else MolmoDecoderLayer
-        )
+        decoder_layer = MolmoDecoderNormAfterLayer if config.norm_after else MolmoDecoderLayer
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: decoder_layer(
-                config, cache_config, quant_config, prefix=prefix
-            ),
+            lambda prefix: decoder_layer(config, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
 
@@ -840,9 +814,7 @@ class MolmoModel(nn.Module, SupportsQuant):
                 residual,
             )
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         if residual is not None:
             hidden_states, _ = self.norm(hidden_states, residual)
         else:
@@ -927,12 +899,7 @@ def get_patches_grid_size(
 
 
 def get_candidate_tilings(max_num: int) -> list[tuple[int, int]]:
-    tilings = [
-        (i, j)
-        for i in range(1, max_num + 1)
-        for j in range(1, max_num + 1)
-        if i * j <= max_num
-    ]
+    tilings = [(i, j) for i in range(1, max_num + 1) for j in range(1, max_num + 1) if i * j <= max_num]
     return sorted(tilings, key=lambda x: x[0] * x[1])
 
 
@@ -1307,11 +1274,7 @@ class MolmoMultiModalProcessor(BaseMultiModalProcessor[MolmoProcessingInfo]):
             )
 
             joint_row = [img_patch_id] * ((ncols + 1) // pooling_size) + [img_col_id]
-            joint = (
-                [img_start_id]
-                + joint_row * ((nrows + 1) // pooling_size)
-                + [img_end_id]
-            )
+            joint = [img_start_id] + joint_row * ((nrows + 1) // pooling_size) + [img_end_id]
 
             return PromptUpdateDetails.select_token_id(
                 extra_joint + joint,
@@ -1332,9 +1295,7 @@ class MolmoMultiModalProcessor(BaseMultiModalProcessor[MolmoProcessingInfo]):
     info=MolmoProcessingInfo,
     dummy_inputs=MolmoDummyInputsBuilder,
 )
-class MolmoForCausalLM(
-    nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA, SupportsQuant
-):
+class MolmoForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA, SupportsQuant):
     merge_by_field_config = True
 
     hf_to_aphrodite_mapper = WeightsMapper(
@@ -1390,9 +1351,7 @@ class MolmoForCausalLM(
 
         vision_config = VisionBackboneConfig()
         self.vision_backbone = MolmoVisionBackbone(config, vision_config, quant_config)
-        self.model = MolmoModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = MolmoModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.img_patch_id = None
 
         if self.config.weight_tying:
@@ -1405,13 +1364,9 @@ class MolmoForCausalLM(
                 prefix=maybe_prefix(prefix, "lm_head"),
             )
 
-        self.logits_processor = LogitsProcessor(
-            config.embedding_size or config.vocab_size
-        )
+        self.logits_processor = LogitsProcessor(config.embedding_size or config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def _parse_and_validate_image_input(
         self,
@@ -1489,9 +1444,7 @@ class MolmoForCausalLM(
         if intermediate_tensors is not None:
             inputs_embeds = None
 
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds=inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds=inputs_embeds)
 
         return hidden_states
 

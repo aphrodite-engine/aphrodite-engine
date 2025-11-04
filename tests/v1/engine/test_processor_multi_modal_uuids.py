@@ -3,8 +3,7 @@ import pytest
 from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.config import (AphroditeConfig, CacheConfig, DeviceConfig,
-                              ModelConfig)
+from aphrodite.config import AphroditeConfig, CacheConfig, DeviceConfig, ModelConfig
 from aphrodite.v1.engine import processor as processor_mod
 from aphrodite.v1.engine.processor import Processor
 
@@ -14,19 +13,13 @@ baby_reading_np_ndarrays = VideoAsset("baby_reading").np_ndarrays
 
 
 # Mock processor for testing
-def _mk_processor(
-    monkeypatch, *, mm_cache_gb: float = 4.0, enable_prefix_caching: bool = True
-) -> Processor:
+def _mk_processor(monkeypatch, *, mm_cache_gb: float = 4.0, enable_prefix_caching: bool = True) -> Processor:
     """
     Create a Processor instance with minimal configuration suitable for unit
     tests without accessing external resources.
     """
-    monkeypatch.setattr(
-        ModelConfig, "try_get_generation_config", lambda self: {}, raising=True
-    )
-    monkeypatch.setattr(
-        ModelConfig, "__post_init__", lambda self, *args: None, raising=True
-    )
+    monkeypatch.setattr(ModelConfig, "try_get_generation_config", lambda self: {}, raising=True)
+    monkeypatch.setattr(ModelConfig, "__post_init__", lambda self, *args: None, raising=True)
     monkeypatch.setattr(
         ModelConfig,
         "verify_with_parallel_config",
@@ -126,17 +119,13 @@ def test_multi_modal_uuids_accepts_none_and_passes_through(
     # Capture the overrides passed to InputPreprocessor.preprocess
     captured: dict[str, object] = {}
 
-    def fake_preprocess(
-        prompt, *, tokenization_kwargs=None, lora_request=None, mm_uuids=None
-    ):
+    def fake_preprocess(prompt, *, tokenization_kwargs=None, lora_request=None, mm_uuids=None):
         captured["mm_uuids"] = mm_uuids
         # Minimal processed inputs for decoder-only flow
         return {"type": "token", "prompt_token_ids": [1]}
 
     # Monkeypatch only the bound preprocess method on this instance
-    monkeypatch.setattr(
-        processor.input_preprocessor, "preprocess", fake_preprocess, raising=True
-    )
+    monkeypatch.setattr(processor.input_preprocessor, "preprocess", fake_preprocess, raising=True)
 
     # Use a consistent two-image scenario across all configurations
     mm_uuids = {"image": [None, "hash_stop"], "video": None}
@@ -165,15 +154,11 @@ def test_multi_modal_uuids_ignored_when_caching_disabled(monkeypatch):
 
     captured: dict[str, object] = {}
 
-    def fake_preprocess(
-        prompt, *, tokenization_kwargs=None, lora_request=None, mm_uuids=None
-    ):
+    def fake_preprocess(prompt, *, tokenization_kwargs=None, lora_request=None, mm_uuids=None):
         captured["mm_uuids"] = mm_uuids
         return {"type": "token", "prompt_token_ids": [1]}
 
-    monkeypatch.setattr(
-        processor.input_preprocessor, "preprocess", fake_preprocess, raising=True
-    )
+    monkeypatch.setattr(processor.input_preprocessor, "preprocess", fake_preprocess, raising=True)
 
     request_id = "req-42"
     mm_uuids = {"image": ["hash_cherry", "hash_stop"], "video": "hash_video"}

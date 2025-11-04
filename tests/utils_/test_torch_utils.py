@@ -1,8 +1,7 @@
 import pytest
 import torch
 
-from aphrodite.utils.torch_utils import (common_broadcastable_dtype,
-                                         current_stream, is_lossless_cast)
+from aphrodite.utils.torch_utils import common_broadcastable_dtype, current_stream, is_lossless_cast
 
 
 @pytest.mark.parametrize(
@@ -71,18 +70,13 @@ def _test_stream_thread(main_expected_stream: torch.cuda.Stream):
     child_thread.start()
 
     try:
-        assert thread_stream_ready.wait(timeout=5), (
-            "Child thread failed to enter stream context in time"
-        )
+        assert thread_stream_ready.wait(timeout=5), "Child thread failed to enter stream context in time"
 
         main_current_stream = current_stream()
 
-        assert main_current_stream != child_stream, (
-            "Main thread's current_stream was contaminated by child thread"
-        )
+        assert main_current_stream != child_stream, "Main thread's current_stream was contaminated by child thread"
         assert main_current_stream == main_expected_stream, (
-            f"Main thread's stream changed unexpectedly. "
-            f"Expected {main_expected_stream}, got {main_current_stream}"
+            f"Main thread's stream changed unexpectedly. Expected {main_expected_stream}, got {main_current_stream}"
         )
 
         thread_can_exit.set()

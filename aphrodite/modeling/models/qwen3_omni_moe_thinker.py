@@ -34,11 +34,11 @@ from transformers import PretrainedConfig
 from transformers import __version__ as TRANSFORMERS_VERSION
 from transformers.feature_extraction_utils import BatchFeature
 from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import (
-    Qwen3OmniMoeConfig, Qwen3OmniMoeThinkerConfig)
-from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
-    Qwen3OmniMoeAudioEncoder)
-from transformers.models.qwen3_omni_moe.processing_qwen3_omni_moe import (
-    Qwen3OmniMoeProcessor)
+    Qwen3OmniMoeConfig,
+    Qwen3OmniMoeThinkerConfig,
+)
+from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import Qwen3OmniMoeAudioEncoder
+from transformers.models.qwen3_omni_moe.processing_qwen3_omni_moe import Qwen3OmniMoeProcessor
 from transformers.models.whisper import WhisperFeatureExtractor
 
 from aphrodite.attention.backends.registry import _Backend
@@ -49,9 +49,7 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.distributed import get_pp_group
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.activation import _ACTIVATION_REGISTRY
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
@@ -59,27 +57,27 @@ from aphrodite.modeling.models.qwen2_audio import Qwen2AudioProcessingInfo
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import MultiModalKwargsItems
 from aphrodite.multimodal.parse import AudioProcessorItems, MultiModalDataItems
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             MultiModalPromptUpdates,
-                                             PlaceholderFeaturesInfo,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    MultiModalPromptUpdates,
+    PlaceholderFeaturesInfo,
+    PromptReplacement,
+    PromptUpdate,
+)
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import (MultiModalEmbeddings, SupportsMRoPE,
-                         SupportsMultiModal, SupportsPP)
-from .qwen2_5_omni_thinker import (Qwen2_5OmniAudioFeatureInputs,
-                                   Qwen2_5OmniConditionalGenerationMixin,
-                                   Qwen2_5OmniThinkerDummyInputsBuilder,
-                                   Qwen2_5OmniThinkerMultiModalProcessor,
-                                   Qwen2_5OmniThinkerProcessingInfo)
-from .qwen2_5_vl import (Qwen2_5_VisionAttention,
-                         Qwen2_5_VisionRotaryEmbedding,
-                         Qwen2_5_VLProcessingInfo)
+from .interfaces import MultiModalEmbeddings, SupportsMRoPE, SupportsMultiModal, SupportsPP
+from .qwen2_5_omni_thinker import (
+    Qwen2_5OmniAudioFeatureInputs,
+    Qwen2_5OmniConditionalGenerationMixin,
+    Qwen2_5OmniThinkerDummyInputsBuilder,
+    Qwen2_5OmniThinkerMultiModalProcessor,
+    Qwen2_5OmniThinkerProcessingInfo,
+)
+from .qwen2_5_vl import Qwen2_5_VisionAttention, Qwen2_5_VisionRotaryEmbedding, Qwen2_5_VLProcessingInfo
 from .qwen3_moe import Qwen3MoeForCausalLM, Qwen3MoeModel
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    _merge_multimodal_embeddings, flatten_bn, maybe_prefix)
-from .vision import (conv3d_to_linear_weight, get_llm_pos_ids_for_vision,
-                     get_vit_attn_backend)
+from .utils import AutoWeightsLoader, WeightsMapper, _merge_multimodal_embeddings, flatten_bn, maybe_prefix
+from .vision import conv3d_to_linear_weight, get_llm_pos_ids_for_vision, get_vit_attn_backend
 
 try:
     import flash_attn
@@ -92,9 +90,7 @@ logger = init_logger(__name__)
 def _get_feat_extract_output_lengths(input_lengths: torch.Tensor):
     input_lengths_leave = input_lengths % 100
     feat_lengths = (input_lengths_leave - 1) // 2 + 1
-    output_lengths = (
-        ((feat_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
-    )
+    output_lengths = ((feat_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
     return feat_lengths, output_lengths
 
 
@@ -232,9 +228,7 @@ class Qwen3_VisionPatchMerger(nn.Module):
         if norm_layer is None:
             norm_layer = partial(nn.LayerNorm, eps=1e-6)
         self.use_postshuffle_norm = use_postshuffle_norm
-        self.ln_q = norm_layer(
-            self.hidden_size if use_postshuffle_norm else context_dim
-        )
+        self.ln_q = norm_layer(self.hidden_size if use_postshuffle_norm else context_dim)
         self.mlp = nn.ModuleList(
             [
                 ColumnParallelLinear(
@@ -300,9 +294,7 @@ class Qwen3Omni_VisionTransformer(nn.Module):
         if self.apply_vit_abs_pos_embed:
             self.pos_embed = nn.Embedding(self.num_grid_per_side**2, self.hidden_size)
         else:
-            self.pos_embed = nn.Parameter(
-                torch.empty([1, self.num_grid_per_side**2, self.hidden_size])
-            )
+            self.pos_embed = nn.Parameter(torch.empty([1, self.num_grid_per_side**2, self.hidden_size]))
 
         norm_layer = partial(nn.LayerNorm, eps=norm_eps)
         head_dim = self.hidden_size // self.num_heads
@@ -351,9 +343,7 @@ class Qwen3Omni_VisionTransformer(nn.Module):
             dtype=torch.get_default_dtype(),
             attn_backend_override=attn_backend_override,
         )
-        if self.attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(
-            torch.get_default_dtype()
-        ):
+        if self.attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(torch.get_default_dtype()):
             self.attn_backend = _Backend.FLASH_ATTN
 
     @property
@@ -400,12 +390,8 @@ class Qwen3Omni_VisionTransformer(nn.Module):
 
         outputs = []
         for t, h, w in grid_thw:
-            h_idxs = torch.linspace(
-                0, num_grid_per_side - 1, h, dtype=torch.float32, device=self.device
-            )
-            w_idxs = torch.linspace(
-                0, num_grid_per_side - 1, w, dtype=torch.float32, device=self.device
-            )
+            h_idxs = torch.linspace(0, num_grid_per_side - 1, h, dtype=torch.float32, device=self.device)
+            w_idxs = torch.linspace(0, num_grid_per_side - 1, w, dtype=torch.float32, device=self.device)
 
             h_floor = h_idxs.to(torch.long)
             w_floor = w_idxs.to(torch.long)
@@ -450,9 +436,7 @@ class Qwen3Omni_VisionTransformer(nn.Module):
 
             combined = combined.view(h * w, hidden_dim)
             repeated = combined.unsqueeze(0).expand(t, -1, -1).contiguous()
-            repeated = repeated.view(
-                t, h // m_size, m_size, w // m_size, m_size, hidden_dim
-            )
+            repeated = repeated.view(t, h // m_size, m_size, w // m_size, m_size, hidden_dim)
             repeated = repeated.permute(0, 1, 3, 2, 4, 5).reshape(-1, hidden_dim)
             outputs.append(repeated)
 
@@ -483,9 +467,7 @@ class Qwen3Omni_VisionTransformer(nn.Module):
             hidden_states = hidden_states + pos_embeds
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
 
-        cu_seqlens = torch.repeat_interleave(
-            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
-        ).cumsum(
+        cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0,
             dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
         )
@@ -506,10 +488,7 @@ class Qwen3Omni_VisionTransformer(nn.Module):
                 max_seqlen=max_seqlen,
                 seqlens=seqlens,
             )
-            if (
-                deepstack_visual_indexes is not None
-                and layer_num in deepstack_visual_indexes
-            ):
+            if deepstack_visual_indexes is not None and layer_num in deepstack_visual_indexes:
                 hidden_states_list.append(hidden_states)
 
         hidden_states = self.merger(hidden_states)
@@ -592,9 +571,7 @@ class Qwen3MoeLLMModel(Qwen3MoeModel):
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
-        for layer_idx, layer in enumerate(
-            self.layers[self.start_layer : self.end_layer]
-        ):
+        for layer_idx, layer in enumerate(self.layers[self.start_layer : self.end_layer]):
             layer_idx = layer_idx + self.start_layer
 
             hidden_states, residual = layer(
@@ -603,18 +580,11 @@ class Qwen3MoeLLMModel(Qwen3MoeModel):
                 residual,
             )
 
-            if deepstack_input_embeds is not None and layer_idx in range(
-                0, len(deepstack_input_embeds)
-            ):
-                hidden_states = (
-                    hidden_states
-                    + deepstack_input_embeds[f"deepstack_input_embeds_{layer_idx}"]
-                )
+            if deepstack_input_embeds is not None and layer_idx in range(0, len(deepstack_input_embeds)):
+                hidden_states = hidden_states + deepstack_input_embeds[f"deepstack_input_embeds_{layer_idx}"]
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -626,23 +596,15 @@ class Qwen3MoeLLMForCausalLM(Qwen3MoeForCausalLM):
         quant_config = aphrodite_config.quant_config
         self.config = config
         self.quant_config = quant_config
-        self.model = Qwen3MoeLLMModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
-        self.lm_head = ParallelLMHead(
-            config.vocab_size, config.hidden_size, quant_config=quant_config
-        )
+        self.model = Qwen3MoeLLMModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
+        self.lm_head = ParallelLMHead(config.vocab_size, config.hidden_size, quant_config=quant_config)
         if self.config.tie_word_embeddings:
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
 
-class Qwen3OmniMoeThinkerProcessingInfo(
-    Qwen2AudioProcessingInfo, Qwen2_5_VLProcessingInfo
-):
+class Qwen3OmniMoeThinkerProcessingInfo(Qwen2AudioProcessingInfo, Qwen2_5_VLProcessingInfo):
     def get_hf_config(self):
         return self.ctx.get_hf_config(Qwen3OmniMoeConfig).thinker_config
 
@@ -715,12 +677,8 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
             if Version(TRANSFORMERS_VERSION) < Version("4.58.0"):
                 # move truncation to audio_kwargs level to avoid conflict
                 # with tok_kwargs
-                mm_kwargs["audio_kwargs"] = {
-                    "truncation": mm_kwargs.pop("truncation", False)
-                }
-                mm_kwargs["text_kwargs"] = {
-                    "truncation": tok_kwargs.pop("truncation", False)
-                }
+                mm_kwargs["audio_kwargs"] = {"truncation": mm_kwargs.pop("truncation", False)}
+                mm_kwargs["text_kwargs"] = {"truncation": tok_kwargs.pop("truncation", False)}
 
         hf_inputs = super()._call_hf_processor(
             prompt=prompt,
@@ -738,18 +696,12 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
             for _, audio in enumerate(audios):
                 audio_length = len(audio[0]) if isinstance(audio, tuple) else len(audio)
                 num_frame = (
-                    (audio_length // hop_length)
-                    if audio_length % hop_length == 0
-                    else (audio_length // hop_length - 1)
+                    (audio_length // hop_length) if audio_length % hop_length == 0 else (audio_length // hop_length - 1)
                 )
                 if mm_kwargs.get("truncation", False):
-                    num_frame = min(
-                        num_frame, feature_extractor.n_samples // hop_length
-                    )
+                    num_frame = min(num_frame, feature_extractor.n_samples // hop_length)
                 audio_num_frames.append(num_frame)
-            hf_inputs["feature_attention_mask"] = [
-                torch.ones(num_frame) for num_frame in audio_num_frames
-            ]
+            hf_inputs["feature_attention_mask"] = [torch.ones(num_frame) for num_frame in audio_num_frames]
             hf_inputs["audio_feature_lengths"] = torch.tensor(audio_num_frames)
         return hf_inputs
 
@@ -836,19 +788,12 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
             video_token_indices, (video_token_indices.shape[0], height, width)
         ).reshape(-1)
         video_token_indices = (
-            (video_token_indices + shift)
-            * next(iter([video_second_per_grid_t]))
-            * position_id_per_seconds
+            (video_token_indices + shift) * next(iter([video_second_per_grid_t])) * position_id_per_seconds
         )
         video_data_index, audio_data_index = 0, 0
         updates = [audio_start_token_id]
-        while video_data_index < len(video_token_indices) and audio_data_index < len(
-            audio_token_indices
-        ):
-            if (
-                video_token_indices[video_data_index]
-                <= audio_token_indices[audio_data_index]
-            ):
+        while video_data_index < len(video_token_indices) and audio_data_index < len(audio_token_indices):
+            if video_token_indices[video_data_index] <= audio_token_indices[audio_data_index]:
                 updates += [video_token_id]
                 video_data_index += 1
             else:
@@ -885,15 +830,11 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
         if audio_feature_lengths is None and feature_attention_mask is None:
             audio_output_lengths = []
         elif audio_feature_lengths is not None:
-            _, audio_output_lens = _get_feat_extract_output_lengths(
-                audio_feature_lengths
-            )
+            _, audio_output_lens = _get_feat_extract_output_lengths(audio_feature_lengths)
             audio_output_lengths = audio_output_lens.tolist()
         elif feature_attention_mask is not None:
             assert isinstance(feature_attention_mask, torch.Tensor)
-            _, audio_output_lens = _get_feat_extract_output_lengths(
-                feature_attention_mask.sum(-1)
-            )
+            _, audio_output_lens = _get_feat_extract_output_lengths(feature_attention_mask.sum(-1))
             audio_output_lengths = audio_output_lens.tolist()
 
         # number of audios read from video.
@@ -911,8 +852,7 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
                 audios = mm_items.get_items("audio", AudioProcessorItems)
                 audio = audios.get(item_idx)
                 raise ValueError(
-                    f"The audio {audio} (len={len(audio)}) is too short "
-                    "to be represented inside the model"
+                    f"The audio {audio} (len={len(audio)}) is too short to be represented inside the model"
                 )
 
             return [audio_token_id] * num_features
@@ -977,9 +917,9 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
         mm_placeholders: Mapping[str, list[PlaceholderFeaturesInfo]],
         mm_item_counts: Mapping[str, int],
     ) -> None:
-        BaseMultiModalProcessor[
-            Qwen2_5OmniThinkerProcessingInfo
-        ]._validate_mm_placeholders(self, mm_placeholders, mm_item_counts)
+        BaseMultiModalProcessor[Qwen2_5OmniThinkerProcessingInfo]._validate_mm_placeholders(
+            self, mm_placeholders, mm_item_counts
+        )
 
     def _get_raw_input_ids(
         self,
@@ -1010,11 +950,7 @@ class Qwen3OmniMoeThinkerMultiModalProcessor(
                             end = i
                             break
                     if end is not None:
-                        result = (
-                            result[:start]
-                            + [vision_bos_token, video_token, vision_eos_token]
-                            + result[end + 2 :]
-                        )
+                        result = result[:start] + [vision_bos_token, video_token, vision_eos_token] + result[end + 2 :]
                 else:
                     break
 
@@ -1040,9 +976,7 @@ class Qwen3OmniMoeConditionalGenerationMixin(Qwen2_5OmniConditionalGenerationMix
 
         audio_feature_lengths = flatten_bn(audio_feature_lengths, concat=True)
 
-        audio_feat_lengths, audio_output_lengths = _get_feat_extract_output_lengths(
-            audio_feature_lengths
-        )
+        audio_feat_lengths, audio_output_lengths = _get_feat_extract_output_lengths(audio_feature_lengths)
 
         audio_outputs = self.audio_tower(
             input_features.to(self.audio_tower.dtype),
@@ -1089,9 +1023,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         self.aphrodite_config = aphrodite_config  # needed for torch compile forward context
-        thinker_config: Qwen3OmniMoeThinkerConfig = (
-            aphrodite_config.model_config.hf_config.thinker_config
-        )
+        thinker_config: Qwen3OmniMoeThinkerConfig = aphrodite_config.model_config.hf_config.thinker_config
         quant_config = aphrodite_config.quant_config
         multimodal_config = aphrodite_config.model_config.multimodal_config
         self.config = thinker_config
@@ -1112,11 +1044,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
 
         self.audio_tower = Qwen3OmniMoeAudioEncoder(thinker_config.audio_config)
 
-        attn_backend_override = (
-            multimodal_config.mm_encoder_attn_backend
-            if multimodal_config is not None
-            else None
-        )
+        attn_backend_override = multimodal_config.mm_encoder_attn_backend if multimodal_config is not None else None
         self.visual = Qwen3Omni_VisionTransformer(
             vision_config=thinker_config.vision_config,
             norm_eps=getattr(thinker_config.text_config, "rms_norm_eps", 1e-6),
@@ -1133,17 +1061,11 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             prefix=maybe_prefix(prefix, "language_model"),
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-        self.use_deepstack = hasattr(
-            thinker_config.vision_config, "deepstack_visual_indexes"
-        )
+        self.use_deepstack = hasattr(thinker_config.vision_config, "deepstack_visual_indexes")
         self.deepstack_num_level = (
-            len(thinker_config.vision_config.deepstack_visual_indexes)
-            if self.use_deepstack
-            else 0
+            len(thinker_config.vision_config.deepstack_visual_indexes) if self.use_deepstack else 0
         )
         # register buffer for deepstack
         self.deepstack_input_embeds = (
@@ -1164,9 +1086,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         # get deepstack_input_embeds from buffer, and clear the buffer
         return IntermediateTensors(
             {
-                f"deepstack_input_embeds_{idx}": self.deepstack_input_embeds[idx][
-                    :num_tokens
-                ]
+                f"deepstack_input_embeds_{idx}": self.deepstack_input_embeds[idx][:num_tokens]
                 for idx in range(self.deepstack_num_level)
             }
         )
@@ -1185,9 +1105,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                 for _ in range(self.deepstack_num_level)
             ]
         for idx in range(self.deepstack_num_level):
-            self.deepstack_input_embeds[idx][:num_tokens].copy_(
-                deepstack_input_embeds[idx]
-            )
+            self.deepstack_input_embeds[idx][:num_tokens].copy_(deepstack_input_embeds[idx])
 
     def _clear_deepstack_input_embeds(self, num_tokens: int) -> None:
         # clear deepstack_input_embeds in buffer
@@ -1201,35 +1119,18 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         # Preserve the order of modalities if there are multiple of them
         # from the order of kwargs.
         for input_key in kwargs:
-            if (
-                input_key in ("pixel_values", "image_embeds")
-                and "image" not in mm_input_by_modality
-            ):
-                mm_input_by_modality["image"] = self._parse_and_validate_image_input(
-                    **kwargs
-                )
-            if (
-                input_key in ("pixel_values_videos", "video_embeds")
-                and "video" not in mm_input_by_modality
-            ):
-                mm_input_by_modality["video"] = self._parse_and_validate_video_input(
-                    **kwargs
-                )
-            if (
-                input_key in ("input_audio_features")
-                and "audio" not in mm_input_by_modality
-            ):
-                mm_input_by_modality["audio"] = self._parse_and_validate_audio_input(
-                    **kwargs
-                )
+            if input_key in ("pixel_values", "image_embeds") and "image" not in mm_input_by_modality:
+                mm_input_by_modality["image"] = self._parse_and_validate_image_input(**kwargs)
+            if input_key in ("pixel_values_videos", "video_embeds") and "video" not in mm_input_by_modality:
+                mm_input_by_modality["video"] = self._parse_and_validate_video_input(**kwargs)
+            if input_key in ("input_audio_features") and "audio" not in mm_input_by_modality:
+                mm_input_by_modality["audio"] = self._parse_and_validate_audio_input(**kwargs)
         return mm_input_by_modality
 
     def get_language_model(self) -> torch.nn.Module:
         return self.language_model
 
-    def get_multimodal_embeddings(
-        self, **kwargs: object
-    ) -> MultiModalEmbeddings | None:
+    def get_multimodal_embeddings(self, **kwargs: object) -> MultiModalEmbeddings | None:
         mm_input_by_modality = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not mm_input_by_modality:
             return []
@@ -1276,12 +1177,9 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         # `use_audio_in_video` will work on V1.
         # split the feat dim to obtain multi-scale visual feature
         has_vision_embeddings = [
-            embeddings.shape[-1] != self.config.text_config.hidden_size
-            for embeddings in multimodal_embeddings
+            embeddings.shape[-1] != self.config.text_config.hidden_size for embeddings in multimodal_embeddings
         ]
-        if self.visual.deepstack_visual_indexes is not None and any(
-            has_vision_embeddings
-        ):
+        if self.visual.deepstack_visual_indexes is not None and any(has_vision_embeddings):
             multiscale_len = len(self.visual.deepstack_visual_indexes)
             multimodal_embeddings_multiscale = []
             is_vision = torch.zeros_like(is_multimodal)
@@ -1289,17 +1187,13 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             mm_position_idx = 0
             for index, embeddings in enumerate(multimodal_embeddings):
                 num_tokens = embeddings.shape[0]
-                current_positions = mm_positions[
-                    mm_position_idx : mm_position_idx + num_tokens
-                ]
+                current_positions = mm_positions[mm_position_idx : mm_position_idx + num_tokens]
 
                 # Vision embeddings
                 if embeddings.shape[-1] != self.config.text_config.hidden_size:
                     visual_dim = embeddings.shape[-1] // (multiscale_len + 1)
                     multi_dim = visual_dim * multiscale_len
-                    embeddings_main, embeddings_multiscale = torch.split(
-                        embeddings, [visual_dim, multi_dim], dim=-1
-                    )
+                    embeddings_main, embeddings_multiscale = torch.split(embeddings, [visual_dim, multi_dim], dim=-1)
                     multimodal_embeddings[index] = embeddings_main
                     multimodal_embeddings_multiscale.append(embeddings_multiscale)
                     is_vision[current_positions] = True
@@ -1319,9 +1213,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                 is_multimodal=is_vision,
             )
             deepstack_input_embeds = (
-                deepstack_input_embeds.view(
-                    inputs_embeds.shape[0], multiscale_len, visual_dim
-                )
+                deepstack_input_embeds.view(inputs_embeds.shape[0], multiscale_len, visual_dim)
                 .permute(1, 0, 2)
                 .contiguous()
             )
@@ -1346,14 +1238,8 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         if intermediate_tensors is not None:
             inputs_embeds = None
 
-        if (
-            self.use_deepstack
-            and inputs_embeds is not None
-            and get_pp_group().is_first_rank
-        ):
-            deepstack_input_embeds = self._get_deepstack_input_embeds(
-                inputs_embeds.size(0)
-            )
+        if self.use_deepstack and inputs_embeds is not None and get_pp_group().is_first_rank:
+            deepstack_input_embeds = self._get_deepstack_input_embeds(inputs_embeds.size(0))
         else:
             deepstack_input_embeds = None
 
@@ -1408,17 +1294,11 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             raise ValueError("_omni3_get_input_positions_tensor expects 1D input_ids")
 
         seq_len = input_ids.shape[0]
-        if audio_feature_lengths is not None and not isinstance(
-            audio_feature_lengths, torch.Tensor
-        ):
-            audio_feature_lengths = torch.as_tensor(
-                audio_feature_lengths, dtype=torch.long
-            )
+        if audio_feature_lengths is not None and not isinstance(audio_feature_lengths, torch.Tensor):
+            audio_feature_lengths = torch.as_tensor(audio_feature_lengths, dtype=torch.long)
         if second_per_grid_ts is None:
             if video_grid_thw is not None and video_grid_thw.numel() > 0:
-                second_per_grids = torch.ones(
-                    video_grid_thw.shape[0], dtype=torch.float32
-                )
+                second_per_grids = torch.ones(video_grid_thw.shape[0], dtype=torch.float32)
             else:
                 second_per_grids = torch.tensor([], dtype=torch.float32)
         else:
@@ -1432,9 +1312,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         audio_start_token_id = config.audio_start_token_id
         position_id_per_seconds = config.position_id_per_seconds
 
-        vision_start_indices = torch.argwhere(
-            input_ids == vision_start_token_id
-        ).squeeze(1)
+        vision_start_indices = torch.argwhere(input_ids == vision_start_token_id).squeeze(1)
         if vision_start_indices.numel() > 0:
             vision_tokens = input_ids[vision_start_indices + 1]
         else:
@@ -1453,11 +1331,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         video_idx = 0
         audio_idx = 0
         remain_images, remain_videos, remain_audios = image_nums, video_nums, audio_nums  # noqa: E501
-        multimodal_nums = (
-            image_nums + audio_nums
-            if use_audio_in_video
-            else image_nums + video_nums + audio_nums
-        )  # noqa: E501
+        multimodal_nums = image_nums + audio_nums if use_audio_in_video else image_nums + video_nums + audio_nums  # noqa: E501
 
         for _ in range(multimodal_nums):
             st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
@@ -1477,55 +1351,28 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                 text_len = min_ed - st
                 if text_len != 0:
                     st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
-                    llm_pos_ids_list.append(
-                        torch.arange(text_len, dtype=torch.long)
-                        .view(1, -1)
-                        .expand(3, -1)
-                        + st_idx
-                    )
+                    llm_pos_ids_list.append(torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 bos_len = 1
-                llm_pos_ids_list.append(
-                    torch.arange(bos_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                llm_pos_ids_list.append(torch.arange(bos_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
-                _, audio_len = _get_feat_extract_output_lengths(
-                    audio_feature_lengths[audio_idx]
-                )
-                llm_pos_ids = (
-                    torch.arange(audio_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                _, audio_len = _get_feat_extract_output_lengths(audio_feature_lengths[audio_idx])
+                llm_pos_ids = torch.arange(audio_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx
                 llm_pos_ids_list.append(llm_pos_ids)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 eos_len = 1
-                llm_pos_ids_list.append(
-                    torch.arange(eos_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                llm_pos_ids_list.append(torch.arange(eos_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st += text_len + bos_len + audio_len + eos_len
                 audio_idx += 1
                 remain_audios -= 1
-            elif (
-                min_ed == ed_vision_start
-                and input_ids[ed_vision_start + 1] == image_token_id
-            ):
+            elif min_ed == ed_vision_start and input_ids[ed_vision_start + 1] == image_token_id:
                 text_len = min_ed - st
                 if text_len != 0:
                     st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
-                    llm_pos_ids_list.append(
-                        torch.arange(text_len, dtype=torch.long)
-                        .view(1, -1)
-                        .expand(3, -1)
-                        + st_idx
-                    )
+                    llm_pos_ids_list.append(torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 bos_len = 1
-                llm_pos_ids_list.append(
-                    torch.arange(bos_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                llm_pos_ids_list.append(torch.arange(bos_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 grid_t = image_grid_thw[image_idx][0]
                 grid_hs = image_grid_thw[:, 1]
@@ -1538,10 +1385,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                 llm_pos_ids_list.append(llm_pos_ids)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 eos_len = 1
-                llm_pos_ids_list.append(
-                    torch.arange(eos_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                llm_pos_ids_list.append(torch.arange(eos_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st += text_len + bos_len + image_len + eos_len
                 image_idx += 1
                 remain_images -= 1
@@ -1553,27 +1397,15 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                 text_len = min_ed - st
                 if text_len != 0:
                     st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
-                    llm_pos_ids_list.append(
-                        torch.arange(text_len, dtype=torch.long)
-                        .view(1, -1)
-                        .expand(3, -1)
-                        + st_idx
-                    )
+                    llm_pos_ids_list.append(torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 bos_len = 1
-                llm_pos_ids_list.append(
-                    torch.arange(bos_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                llm_pos_ids_list.append(torch.arange(bos_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 grid_t = video_grid_thw[video_idx][0]
                 grid_hs = video_grid_thw[:, 1]
                 grid_ws = video_grid_thw[:, 2]
-                t_index = (
-                    torch.arange(grid_t)
-                    * float(second_per_grids[video_idx].item())
-                    * position_id_per_seconds
-                )
+                t_index = torch.arange(grid_t) * float(second_per_grids[video_idx].item()) * position_id_per_seconds
                 llm_pos_ids = get_llm_pos_ids_for_vision(
                     st_idx, video_idx, spatial_merge_size, t_index, grid_hs, grid_ws
                 )
@@ -1581,95 +1413,46 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                 llm_pos_ids_list.append(llm_pos_ids)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 eos_len = 1
-                llm_pos_ids_list.append(
-                    torch.arange(eos_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                llm_pos_ids_list.append(torch.arange(eos_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st += text_len + bos_len + video_len + eos_len
                 video_idx += 1
                 remain_videos -= 1
-            elif (
-                min_ed == ed_vision_start
-                and ed_vision_start + 1 == ed_audio_start
-                and use_audio_in_video
-            ):
+            elif min_ed == ed_vision_start and ed_vision_start + 1 == ed_audio_start and use_audio_in_video:
                 text_len = min_ed - st
                 if text_len != 0:
                     st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
-                    llm_pos_ids_list.append(
-                        torch.arange(text_len, dtype=torch.long)
-                        .view(1, -1)
-                        .expand(3, -1)
-                        + st_idx
-                    )
+                    llm_pos_ids_list.append(torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 bos_len = 1
-                bos_block = (
-                    torch.arange(bos_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                bos_block = torch.arange(bos_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx
                 llm_pos_ids_list.append(bos_block)
                 llm_pos_ids_list.append(bos_block)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
-                _, audio_len = _get_feat_extract_output_lengths(
-                    audio_feature_lengths[audio_idx]
-                )
-                audio_llm_pos_ids = (
-                    torch.arange(audio_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                _, audio_len = _get_feat_extract_output_lengths(audio_feature_lengths[audio_idx])
+                audio_llm_pos_ids = torch.arange(audio_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx
                 grid_t = video_grid_thw[video_idx][0]
                 grid_hs = video_grid_thw[:, 1]
                 grid_ws = video_grid_thw[:, 2]
-                t_index = (
-                    torch.arange(grid_t)
-                    * float(second_per_grids[video_idx].item())
-                    * position_id_per_seconds
-                )
+                t_index = torch.arange(grid_t) * float(second_per_grids[video_idx].item()) * position_id_per_seconds
                 video_llm_pos_ids = get_llm_pos_ids_for_vision(
                     st_idx, video_idx, spatial_merge_size, t_index, grid_hs, grid_ws
                 )
                 video_data_index, audio_data_index = 0, 0
-                while (
-                    video_data_index < video_llm_pos_ids.shape[-1]
-                    and audio_data_index < audio_llm_pos_ids.shape[-1]
-                ):
-                    if (
-                        video_llm_pos_ids[0][video_data_index]
-                        <= audio_llm_pos_ids[0][audio_data_index]
-                    ):
-                        llm_pos_ids_list.append(
-                            video_llm_pos_ids[
-                                :, video_data_index : video_data_index + 1
-                            ]
-                        )
+                while video_data_index < video_llm_pos_ids.shape[-1] and audio_data_index < audio_llm_pos_ids.shape[-1]:
+                    if video_llm_pos_ids[0][video_data_index] <= audio_llm_pos_ids[0][audio_data_index]:
+                        llm_pos_ids_list.append(video_llm_pos_ids[:, video_data_index : video_data_index + 1])
                         video_data_index += 1
                     else:
-                        llm_pos_ids_list.append(
-                            audio_llm_pos_ids[
-                                :, audio_data_index : audio_data_index + 1
-                            ]
-                        )
+                        llm_pos_ids_list.append(audio_llm_pos_ids[:, audio_data_index : audio_data_index + 1])
                         audio_data_index += 1
                 if video_data_index < video_llm_pos_ids.shape[-1]:
-                    llm_pos_ids_list.append(
-                        video_llm_pos_ids[
-                            :, video_data_index : video_llm_pos_ids.shape[-1]
-                        ]
-                    )
+                    llm_pos_ids_list.append(video_llm_pos_ids[:, video_data_index : video_llm_pos_ids.shape[-1]])
                 if audio_data_index < audio_llm_pos_ids.shape[-1]:
-                    llm_pos_ids_list.append(
-                        audio_llm_pos_ids[
-                            :, audio_data_index : audio_llm_pos_ids.shape[-1]
-                        ]
-                    )
+                    llm_pos_ids_list.append(audio_llm_pos_ids[:, audio_data_index : audio_llm_pos_ids.shape[-1]])
                 video_len = video_grid_thw[video_idx].prod() // (spatial_merge_size**2)
                 st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                 eos_len = 1
-                eos_block = (
-                    torch.arange(eos_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                    + st_idx
-                )
+                eos_block = torch.arange(eos_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx
                 llm_pos_ids_list.append(eos_block)
                 llm_pos_ids_list.append(eos_block)
                 st += text_len + bos_len * 2 + audio_len + video_len + eos_len * 2  # noqa: E501
@@ -1681,10 +1464,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         if st < len(input_tokens):
             st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
             text_len = len(input_tokens) - st
-            llm_pos_ids_list.append(
-                torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1)
-                + st_idx
-            )
+            llm_pos_ids_list.append(torch.arange(text_len, dtype=torch.long).view(1, -1).expand(3, -1) + st_idx)
 
         llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
         if llm_positions.shape[1] != seq_len:

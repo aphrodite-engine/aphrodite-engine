@@ -3,24 +3,21 @@ from typing import Any
 
 import torch
 from compressed_tensors import CompressionFormat, ModelCompressor
-from compressed_tensors.quantization import (QuantizationArgs,
-                                             QuantizationStrategy,
-                                             QuantizationType)
+from compressed_tensors.quantization import QuantizationArgs, QuantizationStrategy, QuantizationType
 from compressed_tensors.utils import combine_shards
 
 from aphrodite import _custom_ops as ops
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear)
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          ChannelQuantScaleParameter,
-                                          ModelWeightParameter,
-                                          PerTensorScaleParameter)
-from aphrodite.quantization.compressed_tensors.schemes import (
-    CompressedTensorsScheme)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear
+from aphrodite.modeling.parameter import (
+    BaseAphroditeParameter,
+    ChannelQuantScaleParameter,
+    ModelWeightParameter,
+    PerTensorScaleParameter,
+)
+from aphrodite.quantization.compressed_tensors.schemes import CompressedTensorsScheme
 from aphrodite.quantization.input_quant_fp8 import QuantFP8
 from aphrodite.quantization.utils.quant_utils import GroupShape
-from aphrodite.quantization.utils.w8a8_utils import (convert_to_channelwise,
-                                                     sparse_cutlass_supported)
+from aphrodite.quantization.utils.w8a8_utils import convert_to_channelwise, sparse_cutlass_supported
 
 __all__ = ["CompressedTensors24"]
 
@@ -38,22 +35,15 @@ class CompressedTensors24(CompressedTensorsScheme):
         self.quantized = quantized
         self.weight_quant = weight_quant
         self.input_quant = input_quant
-        model_compressor = ModelCompressor.from_compression_config(
-            model_compression_config
-        )
+        model_compressor = ModelCompressor.from_compression_config(model_compression_config)
         self.do_sparse_decompress = (
             model_compressor is not None
-            and model_compressor.sparsity_config.format
-            == CompressionFormat.sparse_24_bitmask.value
+            and model_compressor.sparsity_config.format == CompressionFormat.sparse_24_bitmask.value
         )
         if self.do_sparse_decompress:
             self.model_compressor = model_compressor
 
-        if (
-            quantized
-            and input_quant is not None
-            and self._get_quant_dtype() == current_platform.fp8_dtype()
-        ):
+        if quantized and input_quant is not None and self._get_quant_dtype() == current_platform.fp8_dtype():
             static = not input_quant.dynamic
             g_shape = GroupShape.PER_TENSOR if static else GroupShape.PER_TOKEN
             self.quant_fp8 = QuantFP8(static, g_shape)
@@ -75,8 +65,7 @@ class CompressedTensors24(CompressedTensorsScheme):
     ):
         if not sparse_cutlass_supported():
             raise ValueError(
-                "Sparse CUTLASS not supported. Aphrodite must be built with "
-                "CUDA 12.2 or later to use this feature"
+                "Sparse CUTLASS not supported. Aphrodite must be built with CUDA 12.2 or later to use this feature"
             )
 
         layer.logical_widths = output_partition_sizes
@@ -96,9 +85,9 @@ class CompressedTensors24(CompressedTensorsScheme):
             weight_loader=weight_loader,
         )
         if self.do_sparse_decompress:
-            assert all(
-                partition_size % 8 == 0 for partition_size in output_partition_sizes
-            ), "All partitions must be divisible by 8 for "
+            assert all(partition_size % 8 == 0 for partition_size in output_partition_sizes), (
+                "All partitions must be divisible by 8 for "
+            )
             "2:4 sparse compressed models"
 
             shape = BaseAphroditeParameter(
@@ -133,22 +122,14 @@ class CompressedTensors24(CompressedTensorsScheme):
 
         # Check if quantized, not just 2:4 Sparse
         if self.quantized:
-            if (
-                self.weight_quant
-                and self.weight_quant.strategy == QuantizationStrategy.CHANNEL.value
-            ):
+            if self.weight_quant and self.weight_quant.strategy == QuantizationStrategy.CHANNEL.value:
                 weight_scale = ChannelQuantScaleParameter(
-                    data=torch.empty(
-                        (sum(output_partition_sizes), 1), dtype=torch.float32
-                    ),
+                    data=torch.empty((sum(output_partition_sizes), 1), dtype=torch.float32),
                     output_dim=0,
                     weight_loader=weight_loader,
                 )
             else:
-                assert (
-                    self.weight_quant
-                    and self.weight_quant.strategy == QuantizationStrategy.TENSOR.value
-                )
+                assert self.weight_quant and self.weight_quant.strategy == QuantizationStrategy.TENSOR.value
                 weight_scale = PerTensorScaleParameter(
                     data=torch.empty(len(output_partition_sizes), dtype=torch.float32),
                     weight_loader=weight_loader,
@@ -169,12 +150,8 @@ class CompressedTensors24(CompressedTensorsScheme):
 
         else:
             # for sparse-only, pass in 1 for weight/input scales
-            weight_scale = torch.nn.Parameter(
-                data=torch.ones(1, dtype=torch.float32), requires_grad=False
-            )
-            input_scale = torch.nn.Parameter(
-                data=torch.ones(1, dtype=torch.float32), requires_grad=False
-            )
+            weight_scale = torch.nn.Parameter(data=torch.ones(1, dtype=torch.float32), requires_grad=False)
+            input_scale = torch.nn.Parameter(data=torch.ones(1, dtype=torch.float32), requires_grad=False)
             layer.register_parameter("input_scale", input_scale)
             layer.register_parameter("weight_scale", weight_scale)
 
@@ -205,9 +182,7 @@ class CompressedTensors24(CompressedTensorsScheme):
 
         # torch.compile workaround
         if hasattr(layer, "input_scale"):
-            layer.input_scale = torch.nn.Parameter(
-                layer.input_scale.data, requires_grad=False
-            )
+            layer.input_scale = torch.nn.Parameter(layer.input_scale.data, requires_grad=False)
 
         if self.weight_quant:
             if self.weight_quant.strategy == QuantizationStrategy.TENSOR.value:
@@ -220,9 +195,7 @@ class CompressedTensors24(CompressedTensorsScheme):
                 )
             else:
                 # torch.compile workaround
-                layer.weight_scale = torch.nn.Parameter(
-                    layer.weight_scale.data, requires_grad=False
-                )
+                layer.weight_scale = torch.nn.Parameter(layer.weight_scale.data, requires_grad=False)
 
         # Set all negative zero values to 0 prior to compression
         if layer.weight.dtype.is_floating_point and layer.weight.dtype.itemsize >= 2:
@@ -293,16 +266,10 @@ class CompressedTensors24(CompressedTensorsScheme):
         if not is_8_bits:
             raise ValueError("Cutlass only supports 8-bit quantization")
 
-        if (
-            self.weight_quant.type == QuantizationType.FLOAT
-            and self.input_quant.type == QuantizationType.FLOAT
-        ):
+        if self.weight_quant.type == QuantizationType.FLOAT and self.input_quant.type == QuantizationType.FLOAT:
             return torch.float8_e4m3fn
 
-        if (
-            self.weight_quant.type == QuantizationType.INT
-            and self.input_quant.type == QuantizationType.INT
-        ):
+        if self.weight_quant.type == QuantizationType.INT and self.input_quant.type == QuantizationType.INT:
             return torch.int8
 
         raise ValueError("Quantization type not supported by Cutlass")
@@ -354,16 +321,12 @@ class CompressedTensors24(CompressedTensorsScheme):
         if isinstance(layer, (QKVParallelLinear, MergedColumnParallelLinear)):
             split_weights = torch.split(compressed, layer.logical_widths)
             split_bitmask = torch.split(bitmask, layer.logical_widths)
-            split_shape = [
-                (out, layer.input_size_per_partition) for out in layer.logical_widths
-            ]
+            split_shape = [(out, layer.input_size_per_partition) for out in layer.logical_widths]
 
         if split_weights:
             decompressed_shards = [
                 _process_split(compressed_weight, shape, bitmask)
-                for compressed_weight, shape, bitmask in zip(
-                    split_weights, split_shape, split_bitmask
-                )
+                for compressed_weight, shape, bitmask in zip(split_weights, split_shape, split_bitmask)
             ]
             decompressed = combine_shards(decompressed_shards)
         else:

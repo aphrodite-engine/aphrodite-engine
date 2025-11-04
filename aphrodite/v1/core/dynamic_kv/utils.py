@@ -11,6 +11,7 @@ def _sanitize_segment(segment: str) -> str:
             allowed.append("-")
     return "".join(allowed)[:64]
 
+
 def _ipc_segment_exists(name: str) -> bool:
     """Return True if a shared-memory segment/file with this name exists."""
     try:
@@ -67,16 +68,12 @@ def _get_page_size() -> int:
 
     try:
         page_size = int(page_size_mb_str) * 1024 * 1024
-    except ValueError:
-        raise ValueError(
-            f"Invalid KVCACHED_PAGE_SIZE_MB: {page_size_mb_str}. Must be an integer."
-        )
+    except ValueError as e:
+        raise ValueError(f"Invalid KVCACHED_PAGE_SIZE_MB: {page_size_mb_str}. Must be an integer.") from e
 
     base_size = 2 * 1024 * 1024
     if page_size <= 0 or page_size % base_size != 0:
-        raise ValueError(
-            f"PAGE_SIZE must be a positive multiple of 2MB (2097152 bytes), "
-            f"got: {page_size}")
+        raise ValueError(f"PAGE_SIZE must be a positive multiple of 2MB (2097152 bytes), got: {page_size}")
 
     return page_size
 
@@ -84,13 +81,11 @@ def _get_page_size() -> int:
 PAGE_SIZE = _get_page_size()
 
 GPU_UTILIZATION = float(os.getenv("KVCACHED_GPU_UTILIZATION", "0.95"))
-PAGE_PREALLOC_ENABLED = os.getenv("KVCACHED_PAGE_PREALLOC_ENABLED",
-                                  "true").lower() == "true"
+PAGE_PREALLOC_ENABLED = os.getenv("KVCACHED_PAGE_PREALLOC_ENABLED", "true").lower() == "true"
 MIN_RESERVED_PAGES = int(os.getenv("KVCACHED_MIN_RESERVED_PAGES", "5"))
 MAX_RESERVED_PAGES = int(os.getenv("KVCACHED_MAX_RESERVED_PAGES", "10"))
 SANITY_CHECK = os.getenv("KVCACHED_SANITY_CHECK", "false").lower() == "true"
-CONTIGUOUS_LAYOUT = os.getenv("KVCACHED_CONTIGUOUS_LAYOUT",
-                              "true").lower() == "true"
+CONTIGUOUS_LAYOUT = os.getenv("KVCACHED_CONTIGUOUS_LAYOUT", "true").lower() == "true"
 
 DEFAULT_IPC_NAME = _obtain_default_ipc_name()
 SHM_DIR = "/dev/shm"
@@ -104,4 +99,3 @@ def align_up_to_page(n_cells: int, cell_size: int) -> int:
     n_cells_per_page = PAGE_SIZE // cell_size
     aligned_n_cells = align_to(n_cells, n_cells_per_page)
     return aligned_n_cells
-

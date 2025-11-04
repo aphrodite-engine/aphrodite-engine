@@ -1,18 +1,17 @@
 # adapted from https://www.modelscope.cn/models/TeleAI/TeleChat2-3B/resolve/master/configuration_telechat2.py
-""" Telechat configuration compatible with LlamaConfig. """
+"""Telechat configuration compatible with LlamaConfig."""
 
 from transformers.configuration_utils import PretrainedConfig
 
 
 class Telechat2Config(PretrainedConfig):
-
     model_type = "telechat"
     keys_to_ignore_at_inference = ["past_key_values"]
     attribute_map = {
         "num_hidden_layers": "n_layer",
         "num_attention_heads": "n_head",
         "intermediate_size": "ffn_hidden_size",
-        "rms_norm_eps": "layer_norm_epsilon"
+        "rms_norm_eps": "layer_norm_epsilon",
     }
 
     def __init__(
@@ -44,8 +43,7 @@ class Telechat2Config(PretrainedConfig):
         self.layer_norm_epsilon = layer_norm_epsilon
         self.initializer_range = initializer_range
         self.use_cache = use_cache
-        self.apply_residual_connection_post_layernorm = (
-            apply_residual_connection_post_layernorm)
+        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
         self.hidden_dropout = hidden_dropout
         self.attention_dropout = attention_dropout
         self.bos_token_id = bos_token_id
@@ -56,6 +54,4 @@ class Telechat2Config(PretrainedConfig):
         self.num_key_value_heads = kwargs.pop("num_key_value_heads", None)
         self.ffn_hidden_size = ffn_hidden_size
         self.hidden_act = hidden_act
-        super().__init__(bos_token_id=bos_token_id,
-                         eos_token_id=eos_token_id,
-                         **kwargs)
+        super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)

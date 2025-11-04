@@ -64,9 +64,7 @@ class DPCoordinator:
         # Assume coordinator is colocated with front-end procs when not in
         # either external or hybrid DP LB mode.
         local_only = not (external_lb or hybrid_lb)
-        front_publish_address = get_engine_client_zmq_addr(
-            local_only=local_only, host=host
-        )
+        front_publish_address = get_engine_client_zmq_addr(local_only=local_only, host=host)
 
         local_only_eng = dp_size == parallel_config.data_parallel_size_local
         back_publish_address = get_engine_client_zmq_addr(local_only_eng, host)
@@ -178,10 +176,7 @@ class DPCoordinatorProc:
             # Wait until all engines subscribe.
             for _ in self.engines:
                 if publish_back.recv() != b"\x01":
-                    logger.error(
-                        "DP Coordinator received unexpected message while "
-                        "waiting for engines to subscribe"
-                    )
+                    logger.error("DP Coordinator received unexpected message while waiting for engines to subscribe")
                     return
             # Send ready message to engines.
             publish_back.send(b"READY")
@@ -227,11 +222,7 @@ class DPCoordinatorProc:
                         continue
 
                     decoded = msgspec.msgpack.decode(buffer)
-                    if (
-                        isinstance(decoded, (list, tuple))
-                        and len(decoded) == 2
-                        and decoded[0] == "SCALE_ELASTIC_EP"
-                    ):
+                    if isinstance(decoded, (list, tuple)) and len(decoded) == 2 and decoded[0] == "SCALE_ELASTIC_EP":
                         # Handle scale up notification
                         new_engine_count = decoded[1]
                         current_count = len(self.engines)
@@ -276,9 +267,7 @@ class DPCoordinatorProc:
 
                         engines_running = True
                         wave_state_changed = True
-                        self._send_start_wave(
-                            publish_back, current_wave, engine_to_exclude
-                        )
+                        self._send_start_wave(publish_back, current_wave, engine_to_exclude)
 
                 if output_back in events:
                     # We received a message from one of the engines.
@@ -306,13 +295,9 @@ class DPCoordinatorProc:
                                 last_step_counts = self._get_engine_counts(do_copy=True)
                             last_stats_step = stats_step
                             last_stats_wave = stats_wave
-                        elif stats_wave != last_stats_wave or (
-                            stats_step != last_stats_step
-                        ):
+                        elif stats_wave != last_stats_wave or (stats_step != last_stats_step):
                             logger.warning(
-                                "Received stats for out-of-order "
-                                "step (%d, %d) from engine %d (expected "
-                                "> (%d, %d))",
+                                "Received stats for out-of-order step (%d, %d) from engine %d (expected > (%d, %d))",
                                 stats_wave,
                                 stats_step,
                                 eng_index,
@@ -329,22 +314,18 @@ class DPCoordinatorProc:
                         # (engines_running==False).
                         if current_wave <= wave:
                             new_wave = wave + 1
-                            logger.debug(
-                                "Moving DP wave from %d to %d.", current_wave, new_wave
-                            )
+                            logger.debug("Moving DP wave from %d to %d.", current_wave, new_wave)
                             current_wave = new_wave
                             engines_running = False
                             wave_state_changed = True
                     elif (wave := outputs.start_wave) is not None and (
-                        wave > current_wave
-                        or (wave == current_wave and not engines_running)
+                        wave > current_wave or (wave == current_wave and not engines_running)
                     ):
                         # 3. The engine received request for a non-current wave
                         # so we must ensure that other engines progress to the
                         # next wave (race condition handling).
                         logger.debug(
-                            "Starting wave %d after notification of "
-                            "stale wave request from engine.",
+                            "Starting wave %d after notification of stale wave request from engine.",
                             wave,
                         )
                         current_wave = wave
@@ -357,9 +338,7 @@ class DPCoordinatorProc:
                     publish_front.send(msgspec.msgpack.encode(message))
 
     @staticmethod
-    def _send_start_wave(
-        socket: zmq.Socket, wave: int, exclude_engine_index: int | None
-    ):
+    def _send_start_wave(socket: zmq.Socket, wave: int, exclude_engine_index: int | None):
         """Broadcast the START_DP_WAVE message to all the engines.
         It includes the current wave number and index of engine which
         has already received a request with this wave number and so doesn't

@@ -11,9 +11,12 @@ from aphrodite.config.model import LogprobsMode
 from aphrodite.distributed import cleanup_dist_env_and_memory
 from tests.utils import large_gpu_mark
 from tests.v1.sample.utils import (
-    BatchLogprobsComposition, BatchLogprobsSpecType,
+    BatchLogprobsComposition,
+    BatchLogprobsSpecType,
     assert_incr_detok_str_matches_non_incr_detok_str,
-    compute_correct_cumulative_logprob, get_test_batch)
+    compute_correct_cumulative_logprob,
+    get_test_batch,
+)
 
 from ...conftest import AphroditeRunner, HfRunner
 
@@ -96,9 +99,7 @@ def _repeat_logprob_config(
     """
     num_test_prompts = len(test_prompts)
     # Make sure there is a logprobs configuration for each test prompt
-    logprob_prompt_logprob_list = list(
-        itertools.islice(itertools.cycle(logprob_prompt_logprob_list), num_test_prompts)
-    )
+    logprob_prompt_logprob_list = list(itertools.islice(itertools.cycle(logprob_prompt_logprob_list), num_test_prompts))
     # Now the number of prompts should match the number of sample params combos
     assert num_test_prompts == len(logprob_prompt_logprob_list)
     return logprob_prompt_logprob_list
@@ -115,9 +116,7 @@ def _run_and_validate(
     max_tokens: int,
     do_apc: bool,
 ) -> None:
-    aphrodite_results = aphrodite_model.llm.generate(
-        test_prompts, sampling_params=aphrodite_sampling_params
-    )
+    aphrodite_results = aphrodite_model.llm.generate(test_prompts, sampling_params=aphrodite_sampling_params)
 
     for aphrodite_result, hf_logprob, hf_output, logprob_prompt_logprob in zip(
         aphrodite_results, hf_logprobs, hf_outputs, logprob_prompt_logprob_list
@@ -128,16 +127,10 @@ def _run_and_validate(
         # Test whether sampled token output is consistent between Aphrodite and HF
         # Aphrodite prompt+completion should match HF output
         if temperature == 0.0:
-            assert (
-                aphrodite_result.prompt_token_ids + aphrodite_result.outputs[0].token_ids
-                == hf_output[0]
-            )
+            assert aphrodite_result.prompt_token_ids + aphrodite_result.outputs[0].token_ids == hf_output[0]
         else:
             # Sampled tokens won't match if not greedy
-            assert (
-                aphrodite_result.prompt_token_ids
-                == hf_output[0][: len(aphrodite_result.prompt_token_ids)]
-            )
+            assert aphrodite_result.prompt_token_ids == hf_output[0][: len(aphrodite_result.prompt_token_ids)]
 
         # Validate sample logprobs
         if num_top_logprobs is not None:
@@ -146,9 +139,7 @@ def _run_and_validate(
             # correct
             assert aphrodite_result.outputs[0].logprobs is not None
             assert len(aphrodite_result.outputs[0].logprobs) == max_tokens
-            for logprobs, token_id in zip(
-                aphrodite_result.outputs[0].logprobs, aphrodite_result.outputs[0].token_ids
-            ):
+            for logprobs, token_id in zip(aphrodite_result.outputs[0].logprobs, aphrodite_result.outputs[0].token_ids):
                 assert logprobs is not None
 
                 # Confirm that the output token appears among the logprobs
@@ -171,13 +162,9 @@ def _run_and_validate(
             output_string_from_most_likely_tokens_lst: list[str] = []
             for top_logprobs in aphrodite_result.outputs[0].logprobs:
                 top_logprob = next(iter(top_logprobs.values()))
-                output_string_from_most_likely_tokens_lst.append(
-                    top_logprob.decoded_token
-                )
+                output_string_from_most_likely_tokens_lst.append(top_logprob.decoded_token)
 
-            output_string_from_most_likely_tokens = "".join(
-                output_string_from_most_likely_tokens_lst
-            )
+            output_string_from_most_likely_tokens = "".join(output_string_from_most_likely_tokens_lst)
             assert_incr_detok_str_matches_non_incr_detok_str(
                 output_text,
                 output_string_from_most_likely_tokens,
@@ -199,8 +186,7 @@ def _run_and_validate(
                             rtol=1e-2,
                         )
                     assert isinstance(sample_logprob.decoded_token, str), (
-                        "The token should be decoded by the time it is"
-                        " returned to the user."
+                        "The token should be decoded by the time it is returned to the user."
                     )
 
             # At this point we know the sample logprobs are correct for this
@@ -233,9 +219,7 @@ def _run_and_validate(
 
                 # Confirm that the prompt token appears among the logprobs
                 assert prompt_token_id in prompt_logprobs
-                token_in_topk = (
-                    prompt_logprobs[prompt_token_id].rank <= num_top_prompt_logprobs
-                )
+                token_in_topk = prompt_logprobs[prompt_token_id].rank <= num_top_prompt_logprobs
 
                 # If the prompt token is not included in the top K
                 # logprob, it can return 1 more data
@@ -247,9 +231,7 @@ def _run_and_validate(
                 if num_top_prompt_logprobs > 0:
                     # We should have an entry for each of the topk ranks
                     all_ranks = {lp.rank for lp in prompt_logprobs.values()}
-                    assert all(
-                        r in all_ranks for r in range(1, num_top_prompt_logprobs + 1)
-                    )
+                    assert all(r in all_ranks for r in range(1, num_top_prompt_logprobs + 1))
 
             # Compare prompt logprobs to HF
             # The first prompt logprob is always None, so we compare it from
@@ -267,9 +249,7 @@ def _run_and_validate(
             assert aphrodite_result.prompt_logprobs is None
 
 
-@pytest.mark.parametrize(
-    "batch_logprobs_composition", [NONE, SAMPLE, PROMPT, SAMPLE_PROMPT]
-)
+@pytest.mark.parametrize("batch_logprobs_composition", [NONE, SAMPLE, PROMPT, SAMPLE_PROMPT])
 @pytest.mark.parametrize("temperature", [0.0, 2.0])
 def test_get_logprobs_and_prompt_logprobs(
     hf_model,
@@ -325,9 +305,7 @@ def test_get_logprobs_and_prompt_logprobs(
     logprob_prompt_logprob_list = get_test_batch(batch_logprobs_composition)
 
     # Ensure that each test prompt has a logprob config for testing
-    logprob_prompt_logprob_list = _repeat_logprob_config(
-        test_prompts, logprob_prompt_logprob_list
-    )
+    logprob_prompt_logprob_list = _repeat_logprob_config(test_prompts, logprob_prompt_logprob_list)
     # Generate SamplingParams
     aphrodite_sampling_params = [
         SamplingParams(
@@ -415,9 +393,7 @@ def test_zero_logprobs(aphrodite_model, example_prompts):
     sampling_params_logprobs_zero = SamplingParams(
         max_tokens=max_tokens, logprobs=0, prompt_logprobs=0, temperature=0.0
     )
-    results_logprobs_zero = aphrodite_model.llm.generate(
-        example_prompts, sampling_params=sampling_params_logprobs_zero
-    )
+    results_logprobs_zero = aphrodite_model.llm.generate(example_prompts, sampling_params=sampling_params_logprobs_zero)
 
     for i in range(len(results_logprobs_zero)):
         # Check that there is one sample logprob dict for each
@@ -450,12 +426,8 @@ def test_all_logprobs(example_prompts):
         max_model_len=256,
     )
 
-    sampling_params_logprobs_all = SamplingParams(
-        max_tokens=5, logprobs=-1, prompt_logprobs=-1
-    )
-    results_logprobs_all = runner.llm.generate(
-        example_prompts, sampling_params=sampling_params_logprobs_all
-    )
+    sampling_params_logprobs_all = SamplingParams(max_tokens=5, logprobs=-1, prompt_logprobs=-1)
+    results_logprobs_all = runner.llm.generate(example_prompts, sampling_params=sampling_params_logprobs_all)
     vocab_size = runner.llm.llm_engine.model_config.get_vocab_size()
 
     for i in range(len(results_logprobs_all)):
@@ -538,9 +510,7 @@ def test_spec_decode_logprobs(
     with monkeypatch.context() as m:
         m.setenv("APHRODITE_USE_V1", "1")
         prompt = "Hello world"
-        sampling_params = SamplingParams(
-            temperature=0, logprobs=3, max_tokens=10, ignore_eos=False
-        )
+        sampling_params = SamplingParams(temperature=0, logprobs=3, max_tokens=10, ignore_eos=False)
         method, model_name, spec_model_name = model_setup
         max_model_len = 256
 

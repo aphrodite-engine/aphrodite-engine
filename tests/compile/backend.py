@@ -66,9 +66,7 @@ class TestBackend:
         from torch._inductor.compile_fx import compile_fx
 
         with self.debug_ctx:
-            return compile_fx(
-                graph, example_inputs, config_patches=self.inductor_config
-            )
+            return compile_fx(graph, example_inputs, config_patches=self.inductor_config)
 
     @with_pattern_match_debug
     def post_pass(self, graph: fx.Graph):

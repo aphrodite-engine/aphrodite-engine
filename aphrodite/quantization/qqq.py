@@ -5,10 +5,12 @@ from torch.nn.parameter import Parameter
 
 from aphrodite import _custom_ops as ops
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          ChannelQuantScaleParameter,
-                                          GroupQuantScaleParameter,
-                                          PackedAphroditeParameter)
+from aphrodite.modeling.parameter import (
+    BaseAphroditeParameter,
+    ChannelQuantScaleParameter,
+    GroupQuantScaleParameter,
+    PackedAphroditeParameter,
+)
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
 
@@ -24,7 +26,7 @@ MARLIN_QQQ_SUPPORTED_SYM = [True]
 
 class QQQConfig(QuantizationConfig):
     """Config class for QQQ
-    
+
     Reference: https://arxiv.org/pdf/2406.09904
     """
 
@@ -44,16 +46,18 @@ class QQQConfig(QuantizationConfig):
             raise ValueError(
                 f"QQQ does not support weight_bits = {self.weight_bits}. "
                 f"Only weight_bits = {MARLIN_QQQ_SUPPORTED_NUM_BITS} "
-                "are supported.")
+                "are supported."
+            )
         if self.group_size not in MARLIN_QQQ_SUPPORTED_GROUP_SIZES:
             raise ValueError(
                 f"QQQ does not support group_size = {self.group_size}. "
                 f"Only group_sizes = {MARLIN_QQQ_SUPPORTED_GROUP_SIZES} "
-                "are supported.")
+                "are supported."
+            )
         if self.is_sym not in MARLIN_QQQ_SUPPORTED_SYM:
             raise ValueError(
-                f"QQQ does not support is_sym = {self.is_sym}. "
-                f"Only sym = {MARLIN_QQQ_SUPPORTED_SYM} are supported.")
+                f"QQQ does not support is_sym = {self.is_sym}. Only sym = {MARLIN_QQQ_SUPPORTED_SYM} are supported."
+            )
 
         # 4 Bits packed into 32 bit datatype.
         self.pack_factor = 32 // self.weight_bits
@@ -75,8 +79,7 @@ class QQQConfig(QuantizationConfig):
         self.perm_len = 1024
 
     def __repr__(self) -> str:
-        return "QQQConfig(weight_bits={}, group_size={})".format(
-            self.weight_bits, self.group_size)
+        return "QQQConfig(weight_bits={}, group_size={})".format(self.weight_bits, self.group_size)
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -104,8 +107,7 @@ class QQQConfig(QuantizationConfig):
         group_size = cls.get_from_keys(config, ["group_size"])
         return cls(weight_bits, group_size)
 
-    def get_quant_method(self, layer: torch.nn.Module,
-                         prefix: str) -> Optional["QQQLinearMethod"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QQQLinearMethod"]:
         if isinstance(layer, LinearBase):
             return QQQLinearMethod(self)
         return None
@@ -133,8 +135,7 @@ class QQQLinearMethod(LinearMethodBase):
     ):
         weight_loader = extra_weight_attrs["weight_loader"]
         if params_dtype != torch.float16:
-            raise ValueError(
-                f"The params dtype must be float16, but got {params_dtype}")
+            raise ValueError(f"The params dtype must be float16, but got {params_dtype}")
 
         # Validate output_size_per_partition
         output_size_per_partition = sum(output_partition_sizes)
@@ -142,38 +143,39 @@ class QQQLinearMethod(LinearMethodBase):
             raise ValueError(
                 f"Weight output_size_per_partition = "
                 f"{output_size_per_partition} is not divisible by "
-                f"min_n_threads = {self.quant_config.min_n_threads}.")
+                f"min_n_threads = {self.quant_config.min_n_threads}."
+            )
         if output_size_per_partition % self.quant_config.pack_factor != 0:
             raise ValueError(
                 f"Weight output_size_per_partition = "
                 f"{output_size_per_partition} is not divisible by "
-                f"pack_factor = {self.quant_config.pack_factor}.")
+                f"pack_factor = {self.quant_config.pack_factor}."
+            )
 
         # Validate input_size_per_partition
         if input_size_per_partition % self.quant_config.min_k_threads != 0:
             raise ValueError(
                 f"Weight input_size_per_partition = "
                 f"{input_size_per_partition} is not divisible by "
-                f"min_k_threads = {self.quant_config.min_k_threads}.")
-        if (self.quant_config.group_size != -1 and
-                input_size_per_partition % self.quant_config.group_size != 0):
-            raise ValueError(f"Weight input_size_per_partition = "
-                             f"{input_size_per_partition} is not divisible by "
-                             f"group_size = {self.quant_config.group_size}.")
+                f"min_k_threads = {self.quant_config.min_k_threads}."
+            )
+        if self.quant_config.group_size != -1 and input_size_per_partition % self.quant_config.group_size != 0:
+            raise ValueError(
+                f"Weight input_size_per_partition = "
+                f"{input_size_per_partition} is not divisible by "
+                f"group_size = {self.quant_config.group_size}."
+            )
 
         # Check that we have at least 4 tiles horizontally in the shard
-        num_tiles_per_perm = self.quant_config.perm_len // (
-            self.quant_config.tile_size**2)
+        num_tiles_per_perm = self.quant_config.perm_len // (self.quant_config.tile_size**2)
         if output_size_per_partition % num_tiles_per_perm != 0:
-            raise ValueError(
-                "Each permutation group must reside on the same gpu")
+            raise ValueError("Each permutation group must reside on the same gpu")
 
         # Quantized 4Bit weights packed into Int32.
         qweight = PackedAphroditeParameter(
             data=torch.empty(
                 input_size_per_partition // self.quant_config.tile_size,
-                output_size_per_partition * self.quant_config.tile_size //
-                self.quant_config.pack_factor,
+                output_size_per_partition * self.quant_config.tile_size // self.quant_config.pack_factor,
                 device="cuda",
                 dtype=torch.int32,
             ),
@@ -182,16 +184,19 @@ class QQQLinearMethod(LinearMethodBase):
             packed_dim=1,
             packed_factor=self.quant_config.pack_factor,
             marlin_tile_size=self.quant_config.tile_size,
-            weight_loader=weight_loader)
+            weight_loader=weight_loader,
+        )
 
-        s_channel = ChannelQuantScaleParameter(data=torch.empty(
-            1,
-            output_size_per_partition,
-            device="cuda",
-            dtype=torch.float,
-        ),
-                                               weight_loader=weight_loader,
-                                               output_dim=1)
+        s_channel = ChannelQuantScaleParameter(
+            data=torch.empty(
+                1,
+                output_size_per_partition,
+                device="cuda",
+                dtype=torch.float,
+            ),
+            weight_loader=weight_loader,
+            output_dim=1,
+        )
 
         if self.quant_config.group_size == -1:
             s_group_data = torch.tensor(
@@ -212,19 +217,16 @@ class QQQLinearMethod(LinearMethodBase):
         if self.quant_config.group_size == -1:
             s_group = BaseAphroditeParameter(**s_group_attr)
         else:
-            s_group = GroupQuantScaleParameter(output_dim=1,
-                                               input_dim=0,
-                                               **s_group_attr)
+            s_group = GroupQuantScaleParameter(output_dim=1, input_dim=0, **s_group_attr)
 
         # Allocate workspace (Used for internal locking mechanism)
         max_workspace_size = (
-            output_size_per_partition //
-            self.quant_config.min_n_threads) * self.quant_config.max_parallel
+            output_size_per_partition // self.quant_config.min_n_threads
+        ) * self.quant_config.max_parallel
 
-        workspace = BaseAphroditeParameter(data=torch.zeros(max_workspace_size,
-                                                       device="cuda",
-                                                       dtype=torch.int),
-                                      weight_loader=weight_loader)
+        workspace = BaseAphroditeParameter(
+            data=torch.zeros(max_workspace_size, device="cuda", dtype=torch.int), weight_loader=weight_loader
+        )
 
         layer.register_parameter("B", qweight)
         layer.register_parameter("s_channel", s_channel)
@@ -242,7 +244,7 @@ class QQQLinearMethod(LinearMethodBase):
         self,
         layer: torch.nn.Module,
         x: torch.Tensor,
-        bias: Optional[torch.Tensor] = None,
+        bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         qweight = layer.B
         s_ch = layer.s_channel
@@ -257,10 +259,9 @@ class QQQLinearMethod(LinearMethodBase):
 
         x_int8, s_tok, _ = ops.scaled_int8_quant(x_2d)
 
-        output_2d = ops.marlin_qqq_gemm(x_int8, qweight, s_tok, s_ch, s_group,
-                                        workspace, size_m, size_n, size_k)
+        output_2d = ops.marlin_qqq_gemm(x_int8, qweight, s_tok, s_ch, s_group, workspace, size_m, size_n, size_k)
 
-        output = output_2d.view(x.shape[:-1] + (output_2d.shape[1], ))
+        output = output_2d.view(x.shape[:-1] + (output_2d.shape[1],))
 
         if bias is not None:
             output.add_(bias)  # In-place add

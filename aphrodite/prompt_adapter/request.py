@@ -4,13 +4,15 @@ from aphrodite.adapter_commons.request import AdapterRequest
 
 
 class PromptAdapterRequest(
-        msgspec.Struct,
-        array_like=True,  # type: ignore[call-arg]
-        omit_defaults=True,  # type: ignore[call-arg]
-        frozen=True):  # type: ignore[call-arg]
+    msgspec.Struct,
+    array_like=True,  # type: ignore[call-arg]
+    omit_defaults=True,  # type: ignore[call-arg]
+    frozen=True,
+):  # type: ignore[call-arg]
     """
     Request for a Prompt adapter.
     """
+
     __metaclass__ = AdapterRequest
 
     prompt_adapter_name: str

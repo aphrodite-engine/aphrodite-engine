@@ -25,8 +25,7 @@ import torch.nn as nn
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.models.llama import (LlamaDecoderLayer,
-                                             LlamaForCausalLM, LlamaModel)
+from aphrodite.modeling.models.llama import LlamaDecoderLayer, LlamaForCausalLM, LlamaModel
 
 
 class TeleFLMModel(LlamaModel):
@@ -67,6 +66,4 @@ class TeleFLMForCausalLM(LlamaForCausalLM):
             self.mup_scale_factor = self.config.mup_scale_factor
             self.output_mult = self.config.output_mult / self.mup_scale_factor
             logit_scale = self.output_mult
-            self.logits_processor = LogitsProcessor(
-                self.unpadded_vocab_size, self.config.vocab_size, logit_scale
-            )
+            self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, self.config.vocab_size, logit_scale)

@@ -1,11 +1,8 @@
 import pytest
 from transformers import AutoTokenizer
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
-from aphrodite.reasoning import (DeepSeekR1ReasoningParser,
-                                 DeepSeekV3ReasoningParser,
-                                 IdentityReasoningParser)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
+from aphrodite.reasoning import DeepSeekR1ReasoningParser, DeepSeekV3ReasoningParser, IdentityReasoningParser
 
 REASONING_MODEL_NAME = "deepseek-ai/DeepSeek-V3.1"
 
@@ -23,9 +20,7 @@ def tokenizer():
     ],
 )
 def test_parser_selection(tokenizer, thinking, expected_parser_type):
-    parser = DeepSeekV3ReasoningParser(
-        tokenizer, chat_template_kwargs={"thinking": thinking}
-    )
+    parser = DeepSeekV3ReasoningParser(tokenizer, chat_template_kwargs={"thinking": thinking})
 
     assert isinstance(parser._parser, expected_parser_type)
 

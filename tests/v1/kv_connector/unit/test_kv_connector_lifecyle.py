@@ -1,10 +1,9 @@
 from aphrodite.distributed.kv_transfer.kv_connector.v1.shared_storage_connector import (  # noqa: E501
-    SharedStorageConnectorMetadata)
-from aphrodite.distributed.kv_transfer.kv_transfer_state import (
-    ensure_kv_transfer_initialized, get_kv_transfer_group)
+    SharedStorageConnectorMetadata,
+)
+from aphrodite.distributed.kv_transfer.kv_transfer_state import ensure_kv_transfer_initialized, get_kv_transfer_group
 from aphrodite.v1.core.sched.output import CachedRequestData, SchedulerOutput
-from aphrodite.v1.worker.kv_connector_model_runner_mixin import (
-    KVConnectorModelRunnerMixin)
+from aphrodite.v1.worker.kv_connector_model_runner_mixin import KVConnectorModelRunnerMixin
 
 # Importing utils registers TestSharedStorageConnector with the factory
 from .utils import create_aphrodite_config
@@ -42,9 +41,7 @@ def test_kv_connector_mixin_clears_metadata():
         scheduler_output = _make_empty_scheduler_output()
 
         # Invoke the no-forward path which uses the mixin context manager
-        KVConnectorModelRunnerMixin.kv_connector_no_forward(
-            scheduler_output, aphrodite_config
-        )
+        KVConnectorModelRunnerMixin.kv_connector_no_forward(scheduler_output, aphrodite_config)
 
         # Verify clear_connector_metadata was called on the connector
         connector = get_kv_transfer_group()

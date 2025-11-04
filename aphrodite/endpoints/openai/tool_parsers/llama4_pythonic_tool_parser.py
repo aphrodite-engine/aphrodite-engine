@@ -7,13 +7,16 @@ import regex as re
 from transformers import PreTrainedTokenizerBase
 
 import aphrodite.envs as envs
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaFunctionCall,
-                                                 DeltaMessage, DeltaToolCall,
-                                                 ExtractedToolCallInformation,
-                                                 FunctionCall, ToolCall)
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParser, ToolParserManager)
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    DeltaFunctionCall,
+    DeltaMessage,
+    DeltaToolCall,
+    ExtractedToolCallInformation,
+    FunctionCall,
+    ToolCall,
+)
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
 from aphrodite.logger import init_logger
 
 logger = init_logger(__name__)
@@ -54,9 +57,7 @@ class Llama4PythonicToolParser(ToolParser):
     def current_tool_index(self, value: int) -> None:
         self.current_tool_id = value
 
-    def extract_tool_calls(
-        self, model_output: str, request: ChatCompletionRequest
-    ) -> ExtractedToolCallInformation:
+    def extract_tool_calls(self, model_output: str, request: ChatCompletionRequest) -> ExtractedToolCallInformation:
         """
         Extract the tool calls from a complete model response.
         """
@@ -70,28 +71,20 @@ class Llama4PythonicToolParser(ToolParser):
         is_tool_call_pattern = False
         try:
             is_tool_call_pattern = (
-                self.TOOL_CALL_REGEX.match(
-                    model_output, timeout=envs.APHRODITE_TOOL_PARSE_REGEX_TIMEOUT_SECONDS
-                )
+                self.TOOL_CALL_REGEX.match(model_output, timeout=envs.APHRODITE_TOOL_PARSE_REGEX_TIMEOUT_SECONDS)
                 is not None
             )
         except TimeoutError:
             logger.warning("Regex timeout occurred when matching tool call pattern.")
-            logger.debug(
-                "Regex timeout occurred when matching user input: %s", model_output
-            )
+            logger.debug("Regex timeout occurred when matching user input: %s", model_output)
 
         if not is_tool_call_pattern:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         try:
             module = ast.parse(model_output)
             parsed = getattr(module.body[0], "value", None)
-            if isinstance(parsed, ast.List) and all(
-                isinstance(e, ast.Call) for e in parsed.elts
-            ):
+            if isinstance(parsed, ast.List) and all(isinstance(e, ast.Call) for e in parsed.elts):
                 return ExtractedToolCallInformation(
                     tools_called=True,
                     tool_calls=[
@@ -101,15 +94,11 @@ class Llama4PythonicToolParser(ToolParser):
                     content=None,
                 )
             else:
-                raise _UnexpectedAstError(
-                    "Tool output must be a list of function calls"
-                )
+                raise _UnexpectedAstError("Tool output must be a list of function calls")
         except Exception:
             logger.exception("Error in extracting tool call from response.")
             # Treat as regular text
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def extract_tool_calls_streaming(
         self,
@@ -121,9 +110,7 @@ class Llama4PythonicToolParser(ToolParser):
         delta_token_ids: Sequence[int],
         request: ChatCompletionRequest,
     ) -> DeltaMessage | None:
-        if not current_text.startswith("[") and not current_text.startswith(
-            "<|python_start|>"
-        ):
+        if not current_text.startswith("[") and not current_text.startswith("<|python_start|>"):
             return DeltaMessage(content=delta_text)
 
         try:
@@ -139,12 +126,8 @@ class Llama4PythonicToolParser(ToolParser):
 
             module = ast.parse(valid_text)
             parsed = getattr(module.body[0], "value", None)
-            if not isinstance(parsed, ast.List) or not all(
-                isinstance(e, ast.Call) for e in parsed.elts
-            ):
-                raise _UnexpectedAstError(
-                    "Tool output must be a list of function calls"
-                )
+            if not isinstance(parsed, ast.List) or not all(isinstance(e, ast.Call) for e in parsed.elts):
+                raise _UnexpectedAstError("Tool output must be a list of function calls")
             tool_calls = [
                 _handle_single_tool(e)  # type: ignore
                 for e in parsed.elts
@@ -159,9 +142,7 @@ class Llama4PythonicToolParser(ToolParser):
                 if len(self.streamed_args_for_tool) == index:
                     self.streamed_args_for_tool.append("")
 
-                new_call_complete = (
-                    index < len(tool_calls) - 1 or ")]" not in added_text
-                )
+                new_call_complete = index < len(tool_calls) - 1 or ")]" not in added_text
                 if new_call_complete:
                     self.current_tool_index += 1
 
@@ -172,16 +153,11 @@ class Llama4PythonicToolParser(ToolParser):
                 # Strings get single quotes in the model-produced string.
                 # JSON requires double quotes.
                 withheld_suffix = withheld_suffix.replace("'", '"')
-                delta = _compute_tool_delta(
-                    self.streamed_args_for_tool[index], new_call, index, withheld_suffix
-                )
+                delta = _compute_tool_delta(self.streamed_args_for_tool[index], new_call, index, withheld_suffix)
 
                 if delta is not None:
                     tool_deltas.append(delta)
-                    if (
-                        delta.function is not None
-                        and delta.function.arguments is not None
-                    ):
+                    if delta.function is not None and delta.function.arguments is not None:
                         self.streamed_args_for_tool[index] += delta.function.arguments
 
             # HACK: serving_chat.py inspects the internal state of tool parsers
@@ -202,9 +178,7 @@ class Llama4PythonicToolParser(ToolParser):
                 return None
         except Exception:
             logger.exception("Error trying to handle streaming tool call.")
-            logger.debug(
-                "Skipping chunk as a result of tool streaming extraction error"
-            )
+            logger.debug("Skipping chunk as a result of tool streaming extraction error")
             return None
 
 
@@ -283,12 +257,7 @@ def _make_valid_python(text: str) -> tuple[str, str] | None:
             return None  # Incomplete parameter name
     if text.endswith(","):
         text = text[:-1]
-    if (
-        bracket_stack
-        and bracket_stack[-1] == "["
-        and not text.endswith("[")
-        and not text.endswith(")")
-    ):
+    if bracket_stack and bracket_stack[-1] == "[" and not text.endswith("[") and not text.endswith(")"):
         return None  # Incomplete function name
 
     added_text = ""
@@ -326,10 +295,4 @@ def _compute_tool_delta(
         )
 
     arg_diff = new_call_args[len(previously_sent_args) :]
-    return (
-        DeltaToolCall(
-            id=None, index=index, function=DeltaFunctionCall(arguments=arg_diff)
-        )
-        if arg_diff
-        else None
-    )
+    return DeltaToolCall(id=None, index=index, function=DeltaFunctionCall(arguments=arg_diff)) if arg_diff else None

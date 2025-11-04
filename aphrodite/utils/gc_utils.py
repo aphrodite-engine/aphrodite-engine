@@ -74,16 +74,11 @@ class GCDebugger:
             # optionally top collected objects
             elpased_ms = (time.monotonic_ns() - self.start_time_ns) / 1e6
             logger.info(
-                "GC took %.3fms to complete. "
-                "Collected %s objects in GC generation %d.%s",
+                "GC took %.3fms to complete. Collected %s objects in GC generation %d.%s",
                 elpased_ms,
                 str(info.get("collected", "?")),
                 generation,
-                (
-                    f" Top collected objects: \n{self.gc_top_collected_objects}"
-                    if self.gc_top_collected_objects
-                    else ""
-                ),
+                (f" Top collected objects: \n{self.gc_top_collected_objects}" if self.gc_top_collected_objects else ""),
             )
 
 
@@ -124,7 +119,4 @@ def _compute_top_gc_collected_objects(objects: list[Any], top: int) -> str:
     if top <= 0:
         return ""
     object_types = [_compute_detailed_type(o) for o in objects]
-    return "\n".join(
-        f"{count:>5}:{object_type}"
-        for object_type, count in Counter(object_types).most_common(top)
-    )
+    return "\n".join(f"{count:>5}:{object_type}" for object_type, count in Counter(object_types).most_common(top))

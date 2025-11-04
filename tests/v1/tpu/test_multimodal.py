@@ -11,9 +11,7 @@ from ...utils import RemoteOpenAIServer
 @pytest.fixture(scope="session")
 def base64_encoded_image(local_asset_server) -> dict[str, str]:
     return {
-        image_asset: encode_image_base64(
-            local_asset_server.get_image_asset(image_asset)
-        )
+        image_asset: encode_image_base64(local_asset_server.get_image_asset(image_asset))
         for image_asset in TEST_IMAGE_ASSETS
     }
 
@@ -53,9 +51,7 @@ async def test_basic_vision(model_name: str, base64_encoded_image: dict[str, str
     ]
 
     # Server will pre-compile on first startup (takes a long time).
-    with RemoteOpenAIServer(
-        model_name, server_args, max_wait_seconds=600
-    ) as remote_server:
+    with RemoteOpenAIServer(model_name, server_args, max_wait_seconds=600) as remote_server:
         client: openai.AsyncOpenAI = remote_server.get_async_client()
 
         # Other requests now should be much faster

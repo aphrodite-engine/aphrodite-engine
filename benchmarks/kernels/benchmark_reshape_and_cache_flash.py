@@ -40,10 +40,7 @@ def run_benchmark(
         raise ValueError("fp8 kv-cache requires head_size to be a multiple of 16.")
 
     if implementation not in ("cuda", "triton"):
-        raise ValueError(
-            f"Unsupported implementation: {implementation}. "
-            "Only 'cuda' and 'triton' are supported."
-        )
+        raise ValueError(f"Unsupported implementation: {implementation}. Only 'cuda' and 'triton' are supported.")
     if implementation == "triton" and kv_cache_layout == "HND":
         return float("nan")  # Triton does not support HND layout yet.
 
@@ -153,10 +150,7 @@ def main(args):
             )
             rows.append([n_tok, layout, f"{lat * 1e6:.3f}"])
 
-    print(
-        f"Benchmark results for implementation {args.implementation}"
-        f" (measuring with {args.mode}):"
-    )
+    print(f"Benchmark results for implementation {args.implementation} (measuring with {args.mode}):")
     print(tabulate(rows, headers=["num_tokens", "layout", "latency (µs)"]))
 
 

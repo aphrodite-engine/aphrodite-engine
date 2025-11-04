@@ -12,26 +12,21 @@ from aphrodite.config import AphroditeConfig, KVTransferConfig
 from aphrodite.distributed.kv_events import BlockRemoved, BlockStored
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import KVConnectorRole
 from aphrodite.distributed.kv_transfer.kv_connector.v1.offloading_connector import (
-    OffloadingConnector, OffloadingConnectorMetadata)
+    OffloadingConnector,
+    OffloadingConnectorMetadata,
+)
 from aphrodite.forward_context import ForwardContext
 from aphrodite.utils.hashing import sha256
-from aphrodite.v1.core.kv_cache_utils import (BlockHash,
-                                              get_request_block_hasher,
-                                              init_none_hash)
+from aphrodite.v1.core.kv_cache_utils import BlockHash, get_request_block_hasher, init_none_hash
 from aphrodite.v1.core.sched.scheduler import Scheduler
-from aphrodite.v1.kv_offload.abstract import (LoadStoreSpec, OffloadingEvent,
-                                              OffloadingManager,
-                                              PrepareStoreOutput)
+from aphrodite.v1.kv_offload.abstract import LoadStoreSpec, OffloadingEvent, OffloadingManager, PrepareStoreOutput
 from aphrodite.v1.kv_offload.mediums import GPULoadStoreSpec
 from aphrodite.v1.kv_offload.spec import OffloadingSpec
-from aphrodite.v1.kv_offload.worker.worker import (OffloadingHandler,
-                                                   TransferResult,
-                                                   TransferSpec)
+from aphrodite.v1.kv_offload.worker.worker import OffloadingHandler, TransferResult, TransferSpec
 from aphrodite.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, KVConnectorOutput
 from aphrodite.v1.request import Request
 
-from .utils import (EOS_TOKEN_ID, create_aphrodite_config,
-                    create_model_runner_output, create_scheduler)
+from .utils import EOS_TOKEN_ID, create_aphrodite_config, create_model_runner_output, create_scheduler
 
 
 class MockLoadStoreSpec(LoadStoreSpec):
@@ -68,17 +63,13 @@ class MockOffloadingSpec(OffloadingSpec):
 
         self.manager = MagicMock(spec=OffloadingManager)
         self.manager.lookup.return_value = 0
-        self.manager.prepare_load = lambda block_hashes: (
-            MockLoadStoreSpec(block_hashes)
-        )
+        self.manager.prepare_load = lambda block_hashes: (MockLoadStoreSpec(block_hashes))
         self.handler = MockOffloadingHandler()
 
     def get_manager(self) -> OffloadingManager:
         return self.manager
 
-    def get_handlers(
-        self, _
-    ) -> Iterator[tuple[type[LoadStoreSpec], type[LoadStoreSpec], OffloadingHandler]]:
+    def get_handlers(self, _) -> Iterator[tuple[type[LoadStoreSpec], type[LoadStoreSpec], OffloadingHandler]]:
         yield GPULoadStoreSpec, MockLoadStoreSpec, self.handler
         yield MockLoadStoreSpec, GPULoadStoreSpec, self.handler
 
@@ -95,18 +86,14 @@ class TransferSummary:
 
 
 class RequestRunner:
-    def __init__(
-        self, offloaded_block_size: int, gpu_block_size: int, num_gpu_blocks: int
-    ):
+    def __init__(self, offloaded_block_size: int, gpu_block_size: int, num_gpu_blocks: int):
         self.offloaded_block_size: int = offloaded_block_size
         self.gpu_block_size: int = gpu_block_size
         self.num_gpu_blocks: int = num_gpu_blocks
 
         self.req_id: int = -1
 
-        aphrodite_config = create_aphrodite_config(
-            block_size=gpu_block_size, max_num_batched_tokens=1000
-        )
+        aphrodite_config = create_aphrodite_config(block_size=gpu_block_size, max_num_batched_tokens=1000)
         aphrodite_config.kv_transfer_config = KVTransferConfig(
             kv_connector="OffloadingConnector",
             kv_role="kv_both",
@@ -117,9 +104,7 @@ class RequestRunner:
             },
         )
 
-        self.scheduler: Scheduler = create_scheduler(
-            aphrodite_config, num_blocks=num_gpu_blocks
-        )
+        self.scheduler: Scheduler = create_scheduler(aphrodite_config, num_blocks=num_gpu_blocks)
         self.worker_connector = OffloadingConnector(aphrodite_config, KVConnectorRole.WORKER)
 
         # register worker kv_caches to enable OffloadingWorker creations
@@ -163,9 +148,7 @@ class RequestRunner:
         init_none_hash(sha256)
         self._block_hasher = get_request_block_hasher(gpu_block_size, sha256)
 
-        self._dummy_ctx: ForwardContext = ForwardContext(
-            no_compile_layers={}, attn_metadata={}, virtual_engine=0
-        )
+        self._dummy_ctx: ForwardContext = ForwardContext(no_compile_layers={}, attn_metadata={}, virtual_engine=0)
 
     def new_request(self, token_ids: list[int]):
         assert not self.scheduler.requests
@@ -214,27 +197,19 @@ class RequestRunner:
                 if store:
                     assert len(gpu_block_indices) == len(offload_addresses)
 
-                    self.completed_stores.append(
-                        TransferSummary(gpu_block_indices, offload_addresses)
-                    )
+                    self.completed_stores.append(TransferSummary(gpu_block_indices, offload_addresses))
                     self.pending_stores_count -= 1
                 else:
-                    remainder_sub_block_count = len(offload_addresses) - len(
-                        gpu_block_indices
-                    )
+                    remainder_sub_block_count = len(offload_addresses) - len(gpu_block_indices)
                     assert remainder_sub_block_count >= 0
                     assert remainder_sub_block_count < block_size_factor
                     offload_addresses = offload_addresses[remainder_sub_block_count:]
 
-                    self.completed_loads.append(
-                        TransferSummary(gpu_block_indices, offload_addresses)
-                    )
+                    self.completed_loads.append(TransferSummary(gpu_block_indices, offload_addresses))
                     self.pending_loads_count -= 1
 
     def _update_gpu_block_idx(self):
-        for blocks in self.scheduler.kv_cache_manager.coordinator.single_type_managers[
-            0
-        ].req_to_blocks.values():
+        for blocks in self.scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks.values():
             for block_idx, block in enumerate(blocks):
                 self.gpu_block_index[block.block_id] = block_idx
 
@@ -268,9 +243,7 @@ class RequestRunner:
             if scheduler_output.total_num_scheduled_tokens > 0:
                 self.worker_connector.wait_for_save()
 
-            finished_sending, finished_recving = self.worker_connector.get_finished(
-                scheduler_output.finished_req_ids
-            )
+            finished_sending, finished_recving = self.worker_connector.get_finished(scheduler_output.finished_req_ids)
 
             self.worker_connector.clear_connector_metadata()
 
@@ -302,9 +275,7 @@ class RequestRunner:
                 assert not finished_recving
 
                 model_runner_output = copy.deepcopy(EMPTY_MODEL_RUNNER_OUTPUT)
-                model_runner_output.kv_connector_output = KVConnectorOutput(
-                    finished_sending=finished_sending
-                )
+                model_runner_output.kv_connector_output = KVConnectorOutput(finished_sending=finished_sending)
 
                 self.scheduler.update_from_output(scheduler_output, model_runner_output)
 
@@ -331,9 +302,7 @@ class RequestRunner:
 
         loaded_gpu_block_indexes: set[int] = set()
         for transfer in self.completed_loads:
-            for gpu_block_idx, offloaded_address in zip(
-                transfer.gpu_block_indices, transfer.offload_addresses
-            ):
+            for gpu_block_idx, offloaded_address in zip(transfer.gpu_block_indices, transfer.offload_addresses):
                 loaded_gpu_block_indexes.add(gpu_block_idx)
                 assert gpu_block_idx == self.offloaded[offloaded_address]
 
@@ -342,9 +311,7 @@ class RequestRunner:
 
         stored_gpu_block_indexes: set[int] = set()
         for transfer in self.completed_stores:
-            for gpu_block_idx, offloaded_address in zip(
-                transfer.gpu_block_indices, transfer.offload_addresses
-            ):
+            for gpu_block_idx, offloaded_address in zip(transfer.gpu_block_indices, transfer.offload_addresses):
                 stored_gpu_block_indexes.add(gpu_block_idx)
                 self.offloaded[offloaded_address] = gpu_block_idx
 
@@ -392,9 +359,7 @@ def test_offloading_connector(request_runner):
     # 3 blocks, store just the middle block (skip first and last)
     # blocks = [0, 1, 2], [3, 4, 5], [6, 7, 8]
     runner.new_request(token_ids=[0] * offloaded_block_size * 3)
-    runner.manager.prepare_store.side_effect = (
-        lambda block_hashes: generate_store_output(list(block_hashes)[1:2])
-    )
+    runner.manager.prepare_store.side_effect = lambda block_hashes: generate_store_output(list(block_hashes)[1:2])
     runner.run(decoded_tokens=[0], expected_stored_gpu_block_indexes=(3, 4, 5))
 
     # add block missing 1 token -> no offload
@@ -407,15 +372,11 @@ def test_offloading_connector(request_runner):
     runner.manager.prepare_store.assert_called()
 
     # 1 more block, now set block_hashes_to_store = []
-    runner.manager.prepare_store.side_effect = (
-        lambda block_hashes: generate_store_output([])
-    )
+    runner.manager.prepare_store.side_effect = lambda block_hashes: generate_store_output([])
     runner.run(decoded_tokens=[0] * offloaded_block_size)
 
     # 1 more block, now check touch was called with all 6 blocks
-    runner.manager.prepare_store.side_effect = (
-        lambda block_hashes: generate_store_output(block_hashes)
-    )
+    runner.manager.prepare_store.side_effect = lambda block_hashes: generate_store_output(block_hashes)
     runner.run(
         decoded_tokens=[0] * offloaded_block_size,
         expected_stored_gpu_block_indexes=(15, 16, 17),
@@ -445,20 +406,14 @@ def test_offloading_connector(request_runner):
     runner.run(decoded_tokens=[EOS_TOKEN_ID])
 
     # full_block_tokens - num_computed_tokens < offloaded_block_size
-    runner.new_request(
-        token_ids=[0] * gpu_block_size + [1] * (offloaded_block_size - gpu_block_size)
-    )
-    runner.manager.prepare_store.side_effect = (
-        lambda block_hashes: generate_store_output([])
-    )
+    runner.new_request(token_ids=[0] * gpu_block_size + [1] * (offloaded_block_size - gpu_block_size))
+    runner.manager.prepare_store.side_effect = lambda block_hashes: generate_store_output([])
     runner.run(decoded_tokens=[EOS_TOKEN_ID])
     runner.manager.lookup.assert_not_called()
 
     # single block lookup with no hits
     runner.new_request(token_ids=[1] * offloaded_block_size)
-    runner.manager.prepare_store.side_effect = (
-        lambda block_hashes: generate_store_output([])
-    )
+    runner.manager.prepare_store.side_effect = lambda block_hashes: generate_store_output([])
     runner.run(decoded_tokens=[EOS_TOKEN_ID])
     runner.manager.lookup.assert_called()
     assert len(list(runner.manager.lookup.call_args.args[0])) == 1
@@ -466,37 +421,23 @@ def test_offloading_connector(request_runner):
     # single block lookup with a hit
     runner.scheduler.reset_prefix_cache()
     runner.new_request(token_ids=[0] * offloaded_block_size)
-    runner.manager.prepare_store.side_effect = (
-        lambda block_hashes: generate_store_output([])
-    )
+    runner.manager.prepare_store.side_effect = lambda block_hashes: generate_store_output([])
     runner.manager.lookup.return_value = 1
-    runner.run(
-        decoded_tokens=[EOS_TOKEN_ID], expected_loaded_gpu_block_indexes=(0, 1, 2)
-    )
+    runner.run(decoded_tokens=[EOS_TOKEN_ID], expected_loaded_gpu_block_indexes=(0, 1, 2))
 
     # single block lookup with a hit in a middle block
-    runner.new_request(
-        token_ids=[0] * offloaded_block_size * 2 + [1] * offloaded_block_size
-    )
-    runner.manager.prepare_store.side_effect = (
-        lambda block_hashes: generate_store_output([])
-    )
+    runner.new_request(token_ids=[0] * offloaded_block_size * 2 + [1] * offloaded_block_size)
+    runner.manager.prepare_store.side_effect = lambda block_hashes: generate_store_output([])
     runner.manager.lookup.return_value = 1
-    runner.run(
-        decoded_tokens=[EOS_TOKEN_ID], expected_loaded_gpu_block_indexes=(3, 4, 5)
-    )
+    runner.run(decoded_tokens=[EOS_TOKEN_ID], expected_loaded_gpu_block_indexes=(3, 4, 5))
 
     # test take_events
     def to_hashes(int_hashes: list[int]) -> list[BlockHash]:
         return [BlockHash(str(i).encode()) for i in int_hashes]
 
     def take_events() -> Iterable[OffloadingEvent]:
-        yield OffloadingEvent(
-            block_hashes=to_hashes([1, 2, 3]), block_size=16, medium="A", removed=False
-        )
-        yield OffloadingEvent(
-            block_hashes=to_hashes([4, 5, 6]), block_size=32, medium="B", removed=True
-        )
+        yield OffloadingEvent(block_hashes=to_hashes([1, 2, 3]), block_size=16, medium="A", removed=False)
+        yield OffloadingEvent(block_hashes=to_hashes([4, 5, 6]), block_size=32, medium="B", removed=True)
 
     runner.manager.take_events.side_effect = take_events
     events = list(runner.scheduler_connector.take_events())

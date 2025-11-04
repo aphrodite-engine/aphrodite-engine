@@ -1,5 +1,4 @@
 # ruff: noqa: E501
-# coding=utf-8
 # Copied from
 # https://huggingface.co/Snowflake/snowflake-arctic-instruct/blob/main/configuration_arctic.py
 """Arctic model configuration"""

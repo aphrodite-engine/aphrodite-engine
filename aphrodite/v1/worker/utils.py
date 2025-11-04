@@ -320,9 +320,7 @@ def bind_kv_cache(
         forward_context[layer_name].kv_cache = [kv_cache]
 
 
-def is_residual_scattered_for_sp(
-    aphrodite_config: AphroditeConfig, num_input_tokens: int
-) -> bool:
+def is_residual_scattered_for_sp(aphrodite_config: AphroditeConfig, num_input_tokens: int) -> bool:
     """Check if the residual tensor is scattered for sequence parallelism.
 
     The residual tensor is scattered across tensor parallel ranks when sequence

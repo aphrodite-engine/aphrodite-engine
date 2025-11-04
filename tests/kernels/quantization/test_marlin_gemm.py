@@ -8,26 +8,40 @@ import torch
 
 from aphrodite import _custom_ops as ops
 from aphrodite.quantization.gptq_marlin_24 import (
-    GPTQ_MARLIN_24_MAX_PARALLEL, GPTQ_MARLIN_24_MIN_THREAD_N,
-    GPTQ_MARLIN_24_SUPPORTED_GROUP_SIZES, GPTQ_MARLIN_24_SUPPORTED_QUANT_TYPES)
+    GPTQ_MARLIN_24_MAX_PARALLEL,
+    GPTQ_MARLIN_24_MIN_THREAD_N,
+    GPTQ_MARLIN_24_SUPPORTED_GROUP_SIZES,
+    GPTQ_MARLIN_24_SUPPORTED_QUANT_TYPES,
+)
 from aphrodite.quantization.utils.marlin_utils import (
-    MARLIN_SUPPORTED_GROUP_SIZES, marlin_make_empty_g_idx,
-    marlin_make_workspace_new, marlin_permute_bias, marlin_permute_scales,
-    query_marlin_supported_quant_types)
+    MARLIN_SUPPORTED_GROUP_SIZES,
+    marlin_make_empty_g_idx,
+    marlin_make_workspace_new,
+    marlin_permute_bias,
+    marlin_permute_scales,
+    query_marlin_supported_quant_types,
+)
 from aphrodite.quantization.utils.marlin_utils_fp4 import (
-    FP4_MARLIN_SUPPORTED_GROUP_SIZES, rand_marlin_weight_mxfp4_like,
-    rand_marlin_weight_nvfp4_like)
-from aphrodite.quantization.utils.marlin_utils_fp8 import (
-    marlin_quant_fp8_torch)
+    FP4_MARLIN_SUPPORTED_GROUP_SIZES,
+    rand_marlin_weight_mxfp4_like,
+    rand_marlin_weight_nvfp4_like,
+)
+from aphrodite.quantization.utils.marlin_utils_fp8 import marlin_quant_fp8_torch
 from aphrodite.quantization.utils.marlin_utils_test import (
-    MarlinWorkspace, awq_marlin_quantize, get_weight_perm, marlin_quantize,
-    marlin_weights)
-from aphrodite.quantization.utils.marlin_utils_test_24 import (
-    marlin_24_quantize)
-from aphrodite.quantization.utils.quant_utils import (awq_pack, gptq_pack,
-                                                      gptq_quantize_weights,
-                                                      quantize_weights,
-                                                      sort_weights)
+    MarlinWorkspace,
+    awq_marlin_quantize,
+    get_weight_perm,
+    marlin_quantize,
+    marlin_weights,
+)
+from aphrodite.quantization.utils.marlin_utils_test_24 import marlin_24_quantize
+from aphrodite.quantization.utils.quant_utils import (
+    awq_pack,
+    gptq_pack,
+    gptq_quantize_weights,
+    quantize_weights,
+    sort_weights,
+)
 from aphrodite.scalar_type import scalar_types
 from tests.kernels.utils import DEFAULT_OPCHECK_TEST_UTILS, opcheck
 from tests.quantization.utils import is_quant_method_supported
@@ -56,9 +70,7 @@ DTYPES = [torch.float16, torch.bfloat16]
 
 
 def compute_max_diff(output, output_ref):
-    return torch.mean(torch.abs(output - output_ref)) / torch.mean(
-        torch.abs(output_ref)
-    )
+    return torch.mean(torch.abs(output - output_ref)) / torch.mean(torch.abs(output_ref))
 
 
 def rand_data(shape, dtype=torch.float16):
@@ -75,9 +87,7 @@ def rand_data(shape, dtype=torch.float16):
 @pytest.mark.parametrize("group_size", MARLIN_SUPPORTED_GROUP_SIZES)
 @pytest.mark.parametrize("act_order", ACT_ORDER_OPTS)
 @pytest.mark.parametrize("mnk_factors", MNK_FACTORS)
-def test_gptq_marlin_repack(
-    k_chunk, n_chunk, quant_type, group_size, act_order, mnk_factors
-):
+def test_gptq_marlin_repack(k_chunk, n_chunk, quant_type, group_size, act_order, mnk_factors):
     m_factor, n_factor, k_factor = mnk_factors
 
     size_k = k_chunk * k_factor
@@ -99,9 +109,7 @@ def test_gptq_marlin_repack(
     b_weight = rand_data((size_k, size_n))
 
     # Quantize (and apply act_order if provided)
-    w_ref, q_w, s, g_idx, rand_perm = gptq_quantize_weights(
-        b_weight, quant_type, group_size, act_order
-    )
+    w_ref, q_w, s, g_idx, rand_perm = gptq_quantize_weights(b_weight, quant_type, group_size, act_order)
 
     # Pack to GPTQ format
     q_w_gptq = gptq_pack(q_w, quant_type.size_bits, size_k, size_n)
@@ -114,9 +122,7 @@ def test_gptq_marlin_repack(
 
     # Pack to Marlin format
     weight_perm = get_weight_perm(quant_type.size_bits)
-    marlin_q_w_1 = marlin_weights(
-        q_w, size_k, size_n, quant_type.size_bits, weight_perm
-    )
+    marlin_q_w_1 = marlin_weights(q_w, size_k, size_n, quant_type.size_bits, weight_perm)
 
     opcheck(
         torch.ops._C.gptq_marlin_repack,
@@ -160,22 +166,16 @@ def test_awq_marlin_repack(k_chunk, n_chunk, quant_type, group_size, mnk_factors
     b_weight = rand_data((size_k, size_n))
 
     # Quantize
-    w_ref, q_w, s, zp = quantize_weights(
-        b_weight, quant_type, group_size, zero_points=True
-    )
+    w_ref, q_w, s, zp = quantize_weights(b_weight, quant_type, group_size, zero_points=True)
 
     # Pack to AWQ format
     q_w_awq = awq_pack(q_w, quant_type.size_bits, size_k, size_n)
 
     # Pack to Marlin format
     weight_perm = get_weight_perm(quant_type.size_bits)
-    marlin_q_w_1 = marlin_weights(
-        q_w, size_k, size_n, quant_type.size_bits, weight_perm
-    )
+    marlin_q_w_1 = marlin_weights(q_w, size_k, size_n, quant_type.size_bits, weight_perm)
 
-    opcheck(
-        torch.ops._C.awq_marlin_repack, (q_w_awq, size_k, size_n, quant_type.size_bits)
-    )
+    opcheck(torch.ops._C.awq_marlin_repack, (q_w_awq, size_k, size_n, quant_type.size_bits))
 
     # Run Marlin repack GPU kernel
     marlin_q_w_2 = ops.awq_marlin_repack(
@@ -196,9 +196,7 @@ def test_awq_marlin_repack(k_chunk, n_chunk, quant_type, group_size, mnk_factors
 @pytest.mark.parametrize("k_chunk", MARLIN_K_CHUNKS)
 @pytest.mark.parametrize("n_chunk", MARLIN_N_CHUNKS)
 @pytest.mark.parametrize("quant_type", query_marlin_supported_quant_types())
-@pytest.mark.parametrize(
-    "group_size", set(MARLIN_SUPPORTED_GROUP_SIZES + FP4_MARLIN_SUPPORTED_GROUP_SIZES)
-)
+@pytest.mark.parametrize("group_size", set(MARLIN_SUPPORTED_GROUP_SIZES + FP4_MARLIN_SUPPORTED_GROUP_SIZES))
 @pytest.mark.parametrize("mnk_factors", MNK_FACTORS)
 @pytest.mark.parametrize("act_order", ACT_ORDER_OPTS)
 @pytest.mark.parametrize("is_k_full", K_FULL_OPTS)
@@ -245,13 +243,9 @@ def test_gptq_marlin_gemm(
             return
 
         if group_size == 16:
-            w_ref, marlin_q_w, marlin_s, marlin_s2 = rand_marlin_weight_nvfp4_like(
-                b_weight.T, group_size
-            )
+            w_ref, marlin_q_w, marlin_s, marlin_s2 = rand_marlin_weight_nvfp4_like(b_weight.T, group_size)
         else:
-            w_ref, marlin_q_w, marlin_s = rand_marlin_weight_mxfp4_like(
-                b_weight.T, group_size
-            )
+            w_ref, marlin_q_w, marlin_s = rand_marlin_weight_mxfp4_like(b_weight.T, group_size)
             marlin_s2 = None
 
         g_idx = None
@@ -270,9 +264,7 @@ def test_gptq_marlin_gemm(
     elif has_zp:
         if group_size == 16:
             return
-        w_ref, marlin_q_w, marlin_s, marlin_zp = awq_marlin_quantize(
-            b_weight, quant_type, group_size
-        )
+        w_ref, marlin_q_w, marlin_s, marlin_zp = awq_marlin_quantize(b_weight, quant_type, group_size)
         g_idx = None
         sort_indices = None
         marlin_s2 = None
@@ -386,13 +378,9 @@ def test_gptq_marlin_24_gemm(k_chunk, n_chunk, quant_type, group_size, mnk_facto
     a_input = rand_data((size_m, size_k))
     b_weight = rand_data((size_k, size_n))
 
-    (w_24_ref, marlin_24_q_w_comp, marlin_24_meta, marlin_24_s) = marlin_24_quantize(
-        b_weight, quant_type, group_size
-    )
+    (w_24_ref, marlin_24_q_w_comp, marlin_24_meta, marlin_24_s) = marlin_24_quantize(b_weight, quant_type, group_size)
 
-    workspace_24 = MarlinWorkspace(
-        size_n, GPTQ_MARLIN_24_MIN_THREAD_N, GPTQ_MARLIN_24_MAX_PARALLEL
-    )
+    workspace_24 = MarlinWorkspace(size_n, GPTQ_MARLIN_24_MIN_THREAD_N, GPTQ_MARLIN_24_MAX_PARALLEL)
 
     output_ref = torch.matmul(a_input, w_24_ref)
 
@@ -465,15 +453,9 @@ def test_hqq_marlin_gemm(
     gptq_w_q = gptq_pack(b_weight.transpose(1, 0), 4, size_k, size_n)
 
     sort_indices = torch.empty(0, dtype=torch.int, device=dev)
-    marlin_w_q = ops.gptq_marlin_repack(gptq_w_q, sort_indices, size_k, size_n, 4).to(
-        dev
-    )
-    marlin_s = marlin_permute_scales(
-        scale.transpose(1, 0), size_k, size_n, group_size
-    ).to(dev)
-    marlin_zp = marlin_permute_scales(
-        zero.transpose(1, 0), size_k, size_n, group_size
-    ).to(dev)
+    marlin_w_q = ops.gptq_marlin_repack(gptq_w_q, sort_indices, size_k, size_n, 4).to(dev)
+    marlin_s = marlin_permute_scales(scale.transpose(1, 0), size_k, size_n, group_size).to(dev)
+    marlin_zp = marlin_permute_scales(zero.transpose(1, 0), size_k, size_n, group_size).to(dev)
 
     g_idx = marlin_make_empty_g_idx(dev)
     g_idx_sort_indices = marlin_make_empty_g_idx(dev)
@@ -525,9 +507,7 @@ def test_marlin_gemm_subset_input():
     a_input = rand_data((big_m, big_k))[8 : size_m + 8, 8 : size_k + 8]
     b_weight = rand_data((size_k, size_n))
 
-    w_ref, marlin_q_w, marlin_s, g_idx, sort_indices, _ = marlin_quantize(
-        b_weight, quant_type, group_size, False
-    )
+    w_ref, marlin_q_w, marlin_s, g_idx, sort_indices, _ = marlin_quantize(b_weight, quant_type, group_size, False)
 
     marlin_zp = marlin_make_empty_g_idx(marlin_s.device)
     workspace = marlin_make_workspace_new(a_input.device)
@@ -573,9 +553,7 @@ def test_marlin_gemm_with_bias(size_m):
 
     marlin_bias = marlin_permute_bias(b_bias)
 
-    w_ref, marlin_q_w, marlin_s, g_idx, sort_indices, _ = marlin_quantize(
-        b_weight, quant_type, group_size, False
-    )
+    w_ref, marlin_q_w, marlin_s, g_idx, sort_indices, _ = marlin_quantize(b_weight, quant_type, group_size, False)
 
     marlin_zp = marlin_make_empty_g_idx(marlin_s.device)
     workspace = marlin_make_workspace_new(a_input.device)

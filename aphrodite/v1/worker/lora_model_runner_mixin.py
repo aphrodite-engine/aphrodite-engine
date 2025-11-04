@@ -25,16 +25,13 @@ logger = init_logger(__name__)
 
 # Defined as a mixin for GPUModelRunner
 class LoRAModelRunnerMixin:
-    def load_lora_model(
-        self, model: nn.Module, aphrodite_config: AphroditeConfig, device: torch.device
-    ) -> nn.Module:
+    def load_lora_model(self, model: nn.Module, aphrodite_config: AphroditeConfig, device: torch.device) -> nn.Module:
         if not supports_lora(model):
             raise ValueError(f"{model.__class__.__name__} does not support LoRA yet.")
 
         if supports_multimodal(model):
             logger.warning(
-                "Regarding multimodal models, Aphrodite currently "
-                "only supports adding LoRA to language model."
+                "Regarding multimodal models, Aphrodite currently only supports adding LoRA to language model."
             )
 
         # Add LoRA Manager to the Model Runner
@@ -58,32 +55,22 @@ class LoRAModelRunnerMixin:
         # non-cuda platforms.
         # On cuda platforms we use the same kernels for prefill and
         # decode and this flag is generally ignored.
-        lora_mapping = LoRAMapping(
-            token_lora_mapping, prompt_lora_mapping, is_prefill=True
-        )
+        lora_mapping = LoRAMapping(token_lora_mapping, prompt_lora_mapping, is_prefill=True)
         self.lora_manager.set_active_adapters(lora_requests, lora_mapping)
 
     def _ensure_lora_enabled(self) -> None:
         if not hasattr(self, "lora_manager"):
             raise RuntimeError("LoRA is not enabled. Use --enable-lora to enable LoRA.")
 
-    def set_active_loras(
-        self, input_batch: InputBatch, num_scheduled_tokens: np.ndarray
-    ) -> None:
+    def set_active_loras(self, input_batch: InputBatch, num_scheduled_tokens: np.ndarray) -> None:
         prompt_lora_mapping: tuple[int, ...]  # of size input_batch.num_reqs
         token_lora_mapping: tuple[int, ...]  # of size np.sum(num_scheduled_tokens)
         lora_requests: set[LoRARequest]
-        prompt_lora_mapping, token_lora_mapping, lora_requests = (
-            input_batch.make_lora_inputs(num_scheduled_tokens)
-        )
-        return self._set_active_loras(
-            prompt_lora_mapping, token_lora_mapping, lora_requests
-        )
+        prompt_lora_mapping, token_lora_mapping, lora_requests = input_batch.make_lora_inputs(num_scheduled_tokens)
+        return self._set_active_loras(prompt_lora_mapping, token_lora_mapping, lora_requests)
 
     @contextmanager
-    def maybe_setup_dummy_loras(
-        self, lora_config: LoRAConfig | None, remove_lora: bool = True
-    ):
+    def maybe_setup_dummy_loras(self, lora_config: LoRAConfig | None, remove_lora: bool = True):
         if lora_config is None:
             yield
         else:
@@ -91,9 +78,7 @@ class LoRAModelRunnerMixin:
             assert self.lora_manager is not None, "LoRA is not enabled"
 
             num_loras = lora_config.max_loras
-            lora_warmup_rank = (
-                lora_config.max_lora_rank if lora_config.max_lora_rank < 8 else 8
-            )
+            lora_warmup_rank = lora_config.max_lora_rank if lora_config.max_lora_rank < 8 else 8
             # Make dummy lora requests
             lora_requests: set[LoRARequest] = {
                 LoRARequest(
@@ -135,9 +120,7 @@ class LoRAModelRunnerMixin:
             # Make prompt lora mapping
             # Assign LoRA IDs cyclically to simulate a worst-case scenario.
             if activate_lora:
-                prompt_lora_mapping = (
-                    np.arange(num_reqs, dtype=np.int32) % num_loras
-                ) + 1
+                prompt_lora_mapping = (np.arange(num_reqs, dtype=np.int32) % num_loras) + 1
             else:
                 prompt_lora_mapping = np.zeros(num_reqs, dtype=np.int32)
 
@@ -154,9 +137,7 @@ class LoRAModelRunnerMixin:
                 for lora_id in range(1, num_loras + 1)
             }
 
-            self._set_active_loras(
-                tuple(prompt_lora_mapping), tuple(token_lora_mapping), lora_requests
-            )
+            self._set_active_loras(tuple(prompt_lora_mapping), tuple(token_lora_mapping), lora_requests)
 
             yield
 
@@ -170,9 +151,7 @@ class LoRAModelRunnerMixin:
     ):
         with (
             self.maybe_setup_dummy_loras(lora_config, remove_lora),
-            self.maybe_select_dummy_loras(
-                lora_config, num_scheduled_tokens, activate_lora
-            ),
+            self.maybe_select_dummy_loras(lora_config, num_scheduled_tokens, activate_lora),
         ):
             yield
 

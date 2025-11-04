@@ -28,28 +28,30 @@ from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.pooler import DispatchPooler, DummyPooler
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.terratorch_plugin import (DummyDataGenerator,
-                                                         InferenceRunner,
-                                                         InputDefinition,
-                                                         InputTypeEnum)
+from aphrodite.modeling.models.terratorch_plugin import (
+    DummyDataGenerator,
+    InferenceRunner,
+    InputDefinition,
+    InputTypeEnum,
+)
 from aphrodite.modeling.models.utils import AutoWeightsLoader
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import MultiModalProcessorOnlyCache
-from aphrodite.multimodal.inputs import (ImageItem, ModalityData,
-                                         MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalInputs,
-                                         MultiModalKwargsItems,
-                                         MultiModalUUIDDict, PlaceholderRange)
-from aphrodite.multimodal.parse import (DictEmbeddingItems, ModalityDataItems,
-                                        MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo, PromptUpdate)
+from aphrodite.multimodal.inputs import (
+    ImageItem,
+    ModalityData,
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalInputs,
+    MultiModalKwargsItems,
+    MultiModalUUIDDict,
+    PlaceholderRange,
+)
+from aphrodite.multimodal.parse import DictEmbeddingItems, ModalityDataItems, MultiModalDataItems, MultiModalDataParser
+from aphrodite.multimodal.processing import BaseMultiModalProcessor, BaseProcessingInfo, PromptUpdate
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 
-from .interfaces import (IsAttentionFree, MultiModalEmbeddings,
-                         SupportsMultiModal)
+from .interfaces import IsAttentionFree, MultiModalEmbeddings, SupportsMultiModal
 from .interfaces_base import default_pooling_type
 
 logger = init_logger(__name__)
@@ -89,9 +91,7 @@ class TerratorchProcessingInfo(BaseProcessingInfo):
 class TerratorchInputBuilder(BaseDummyInputsBuilder[TerratorchProcessingInfo]):
     def __init__(self, info: TerratorchProcessingInfo):
         super().__init__(info)
-        self.dummy_data_generator = DummyDataGenerator(
-            self.info.get_hf_config().to_dict()["pretrained_cfg"]
-        )
+        self.dummy_data_generator = DummyDataGenerator(self.info.get_hf_config().to_dict()["pretrained_cfg"])
 
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         return ""
@@ -107,9 +107,7 @@ class TerratorchInputBuilder(BaseDummyInputsBuilder[TerratorchProcessingInfo]):
 
         if mm_options:
             logger.warning(
-                "Configurable multimodal profiling "
-                "options are not supported for Terratorch. "
-                "They are ignored for now."
+                "Configurable multimodal profiling options are not supported for Terratorch. They are ignored for now."
             )
 
         return self.dummy_data_generator.get_dummy_mm_data()
@@ -185,9 +183,7 @@ class TerratorchMultiModalProcessor(BaseMultiModalProcessor):
 
         mm_items = self._to_mm_items(mm_data)
         tokenization_kwargs = tokenization_kwargs or {}
-        mm_hashes = self._hash_mm_items(
-            mm_items, hf_processor_mm_kwargs, tokenization_kwargs, mm_uuids=mm_uuids
-        )
+        mm_hashes = self._hash_mm_items(mm_items, hf_processor_mm_kwargs, tokenization_kwargs, mm_uuids=mm_uuids)
         mm_placeholders = {"image": [PlaceholderRange(offset=0, length=0)]}
 
         mm_processed_data = BatchFeature(image_data)
@@ -286,9 +282,7 @@ class Terratorch(nn.Module, IsAttentionFree, SupportsMultiModal):
                             if "_timm_module." in name:
                                 name = name.replace("_timm_module.", "")
                             buffer = model_buffers[name]
-                            weight_loader = getattr(
-                                buffer, "weight_loader", default_weight_loader
-                            )
+                            weight_loader = getattr(buffer, "weight_loader", default_weight_loader)
                             weight_loader(buffer, weight)
                             loaded_buffers.append(name)
                         else:

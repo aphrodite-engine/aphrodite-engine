@@ -4,12 +4,11 @@ import torch
 
 import aphrodite.envs as envs
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
-from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
-                                                        FusedMoEQuantConfig)
-from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import (
-    FlashInferExperts)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import FlashInferExperts
 from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_prepare_finalize import (  # noqa: E501
-    create_flashinfer_prepare_finalize)
+    create_flashinfer_prepare_finalize,
+)
 from aphrodite.platforms import current_platform
 from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe
 
@@ -30,9 +29,7 @@ def is_flashinfer_fp4_cutlass_moe_available() -> bool:
     )
 
 
-def reorder_w1w3_to_w3w1(
-    weight: torch.Tensor, scale: torch.Tensor, dim: int = -2
-) -> tuple[torch.Tensor, torch.Tensor]:
+def reorder_w1w3_to_w3w1(weight: torch.Tensor, scale: torch.Tensor, dim: int = -2) -> tuple[torch.Tensor, torch.Tensor]:
     """Re-order the concatenated `[w1, w3]` tensors to `[w3, w1]`"""
     size = weight.size(dim)
     assert size % 2 == 0, f"Expected even size in dim {dim}, got {size}"
@@ -53,9 +50,7 @@ def build_flashinfer_fp4_cutlass_moe_prepare_finalize(
     """Create a FlashInfer CUTLASS fused-MoE prepare finalize kernel"""
     use_dp = moe.moe_parallel_config.dp_size > 1
     enable_alltoallv = moe.moe_parallel_config.all2all_backend == "flashinfer_all2allv"
-    return create_flashinfer_prepare_finalize(
-        use_dp=use_dp, use_nvfp4=True, enable_alltoallv=enable_alltoallv
-    )
+    return create_flashinfer_prepare_finalize(use_dp=use_dp, use_nvfp4=True, enable_alltoallv=enable_alltoallv)
 
 
 def select_nvfp4_gemm_impl(

@@ -5,13 +5,11 @@ from collections.abc import Callable
 from typing import Any, Concatenate
 
 import torch
-from torch.multiprocessing import (
-    spawn)  # pyright: ignore[reportPrivateImportUsage]
+from torch.multiprocessing import spawn  # pyright: ignore[reportPrivateImportUsage]
 from typing_extensions import ParamSpec
 
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
-from aphrodite.distributed import (init_distributed_environment,
-                                   initialize_model_parallel)
+from aphrodite.distributed import init_distributed_environment, initialize_model_parallel
 from aphrodite.utils.network_utils import get_open_port
 
 ## Parallel Processes Utils
@@ -29,9 +27,7 @@ class ProcessGroupInfo:
     device: torch.device
 
 
-def _set_aphrodite_config(
-    aphrodite_config: AphroditeConfig, world_size: int, rank: int, local_rank: int
-):
+def _set_aphrodite_config(aphrodite_config: AphroditeConfig, world_size: int, rank: int, local_rank: int):
     import tempfile
 
     temp_file = tempfile.mkstemp()[1]

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import torch
 from torch.nn.parameter import Parameter
@@ -8,9 +8,7 @@ from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
 from aphrodite.quantization.base_config import QuantizationConfig
-from aphrodite.quantization.quip_utils import (get_hadK, get_packed_abs_grid,
-                                               matmul_hadU_cuda,
-                                               matmul_hadUt_cuda)
+from aphrodite.quantization.quip_utils import get_hadK, get_packed_abs_grid, matmul_hadU_cuda, matmul_hadUt_cuda
 
 
 class QuipConfig(QuantizationConfig):
@@ -25,19 +23,17 @@ class QuipConfig(QuantizationConfig):
         self.use_rand = use_rand
 
         if self.codebook != "E8P12":
-            raise ValueError("Currently, only E8P12 is supported for "
-                             f"Quip, but got {self.codebook}.")
+            raise ValueError(f"Currently, only E8P12 is supported for Quip, but got {self.codebook}.")
 
     def __repr__(self) -> str:
-        return (f"QuipConfig(codebook={self.codebook}, "
-                f"rescale_WH={self.rescale_WH})")
+        return f"QuipConfig(codebook={self.codebook}, rescale_WH={self.rescale_WH})"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
         return "quip"
 
     @classmethod
-    def get_supported_act_dtypes(cls) -> List[torch.dtype]:
+    def get_supported_act_dtypes(cls) -> list[torch.dtype]:
         return [torch.half]
 
     @classmethod
@@ -45,22 +41,21 @@ class QuipConfig(QuantizationConfig):
         return 80
 
     @classmethod
-    def get_config_filenames(cls) -> List[str]:
+    def get_config_filenames(cls) -> list[str]:
         return ["quantization_config.json"]
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "QuipConfig":
+    def from_config(cls, config: dict[str, Any]) -> "QuipConfig":
         codebook = cls.get_from_keys(config, ["codebook"])
         use_rand = cls.get_from_keys(config, ["use_rand"])
         return cls(codebook, use_rand)
 
-    def get_quant_method(self, layer: torch.nn.Module,
-                         prefix: str) -> Optional["QuipLinearMethod"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuipLinearMethod"]:
         if isinstance(layer, LinearBase):
             return QuipLinearMethod(self)
         return None
 
-    def get_scaled_act_names(self) -> List[str]:
+    def get_scaled_act_names(self) -> list[str]:
         return []
 
 
@@ -81,22 +76,18 @@ class QuipLinearMethod(LinearMethodBase):
         self,
         layer: torch.nn.Module,
         input_size_per_partition: int,
-        output_partition_sizes: List[int],
+        output_partition_sizes: list[int],
         input_size: int,
         output_size: int,
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ):
         output_size_per_partition = sum(output_partition_sizes)
-        if (input_size != input_size_per_partition
-                or output_size != output_size_per_partition):
-            raise ValueError(
-                "Currently Quip doesn't support tensor parallel yet")
+        if input_size != input_size_per_partition or output_size != output_size_per_partition:
+            raise ValueError("Currently Quip doesn't support tensor parallel yet")
 
-        had_left, K_left, q_in_features = get_hadK(input_size,
-                                                   self.quant_config.use_rand)
-        had_right, K_right, q_out_features = get_hadK(
-            output_size, self.quant_config.use_rand)
+        had_left, K_left, q_in_features = get_hadK(input_size, self.quant_config.use_rand)
+        had_right, K_right, q_out_features = get_hadK(output_size, self.quant_config.use_rand)
 
         if had_left is not None:
             layer.register_parameter(
@@ -104,7 +95,8 @@ class QuipLinearMethod(LinearMethodBase):
                 Parameter(
                     had_left.to(dtype=params_dtype, device="cuda"),
                     requires_grad=False,
-                ))
+                ),
+            )
             set_weight_attrs(layer.had_left, extra_weight_attrs)
         if had_right is not None:
             layer.register_parameter(
@@ -112,24 +104,24 @@ class QuipLinearMethod(LinearMethodBase):
                 Parameter(
                     had_right.to(dtype=params_dtype, device="cuda"),
                     requires_grad=False,
-                ))
+                ),
+            )
             set_weight_attrs(layer.had_right, extra_weight_attrs)
         layer.register_parameter(
             "Qidxs",
             Parameter(
-                torch.empty(q_out_features,
-                            q_in_features // self.pack,
-                            device="cuda",
-                            dtype=self.idx_dtype),
+                torch.empty(q_out_features, q_in_features // self.pack, device="cuda", dtype=self.idx_dtype),
                 requires_grad=False,
-            ))
+            ),
+        )
         set_weight_attrs(layer.Qidxs, extra_weight_attrs)
         layer.register_parameter(
             "Wscale",
             Parameter(
                 torch.ones((), dtype=torch.float, device="cuda"),
                 requires_grad=False,
-            ))
+            ),
+        )
         set_weight_attrs(layer.Wscale, extra_weight_attrs)
         layer.register_parameter(
             "SU",
@@ -140,7 +132,8 @@ class QuipLinearMethod(LinearMethodBase):
                     dtype=params_dtype,
                 ),
                 requires_grad=False,
-            ))
+            ),
+        )
         set_weight_attrs(layer.SU, extra_weight_attrs)
         layer.register_parameter(
             "SV",
@@ -151,13 +144,11 @@ class QuipLinearMethod(LinearMethodBase):
                     dtype=params_dtype,
                 ),
                 requires_grad=False,
-            ))
+            ),
+        )
         set_weight_attrs(layer.SV, extra_weight_attrs)
 
-    def apply(self,
-              layer: torch.nn.Module,
-              x: torch.Tensor,
-              bias: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def apply(self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
         # First run
         if isinstance(layer.Wscale, torch.Tensor):
             layer.Wscale = layer.Wscale.item()
@@ -171,25 +162,19 @@ class QuipLinearMethod(LinearMethodBase):
 
         if "SU" in layer:
             reshaped_x = reshaped_x * layer.SU
-        reshaped_x = matmul_hadUt_cuda(reshaped_x, layer.get("had_left", None),
-                                       layer.K_left, layer.q_in_features,
-                                       layer.Wscale)
+        reshaped_x = matmul_hadUt_cuda(
+            reshaped_x, layer.get("had_left", None), layer.K_left, layer.q_in_features, layer.Wscale
+        )
 
         m, n = layer.Qidxs.shape
         if reshaped_x.size(0) < 32:
             out = ops.quip_gemv(reshaped_x, layer.Qidxs, self.grid_packed_abs)
         else:
-            W_decompressed = torch.empty(m,
-                                         n * 8,
-                                         dtype=torch.float16,
-                                         device=x.device)
-            ops.quip_decompress(layer.Qidxs, self.grid_packed_abs,
-                                W_decompressed)
+            W_decompressed = torch.empty(m, n * 8, dtype=torch.float16, device=x.device)
+            ops.quip_decompress(layer.Qidxs, self.grid_packed_abs, W_decompressed)
             out = reshaped_x @ W_decompressed.T
 
-        out = matmul_hadU_cuda(out, layer.get("had_right",
-                                              None), layer.K_right,
-                               layer.q_out_features)[..., :out_dim]
+        out = matmul_hadU_cuda(out, layer.get("had_right", None), layer.K_right, layer.q_out_features)[..., :out_dim]
         if "SV" in layer:
             out = out * layer.SV
         out = out.view(*x.shape[:-1], out.shape[-1])

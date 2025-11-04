@@ -58,9 +58,7 @@ logger = init_logger(__name__)
 #    load_weights
 
 
-def maybe_save_metadata_and_attributes_for_weight_reloading(
-    model: nn.Module, model_config: ModelConfig
-):
+def maybe_save_metadata_and_attributes_for_weight_reloading(model: nn.Module, model_config: ModelConfig):
     # following is to support on the fly quantization, currently only supported
     # for torchao
     if model_config.quantization != "torchao":
@@ -69,9 +67,7 @@ def maybe_save_metadata_and_attributes_for_weight_reloading(
     if getattr(model, "process_weights_after_loading_already_called", False):
         # In case `process_weights_after_loading` is called multiple times
         # we'll skip it at later times
-        logger.warning(
-            "process_weights_after_loading already called for model %s", model
-        )
+        logger.warning("process_weights_after_loading already called for model %s", model)
         return
 
     from aphrodite.modeling.model_loader.weight_utils import get_quant_config
@@ -86,8 +82,7 @@ def maybe_save_metadata_and_attributes_for_weight_reloading(
     # restore the bfloat16 model weights during the relad step (R1 and R2)
     # see Notes in online_quantization.py for more details
     if not (
-        hasattr(quant_config, "is_checkpoint_torchao_serialized")
-        and not quant_config.is_checkpoint_torchao_serialized
+        hasattr(quant_config, "is_checkpoint_torchao_serialized") and not quant_config.is_checkpoint_torchao_serialized
     ):
         return
 
@@ -153,9 +148,7 @@ def load_weights_and_online_quantize(
     # R1, R2, R3, R4 in the Notes
 
     # TODO: Add fp8 support
-    assert model_config.quantization == "torchao", (
-        "online quantization is only enabled for torchao currently"
-    )
+    assert model_config.quantization == "torchao", "online quantization is only enabled for torchao currently"
     # TODO: use create_weights to restore the weights to original state
 
     # Step R1: First restore the quantized weights to original bfloat16
@@ -172,9 +165,7 @@ def load_weights_and_online_quantize(
         _device = d["device"]
         if model_device is not None:
             assert model_device == _device, (
-                "Expecting all weights "
-                "to be in the same device for now, got both: "
-                f"{model_device} and {_device}"
+                f"Expecting all weights to be in the same device for now, got both: {model_device} and {_device}"
             )
         else:
             model_device = _device
@@ -212,9 +203,7 @@ def load_weights_and_online_quantize(
     weights_iter, total_bytes = model_loader.get_all_weights(model_config, model)
     from aphrodite.utils import tensor_progress_bar
 
-    loaded_weights = model.load_weights(
-        tensor_progress_bar(weights_iter, total_bytes, "Loading model weights")
-    )
+    loaded_weights = model.load_weights(tensor_progress_bar(weights_iter, total_bytes, "Loading model weights"))
 
     # Step I2: online quantize the weights
     # manually process weights after loading

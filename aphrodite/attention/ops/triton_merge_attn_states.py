@@ -75,17 +75,11 @@ def merge_attn_states_kernel(
     head_arange = tl.arange(0, PADDED_HEAD_SIZE)
     head_mask = head_arange < HEAD_SIZE
     p_out = tl.load(
-        prefix_output
-        + token_idx * num_heads * HEAD_SIZE
-        + head_idx * HEAD_SIZE
-        + head_arange,
+        prefix_output + token_idx * num_heads * HEAD_SIZE + head_idx * HEAD_SIZE + head_arange,
         mask=head_mask,
     )
     s_out = tl.load(
-        suffix_output
-        + token_idx * num_heads * HEAD_SIZE
-        + head_idx * HEAD_SIZE
-        + head_arange,
+        suffix_output + token_idx * num_heads * HEAD_SIZE + head_idx * HEAD_SIZE + head_arange,
         mask=head_mask,
     )
 

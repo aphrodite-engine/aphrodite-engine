@@ -1,8 +1,7 @@
 import pytest
 import torch
 
-from aphrodite.modeling.layers.lightning_attn import (
-    linear_decode_forward_triton)
+from aphrodite.modeling.layers.lightning_attn import linear_decode_forward_triton
 from aphrodite.platforms import current_platform
 
 NUM_HEADS = [4, 8]
@@ -128,9 +127,7 @@ def test_linear_decode_forward_triton(
     k = base * torch.randn(batch_size, num_heads, 1, head_size, dtype=dtype)
     v = base * torch.randn(batch_size, num_heads, 1, head_size, dtype=dtype)
 
-    kv_caches = base * torch.randn(
-        batch_size, num_heads, head_size, head_size, dtype=dtype, device="cuda"
-    )
+    kv_caches = base * torch.randn(batch_size, num_heads, head_size, head_size, dtype=dtype, device="cuda")
 
     kv_caches_copy = kv_caches.clone()
 
@@ -140,13 +137,9 @@ def test_linear_decode_forward_triton(
 
     slot_idx = torch.arange(batch_size, device="cuda")
 
-    triton_output = linear_decode_forward_triton(
-        q, k, v, kv_caches, slope_rate, slot_idx
-    )
+    triton_output = linear_decode_forward_triton(q, k, v, kv_caches, slope_rate, slot_idx)
 
-    reference_output = reference_linear_decode(
-        q, k, v, kv_caches_copy, slope_rate, slot_idx
-    )
+    reference_output = reference_linear_decode(q, k, v, kv_caches_copy, slope_rate, slot_idx)
     torch.testing.assert_close(triton_output, reference_output, rtol=1e-1, atol=1e-1)
     torch.testing.assert_close(kv_caches, kv_caches_copy, rtol=1e-1, atol=1e-1)
 
@@ -173,9 +166,7 @@ def test_linear_decode_forward_triton_with_padding(
     k = base * torch.randn(batch_size, num_heads, 1, head_size, dtype=dtype)
     v = base * torch.randn(batch_size, num_heads, 1, head_size, dtype=dtype)
 
-    kv_caches = base * torch.randn(
-        batch_size, num_heads, head_size, head_size, dtype=dtype, device="cuda"
-    )
+    kv_caches = base * torch.randn(batch_size, num_heads, head_size, head_size, dtype=dtype, device="cuda")
 
     kv_caches_copy = kv_caches.clone()
 
@@ -185,13 +176,9 @@ def test_linear_decode_forward_triton_with_padding(
 
     slot_idx = torch.tensor([0, 1, -1, 2], device="cuda")
 
-    triton_output = linear_decode_forward_triton(
-        q, k, v, kv_caches, slope_rate, slot_idx
-    )
+    triton_output = linear_decode_forward_triton(q, k, v, kv_caches, slope_rate, slot_idx)
 
-    reference_output = reference_linear_decode(
-        q, k, v, kv_caches_copy, slope_rate, slot_idx
-    )
+    reference_output = reference_linear_decode(q, k, v, kv_caches_copy, slope_rate, slot_idx)
 
     padding_mask = (slot_idx != -1).unsqueeze(1).expand(-1, num_heads * head_size)
 
@@ -204,9 +191,7 @@ def test_linear_decode_forward_triton_with_padding(
 
     for i in range(batch_size):
         if valid_indices[i] > 0:
-            torch.testing.assert_close(
-                kv_caches[i], kv_caches_copy[i], rtol=rtol, atol=atol
-            )
+            torch.testing.assert_close(kv_caches[i], kv_caches_copy[i], rtol=rtol, atol=atol)
 
     torch.testing.assert_close(triton_masked, reference_masked, rtol=rtol, atol=atol)
 
@@ -240,21 +225,15 @@ def test_lightning_attention_reference(
     for h in range(num_heads):
         ed[h] = 0.1 * (h + 1)
 
-    kv_history = base * torch.randn(
-        batch_size, num_heads, head_size, head_size, dtype=dtype, device="cuda"
-    )
+    kv_history = base * torch.randn(batch_size, num_heads, head_size, head_size, dtype=dtype, device="cuda")
 
     kv_history_clone = kv_history.clone()
 
-    ref_output, ref_kv_cache = reference_lightning_attention(
-        q, k, v, ed, 256, kv_history
-    )
+    ref_output, ref_kv_cache = reference_lightning_attention(q, k, v, ed, 256, kv_history)
 
     from aphrodite.modeling.layers.lightning_attn import lightning_attention
 
-    actual_output, actual_kv_cache = lightning_attention(
-        q, k, v, ed, 256, kv_history_clone
-    )
+    actual_output, actual_kv_cache = lightning_attention(q, k, v, ed, 256, kv_history_clone)
 
     atol, rtol = 1.5e-1, 1.5e-1
     torch.testing.assert_close(ref_output, actual_output, rtol=rtol, atol=atol)

@@ -32,23 +32,23 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class OlmoAttention(nn.Module):
@@ -196,20 +196,14 @@ class OlmoDecoderLayer(nn.Module):
     ):
         super().__init__()
         # Attention block.
-        self.self_attn = OlmoAttention(
-            config, cache_config, quant_config, prefix=f"{prefix}.self_attn"
-        )
+        self.self_attn = OlmoAttention(config, cache_config, quant_config, prefix=f"{prefix}.self_attn")
 
         # MLP block.
         self.mlp = OlmoMLP(config, quant_config, prefix=f"{prefix}.mlp")
 
         # LayerNorm
-        self.input_layernorm = nn.LayerNorm(
-            config.hidden_size, elementwise_affine=False, bias=False
-        )
-        self.post_attention_layernorm = nn.LayerNorm(
-            config.hidden_size, elementwise_affine=False, bias=False
-        )
+        self.input_layernorm = nn.LayerNorm(config.hidden_size, elementwise_affine=False, bias=False)
+        self.post_attention_layernorm = nn.LayerNorm(config.hidden_size, elementwise_affine=False, bias=False)
 
     def forward(
         self,
@@ -241,19 +235,13 @@ class OlmoModel(nn.Module):
 
         self.config = config
 
-        self.embed_tokens = VocabParallelEmbedding(
-            config.vocab_size, config.hidden_size
-        )
+        self.embed_tokens = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: OlmoDecoderLayer(
-                config, cache_config, quant_config, prefix=prefix
-            ),
+            lambda prefix: OlmoDecoderLayer(config, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
-        self.norm = nn.LayerNorm(
-            config.hidden_size, elementwise_affine=False, bias=False
-        )
+        self.norm = nn.LayerNorm(config.hidden_size, elementwise_affine=False, bias=False)
         self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
             ["hidden_states"], config.hidden_size
         )
@@ -352,9 +340,7 @@ class OlmoForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         config = aphrodite_config.model_config.hf_config
         quant_config = aphrodite_config.quant_config
         self.config = config
-        self.model = OlmoModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = OlmoModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         if config.tie_word_embeddings:
             self.lm_head = self.model.embed_tokens
         else:
@@ -367,9 +353,7 @@ class OlmoForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
                 prefix=maybe_prefix(prefix, "lm_head"),
             )
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -399,8 +383,6 @@ class OlmoForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(
-                ["lm_head.weight"] if self.config.tie_word_embeddings else None
-            ),
+            skip_prefixes=(["lm_head.weight"] if self.config.tie_word_embeddings else None),
         )
         return loader.load_weights(weights)

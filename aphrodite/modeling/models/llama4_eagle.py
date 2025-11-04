@@ -25,11 +25,9 @@ from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.llama4 import (Llama4DecoderLayer,
-                                              Llama4ForCausalLM)
+from aphrodite.modeling.models.llama4 import Llama4DecoderLayer, Llama4ForCausalLM
 from aphrodite.modeling.models.utils import extract_layer_index
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.torchao import TorchAOConfig
@@ -77,9 +75,7 @@ class LlamaModel(nn.Module):
         finally:
             # Restore original quant_config
             aphrodite_config.quant_config = original_quant_config
-        self.fc = torch.nn.Linear(
-            self.config.hidden_size * 2, self.config.hidden_size, bias=False
-        )
+        self.fc = torch.nn.Linear(self.config.hidden_size * 2, self.config.hidden_size, bias=False)
         self.norm = RMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
@@ -141,9 +137,7 @@ class LlamaModel(nn.Module):
             assert name in loaded_params, f"{name} is not loaded!"
         return loaded_params
 
-    def validate_and_update_config(
-        self, start_layer_id: int, quant_config: QuantizationConfig | None = None
-    ) -> None:
+    def validate_and_update_config(self, start_layer_id: int, quant_config: QuantizationConfig | None = None) -> None:
         # yoco and moe is not supported by draft model yet
         assert self.config.yoco_global_kv_layer is None
         assert self.config.yoco_local_kv_layer is None
@@ -156,9 +150,7 @@ class LlamaModel(nn.Module):
 
             def pad_layer_name(layer: str) -> str:
                 layer_index = extract_layer_index(layer)
-                return layer.replace(
-                    str(layer_index), str(layer_index + start_layer_id)
-                )
+                return layer.replace(str(layer_index), str(layer_index + start_layer_id))
 
             torchao_config = quant_config.torchao_config
             torchao_config.module_fqn_to_config = {
@@ -171,9 +163,7 @@ class EagleLlama4ForCausalLM(Llama4ForCausalLM):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         nn.Module.__init__(self)
         self.config = aphrodite_config.speculative_config.draft_model_config.hf_config
-        target_layer_num = aphrodite_config.model_config.get_num_layers(
-            aphrodite_config.parallel_config
-        )
+        target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
         # draft model quantization config may differ from target model
         quant_config = AphroditeConfig.get_quantization_config(
             aphrodite_config.speculative_config.draft_model_config, aphrodite_config.load_config
@@ -185,9 +175,7 @@ class EagleLlama4ForCausalLM(Llama4ForCausalLM):
             quant_config=quant_config,
         )
         logit_scale = getattr(self.config, "logit_scale", 1.0)
-        self.logits_processor = LogitsProcessor(
-            self.config.vocab_size, scale=logit_scale
-        )
+        self.logits_processor = LogitsProcessor(self.config.vocab_size, scale=logit_scale)
 
     def get_language_model(self) -> torch.nn.Module:
         return self.model

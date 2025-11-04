@@ -9,8 +9,7 @@ import regex as re
 import torch
 import torch.nn as nn
 from mistral_common.audio import mel_filter_bank
-from mistral_common.protocol.instruct.chunk import (AudioChunk, RawAudio,
-                                                    TextChunk)
+from mistral_common.protocol.instruct.chunk import AudioChunk, RawAudio, TextChunk
 from mistral_common.protocol.instruct.messages import UserMessage
 from mistral_common.protocol.instruct.request import ChatCompletionRequest
 from mistral_common.protocol.transcription.request import TranscriptionRequest
@@ -28,22 +27,24 @@ from aphrodite.modeling.models import SupportsPP
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.models.whisper import WhisperEncoder
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems,
-                                         MultiModalUUIDDict, NestedTensors)
-from aphrodite.multimodal.parse import (AudioProcessorItems,
-                                        MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             MultiModalProcessingInfo,
-                                             PromptReplacement, PromptUpdate)
-from aphrodite.multimodal.profiling import (BaseDummyInputsBuilder,
-                                            ProcessorInputs)
+from aphrodite.multimodal.inputs import (
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalKwargsItems,
+    MultiModalUUIDDict,
+    NestedTensors,
+)
+from aphrodite.multimodal.parse import AudioProcessorItems, MultiModalDataItems, MultiModalDataParser
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    MultiModalProcessingInfo,
+    PromptReplacement,
+    PromptUpdate,
+)
+from aphrodite.multimodal.profiling import BaseDummyInputsBuilder, ProcessorInputs
 from aphrodite.quantization import QuantizationConfig
-from aphrodite.transformers_utils.tokenizer import (
-    MistralTokenizer, cached_tokenizer_from_config)
+from aphrodite.transformers_utils.tokenizer import MistralTokenizer, cached_tokenizer_from_config
 
 from .interfaces import SupportsLoRA, SupportsMultiModal, SupportsTranscription
 from .utils import init_aphrodite_registered_model, maybe_prefix
@@ -107,9 +108,7 @@ class VoxtralProcessorAdapter:
         self,
         audio_length: int,
     ) -> int:
-        pad_audio_length = self._audio_processor.next_multiple_of_chunk_frames(
-            audio_length, self.sampling_rate
-        )
+        pad_audio_length = self._audio_processor.next_multiple_of_chunk_frames(audio_length, self.sampling_rate)
         return ceil(pad_audio_length / (self.sampling_rate // self.frame_rate))
 
     def __call__(
@@ -151,9 +150,7 @@ class VoxtralProcessorAdapter:
             # pad if necessary
             audio = self._audio_processor.pad(audio, self.sampling_rate)
 
-            audio_tokens = [self.begin_audio_token_id] + [
-                self.audio_token_id
-            ] * self.get_num_audio_tokens(len(audio))
+            audio_tokens = [self.begin_audio_token_id] + [self.audio_token_id] * self.get_num_audio_tokens(len(audio))
 
             audios_tokens.append(torch.tensor(audio_tokens))
             audios_processed.append(torch.tensor(audio))
@@ -192,9 +189,7 @@ class VoxtralProcessingInfo(BaseProcessingInfo):
 
     def get_max_audio_array_len(self) -> int:
         processor = self.get_hf_processor()
-        return self.get_max_audio_tokens() * int(
-            processor.sampling_rate // processor.frame_rate
-        )
+        return self.get_max_audio_tokens() * int(processor.sampling_rate // processor.frame_rate)
 
 
 class VoxtralDummyInputsBuilder(BaseDummyInputsBuilder[VoxtralProcessingInfo]):
@@ -213,11 +208,7 @@ class VoxtralDummyInputsBuilder(BaseDummyInputsBuilder[VoxtralProcessingInfo]):
 
         audio_overrides = mm_options.get("audio") if mm_options else None
 
-        return {
-            "audio": self._get_dummy_audios(
-                length=target_length, num_audios=num_audios, overrides=audio_overrides
-            )
-        }
+        return {"audio": self._get_dummy_audios(length=target_length, num_audios=num_audios, overrides=audio_overrides)}
 
     def get_dummy_processor_inputs(
         self,
@@ -319,9 +310,7 @@ class VoxtralMultiModalProcessor(BaseMultiModalProcessor[VoxtralProcessingInfo])
     info=VoxtralProcessingInfo,
     dummy_inputs=VoxtralDummyInputsBuilder,
 )
-class VoxtralForConditionalGeneration(
-    nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA, SupportsTranscription
-):
+class VoxtralForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA, SupportsTranscription):
     merge_by_field_config = True
 
     supported_languages = ISO639_1_SUPPORTED_LANGS
@@ -338,9 +327,7 @@ class VoxtralForConditionalGeneration(
         # update quant config to so that ignored module and target module names
         # match the Aphrodite model names
         if hasattr(aphrodite_config, "quant_config"):
-            aphrodite_config.quant_config = self.maybe_update_quant_config(
-                aphrodite_config.quant_config
-            )
+            aphrodite_config.quant_config = self.maybe_update_quant_config(aphrodite_config.quant_config)
 
         config = aphrodite_config.model_config.hf_config
         self.config = config
@@ -400,9 +387,7 @@ class VoxtralForConditionalGeneration(
         for i, audio_embedding in enumerate(audio_embeddings):
             seq_len, dim = audio_embedding.shape
             # Pad such that seq_len is divisible by downsample_factor
-            target_seq_len = self.downsample_factor * math.ceil(
-                seq_len / self.downsample_factor
-            )
+            target_seq_len = self.downsample_factor * math.ceil(seq_len / self.downsample_factor)
             audio_embedding = torch.nn.functional.pad(
                 audio_embedding,
                 (0, 0, 0, target_seq_len - seq_len),
@@ -414,23 +399,17 @@ class VoxtralForConditionalGeneration(
         # Concat, project and resplit
         audio_embeddings_packed = torch.cat(audio_embeddings, dim=0)
         audio_embeddings_packed = self.audio_language_adapter(audio_embeddings_packed)
-        audio_embeddings = torch.split(
-            audio_embeddings_packed, [a.shape[0] for a in audio_embeddings], dim=0
-        )
+        audio_embeddings = torch.split(audio_embeddings_packed, [a.shape[0] for a in audio_embeddings], dim=0)
 
         return audio_embeddings
 
-    def _parse_and_validate_audio_arrays(
-        self, **kwargs: object
-    ) -> list[torch.Tensor] | None:
+    def _parse_and_validate_audio_arrays(self, **kwargs: object) -> list[torch.Tensor] | None:
         audio_arrays = kwargs.pop("audio_arrays", None)
         if audio_arrays is None:
             return None
 
         if not isinstance(audio_arrays, (torch.Tensor, list)):
-            raise ValueError(
-                f"Incorrect type of audio_arrays. Got type: {type(audio_arrays)}"
-            )
+            raise ValueError(f"Incorrect type of audio_arrays. Got type: {type(audio_arrays)}")
 
         if isinstance(audio_arrays, torch.Tensor):
             audio_arrays = list(audio_arrays.unbind(0))
@@ -443,9 +422,7 @@ class VoxtralForConditionalGeneration(
         return self.language_model.compute_logits(hidden_states)
 
     @classmethod
-    def get_speech_to_text_config(
-        cls, model_config: ModelConfig, task_type: str
-    ) -> SpeechToTextConfig:
+    def get_speech_to_text_config(cls, model_config: ModelConfig, task_type: str) -> SpeechToTextConfig:
         tokenizer = cached_tokenizer_from_config(model_config)
         audio_config = tokenizer.instruct.audio_encoder.audio_config
         max_audio_clip_s = audio_config.chunk_length_s
@@ -497,9 +474,7 @@ class VoxtralForConditionalGeneration(
         """
         tokenizer = cached_tokenizer_from_config(model_config)
         adapter = VoxtralProcessorAdapter(tokenizer)
-        return adapter.get_num_audio_tokens(
-            int(audio_duration_s * stt_config.sample_rate)
-        )
+        return adapter.get_num_audio_tokens(int(audio_duration_s * stt_config.sample_rate))
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         remapping_rules = [
@@ -531,9 +506,7 @@ class VoxtralForConditionalGeneration(
                 is_encoder = (
                     name.startswith("mm_whisper_embeddings")
                     and not name.startswith("mm_whisper_embeddings.tok_embeddings")
-                    and not name.startswith(
-                        "mm_whisper_embeddings.audio_language_projection"
-                    )
+                    and not name.startswith("mm_whisper_embeddings.audio_language_projection")
                 )
 
                 for pattern, repl in remapping_rules:
@@ -564,9 +537,7 @@ class VoxtralForConditionalGeneration(
 
         return loaded_weights
 
-    def maybe_update_quant_config(
-        self, quant_config: QuantizationConfig
-    ) -> QuantizationConfig:
+    def maybe_update_quant_config(self, quant_config: QuantizationConfig) -> QuantizationConfig:
         """
         Update quant config to so that ignored module and target module names
         match the Aphrodite model names.
@@ -752,9 +723,7 @@ class VoxtralEncoderModel(nn.Module):
 
     @property
     def downsample_factor(self) -> int:
-        return (
-            self.whisper_encoder.conv1.stride[0] * self.whisper_encoder.conv2.stride[0]
-        )
+        return self.whisper_encoder.conv1.stride[0] * self.whisper_encoder.conv2.stride[0]
 
     @property
     def chunk_size(self) -> int:
@@ -766,10 +735,7 @@ class VoxtralEncoderModel(nn.Module):
     ) -> tuple[torch.Tensor, list[int]]:
         assert isinstance(audio_waveforms, list)
         # list[num_mel_bins, seq_len]
-        input_features = [
-            self.compute_whisper_melspec(audio).to(self.dtype)
-            for audio in audio_waveforms
-        ]
+        input_features = [self.compute_whisper_melspec(audio).to(self.dtype) for audio in audio_waveforms]
 
         chunked_features: list[torch.Tensor] = []
         chunks_per_example: list[int] = []
@@ -781,9 +747,7 @@ class VoxtralEncoderModel(nn.Module):
         # [total_num_chunks, num_mel_bins, chunk_size]
         return torch.stack(chunked_features), chunks_per_example
 
-    def forward(
-        self, input_features: torch.Tensor | list[torch.Tensor]
-    ) -> list[torch.Tensor]:
+    def forward(self, input_features: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
         if not isinstance(input_features, list):
             input_features = [input_features]
 

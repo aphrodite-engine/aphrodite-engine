@@ -148,9 +148,7 @@ def test_rocm_wvsplitk_fp8_kernel(n, k, m, dtype, seed):
     A, scale_a = ref_dynamic_per_tensor_fp8_quant(A)
     B, scale_b = ref_dynamic_per_tensor_fp8_quant(B)
 
-    ref_out = torch._scaled_mm(
-        A, B.t(), out_dtype=dtype, scale_a=scale_a, scale_b=scale_b
-    )
+    ref_out = torch._scaled_mm(A, B.t(), out_dtype=dtype, scale_a=scale_a, scale_b=scale_b)
     out = ops.wvSplitKQ(B, A, dtype, scale_a, scale_b, current_platform.get_cu_count())
 
     assert torch.allclose(out, ref_out, rtol=0.01)
@@ -174,11 +172,7 @@ def test_rocm_wvsplitk_fp8_bias1D_kernel(n, k, m, dtype, seed):
     A, scale_a = ref_dynamic_per_tensor_fp8_quant(A)
     B, scale_b = ref_dynamic_per_tensor_fp8_quant(B)
 
-    ref_out = torch._scaled_mm(
-        A, B.t(), out_dtype=dtype, scale_a=scale_a, scale_b=scale_b, bias=BIAS
-    )
-    out = ops.wvSplitKQ(
-        B, A, dtype, scale_a, scale_b, current_platform.get_cu_count(), BIAS
-    )
+    ref_out = torch._scaled_mm(A, B.t(), out_dtype=dtype, scale_a=scale_a, scale_b=scale_b, bias=BIAS)
+    out = ops.wvSplitKQ(B, A, dtype, scale_a, scale_b, current_platform.get_cu_count(), BIAS)
 
     assert torch.allclose(out, ref_out, rtol=0.01)

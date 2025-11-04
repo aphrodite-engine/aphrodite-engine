@@ -20,14 +20,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Union
 
 import PIL
 import torch
 from transformers import AutoProcessor, BatchFeature
 from transformers.image_utils import ImageInput
-from transformers.processing_utils import (ProcessingKwargs, ProcessorMixin,
-                                           Unpack)
+from transformers.processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 
 __all__ = [ 'OvisProcessor']
@@ -87,7 +85,7 @@ class OvisProcessor(ProcessorMixin):
     def __call__(
         self,
         images: ImageInput = None,
-        text: Union[TextInput, PreTokenizedInput, List[TextInput], List[PreTokenizedInput]] = None,
+        text: TextInput | PreTokenizedInput | list[TextInput] | list[PreTokenizedInput] = None,
         **kwargs: Unpack[OvisProcessorKwargs],
     ) -> BatchFeature:
         """

@@ -4,16 +4,12 @@ from typing import Any, Optional
 import torch
 
 from aphrodite.distributed import get_tensor_model_parallel_rank, get_tp_group
-from aphrodite.modeling.layers.fused_moe import (FusedMoE, FusedMoEConfig,
-                                                 FusedMoEMethodBase)
-from aphrodite.modeling.layers.fused_moe.config import (
-    FusedMoEQuantConfig, int8_w8a16_moe_quant_config)
-from aphrodite.modeling.layers.linear import (LinearBase,
-                                              UnquantizedLinearMethod)
+from aphrodite.modeling.layers.fused_moe import FusedMoE, FusedMoEConfig, FusedMoEMethodBase
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig, int8_w8a16_moe_quant_config
+from aphrodite.modeling.layers.linear import LinearBase, UnquantizedLinearMethod
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 
 
 class ExpertsInt8Config(QuantizationConfig):
@@ -42,9 +38,7 @@ class ExpertsInt8Config(QuantizationConfig):
     def from_config(cls, config: dict[str, Any]) -> "ExpertsInt8Config":
         return cls()
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
         if isinstance(layer, LinearBase):
             return UnquantizedLinearMethod()
         elif isinstance(layer, FusedMoE):
@@ -74,9 +68,7 @@ class ExpertsInt8MoEMethod(FusedMoEMethodBase):
 
         assert "weight_loader" in extra_weight_attrs
         weight_loader = extra_weight_attrs["weight_loader"]
-        wrapped_weight_loader = ExpertsInt8MoEMethod.quantizing_weight_loader(
-            layer, weight_loader
-        )
+        wrapped_weight_loader = ExpertsInt8MoEMethod.quantizing_weight_loader(layer, weight_loader)
         extra_weight_attrs["weight_loader"] = wrapped_weight_loader
 
         # Fused gate_up_proj (column parallel)
@@ -106,9 +98,7 @@ class ExpertsInt8MoEMethod(FusedMoEMethodBase):
         set_weight_attrs(w2_weight, extra_weight_attrs)
 
         w13_scale = torch.nn.Parameter(
-            torch.zeros(
-                num_experts, 2 * intermediate_size_per_partition, dtype=torch.float32
-            ),
+            torch.zeros(num_experts, 2 * intermediate_size_per_partition, dtype=torch.float32),
             requires_grad=False,
         )
         layer.register_parameter("w13_scale", w13_scale)
@@ -119,12 +109,8 @@ class ExpertsInt8MoEMethod(FusedMoEMethodBase):
         )
         layer.register_parameter("w2_scale", w2_scale)
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
-        return int8_w8a16_moe_quant_config(
-            w1_scale=layer.w13_scale, w2_scale=layer.w2_scale, w1_zp=None, w2_zp=None
-        )
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
+        return int8_w8a16_moe_quant_config(w1_scale=layer.w13_scale, w2_scale=layer.w2_scale, w1_zp=None, w2_zp=None)
 
     def apply(
         self,
@@ -152,9 +138,7 @@ class ExpertsInt8MoEMethod(FusedMoEMethodBase):
         assert self.fused_experts is None
 
         if enable_eplb:
-            raise NotImplementedError(
-                "EPLB not supported for `ExpertsInt8MoEMethod` yet."
-            )
+            raise NotImplementedError("EPLB not supported for `ExpertsInt8MoEMethod` yet.")
 
         from aphrodite.modeling.layers.fused_moe import fused_experts
 
@@ -208,9 +192,7 @@ class ExpertsInt8MoEMethod(FusedMoEMethodBase):
             # w3, up_proj case: Load into second shard of w13.
             elif shard_id == "w3":
                 scales = quantize_in_place_and_get_scales(loaded_weight[shard, :])
-                layer.w13_scale.data[expert_id, shard_size : 2 * shard_size].copy_(
-                    scales[:, 0]
-                )
+                layer.w13_scale.data[expert_id, shard_size : 2 * shard_size].copy_(scales[:, 0])
             # w2, down_proj case: Load into only shard of w2.
             elif shard_id == "w2":
                 scales = quantize_in_place_and_get_scales(loaded_weight[:, shard])

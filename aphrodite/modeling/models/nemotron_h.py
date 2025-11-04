@@ -26,36 +26,46 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.config.parallel import ParallelConfig
-from aphrodite.distributed import (get_ep_group,
-                                   get_tensor_model_parallel_world_size)
-from aphrodite.distributed.communication_op import (
-    tensor_model_parallel_all_gather)
+from aphrodite.distributed import get_ep_group, get_tensor_model_parallel_world_size
+from aphrodite.distributed.communication_op import tensor_model_parallel_all_gather
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.activation import ReLUSquaredActivation
 from aphrodite.modeling.layers.fused_moe import FusedMoE, SharedFusedMoE
 from aphrodite.modeling.layers.fused_moe.utils import activation_without_mul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
-from aphrodite.modeling.models.interfaces import (HasInnerState, IsHybrid,
-                                                  MixtureOfExperts,
-                                                  SupportsLoRA,
-                                                  SupportsMambaPrefixCaching,
-                                                  SupportsPP, SupportsQuant)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
+from aphrodite.modeling.models.interfaces import (
+    HasInnerState,
+    IsHybrid,
+    MixtureOfExperts,
+    SupportsLoRA,
+    SupportsMambaPrefixCaching,
+    SupportsPP,
+    SupportsQuant,
+)
 from aphrodite.modeling.models.utils import (
-    AutoWeightsLoader, WeightsMapper, is_pp_missing_parameter,
-    make_empty_intermediate_tensors_factory, make_layers, maybe_prefix,
-    sequence_parallel_chunk)
+    AutoWeightsLoader,
+    WeightsMapper,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+    sequence_parallel_chunk,
+)
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.configs import NemotronHConfig
 
@@ -128,9 +138,7 @@ class NemotronHMoE(nn.Module):
             prefix=f"{prefix}.gate",
         )
 
-        self.gate.e_score_correction_bias = nn.Parameter(
-            torch.empty(config.n_routed_experts, dtype=torch.float32)
-        )
+        self.gate.e_score_correction_bias = nn.Parameter(torch.empty(config.n_routed_experts, dtype=torch.float32))
         # Load balancing settings.
         self.enable_eplb = parallel_config.enable_eplb
 
@@ -140,16 +148,12 @@ class NemotronHMoE(nn.Module):
         self.n_local_physical_experts = self.n_physical_experts // self.ep_size
 
         self.physical_expert_start = self.ep_rank * self.n_local_physical_experts
-        self.physical_expert_end = (
-            self.physical_expert_start + self.n_local_physical_experts
-        )
+        self.physical_expert_end = self.physical_expert_start + self.n_local_physical_experts
 
         if config.n_shared_experts is None or config.n_shared_experts == 0:
             self.shared_experts = None
         else:
-            intermediate_size = (
-                config.moe_shared_expert_intermediate_size * config.n_shared_experts
-            )
+            intermediate_size = config.moe_shared_expert_intermediate_size * config.n_shared_experts
 
             self.shared_experts = NemotronHMLP(
                 config=config,
@@ -192,9 +196,7 @@ class NemotronHMoE(nn.Module):
         # router_logits: (num_tokens, n_experts)
         router_logits, _ = self.gate(hidden_states.to(dtype=torch.float32))
 
-        fused_moe_out = self.experts(
-            hidden_states=hidden_states, router_logits=router_logits
-        )
+        fused_moe_out = self.experts(hidden_states=hidden_states, router_logits=router_logits)
 
         shared_output, final_hidden_states = fused_moe_out
 
@@ -211,14 +213,10 @@ class NemotronHMoE(nn.Module):
             final_hidden_states += shared_output
 
         if self.is_sequence_parallel:
-            final_hidden_states = tensor_model_parallel_all_gather(
-                final_hidden_states, 0
-            )
+            final_hidden_states = tensor_model_parallel_all_gather(final_hidden_states, 0)
             final_hidden_states = final_hidden_states[:num_tokens]
         elif self.tp_size > 1:
-            final_hidden_states = self.experts.maybe_all_reduce_tensor_model_parallel(
-                final_hidden_states
-            )
+            final_hidden_states = self.experts.maybe_all_reduce_tensor_model_parallel(final_hidden_states)
 
         return final_hidden_states.view(num_tokens, hidden_dim)
 
@@ -496,11 +494,7 @@ class NemotronHModel(nn.Module):
         lora_config = aphrodite_config.lora_config
 
         self.config = config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -514,9 +508,7 @@ class NemotronHModel(nn.Module):
 
         def get_layer(prefix: str):
             layer_idx = int(prefix.rsplit(".", 1)[1])
-            layer_class = ALL_DECODER_LAYER_TYPES[
-                config.hybrid_override_pattern[layer_idx]
-            ]
+            layer_class = ALL_DECODER_LAYER_TYPES[config.hybrid_override_pattern[layer_idx]]
             return layer_class(
                 config=config,
                 layer_idx=layer_idx,
@@ -566,9 +558,7 @@ class NemotronHModel(nn.Module):
             )
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm_f(hidden_states, residual)
         return hidden_states
 
@@ -641,9 +631,7 @@ class NemotronHModel(nn.Module):
                     # We should ask the weight loader to return success or not
                     # here since otherwise we may skip experts with other
                     # available replicas.
-                    weight_loader = typing.cast(
-                        Callable[..., bool], param.weight_loader
-                    )
+                    weight_loader = typing.cast(Callable[..., bool], param.weight_loader)
                     success = weight_loader(
                         param,
                         loaded_weight,
@@ -660,9 +648,7 @@ class NemotronHModel(nn.Module):
                         continue
 
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
 
             loaded_params.add(name)
@@ -751,9 +737,7 @@ class NemotronHForCausalLM(
         super().__init__()
         self.config = config
         self.scheduler_config = scheduler_config
-        self.model = NemotronHModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = NemotronHModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -769,9 +753,7 @@ class NemotronHForCausalLM(
             prefix=maybe_prefix(prefix, "lm_head"),
         )
 
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
 
         self.make_empty_intmd_tensors = self.model.make_empty_intmd_tensors
 
@@ -841,9 +823,7 @@ class NemotronHForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
 

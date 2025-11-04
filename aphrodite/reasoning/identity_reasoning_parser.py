@@ -2,8 +2,7 @@ from collections.abc import Sequence
 
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParser
 
@@ -22,8 +21,7 @@ class IdentityReasoningParser(ReasoningParser):
         super().__init__(tokenizer, *args, **kwargs)
         if not self.model_tokenizer:
             raise ValueError(
-                "The model tokenizer must be passed to the ReasoningParser "
-                "constructor during construction."
+                "The model tokenizer must be passed to the ReasoningParser constructor during construction."
             )
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:

@@ -7,8 +7,7 @@ import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 
 from aphrodite.config import set_current_aphrodite_config
-from aphrodite.distributed.parallel_state import (
-    ensure_model_parallel_initialized, init_distributed_environment)
+from aphrodite.distributed.parallel_state import ensure_model_parallel_initialized, init_distributed_environment
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.modeling.model_loader.tpu import TPUModelLoader
 

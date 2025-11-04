@@ -60,13 +60,8 @@ async def mcp_enabled_client(mcp_enabled_server):
 async def test_mcp_tool_env_flag_enabled(mcp_enabled_client: OpenAI, model_name: str):
     response = await mcp_enabled_client.responses.create(
         model=model_name,
-        input=(
-            "Execute the following code: "
-            "import random; print(random.randint(1, 1000000))"
-        ),
-        instructions=(
-            "You must use the Python tool to execute code. Never simulate execution."
-        ),
+        input=("Execute the following code: import random; print(random.randint(1, 1000000))"),
+        instructions=("You must use the Python tool to execute code. Never simulate execution."),
         tools=[
             {
                 "type": "mcp",
@@ -86,19 +81,11 @@ async def test_mcp_tool_env_flag_enabled(mcp_enabled_client: OpenAI, model_name:
         recipient = message.get("recipient")
         if recipient and recipient.startswith("python"):
             tool_call_found = True
-            assert message.get("channel") == "analysis", (
-                "Tool call should be on analysis channel"
-            )
+            assert message.get("channel") == "analysis", "Tool call should be on analysis channel"
         author = message.get("author", {})
-        if (
-            author.get("role") == "tool"
-            and author.get("name")
-            and author.get("name").startswith("python")
-        ):
+        if author.get("role") == "tool" and author.get("name") and author.get("name").startswith("python"):
             tool_response_found = True
-            assert message.get("channel") == "analysis", (
-                "Tool response should be on analysis channel"
-            )
+            assert message.get("channel") == "analysis", "Tool response should be on analysis channel"
 
     assert tool_call_found, "Should have found at least one Python tool call"
     assert tool_response_found, "Should have found at least one Python tool response"
@@ -113,10 +100,7 @@ async def test_mcp_tool_env_flag_enabled(mcp_enabled_client: OpenAI, model_name:
 async def test_mcp_tool_env_flag_disabled(mcp_disabled_client: OpenAI, model_name: str):
     response = await mcp_disabled_client.responses.create(
         model=model_name,
-        input=(
-            "Execute the following code if the tool is present: "
-            "import random; print(random.randint(1, 1000000))"
-        ),
+        input=("Execute the following code if the tool is present: import random; print(random.randint(1, 1000000))"),
         tools=[
             {
                 "type": "mcp",
@@ -136,19 +120,11 @@ async def test_mcp_tool_env_flag_disabled(mcp_disabled_client: OpenAI, model_nam
         recipient = message.get("recipient")
         if recipient and recipient.startswith("python"):
             tool_call_found = True
-            assert message.get("channel") == "analysis", (
-                "Tool call should be on analysis channel"
-            )
+            assert message.get("channel") == "analysis", "Tool call should be on analysis channel"
         author = message.get("author", {})
-        if (
-            author.get("role") == "tool"
-            and author.get("name")
-            and author.get("name").startswith("python")
-        ):
+        if author.get("role") == "tool" and author.get("name") and author.get("name").startswith("python"):
             tool_response_found = True
-            assert message.get("channel") == "analysis", (
-                "Tool response should be on analysis channel"
-            )
+            assert message.get("channel") == "analysis", "Tool response should be on analysis channel"
 
     assert not tool_call_found, "Should not have a python call"
     assert not tool_response_found, "Should not have a tool response"

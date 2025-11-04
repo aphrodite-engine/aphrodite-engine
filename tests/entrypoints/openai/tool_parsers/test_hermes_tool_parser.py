@@ -3,8 +3,7 @@ import json
 import pytest
 
 from aphrodite.endpoints.openai.protocol import ChatCompletionRequest
-from aphrodite.endpoints.openai.tool_parsers.hermes_tool_parser import (
-    Hermes2ProToolParser)
+from aphrodite.endpoints.openai.tool_parsers.hermes_tool_parser import Hermes2ProToolParser
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 from ....utils import RemoteOpenAIServer
@@ -53,8 +52,7 @@ PRODUCT_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_product_info",
-            "description": "Get detailed information of a product based on its "
-            "product ID.",
+            "description": "Get detailed information of a product based on its product ID.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -78,8 +76,7 @@ MESSAGES = [{"role": "user", "content": "What's the weather like in Boston?"}]
 PRODUCT_MESSAGES = [
     {
         "role": "user",
-        "content": "Hi! Do you have any detailed information about the product id "
-        "7355608 and inserted true?",
+        "content": "Hi! Do you have any detailed information about the product id 7355608 and inserted true?",
     }
 ]
 
@@ -149,9 +146,7 @@ async def test_streaming_tool_call():
                 if tool_chunk.function.name:
                     tool_call_chunks[index]["name"] += tool_chunk.function.name
                 if tool_chunk.function.arguments:
-                    tool_call_chunks[index]["arguments"] += (
-                        tool_chunk.function.arguments
-                    )
+                    tool_call_chunks[index]["arguments"] += tool_chunk.function.arguments
 
         assert len(tool_call_chunks) == 1
         reconstructed_tool_call = tool_call_chunks[0]
@@ -240,9 +235,7 @@ async def test_streaming_product_tool_call():
                 if tool_chunk.function.name:
                     tool_call_chunks[index]["name"] += tool_chunk.function.name
                 if tool_chunk.function.arguments:
-                    tool_call_chunks[index]["arguments"] += (
-                        tool_chunk.function.arguments
-                    )
+                    tool_call_chunks[index]["arguments"] += tool_chunk.function.arguments
 
         assert len(tool_call_chunks) == 1
         reconstructed_tool_call = tool_call_chunks[0]
@@ -348,9 +341,7 @@ def test_hermes_parser_streaming_failure_case_bug_19056(
             delta_messages.append(delta)
 
     assert delta_messages[0].tool_calls[0].function.name == "final_answer"
-    tool_call_args = "".join(
-        delta.tool_calls[0].function.arguments or "" for delta in delta_messages
-    )
+    tool_call_args = "".join(delta.tool_calls[0].function.arguments or "" for delta in delta_messages)
     assert tool_call_args == '{"trigger": true}'
 
 
@@ -385,12 +376,8 @@ def test_hermes_parser_streaming(
             delta_messages.append(delta)
     print(delta_messages)
     assert delta_messages[0].tool_calls[0].function.name == "get_current_temperature"
-    tool_call_args = "".join(
-        delta.tool_calls[0].function.arguments or "" for delta in delta_messages
-    )
-    assert tool_call_args == (
-        '{"location":"San Francisco, California, United States", "unit": "celsius"}'
-    )
+    tool_call_args = "".join(delta.tool_calls[0].function.arguments or "" for delta in delta_messages)
+    assert tool_call_args == ('{"location":"San Francisco, California, United States", "unit": "celsius"}')
 
 
 def test_hermes_parser_non_streaming_no_tool_call(

@@ -117,9 +117,7 @@ class OffloadingManager(ABC):
         return
 
     @abstractmethod
-    def prepare_store(
-        self, block_hashes: Iterable[BlockHash]
-    ) -> PrepareStoreOutput | None:
+    def prepare_store(self, block_hashes: Iterable[BlockHash]) -> PrepareStoreOutput | None:
         """
         Prepare the given blocks to be offloaded.
         The given blocks will be protected from eviction until

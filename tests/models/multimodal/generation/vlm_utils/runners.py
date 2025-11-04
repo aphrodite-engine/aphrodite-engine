@@ -4,8 +4,7 @@ types / modalities.
 
 from pathlib import PosixPath
 
-from .....conftest import (AphroditeRunner, AudioTestAssets, HfRunner,
-                           ImageTestAssets, VideoTestAssets)
+from .....conftest import AphroditeRunner, AudioTestAssets, HfRunner, ImageTestAssets, VideoTestAssets
 from . import builders, core
 from .types import ExpandableVLMTestArgs, VLMTestInfo
 

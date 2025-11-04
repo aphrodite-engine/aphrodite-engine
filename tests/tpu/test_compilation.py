@@ -40,9 +40,7 @@ def test_tpu_compilation():
             print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
             assert generated_text.startswith(answer)
 
-    compiled_codes = sorted(
-        glob.glob(os.path.join(temp_dir, "__transformed_code*for_forward.py"))
-    )
+    compiled_codes = sorted(glob.glob(os.path.join(temp_dir, "__transformed_code*for_forward.py")))
 
     for i, compiled_code in enumerate(compiled_codes):
         print("{} file: {}".format(i + 1, compiled_code))

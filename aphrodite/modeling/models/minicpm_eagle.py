@@ -34,7 +34,10 @@ from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
@@ -42,8 +45,7 @@ from .interfaces import SupportsLoRA, SupportsPP
 from .minicpm import MiniCPMAttention as EagleMiniCPMAttention
 from .minicpm import MiniCPMMLP as EagleMiniCPMMLP
 from .minicpm import MiniCPMMoE as EagleMiniCPMMoE
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, maybe_prefix)
+from .utils import AutoWeightsLoader, is_pp_missing_parameter, make_empty_intermediate_tensors_factory, maybe_prefix
 
 
 class EagleMiniCPMDecoderLayer(nn.Module):
@@ -67,9 +69,7 @@ class EagleMiniCPMDecoderLayer(nn.Module):
         self._init_ffn_block()
 
     def _init_attn_block(self):
-        self.input_layernorm = RMSNorm(
-            self.config.hidden_size, eps=self.config.rms_norm_eps
-        )
+        self.input_layernorm = RMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps)
         self.self_attn = EagleMiniCPMAttention(
             hidden_size=self.hidden_size,
             num_heads=self.config.num_attention_heads,
@@ -83,9 +83,7 @@ class EagleMiniCPMDecoderLayer(nn.Module):
         )
 
     def _init_ffn_block(self):
-        self.post_attention_layernorm = RMSNorm(
-            self.config.hidden_size, eps=self.config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps)
         self.num_experts = getattr(self.config, "num_experts", 0)
         if self.num_experts == 0:
             self.mlp = EagleMiniCPMMLP(
@@ -116,26 +114,20 @@ class EagleMiniCPMDecoderLayer(nn.Module):
             positions=positions,
             hidden_states=hidden_states,
         )
-        hidden_states = residual + hidden_states * (
-            self.config.scale_depth / math.sqrt(self.config.mup_denominator)
-        )
+        hidden_states = residual + hidden_states * (self.config.scale_depth / math.sqrt(self.config.mup_denominator))
 
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states * (
-            self.config.scale_depth / math.sqrt(self.config.mup_denominator)
-        )
+        hidden_states = residual + hidden_states * (self.config.scale_depth / math.sqrt(self.config.mup_denominator))
 
         return hidden_states, None
 
 
 @support_torch_compile
 class EagleMiniCPMModel(nn.Module):
-    def __init__(
-        self, *, aphrodite_config: AphroditeConfig, prefix: str = "", start_layer: int = 0
-    ):
+    def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", start_layer: int = 0):
         super().__init__()
 
         config = aphrodite_config.speculative_config.draft_model_config.hf_config
@@ -146,16 +138,10 @@ class EagleMiniCPMModel(nn.Module):
         self.config = config
         self.cache_config = cache_config
         self.quant_config = quant_config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
-        self.fc = torch.nn.Linear(
-            self.config.hidden_size * 2, self.config.hidden_size, bias=False
-        )
+        self.fc = torch.nn.Linear(self.config.hidden_size * 2, self.config.hidden_size, bias=False)
         self.input_norm1 = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.input_norm2 = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.embed_tokens = VocabParallelEmbedding(
@@ -266,9 +252,7 @@ class EagleMiniCPMModel(nn.Module):
                         continue
                     param = params_dict[name]
                     weight_loader = param.weight_loader
-                    weight_loader(
-                        param, loaded_weight, weight_name, expert_id=expert_id
-                    )
+                    weight_loader(param, loaded_weight, weight_name, expert_id=expert_id)
                     break
                 else:
                     # Skip loading extra bias for GPTQ models.
@@ -277,9 +261,7 @@ class EagleMiniCPMModel(nn.Module):
                     if is_pp_missing_parameter(name, self):
                         continue
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
 
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
@@ -320,9 +302,7 @@ class EagleMiniCPMForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self.cache_config = cache_config
         self.quant_config = quant_config
 
-        target_layer_num = aphrodite_config.model_config.get_num_layers(
-            aphrodite_config.parallel_config
-        )
+        target_layer_num = aphrodite_config.model_config.get_num_layers(aphrodite_config.parallel_config)
 
         self.model = self._init_model(
             aphrodite_config=aphrodite_config,
@@ -350,16 +330,10 @@ class EagleMiniCPMForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self.scale_width = self.config.hidden_size / self.config.dim_model_base
 
         self.logits_processor = LogitsProcessor(unpadded_vocab_size, config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
-    def _init_model(
-        self, *, aphrodite_config: AphroditeConfig, prefix: str = "", start_layer: int = 0
-    ):
-        return EagleMiniCPMModel(
-            aphrodite_config=aphrodite_config, prefix=prefix, start_layer=start_layer
-        )
+    def _init_model(self, *, aphrodite_config: AphroditeConfig, prefix: str = "", start_layer: int = 0):
+        return EagleMiniCPMModel(aphrodite_config=aphrodite_config, prefix=prefix, start_layer=start_layer)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)

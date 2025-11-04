@@ -5,19 +5,14 @@ import torch
 
 import aphrodite.envs as envs
 from aphrodite.compilation.collective_fusion import AsyncTPPass
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              CompilationMode, DeviceConfig, ModelConfig,
-                              PassConfig)
-from aphrodite.distributed import (tensor_model_parallel_all_gather,
-                                   tensor_model_parallel_reduce_scatter)
-from aphrodite.distributed.parallel_state import (init_distributed_environment,
-                                                  initialize_model_parallel)
+from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode, DeviceConfig, ModelConfig, PassConfig
+from aphrodite.distributed import tensor_model_parallel_all_gather, tensor_model_parallel_reduce_scatter
+from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
 from aphrodite.platforms import current_platform
 from aphrodite.utils.system_utils import update_environment_variables
 
 from ..models.registry import HF_EXAMPLE_MODELS
-from ..utils import (compare_two_settings, create_new_process_for_each_test,
-                     multi_gpu_test)
+from ..utils import compare_two_settings, create_new_process_for_each_test, multi_gpu_test
 from .backend import TestBackend
 
 FP8_DTYPE = current_platform.fp8_dtype()
@@ -35,9 +30,7 @@ class TestMMRSModel(torch.nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.dtype = dtype
-        self.gate_proj = torch.nn.Parameter(
-            torch.empty((self.hidden_size * 2, hidden_size)), requires_grad=False
-        )
+        self.gate_proj = torch.nn.Parameter(torch.empty((self.hidden_size * 2, hidden_size)), requires_grad=False)
         # Initialize weights
         torch.nn.init.normal_(self.gate_proj, std=0.02)
 
@@ -67,9 +60,7 @@ class TestAGMMModel(torch.nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.dtype = dtype
-        self.weight = torch.nn.Parameter(
-            torch.empty((hidden_size, hidden_size)), requires_grad=False
-        )
+        self.weight = torch.nn.Parameter(torch.empty((hidden_size, hidden_size)), requires_grad=False)
         # Initialize weights
         torch.nn.init.normal_(self.weight, std=0.02)
 
@@ -96,11 +87,7 @@ class _BaseScaledMMModel(torch.nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.dtype = dtype
-        self.weight = (
-            torch.empty([hidden_size, hidden_size], dtype=FP8_DTYPE)
-            .contiguous()
-            .transpose(0, 1)
-        )
+        self.weight = torch.empty([hidden_size, hidden_size], dtype=FP8_DTYPE).contiguous().transpose(0, 1)
 
         # Initialize scale_b for _scaled_mm.
         self.scale_b = torch.ones(1, self.hidden_size, dtype=torch.float32)
@@ -171,9 +158,7 @@ class TestCutlassScaledMMRSModel(_BaseScaledMMModel):
             dtype=self.dtype,
             device=input.device,
         )
-        torch.ops._C.cutlass_scaled_mm(
-            mm_out, fp8_input, self.weight, scale_a, self.scale_b, None
-        )
+        torch.ops._C.cutlass_scaled_mm(mm_out, fp8_input, self.weight, scale_a, self.scale_b, None)
         reduce_scatter = tensor_model_parallel_reduce_scatter(mm_out, dim=0)
         return reduce_scatter
 
@@ -201,9 +186,7 @@ class TestAGCutlassScaledMMModel(_BaseScaledMMModel):
             dtype=self.dtype,
             device=all_gather.device,
         )
-        torch.ops._C.cutlass_scaled_mm(
-            mm_out, all_gather, self.weight, scale_a, self.scale_b, None
-        )
+        torch.ops._C.cutlass_scaled_mm(mm_out, all_gather, self.weight, scale_a, self.scale_b, None)
         return mm_out
 
     def ops_in_model_before(self):
@@ -249,10 +232,7 @@ def test_async_tp_pass_replace(
         )
         and dtype == torch.float16
     ):
-        pytest.skip(
-            "Only bf16 high precision output types are supported for "
-            "per-token (row-wise) scaling"
-        )
+        pytest.skip("Only bf16 high precision output types are supported for per-token (row-wise) scaling")
 
     num_processes = 2
 
@@ -319,17 +299,12 @@ def async_tp_pass_on_test_model(
     # this is a fake model name to construct the model config
     # in the aphrodite_config, it's not really used.
     model_name = "RedHatAI/Llama-3.2-1B-Instruct-FP8"
-    aphrodite_config.model_config = ModelConfig(
-        model=model_name, trust_remote_code=True, dtype=dtype, seed=42
-    )
+    aphrodite_config.model_config = ModelConfig(model=model_name, trust_remote_code=True, dtype=dtype, seed=42)
 
     async_tp_pass = AsyncTPPass(aphrodite_config)
     backend = TestBackend(async_tp_pass)
 
-    assert (
-        async_tp_pass.compilation_config.splitting_ops
-        == aphrodite_config.compilation_config.splitting_ops
-    )
+    assert async_tp_pass.compilation_config.splitting_ops == aphrodite_config.compilation_config.splitting_ops
     assert (
         async_tp_pass.compilation_config.use_inductor_graph_partition
         == aphrodite_config.compilation_config.use_inductor_graph_partition
@@ -337,9 +312,7 @@ def async_tp_pass_on_test_model(
 
     model = test_model_cls(hidden_size, dtype)  # Pass dtype to model constructor
 
-    hidden_states = torch.randn(
-        (batch_size * seq_len, hidden_size), dtype=dtype, requires_grad=False
-    )
+    hidden_states = torch.randn((batch_size * seq_len, hidden_size), dtype=dtype, requires_grad=False)
 
     if dynamic:
         torch._dynamo.mark_dynamic(hidden_states, 0)

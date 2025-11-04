@@ -10,15 +10,12 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig
 
-from .deepseek_v2 import (DeepseekV2DecoderLayer,
-                          get_spec_layer_idx_from_weight_name)
+from .deepseek_v2 import DeepseekV2DecoderLayer, get_spec_layer_idx_from_weight_name
 from .interfaces import SupportsPP
 from .utils import maybe_prefix
 
@@ -69,9 +66,7 @@ class DeepSeekMultiTokenPredictorLayer(nn.Module):
         else:
             topk_indices_buffer = None
 
-        self.shared_head = SharedHead(
-            config=config, prefix=prefix, quant_config=quant_config
-        )
+        self.shared_head = SharedHead(config=config, prefix=prefix, quant_config=quant_config)
         self.mtp_block = DeepseekV2DecoderLayer(
             aphrodite_config,
             prefix,
@@ -93,13 +88,9 @@ class DeepSeekMultiTokenPredictorLayer(nn.Module):
         inputs_embeds = self.enorm(inputs_embeds)
         previous_hidden_states = self.hnorm(previous_hidden_states)
 
-        hidden_states = self.eh_proj(
-            torch.cat([inputs_embeds, previous_hidden_states], dim=-1)
-        )
+        hidden_states = self.eh_proj(torch.cat([inputs_embeds, previous_hidden_states], dim=-1))
 
-        hidden_states, residual = self.mtp_block(
-            positions=positions, hidden_states=hidden_states, residual=None
-        )
+        hidden_states, residual = self.mtp_block(positions=positions, hidden_states=hidden_states, residual=None)
         hidden_states = residual + hidden_states
         return hidden_states
 
@@ -113,9 +104,7 @@ class DeepSeekMultiTokenPredictor(nn.Module):
         # to map the exact layer index from weights
         self.layers = torch.nn.ModuleDict(
             {
-                str(idx): DeepSeekMultiTokenPredictorLayer(
-                    aphrodite_config, f"{prefix}.layers.{idx}"
-                )
+                str(idx): DeepSeekMultiTokenPredictorLayer(aphrodite_config, f"{prefix}.layers.{idx}")
                 for idx in range(
                     self.mtp_start_layer_idx,
                     self.mtp_start_layer_idx + self.num_mtp_layers,
@@ -157,9 +146,7 @@ class DeepSeekMultiTokenPredictor(nn.Module):
     ) -> torch.Tensor:
         current_step_idx = spec_step_idx % self.num_mtp_layers
         mtp_layer = self.layers[str(self.mtp_start_layer_idx + current_step_idx)]
-        logits = self.logits_processor(
-            mtp_layer.shared_head.head, mtp_layer.shared_head(hidden_states)
-        )
+        logits = self.logits_processor(mtp_layer.shared_head.head, mtp_layer.shared_head(hidden_states))
         return logits
 
 
@@ -184,9 +171,7 @@ class DeepSeekMTP(nn.Module, SupportsPP):
         inputs_embeds: torch.Tensor | None = None,
         spec_step_idx: int = 0,
     ) -> torch.Tensor:
-        hidden_states = self.model(
-            input_ids, positions, hidden_states, inputs_embeds, spec_step_idx
-        )
+        hidden_states = self.model(input_ids, positions, hidden_states, inputs_embeds, spec_step_idx)
         return hidden_states
 
     def compute_logits(
@@ -236,9 +221,7 @@ class DeepSeekMTP(nn.Module, SupportsPP):
 
                 # QKV fusion is optional, fall back to normal
                 # weight loading if it's not enabled
-                if (
-                    param_name == "fused_qkv_a_proj"
-                ) and name_mapped not in params_dict:
+                if (param_name == "fused_qkv_a_proj") and name_mapped not in params_dict:
                     continue
                 else:
                     name = name_mapped
@@ -279,16 +262,11 @@ class DeepSeekMTP(nn.Module, SupportsPP):
 
                     # According to DeepSeek-V3 Technical Report, MTP modules
                     # shares embedding layer. We only load the first weights.
-                    if (
-                        spec_layer != self.model.mtp_start_layer_idx
-                        and ".layers" not in name
-                    ):
+                    if spec_layer != self.model.mtp_start_layer_idx and ".layers" not in name:
                         continue
 
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -317,9 +295,7 @@ class DeepSeekMTP(nn.Module, SupportsPP):
                 break
         if not spec_layer_weight:
             # treat rest weights as weights for transformer layer block
-            name = name.replace(
-                f"model.layers.{spec_layer}.", f"model.layers.{spec_layer}.mtp_block."
-            )
+            name = name.replace(f"model.layers.{spec_layer}.", f"model.layers.{spec_layer}.mtp_block.")
         elif shared_weight:
             # treat shared weights as top level weights
             name = name.replace(f"model.layers.{spec_layer}.", "model.")

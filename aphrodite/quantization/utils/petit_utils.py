@@ -9,9 +9,7 @@ if TYPE_CHECKING:
 # 1. Create a global variable as a placeholder for the module
 _petit_kernel: Optional["ModuleType"] = None
 
-_PETIT_INSTALL_MSG = (
-    "Petit is not installed. Please install it with `pip install petit-kernel`."
-)
+_PETIT_INSTALL_MSG = "Petit is not installed. Please install it with `pip install petit-kernel`."
 
 
 def _import_petit_kernel() -> "ModuleType":
@@ -40,9 +38,7 @@ def _import_petit_kernel() -> "ModuleType":
 _require_petit = _import_petit_kernel
 
 
-def _check_petit_nvfp4_supported(
-    quant_method: str, group_size: int | None
-) -> tuple[bool, str | None]:
+def _check_petit_nvfp4_supported(quant_method: str, group_size: int | None) -> tuple[bool, str | None]:
     if quant_method != "NVFP4":
         return (
             False,
@@ -77,15 +73,11 @@ def prepare_nvfp4_layer_for_petit(layer: torch.nn.Module) -> None:
     qweight = layer.weight.view(torch.int32).contiguous()
 
     # 3. Call functions through the imported module variable.
-    petit_qweight = petit_kernel.repack_nvfp4(
-        qweight, size_n=part_size_n, size_k=part_size_k
-    )
+    petit_qweight = petit_kernel.repack_nvfp4(qweight, size_n=part_size_n, size_k=part_size_k)
     layer.weight = torch.nn.Parameter(petit_qweight, requires_grad=False)
 
     # Permute scales
-    weight_scale = petit_kernel.process_nvfp4_scales(
-        scales=layer.weight_scale, size_k=part_size_k, size_n=part_size_n
-    )
+    weight_scale = petit_kernel.process_nvfp4_scales(scales=layer.weight_scale, size_k=part_size_k, size_n=part_size_n)
     layer.weight_scale = torch.nn.Parameter(weight_scale, requires_grad=False)
 
 

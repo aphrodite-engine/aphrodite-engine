@@ -13,8 +13,7 @@ import pytest
 import regex as re
 import torch
 from PIL.Image import Image
-from transformers import (AutoConfig, AutoTokenizer, BatchFeature,
-                          GenerationConfig, GenerationMixin)
+from transformers import AutoConfig, AutoTokenizer, BatchFeature, GenerationConfig, GenerationMixin
 from transformers.video_utils import VideoMetadata
 
 from aphrodite.logprobs import SampleLogprobs
@@ -81,9 +80,7 @@ def kimiv_vl_aphrodite_to_hf_output(
     return output_ids, hf_output_str, out_logprobs
 
 
-def llava_image_aphrodite_to_hf_output(
-    aphrodite_output: RunnerOutput, model: str
-) -> RunnerOutput:
+def llava_image_aphrodite_to_hf_output(aphrodite_output: RunnerOutput, model: str) -> RunnerOutput:
     config = AutoConfig.from_pretrained(model)
     mm_token_id = config.image_token_index
     return _llava_aphrodite_to_hf_output(aphrodite_output, model, mm_token_id)
@@ -97,9 +94,7 @@ def llava_video_aphrodite_to_hf_output(
     return _llava_aphrodite_to_hf_output(aphrodite_output, model, mm_token_id)
 
 
-def _llava_aphrodite_to_hf_output(
-    aphrodite_output: RunnerOutput, model: str, mm_token_id: int
-) -> RunnerOutput:
+def _llava_aphrodite_to_hf_output(aphrodite_output: RunnerOutput, model: str, mm_token_id: int) -> RunnerOutput:
     """Sanitize aphrodite output [Llava models] to be comparable with hf output."""
     output_ids, output_str, out_logprobs = aphrodite_output
 
@@ -127,9 +122,7 @@ def llava_onevision_hf_model_kwargs(model: str) -> dict:
     return config.to_dict()
 
 
-def llava_onevision_aphrodite_to_hf_output(
-    aphrodite_output: RunnerOutput, model: str
-) -> RunnerOutput:
+def llava_onevision_aphrodite_to_hf_output(aphrodite_output: RunnerOutput, model: str) -> RunnerOutput:
     """Sanitize aphrodite output [llava-onevision] to compare with hf output."""
     output_ids, output_str, out_logprobs = aphrodite_output
 
@@ -254,9 +247,7 @@ def get_llava_embeddings(image_assets: ImageTestAssets):
 
 
 ####### Prompt path encoders for models that need models on disk
-def qwen_prompt_path_encoder(
-    tmp_path: PosixPath, prompt: str, assets: list[ImageAsset] | ImageTestAssets
-) -> str:
+def qwen_prompt_path_encoder(tmp_path: PosixPath, prompt: str, assets: list[ImageAsset] | ImageTestAssets) -> str:
     """Given a temporary dir path, export one or more image assets into the
     tempdir & replace its contents with the local path to the string so that
     the HF version of Qwen-VL can resolve the path and load the image in its
@@ -306,9 +297,7 @@ def deepseekvl2_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
         return BatchFeature(data=inputs, tensor_type="pt")
 
     hf_model.processor = processor
-    hf_model.model.get_output_embeddings = (
-        lambda: hf_model.model.language.model.embed_tokens
-    )
+    hf_model.model.get_output_embeddings = lambda: hf_model.model.language.model.embed_tokens
     return hf_model
 
 
@@ -344,11 +333,7 @@ def gemma3_aphrodite_to_hf_output(aphrodite_output: RunnerOutput, model: str) ->
     tokenizer = AutoTokenizer.from_pretrained(model)
     eos_token_id = tokenizer.eos_token_id
 
-    hf_output_ids = [
-        token_id
-        for idx, token_id in enumerate(output_ids)
-        if token_id != image_token_id
-    ]
+    hf_output_ids = [token_id for idx, token_id in enumerate(output_ids) if token_id != image_token_id]
 
     hf_output_str = output_str
     if hf_output_ids[-1] == eos_token_id:
@@ -374,10 +359,7 @@ def glm4v_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
         assert len(contents) == len(images)
 
         return hf_processor.apply_chat_template(
-            [
-                {"role": "user", "image": image, "content": content}
-                for image, content in zip(images, contents)
-            ],
+            [{"role": "user", "image": image, "content": content} for image, content in zip(images, contents)],
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
@@ -385,9 +367,7 @@ def glm4v_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
         )
 
     hf_model.processor = processor
-    hf_model.model.get_output_embeddings = (
-        lambda: hf_model.model.transformer.output_layer
-    )
+    hf_model.model.get_output_embeddings = lambda: hf_model.model.transformer.output_layer
     return hf_model
 
 
@@ -404,9 +384,7 @@ def glm4_1v_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
         else:
             video_metadata = None
 
-        return hf_processor(
-            *args, videos=videos, video_metadata=video_metadata, **kwargs
-        )
+        return hf_processor(*args, videos=videos, video_metadata=video_metadata, **kwargs)
 
     hf_model.processor = processor
     return hf_model
@@ -422,9 +400,7 @@ def h2ovl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             self.num_image_token = hf_runner.model.num_image_token
             self.tokenizer = hf_runner.tokenizer
 
-            self.config = AutoConfig.from_pretrained(
-                hf_runner.model_name, trust_remote_code=True
-            )
+            self.config = AutoConfig.from_pretrained(hf_runner.model_name, trust_remote_code=True)
             self.vision_config = self.config.vision_config
             self.use_thumbnail = self.config.use_thumbnail
             self.use_msac = self.config.use_msac
@@ -433,8 +409,7 @@ def h2ovl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             self.image_size = self.vision_config.image_size
 
         def __call__(self, text: str, images: Image | list[Image], **kwargs):
-            from aphrodite.modeling.models.h2ovl import (
-                IMG_CONTEXT, IMG_END, IMG_START, image_to_pixel_values_h2ovl)
+            from aphrodite.modeling.models.h2ovl import IMG_CONTEXT, IMG_END, IMG_START, image_to_pixel_values_h2ovl
 
             images = [images] if isinstance(images, Image) else images
             pixel_values = [
@@ -461,9 +436,7 @@ def h2ovl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
     img_context_token_id = hf_model.tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
     hf_model.model.img_context_token_id = img_context_token_id
     hf_model.processor = H2OVLProcessor(hf_model)
-    hf_model.model.get_output_embeddings = (
-        lambda: hf_model.model.language_model.get_output_embeddings()
-    )
+    hf_model.model.get_output_embeddings = lambda: hf_model.model.language_model.get_output_embeddings()
     hf_model.model.generate = types.MethodType(_internvl_generate, hf_model.model)
     return hf_model
 
@@ -478,9 +451,7 @@ def skyworkr1v_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             self.num_image_token = hf_runner.model.num_image_token
             self.tokenizer = hf_runner.tokenizer
 
-            self.config = AutoConfig.from_pretrained(
-                hf_runner.model_name, trust_remote_code=True
-            )
+            self.config = AutoConfig.from_pretrained(hf_runner.model_name, trust_remote_code=True)
             self.vision_config = self.config.vision_config
             self.use_thumbnail = self.config.use_thumbnail
             self.min_num = self.config.min_dynamic_patch
@@ -489,8 +460,11 @@ def skyworkr1v_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
 
         def __call__(self, text: str, images: Image | list[Image], **kwargs):
             from aphrodite.modeling.models.skyworkr1v import (
-                IMG_CONTEXT, IMG_END, IMG_START,
-                image_to_pixel_values_skyworkr1v)
+                IMG_CONTEXT,
+                IMG_END,
+                IMG_START,
+                image_to_pixel_values_skyworkr1v,
+            )
 
             images = [images] if isinstance(images, Image) else images
             pixel_values = [
@@ -516,9 +490,7 @@ def skyworkr1v_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
     img_context_token_id = hf_model.tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
     hf_model.model.img_context_token_id = img_context_token_id
     hf_model.processor = SkyworkR1VProcessor(hf_model)
-    hf_model.model.get_output_embeddings = (
-        lambda: hf_model.model.language_model.get_output_embeddings()
-    )
+    hf_model.model.get_output_embeddings = lambda: hf_model.model.language_model.get_output_embeddings()
     hf_model.model.generate = types.MethodType(_internvl_generate, hf_model.model)
     return hf_model
 
@@ -533,9 +505,7 @@ def internvl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             self.num_image_token = hf_runner.model.num_image_token
             self.tokenizer = hf_runner.tokenizer
 
-            self.config = AutoConfig.from_pretrained(
-                hf_runner.model_name, trust_remote_code=True
-            )
+            self.config = AutoConfig.from_pretrained(hf_runner.model_name, trust_remote_code=True)
             self.vision_config = self.config.vision_config
             self.use_thumbnail = self.config.use_thumbnail
             self.min_num = self.config.min_dynamic_patch
@@ -550,8 +520,12 @@ def internvl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             **kwargs,
         ):
             from aphrodite.modeling.models.internvl import (
-                IMG_CONTEXT, IMG_END, IMG_START,
-                image_to_pixel_values_internvl, video_to_pixel_values_internvl)
+                IMG_CONTEXT,
+                IMG_END,
+                IMG_START,
+                image_to_pixel_values_internvl,
+                video_to_pixel_values_internvl,
+            )
 
             images = [images] if isinstance(images, Image) else images
             videos = [videos] if isinstance(videos, np.ndarray) else videos
@@ -566,9 +540,7 @@ def internvl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
                     )
                     for image in images
                 ]
-                num_patches_images = [
-                    pixel_value.shape[0] for pixel_value in pixel_values_images
-                ]
+                num_patches_images = [pixel_value.shape[0] for pixel_value in pixel_values_images]
             else:
                 pixel_values_images, num_patches_images = [], []
 
@@ -583,9 +555,7 @@ def internvl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
                     )
                     for video in videos
                 ]
-                num_patches_videos = [
-                    pixel_value.shape[0] for pixel_value in pixel_values_videos
-                ]
+                num_patches_videos = [pixel_value.shape[0] for pixel_value in pixel_values_videos]
             else:
                 pixel_values_videos, num_patches_videos = [], []
 
@@ -593,17 +563,11 @@ def internvl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             while ("<image>" in text) or ("<video>" in text):
                 image_index = text.find("<image>")
                 video_index = text.find("<video>")
-                if image_index == -1 or (
-                    video_index > -1 and video_index < image_index
-                ):
+                if image_index == -1 or (video_index > -1 and video_index < image_index):
                     num_patches = num_patches_videos.pop(0)
                     pixel_values.append(pixel_values_videos.pop(0))
-                    context_tokens = (
-                        IMG_START + IMG_CONTEXT * self.num_image_token + IMG_END
-                    )
-                    video_tokens = "".join(
-                        [f"Frame{i + 1}: {context_tokens}" for i in range(num_patches)]
-                    )
+                    context_tokens = IMG_START + IMG_CONTEXT * self.num_image_token + IMG_END
+                    video_tokens = "".join([f"Frame{i + 1}: {context_tokens}" for i in range(num_patches)])
                     text = text.replace("<video>", video_tokens, 1)
                 else:
                     num_patches = num_patches_images.pop(0)
@@ -620,9 +584,7 @@ def internvl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
     img_context_token_id = hf_model.tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
     hf_model.model.img_context_token_id = img_context_token_id
     hf_model.processor = InternVLProcessor(hf_model)
-    hf_model.model.get_output_embeddings = (
-        lambda: hf_model.model.language_model.get_output_embeddings()
-    )
+    hf_model.model.get_output_embeddings = lambda: hf_model.model.language_model.get_output_embeddings()
     hf_model.model.generate = types.MethodType(_internvl_generate, hf_model.model)
     return hf_model
 
@@ -790,9 +752,7 @@ def molmo_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
 
 def ovis_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
     """Patches and returns an instance of the HfRunner to use for Ovis2."""
-    hf_model.model.get_output_embeddings = (
-        lambda: hf_model.model.llm.get_output_embeddings()
-    )
+    hf_model.model.get_output_embeddings = lambda: hf_model.model.llm.get_output_embeddings()
 
     def processor(*args, text="", images=None, **kwargs):
         text_tokenizer = hf_model.model.get_text_tokenizer()
@@ -808,9 +768,7 @@ def ovis_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
                 text = text.split(start)[1].split(end)[0]
                 break
 
-        prompt, input_ids, pixel_values = hf_model.model.preprocess_inputs(
-            text_or_conversations=text, images=images
-        )
+        prompt, input_ids, pixel_values = hf_model.model.preprocess_inputs(text_or_conversations=text, images=images)
         attention_mask = torch.ne(input_ids, text_tokenizer.pad_token_id)
 
         inputs = {
@@ -826,9 +784,7 @@ def ovis_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
 
 def ovis2_5_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
     """Patches and returns an instance of the HfRunner to use for Ovis2."""
-    hf_model.model.get_output_embeddings = (
-        lambda: hf_model.model.llm.get_output_embeddings()
-    )
+    hf_model.model.get_output_embeddings = lambda: hf_model.model.llm.get_output_embeddings()
 
     def processor(*args, text="", images=None, videos=None, **kwargs):
         if images is None:
@@ -865,9 +821,7 @@ def ovis2_5_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             }
         ]
 
-        input_ids, pixel_values, grid_thws = hf_model.model.preprocess_inputs(
-            messages=messages, enable_thinking=True
-        )
+        input_ids, pixel_values, grid_thws = hf_model.model.preprocess_inputs(messages=messages, enable_thinking=True)
         inputs = {
             "inputs": input_ids,
             "pixel_values": pixel_values,
@@ -899,12 +853,7 @@ def qwen3_vl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             if kwargs.get("do_sample_frames") is None:
                 kwargs["do_sample_frames"] = do_sample_frames
             video_metadata = [
-                [
-                    VideoMetadata(
-                        **{k: v for k, v in video[1].items() if k != "do_sample_frames"}
-                    )
-                ]
-                for video in videos
+                [VideoMetadata(**{k: v for k, v in video[1].items() if k != "do_sample_frames"})] for video in videos
             ]
             videos = [[video[0]] for video in videos]
         elif videos is not None and isinstance(videos, tuple):
@@ -912,24 +861,12 @@ def qwen3_vl_patch_hf_runner(hf_model: HfRunner) -> HfRunner:
             do_sample_frames = videos[1]["do_sample_frames"]
             if kwargs.get("do_sample_frames") is None:
                 kwargs["do_sample_frames"] = do_sample_frames
-            video_metadata = [
-                [
-                    VideoMetadata(
-                        **{
-                            k: v
-                            for k, v in videos[1].items()
-                            if k != "do_sample_frames"
-                        }
-                    )
-                ]
-            ]
+            video_metadata = [[VideoMetadata(**{k: v for k, v in videos[1].items() if k != "do_sample_frames"})]]
             videos = [[videos[0]]]
         else:
             video_metadata = None
 
-        return hf_processor(
-            *args, videos=videos, video_metadata=video_metadata, **kwargs
-        )
+        return hf_processor(*args, videos=videos, video_metadata=video_metadata, **kwargs)
 
     hf_model.processor = processor
     return hf_model

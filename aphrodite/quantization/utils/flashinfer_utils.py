@@ -5,12 +5,11 @@ import torch
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite import envs
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
-                                                        FusedMoEQuantConfig)
-from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import (
-    FlashInferExperts)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_moe import FlashInferExperts
 from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_prepare_finalize import (  # noqa: E501
-    create_flashinfer_prepare_finalize)
+    create_flashinfer_prepare_finalize,
+)
 
 logger = init_logger(__name__)
 
@@ -40,14 +39,10 @@ def calculate_tile_tokens_dim(num_tokens, top_k, num_experts):
 
 
 def swap_w13_to_w31(x: torch.Tensor) -> torch.Tensor:
-    return (
-        x.reshape(-1, 2, x.shape[-2] // 2, x.shape[-1]).flip(dims=[1]).reshape(x.shape)
-    )
+    return x.reshape(-1, 2, x.shape[-2] // 2, x.shape[-1]).flip(dims=[1]).reshape(x.shape)
 
 
-def rotate_flashinfer_fp8_moe_weights(
-    gemm1_weights: torch.Tensor, gemm2_weights: torch.Tensor
-):
+def rotate_flashinfer_fp8_moe_weights(gemm1_weights: torch.Tensor, gemm2_weights: torch.Tensor):
     from flashinfer import reorder_rows_for_gated_act_gemm, shuffle_matrix_a
 
     epilogue_tile_m = 128
@@ -58,9 +53,7 @@ def rotate_flashinfer_fp8_moe_weights(
     # Reorder rows of W1 for fused gated activation
     gemm1_weights_fp8_interleaved = []
     for i in range(num_experts):
-        gemm1_weights_fp8_interleaved.append(
-            reorder_rows_for_gated_act_gemm(gemm1_weights[i])
-        )
+        gemm1_weights_fp8_interleaved.append(reorder_rows_for_gated_act_gemm(gemm1_weights[i]))
 
     # Stack weights and scales for all experts
     gemm1_weights_fp8_interleaved = torch.stack(gemm1_weights_fp8_interleaved).reshape(
@@ -72,22 +65,14 @@ def rotate_flashinfer_fp8_moe_weights(
     gemm2_weights_fp8_shuffled = []
     for i in range(num_experts):
         gemm1_weights_fp8_shuffled.append(
-            shuffle_matrix_a(
-                gemm1_weights_fp8_interleaved[i].view(torch.uint8), epilogue_tile_m
-            )
+            shuffle_matrix_a(gemm1_weights_fp8_interleaved[i].view(torch.uint8), epilogue_tile_m)
         )
 
-        gemm2_weights_fp8_shuffled.append(
-            shuffle_matrix_a(gemm2_weights[i].view(torch.uint8), epilogue_tile_m)
-        )
+        gemm2_weights_fp8_shuffled.append(shuffle_matrix_a(gemm2_weights[i].view(torch.uint8), epilogue_tile_m))
 
     # Stack weights for all experts
-    gemm1_weights.data = torch.stack(gemm1_weights_fp8_shuffled).view(
-        torch.float8_e4m3fn
-    )
-    gemm2_weights.data = torch.stack(gemm2_weights_fp8_shuffled).view(
-        torch.float8_e4m3fn
-    )
+    gemm1_weights.data = torch.stack(gemm1_weights_fp8_shuffled).view(torch.float8_e4m3fn)
+    gemm2_weights.data = torch.stack(gemm2_weights_fp8_shuffled).view(torch.float8_e4m3fn)
 
 
 def apply_flashinfer_per_tensor_scale_fp8(
@@ -105,15 +90,9 @@ def apply_flashinfer_per_tensor_scale_fp8(
 
     import aphrodite.modeling.layers.fused_moe.flashinfer_trtllm_moe  # noqa: E501, F401
 
-    assert layer.output1_scales_scalar is not None, (
-        "Expected output1_scales_scalar to be initialized"
-    )
-    assert layer.output1_scales_scalar is not None, (
-        "Expected output1_scales_gate_scalar to be initialized"
-    )
-    assert layer.output1_scales_scalar is not None, (
-        "Expected output2_scales_scalar to be initialized"
-    )
+    assert layer.output1_scales_scalar is not None, "Expected output1_scales_scalar to be initialized"
+    assert layer.output1_scales_scalar is not None, "Expected output1_scales_gate_scalar to be initialized"
+    assert layer.output1_scales_scalar is not None, "Expected output2_scales_scalar to be initialized"
 
     from aphrodite.modeling.models.llama4 import Llama4MoE
 
@@ -162,16 +141,12 @@ def register_moe_scaling_factors(layer: torch.nn.Module) -> None:
         layer.w2_input_scale,
         layer.w2_weight_scale,
     )
-    layer.register_parameter(
-        "output1_scales_scalar", torch.nn.Parameter(output1_scales, requires_grad=False)
-    )
+    layer.register_parameter("output1_scales_scalar", torch.nn.Parameter(output1_scales, requires_grad=False))
     layer.register_parameter(
         "output1_scales_gate_scalar",
         torch.nn.Parameter(output1_gate_scales, requires_grad=False),
     )
-    layer.register_parameter(
-        "output2_scales_scalar", torch.nn.Parameter(output2_scales, requires_grad=False)
-    )
+    layer.register_parameter("output2_scales_scalar", torch.nn.Parameter(output2_scales, requires_grad=False))
     layer.register_parameter(
         "w2_input_scale_inv",
         torch.nn.Parameter(1.0 / layer.w2_input_scale, requires_grad=False),
@@ -226,9 +201,7 @@ def flashinfer_cutlass_moe_fp8(
 
     fused_experts = mk.FusedMoEModularKernel(
         build_flashinfer_fp8_cutlass_moe_prepare_finalize(moe=None),
-        select_cutlass_fp8_gemm_impl(
-            moe=None, quant_config=quant_config, out_dtype=hidden_states.dtype
-        ),
+        select_cutlass_fp8_gemm_impl(moe=None, quant_config=quant_config, out_dtype=hidden_states.dtype),
     )
 
     return fused_experts(
@@ -253,10 +226,7 @@ def get_flashinfer_moe_backend() -> FlashinferMoeBackend:
         return FlashinferMoeBackend.TENSORRT_LLM
 
     allowed_backends = ["throughput", "latency"]
-    raise ValueError(
-        f"Unknown flashinfer moe backend: {flashinfer_moe_backend}"
-        f" expected one of {allowed_backends}"
-    )
+    raise ValueError(f"Unknown flashinfer moe backend: {flashinfer_moe_backend} expected one of {allowed_backends}")
 
 
 def is_flashinfer_supporting_global_sf(backend: FlashinferMoeBackend | None) -> bool:

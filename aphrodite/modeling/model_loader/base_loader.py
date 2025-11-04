@@ -6,8 +6,7 @@ import torch.nn as nn
 from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.config.load import LoadConfig
 from aphrodite.logger import init_logger
-from aphrodite.modeling.model_loader.utils import (
-    initialize_model, process_weights_after_loading)
+from aphrodite.modeling.model_loader.utils import initialize_model, process_weights_after_loading
 from aphrodite.utils.torch_utils import set_default_torch_dtype
 
 logger = init_logger(__name__)
@@ -30,21 +29,15 @@ class BaseModelLoader(ABC):
         inplace weights loading for an already-initialized model"""
         raise NotImplementedError
 
-    def load_model(
-        self, aphrodite_config: AphroditeConfig, model_config: ModelConfig
-    ) -> nn.Module:
+    def load_model(self, aphrodite_config: AphroditeConfig, model_config: ModelConfig) -> nn.Module:
         """Load a model with the given configurations."""
         device_config = aphrodite_config.device_config
         load_config = aphrodite_config.load_config
-        load_device = (
-            device_config.device if load_config.device is None else load_config.device
-        )
+        load_device = device_config.device if load_config.device is None else load_config.device
         target_device = torch.device(load_device)
         with set_default_torch_dtype(model_config.dtype):
             with target_device:
-                model = initialize_model(
-                    aphrodite_config=aphrodite_config, model_config=model_config
-                )
+                model = initialize_model(aphrodite_config=aphrodite_config, model_config=model_config)
 
             logger.debug("Loading weights on %s ...", load_device)
             # Quantization does not happen in `load_weights` but after it

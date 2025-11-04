@@ -8,18 +8,13 @@ from torch.nn.parameter import Parameter, UninitializedParameter
 
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.fused_moe.config import (FusedMoEConfig,
-                                                        FusedMoEQuantConfig)
-from aphrodite.modeling.layers.fused_moe.layer import (FusedMoE,
-                                                       FusedMoEMethodBase)
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod)
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+from aphrodite.modeling.layers.fused_moe.config import FusedMoEConfig, FusedMoEQuantConfig
+from aphrodite.modeling.layers.fused_moe.layer import FusedMoE, FusedMoEMethodBase
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
 logger = init_logger(__name__)
@@ -53,9 +48,7 @@ class GGUFConfig(QuantizationConfig):
     def from_config(cls, config: dict[str, Any]) -> "GGUFConfig":
         return cls()
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
         if isinstance(layer, LinearBase):
             if is_layer_skipped_gguf(prefix, self.unquantized_modules):
                 return UnquantizedLinearMethod()
@@ -106,9 +99,7 @@ MMVQ_QUANT_TYPES = STANDARD_QUANT_TYPES | KQUANT_TYPES | IMATRIX_QUANT_TYPES
 MMQ_QUANT_TYPES = STANDARD_QUANT_TYPES | KQUANT_TYPES
 
 
-def _fused_mul_mat_gguf(
-    x: torch.Tensor, qweight: torch.Tensor, qweight_type: int
-) -> torch.Tensor:
+def _fused_mul_mat_gguf(x: torch.Tensor, qweight: torch.Tensor, qweight_type: int) -> torch.Tensor:
     if qweight_type in IMATRIX_QUANT_TYPES:
         mmvq_safe = 8 if qweight.shape[0] > 5120 else 16
     else:
@@ -184,24 +175,17 @@ def _fused_moe_gguf(
         return out
 
     # lazy import to avoid triggering triton import in CPU backend
-    from aphrodite.modeling.layers.fused_moe.fused_moe import (
-        moe_align_block_size)
+    from aphrodite.modeling.layers.fused_moe.fused_moe import moe_align_block_size
 
     out_hidden_states = torch.empty_like(x)
     # unless we decent expert reuse we are better off running moe_vec kernel
-    if (
-        qweight_type2 in MMQ_QUANT_TYPES
-        and qweight_type in MMQ_QUANT_TYPES
-        and x.shape[0] > 64
-    ):
+    if qweight_type2 in MMQ_QUANT_TYPES and qweight_type in MMQ_QUANT_TYPES and x.shape[0] > 64:
         num_tokens, _ = x.shape
         E, N, _ = w1.shape
         top_k = topk_ids.shape[1]
         BLOCK_SIZE = ops.ggml_moe_get_block_size(qweight_type)
 
-        sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
-            topk_ids, BLOCK_SIZE, E
-        )
+        sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(topk_ids, BLOCK_SIZE, E)
         out = ops.ggml_moe_a8(
             x,
             w1,
@@ -225,9 +209,7 @@ def _fused_moe_gguf(
             1,
             num_tokens * top_k,
         )
-        out = out.reshape(num_tokens, top_k, w2.shape[1]).mul_(
-            topk_weights.view(num_tokens, top_k, 1)
-        )
+        out = out.reshape(num_tokens, top_k, w2.shape[1]).mul_(topk_weights.view(num_tokens, top_k, 1))
         ops.moe_sum(out, out_hidden_states)
     elif qweight_type2 in MMVQ_QUANT_TYPES and qweight_type in MMVQ_QUANT_TYPES:
         num_tokens, _ = x.shape
@@ -237,12 +219,8 @@ def _fused_moe_gguf(
         out = ops.ggml_moe_a8_vec(x, w1, topk_ids, top_k, qweight_type, N, num_tokens)
         out = act(out)
 
-        out = ops.ggml_moe_a8_vec(
-            out, w2, topk_ids, 1, qweight_type2, w2.shape[1], num_tokens * top_k
-        )
-        out = out.reshape(num_tokens, top_k, w2.shape[1]).mul_(
-            topk_weights.view(num_tokens, top_k, 1)
-        )
+        out = ops.ggml_moe_a8_vec(out, w2, topk_ids, 1, qweight_type2, w2.shape[1], num_tokens * top_k)
+        out = out.reshape(num_tokens, top_k, w2.shape[1]).mul_(topk_weights.view(num_tokens, top_k, 1))
         ops.moe_sum(out, out_hidden_states)
     else:
         logger.warning_once(
@@ -260,9 +238,7 @@ def _fused_moe_gguf(
                 out = act(out)
 
                 expert_down = w2[ii]
-                current_state = fused_mul_mat_gguf(
-                    out, expert_down, qweight_type2
-                ).mul_(ww)
+                current_state = fused_mul_mat_gguf(out, expert_down, qweight_type2).mul_(ww)
                 if current_hidden_state is None:
                     current_hidden_state = current_state
                 else:
@@ -310,9 +286,7 @@ def _apply_gguf_embedding(
         x_flat = x.flatten()
         assert hidden_size == qweight.shape[1] // type_size * block_size
         quant = torch.index_select(qweight, dim=0, index=x_flat)
-        dequant = ops.ggml_dequantize(
-            quant, qweight_type, hidden_size, x_flat.shape[0], dtype
-        )
+        dequant = ops.ggml_dequantize(quant, qweight_type, hidden_size, x_flat.shape[0], dtype)
         return dequant.view(*x.shape, hidden_size)
     else:
         qweight_type = WeightType(qweight_type)
@@ -401,9 +375,7 @@ class GGUFLinearMethod(LinearMethodBase):
         qweight_type = layer.qweight_type.weight_type
         if not (qweight_type in UNQUANTIZED_TYPES or qweight_type in DEQUANT_TYPES):
             qweight_type = WeightType(qweight_type)
-            raise ValueError(
-                f"Unsupported GGUF quantization type {qweight_type} in layer {layer}."
-            )
+            raise ValueError(f"Unsupported GGUF quantization type {qweight_type} in layer {layer}.")
         # For MergedColumnParallelLinear and QKVParallelLinear, we need to
         # materialize the padded weight parameter for CUDA Graph compatibility.
         self._create_padded_weight_param(layer)
@@ -415,18 +387,14 @@ class GGUFLinearMethod(LinearMethodBase):
         shard_id = qweight.shard_id
         if len(data_container := qweight.data_container) > 1:
             dtype = {data.dtype for data in data_container}
-            assert len(dtype) == 1, ValueError(
-                f"Data container has mixed dtypes: {dtype}"
-            )
+            assert len(dtype) == 1, ValueError(f"Data container has mixed dtypes: {dtype}")
             dtype = next(iter(dtype))
             # concat dim0 and pad dim1
             padded_side = max(x.size(1) for x in data_container)
             concat_side = sum(x.size(0) for x in data_container)
             # Pad the quantized weights to dense tensor, and create a map
             # with the location of each shard in the padded tensor.
-            padded_data = torch.zeros(
-                (concat_side, padded_side), dtype=dtype, device=qweight.device
-            )
+            padded_data = torch.zeros((concat_side, padded_side), dtype=dtype, device=qweight.device)
             # (dim0_start, dim0_end, dim1_size)
             shard_offset_map = dict[str, tuple[int, int, int]]()
             for idx in shard_id:
@@ -458,11 +426,7 @@ class GGUFLinearMethod(LinearMethodBase):
             for idx in shard_id:
                 start, end, offset = layer.qweight.shard_offset_map[idx]
                 qweight_type = layer.qweight_type.shard_weight_type[idx]
-                result.append(
-                    fused_mul_mat_gguf(
-                        x, qweight[start:end, :offset].contiguous(), qweight_type
-                    )
-                )
+                result.append(fused_mul_mat_gguf(x, qweight[start:end, :offset].contiguous(), qweight_type))
             out = torch.cat(result, axis=1)
         else:
             qweight = layer.qweight
@@ -513,9 +477,7 @@ class GGUFMoEMethod(FusedMoEMethodBase):
         set_weight_attrs(w13_qweight, extra_weight_attrs)
         layer.register_parameter("w13_qweight", w13_qweight)
 
-        w13_qweight_type = Parameter(
-            torch.empty(1, dtype=torch.uint8), requires_grad=False
-        )
+        w13_qweight_type = Parameter(torch.empty(1, dtype=torch.uint8), requires_grad=False)
         set_weight_attrs(
             w13_qweight_type,
             {"is_gguf_weight_type": True, "weight_type": 0, "ignore_warning": True},
@@ -539,9 +501,7 @@ class GGUFMoEMethod(FusedMoEMethodBase):
         set_weight_attrs(w2_qweight, extra_weight_attrs)
         layer.register_parameter("w2_qweight", w2_qweight)
 
-        w2_qweight_type = Parameter(
-            torch.empty(1, dtype=torch.uint8), requires_grad=False
-        )
+        w2_qweight_type = Parameter(torch.empty(1, dtype=torch.uint8), requires_grad=False)
         set_weight_attrs(
             w2_qweight_type,
             {"is_gguf_weight_type": True, "weight_type": 0, "ignore_warning": True},
@@ -550,9 +510,7 @@ class GGUFMoEMethod(FusedMoEMethodBase):
         set_weight_attrs(w2_qweight_type, extra_weight_attrs)
         layer.register_parameter("w2_qweight_type", w2_qweight_type)
 
-    def get_fused_moe_quant_config(
-        self, layer: torch.nn.Module
-    ) -> FusedMoEQuantConfig | None:
+    def get_fused_moe_quant_config(self, layer: torch.nn.Module) -> FusedMoEQuantConfig | None:
         return None
 
     def apply(
@@ -585,10 +543,7 @@ class GGUFMoEMethod(FusedMoEMethodBase):
 
         assert activation == "silu", "Only SiLU activation is supported."
         if apply_router_weight_on_input:
-            raise NotImplementedError(
-                "Apply router weight on input is not supported for"
-                "fused GGUF MoE method."
-            )
+            raise NotImplementedError("Apply router weight on input is not supported forfused GGUF MoE method.")
 
         topk_weights, topk_ids, _ = FusedMoE.select_experts(
             hidden_states=x,
@@ -628,9 +583,7 @@ class GGUFEmbeddingMethod(GGUFLinearMethod):
         qweight_type = layer.qweight_type.weight_type
         hidden_size = qweight.tensor_shape[1]
 
-        return apply_gguf_embedding(
-            x, qweight, qweight_type, hidden_size, dtype=self.params_dtype
-        )
+        return apply_gguf_embedding(x, qweight, qweight_type, hidden_size, dtype=self.params_dtype)
 
 
 class GGUFUninitializedParameter(UninitializedParameter):

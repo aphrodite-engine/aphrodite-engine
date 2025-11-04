@@ -9,13 +9,12 @@ import math
 import pytest
 import torch
 
-from aphrodite.modeling.layers.fused_moe.config import (
-    fp8_w8a8_moe_quant_config)
+from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
+
 # Aphrodite fused-expert reference (Triton fallback + DeepGEMM option)
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts
 from aphrodite.quantization.utils.fp8_utils import per_token_group_quant_fp8
-from aphrodite.utils.deep_gemm import (calc_diff, is_deep_gemm_supported,
-                                       per_block_cast_to_fp8)
+from aphrodite.utils.deep_gemm import calc_diff, is_deep_gemm_supported, per_block_cast_to_fp8
 
 BLOCK_SIZE = [128, 128]
 
@@ -57,12 +56,8 @@ def make_block_quant_fp8_weights(
     w2_s = torch.empty(e, n_tiles_w2, k_tiles_w2, device="cuda", dtype=torch.float32)
 
     for i in range(e):
-        w1[i], w1_s[i] = per_block_cast_to_fp8(
-            w1_bf16[i], block_size=block_size, use_ue8m0=True
-        )
-        w2[i], w2_s[i] = per_block_cast_to_fp8(
-            w2_bf16[i], block_size=block_size, use_ue8m0=True
-        )
+        w1[i], w1_s[i] = per_block_cast_to_fp8(w1_bf16[i], block_size=block_size, use_ue8m0=True)
+        w2[i], w2_s[i] = per_block_cast_to_fp8(w2_bf16[i], block_size=block_size, use_ue8m0=True)
 
     return w1, w2, w1_s, w2_s
 
@@ -72,11 +67,7 @@ def run_single_case(m, n, k, topk, num_experts, block_size):
     Run one (M,N,K) configuration on a single GPU and assert DeepGEMM ==
     Triton baseline within tolerance.
     """
-    tokens_bf16 = (
-        torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
-        .clamp_min_(-1)
-        .clamp_max_(1)
-    )
+    tokens_bf16 = torch.randn(m, k, device="cuda", dtype=torch.bfloat16).clamp_min_(-1).clamp_max_(1)
     _, a1_scale = per_token_group_quant_fp8(tokens_bf16, block_size[1])
 
     # expert weight tensors
@@ -140,9 +131,7 @@ def test_deepgemm_vs_triton(m, n, k, topk, num_experts, monkeypatch):
     with monkeypatch.context() as mp:
         mp.setenv("APHRODITE_USE_DEEP_GEMM", "1")
 
-        _fused_moe_mod = importlib.import_module(
-            "aphrodite.modeling.layers.fused_moe.fused_moe"
-        )
+        _fused_moe_mod = importlib.import_module("aphrodite.modeling.layers.fused_moe.fused_moe")
 
         call_counter = {"cnt": 0}
 
@@ -168,6 +157,5 @@ def test_deepgemm_vs_triton(m, n, k, topk, num_experts, monkeypatch):
 
         # ensure that the DeepGEMM path was indeed taken.
         assert call_counter["cnt"] == 1, (
-            f"DeepGEMM path was not executed during the test. "
-            f"Call counter: {call_counter['cnt']}"
+            f"DeepGEMM path was not executed during the test. Call counter: {call_counter['cnt']}"
         )

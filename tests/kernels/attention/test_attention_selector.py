@@ -3,13 +3,11 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from aphrodite.attention.selector import (_cached_get_attn_backend,
-                                          get_attn_backend)
+from aphrodite.attention.selector import _cached_get_attn_backend, get_attn_backend
 from aphrodite.platforms.cpu import CpuPlatform
 from aphrodite.platforms.cuda import CudaPlatform
 from aphrodite.platforms.rocm import RocmPlatform
-from aphrodite.utils import (STR_BACKEND_ENV_VAR, STR_FLASH_ATTN_VAL,
-                             STR_INVALID_VAL)
+from aphrodite.utils import STR_BACKEND_ENV_VAR, STR_FLASH_ATTN_VAL, STR_INVALID_VAL
 
 
 @pytest.fixture(autouse=True)
@@ -49,11 +47,7 @@ def generate_params():
     params = []
     for use_mla in [True, False]:
         for device in ["cuda", "hip", "cpu"]:
-            backends = (
-                DEVICE_MLA_BACKENDS[device]
-                if use_mla
-                else DEVICE_REGULAR_ATTN_BACKENDS[device]
-            )
+            backends = DEVICE_MLA_BACKENDS[device] if use_mla else DEVICE_REGULAR_ATTN_BACKENDS[device]
             for name in backends:
                 block_sizes = DEVICE_MLA_BLOCK_SIZES[device] if use_mla else [16]
                 for block_size in block_sizes:
@@ -99,28 +93,20 @@ def test_env(
                     if name == "TRITON_MLA" and block_size == 1:
                         # TRITON_MLA doesn't support block_size == 1
                         with pytest.raises(ValueError) as exc_info:
-                            get_attn_backend(
-                                16, torch.float16, None, block_size, use_mla=use_mla
-                            )
+                            get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                         assert f"The selected backend, {name}" in str(exc_info.value)
                     elif name == "ROCM_AITER_MLA" and block_size != 1:
                         # ROCM_AITER_MLA only supports block_size == 1
                         with pytest.raises(ValueError) as exc_info:
-                            get_attn_backend(
-                                16, torch.float16, None, block_size, use_mla=use_mla
-                            )
+                            get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                         assert f"The selected backend, {name}" in str(exc_info.value)
                     else:
                         # Valid backend-block_size combination
-                        backend = get_attn_backend(
-                            16, torch.float16, None, block_size, use_mla=use_mla
-                        )
+                        backend = get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                         expected = name
                         assert backend.get_name() == expected
                 else:
-                    backend = get_attn_backend(
-                        16, torch.float16, None, block_size, use_mla=use_mla
-                    )
+                    backend = get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                     expected = "ROCM_ATTN"
                     assert backend.get_name() == expected
 
@@ -141,21 +127,15 @@ def test_env(
                             # CUTLASS_MLA only supports block_size == 128
                             pytest.skip("CUTLASS_MLA only supports block_size 128")
                         else:
-                            backend = get_attn_backend(
-                                16, torch.float16, None, block_size, use_mla=use_mla
-                            )
+                            backend = get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                             expected = "CUTLASS_MLA"
                             assert backend.get_name() == expected
                     elif name == "FLASHINFER_MLA":
                         if block_size not in [32, 64]:
                             # FlashInfer MLA only supports block_size 32 or 64
-                            pytest.skip(
-                                "FlashInfer MLA only supports block_size 32 or 64"
-                            )
+                            pytest.skip("FlashInfer MLA only supports block_size 32 or 64")
                         else:
-                            backend = get_attn_backend(
-                                16, torch.float16, None, block_size, use_mla=use_mla
-                            )
+                            backend = get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                             expected = "FLASHINFER_MLA"
                             assert backend.get_name() == expected
                     elif name == "FLASHMLA":
@@ -163,47 +143,34 @@ def test_env(
                             # FlashMLA only supports block_size == 64
                             pytest.skip("FlashMLA only supports block_size 64")
                         else:
-                            from aphrodite.v1.attention.backends.mla.flashmla import (
-                                is_flashmla_dense_supported)
+                            from aphrodite.v1.attention.backends.mla.flashmla import is_flashmla_dense_supported
 
                             is_supported, _ = is_flashmla_dense_supported()
                             if not is_supported:
                                 pytest.skip("FlashMLA not supported on this platform")
                             else:
-                                backend = get_attn_backend(
-                                    16, torch.float16, None, block_size, use_mla=use_mla
-                                )
+                                backend = get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                                 expected = name
                                 assert backend.get_name() == expected
                     elif name == "FLASH_ATTN_MLA":
-                        backend = get_attn_backend(
-                            16, torch.float16, None, block_size, use_mla=use_mla
-                        )
+                        backend = get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                         expected = "FLASH_ATTN_MLA"
                         assert backend.get_name() == expected
                     else:
                         # TRITON_MLA or other fallback
-                        backend = get_attn_backend(
-                            16, torch.float16, None, block_size, use_mla=use_mla
-                        )
+                        backend = get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                         expected = "TRITON_MLA"
                         assert backend.get_name() == expected
                 elif name == "FLASHINFER":
-                    backend = get_attn_backend(
-                        16, torch.float16, None, block_size, use_mla=use_mla
-                    )
+                    backend = get_attn_backend(16, torch.float16, None, block_size, use_mla=use_mla)
                     expected = "FLASHINFER"
                     assert backend.get_name() == expected
                 elif name == "XFORMERS":
-                    backend = get_attn_backend(
-                        32, torch.float16, None, block_size, use_mla=use_mla
-                    )
+                    backend = get_attn_backend(32, torch.float16, None, block_size, use_mla=use_mla)
                     expected = "XFORMERS"
                     assert backend.get_name() == expected
                 elif name == "FLASH_ATTN":
-                    backend = get_attn_backend(
-                        32, torch.float16, None, block_size, use_mla=use_mla
-                    )
+                    backend = get_attn_backend(32, torch.float16, None, block_size, use_mla=use_mla)
                     expected = "FLASH_ATTN"
                     assert backend.get_name() == expected
 
@@ -224,10 +191,7 @@ def test_fp32_fallback(device: str):
 
 def test_flash_attn(monkeypatch: pytest.MonkeyPatch):
     """Test FlashAttn validation."""
-    pytest.skip(
-        "Skipping as current backend selector does not "
-        "handle fallbacks when a backend is set via env var."
-    )
+    pytest.skip("Skipping as current backend selector does not handle fallbacks when a backend is set via env var.")
 
     with monkeypatch.context() as m:
         m.setenv(STR_BACKEND_ENV_VAR, STR_FLASH_ATTN_VAL)

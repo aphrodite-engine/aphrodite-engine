@@ -2,8 +2,7 @@ from collections.abc import Sequence
 
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParserManager
 from aphrodite.reasoning.basic_parsers import BaseThinkingReasoningParser
@@ -39,8 +38,7 @@ class Ernie45ReasoningParser(BaseThinkingReasoningParser):
 
         if not self.model_tokenizer:
             raise ValueError(
-                "The model tokenizer must be passed to the ReasoningParser "
-                "constructor during construction."
+                "The model tokenizer must be passed to the ReasoningParser constructor during construction."
             )
 
         self.start_token_id = self.vocab.get(self.start_token)
@@ -52,10 +50,7 @@ class Ernie45ReasoningParser(BaseThinkingReasoningParser):
         self.parser_token_ids = [self.end_token_id, self.response_end_token_id]
 
         if self.start_token_id is None or self.end_token_id is None:
-            raise RuntimeError(
-                "Ernie45 reasoning parser could not locate think start/end "
-                "tokens in the tokenizer!"
-            )
+            raise RuntimeError("Ernie45 reasoning parser could not locate think start/end tokens in the tokenizer!")
 
     def extract_reasoning_content_streaming(
         self,
@@ -127,10 +122,7 @@ class Ernie45ReasoningParser(BaseThinkingReasoningParser):
             ):
                 content = content.lstrip("\n")
             # remove \n after </think>\n
-            if (
-                len(previous_token_ids) > 1
-                and previous_token_ids[-2] == self.end_token_id
-            ) and (
+            if (len(previous_token_ids) > 1 and previous_token_ids[-2] == self.end_token_id) and (
                 len(delta_token_ids) > 0 and delta_token_ids[0] == self.newline_token_id
             ):
                 content = content.lstrip("\n")
@@ -153,9 +145,7 @@ class Ernie45ReasoningParser(BaseThinkingReasoningParser):
         Returns:
             tuple[Optional[str], Optional[str]]: reasoning content and content
         """
-        reasoning_content, content = super().extract_reasoning_content(
-            model_output, request
-        )
+        reasoning_content, content = super().extract_reasoning_content(model_output, request)
         if content:
             start_idx = content.find(self.response_start_token)
             end_idx = content.rfind(self.response_end_token)

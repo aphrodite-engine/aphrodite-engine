@@ -31,9 +31,7 @@ MAX_NUM_REQS = [16, 1024]
 # TENSOR_PARALLEL_SIZES = [1, 4]
 
 
-@pytest.mark.skipif(
-    not current_platform.is_tpu(), reason="This is a basic test for TPU only"
-)
+@pytest.mark.skipif(not current_platform.is_tpu(), reason="This is a basic test for TPU only")
 @pytest.mark.parametrize("model", MODELS)
 @pytest.mark.parametrize("max_tokens", [5])
 @pytest.mark.parametrize("tensor_parallel_size", TENSOR_PARALLEL_SIZES)
@@ -45,11 +43,7 @@ def test_basic(
     tensor_parallel_size: int,
     max_num_seqs: int,
 ) -> None:
-    prompt = (
-        "The next numbers of the sequence "
-        + ", ".join(str(i) for i in range(1024))
-        + " are:"
-    )
+    prompt = "The next numbers of the sequence " + ", ".join(str(i) for i in range(1024)) + " are:"
     example_prompts = [prompt]
 
     with aphrodite_runner(
@@ -69,9 +63,7 @@ def test_basic(
 
 
 @pytest.mark.skip(reason="Temporarily disabled due to timeout")
-@pytest.mark.skipif(
-    not current_platform.is_tpu(), reason="This is a basic test for TPU only"
-)
+@pytest.mark.skipif(not current_platform.is_tpu(), reason="This is a basic test for TPU only")
 @pytest.mark.parametrize("max_tokens", [8])
 @pytest.mark.parametrize("max_num_seqs", [16])
 def test_phi3(
@@ -92,9 +84,7 @@ def test_phi3(
     # test head dim = 96
     model = "microsoft/Phi-3-mini-128k-instruct"
 
-    with aphrodite_runner(
-        model, max_num_batched_tokens=256, max_num_seqs=max_num_seqs
-    ) as aphrodite_model:
+    with aphrodite_runner(model, max_num_batched_tokens=256, max_num_seqs=max_num_seqs) as aphrodite_model:
         aphrodite_outputs = aphrodite_model.generate_greedy(prompts, max_tokens)
     # aphrodite_outputs is a list of tuples whose first element is the token id
     # and the second element is the output (including the prompt).
@@ -143,9 +133,7 @@ def test_gemma3_27b_with_text_input_and_tp(
         assert answer in generated_text
 
 
-@pytest.mark.skipif(
-    not current_platform.is_tpu(), reason="This is a basic test for TPU only"
-)
+@pytest.mark.skipif(not current_platform.is_tpu(), reason="This is a basic test for TPU only")
 def test_w8a8_quantization(
     aphrodite_runner: type[AphroditeRunner],
 ) -> None:
@@ -154,11 +142,7 @@ def test_w8a8_quantization(
     tensor_parallel_size = 1
     max_num_seqs = 4
 
-    prompt = (
-        "The next numbers of the sequence "
-        + ", ".join(str(i) for i in range(1024))
-        + " are:"
-    )
+    prompt = "The next numbers of the sequence " + ", ".join(str(i) for i in range(1024)) + " are:"
     example_prompts = [prompt]
 
     with aphrodite_runner(

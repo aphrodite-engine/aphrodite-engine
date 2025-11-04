@@ -7,14 +7,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 import huggingface_hub
-from transformers import (AutoTokenizer, PreTrainedTokenizer,
-                          PreTrainedTokenizerFast)
+from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
 from typing_extensions import assert_never
 
 from aphrodite import envs
 from aphrodite.logger import init_logger
-from aphrodite.transformers_utils.config import (
-    get_sentence_transformer_tokenizer_config)
+from aphrodite.transformers_utils.config import get_sentence_transformer_tokenizer_config
 from aphrodite.transformers_utils.tokenizers import MistralTokenizer
 from aphrodite.transformers_utils.utils import check_gguf_file
 
@@ -194,12 +192,9 @@ def get_tokenizer(
 
     tokenizer: AnyTokenizer
     if tokenizer_mode == "mistral":
-        tokenizer = MistralTokenizer.from_pretrained(
-            str(tokenizer_name), revision=revision
-        )
+        tokenizer = MistralTokenizer.from_pretrained(str(tokenizer_name), revision=revision)
     elif tokenizer_mode == "custom":
-        from aphrodite.transformers_utils.tokenizer_base import (
-            TokenizerRegistry)
+        from aphrodite.transformers_utils.tokenizer_base import TokenizerRegistry
 
         tokenizer = TokenizerRegistry.get_tokenizer(
             str(tokenizer_name),
@@ -238,15 +233,9 @@ def get_tokenizer(
 
         # The special_tokens in tokenizer should also be
         # controlled by do_lower_case in encoder_config
-        encoder_config = get_sentence_transformer_tokenizer_config(
-            tokenizer_name, revision
-        )
-        if isinstance(encoder_config, dict) and encoder_config.get(
-            "do_lower_case", False
-        ):
-            special_tokens_map = {
-                k: v.lower() for k, v in tokenizer.special_tokens_map.items()
-            }
+        encoder_config = get_sentence_transformer_tokenizer_config(tokenizer_name, revision)
+        if isinstance(encoder_config, dict) and encoder_config.get("do_lower_case", False):
+            special_tokens_map = {k: v.lower() for k, v in tokenizer.special_tokens_map.items()}
             tokenizer.add_special_tokens(special_tokens_map)
 
         if not isinstance(tokenizer, PreTrainedTokenizerFast):

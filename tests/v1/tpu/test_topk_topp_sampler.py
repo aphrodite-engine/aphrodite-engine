@@ -6,8 +6,7 @@ import torch_xla
 
 from aphrodite.platforms import current_platform
 from aphrodite.v1.sample.ops.topk_topp_sampler import apply_top_k_top_p
-from aphrodite.v1.sample.tpu.sampler import (
-    apply_top_k_top_p as apply_top_k_top_p_tpu)
+from aphrodite.v1.sample.tpu.sampler import apply_top_k_top_p as apply_top_k_top_p_tpu
 
 if not current_platform.is_tpu():
     pytest.skip("This test needs a TPU.", allow_module_level=True)
@@ -71,9 +70,7 @@ def test_topp_basic():
             ]
         )
 
-        result = apply_top_k_top_p_tpu(
-            logits=logits.clone(), k=torch.tensor([3, 3]), p=torch.tensor([0.79, 0.79])
-        )
+        result = apply_top_k_top_p_tpu(logits=logits.clone(), k=torch.tensor([3, 3]), p=torch.tensor([0.79, 0.79]))
 
         torch_xla.sync()
 
@@ -93,9 +90,7 @@ def test_topp_select_all():
             ]
         )
 
-        result = apply_top_k_top_p_tpu(
-            logits=logits.clone(), k=torch.tensor([3, 3]), p=torch.tensor([1.0, 1.0])
-        )
+        result = apply_top_k_top_p_tpu(logits=logits.clone(), k=torch.tensor([3, 3]), p=torch.tensor([1.0, 1.0]))
 
         torch_xla.sync()
 
@@ -105,13 +100,9 @@ def test_topp_select_all():
 def test_topp_with_ties():
     with torch.device(xm.xla_device()):
         # Input has multiple math.log(0.3).
-        logits = torch.tensor(
-            [[math.log(0.3), math.log(0.3), math.log(0.3), math.log(0.1)]]
-        )
+        logits = torch.tensor([[math.log(0.3), math.log(0.3), math.log(0.3), math.log(0.1)]])
 
-        result = apply_top_k_top_p_tpu(
-            logits=logits.clone(), k=torch.tensor([4]), p=torch.tensor([0.2])
-        )
+        result = apply_top_k_top_p_tpu(logits=logits.clone(), k=torch.tensor([4]), p=torch.tensor([0.2]))
 
         torch_xla.sync()
 
@@ -133,9 +124,7 @@ def test_both_topk_topp():
         )
 
         # Set k=1 for the first batch.
-        result = apply_top_k_top_p_tpu(
-            logits=logits.clone(), k=torch.tensor([1, 3]), p=torch.tensor([0.79, 0.79])
-        )
+        result = apply_top_k_top_p_tpu(logits=logits.clone(), k=torch.tensor([1, 3]), p=torch.tensor([0.79, 0.79]))
 
         torch_xla.sync()
 

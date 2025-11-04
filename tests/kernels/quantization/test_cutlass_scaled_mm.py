@@ -128,27 +128,19 @@ def cutlass_int8_gemm_helper(
 
 
 @pytest.mark.parametrize("m,n,k", MNK_FACTORS)
-@pytest.mark.parametrize(
-    "a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
-@pytest.mark.parametrize(
-    "b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
+@pytest.mark.parametrize("a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
+@pytest.mark.parametrize("b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
 @pytest.mark.parametrize("use_bias", [True, False])
 @pytest.mark.skipif(
     not current_platform.has_device_capability(89),
     reason="FP8 is not supported on this GPU type.",
 )
-def test_cutlass_fp8_gemm(
-    m: int, n: int, k: int, a_scale_group_shape, b_scale_group_shape, use_bias: bool
-):
+def test_cutlass_fp8_gemm(m: int, n: int, k: int, a_scale_group_shape, b_scale_group_shape, use_bias: bool):
     cutlass_fp8_gemm_helper(m, n, k, a_scale_group_shape, b_scale_group_shape, use_bias)
 
 
 @pytest.mark.parametrize("m,n,k", MNK_FACTORS)
-@pytest.mark.parametrize(
-    "a_scale_group_shape,b_scale_group_shape", [((1, 128), (128, 128))]
-)
+@pytest.mark.parametrize("a_scale_group_shape,b_scale_group_shape", [((1, 128), (128, 128))])
 @pytest.mark.parametrize("use_bias", [False])
 @pytest.mark.skipif(
     not current_platform.has_device_capability(90),
@@ -167,27 +159,15 @@ def test_cutlass_fp8_blockwise_scale_gemm(
 
 
 @pytest.mark.parametrize("m,n,k", MNK_FACTORS)
-@pytest.mark.parametrize(
-    "a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
-@pytest.mark.parametrize(
-    "b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
+@pytest.mark.parametrize("a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
+@pytest.mark.parametrize("b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
 @pytest.mark.parametrize("use_bias", [True, False])
-def test_cutlass_int8_gemm(
-    m: int, n: int, k: int, a_scale_group_shape, b_scale_group_shape, use_bias: bool
-):
-    cutlass_int8_gemm_helper(
-        m, n, k, a_scale_group_shape, b_scale_group_shape, use_bias
-    )
+def test_cutlass_int8_gemm(m: int, n: int, k: int, a_scale_group_shape, b_scale_group_shape, use_bias: bool):
+    cutlass_int8_gemm_helper(m, n, k, a_scale_group_shape, b_scale_group_shape, use_bias)
 
 
-@pytest.mark.parametrize(
-    "a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
-@pytest.mark.parametrize(
-    "b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
+@pytest.mark.parametrize("a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
+@pytest.mark.parametrize("b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
 @pytest.mark.parametrize("out_dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("use_bias", [True, False])
 def test_cutlass_int8_gemm_output_dtype(
@@ -207,12 +187,8 @@ def test_cutlass_int8_gemm_output_dtype(
     )
 
 
-@pytest.mark.parametrize(
-    "a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
-@pytest.mark.parametrize(
-    "b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
+@pytest.mark.parametrize("a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
+@pytest.mark.parametrize("b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
 @pytest.mark.parametrize("out_dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("use_bias", [True, False])
 @pytest.mark.skipif(
@@ -236,9 +212,7 @@ def test_cutlass_fp8_gemm_output_dtype(
     )
 
 
-@pytest.mark.parametrize(
-    "a_scale_group_shape,b_scale_group_shape", [((1, 128), (128, 128))]
-)
+@pytest.mark.parametrize("a_scale_group_shape,b_scale_group_shape", [((1, 128), (128, 128))])
 @pytest.mark.parametrize("out_dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("use_bias", [False])
 @pytest.mark.skipif(
@@ -262,21 +236,15 @@ def test_cutlass_fp8_blockwise_scale_gemm_dtype(
     )
 
 
-@pytest.mark.parametrize(
-    "a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
-@pytest.mark.parametrize(
-    "b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
+@pytest.mark.parametrize("a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
+@pytest.mark.parametrize("b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
 @pytest.mark.parametrize("use_bias", [True, False])
 @pytest.mark.parametrize("device", CUDA_DEVICES)
 @pytest.mark.skipif(
     not current_platform.has_device_capability(89),
     reason="FP8 is not supported on this GPU type.",
 )
-def test_cutlass_fp8_gemm_devices(
-    a_scale_group_shape, b_scale_group_shape, use_bias: bool, device: str
-):
+def test_cutlass_fp8_gemm_devices(a_scale_group_shape, b_scale_group_shape, use_bias: bool, device: str):
     cutlass_fp8_gemm_helper(
         512,
         512,
@@ -289,17 +257,11 @@ def test_cutlass_fp8_gemm_devices(
     )
 
 
-@pytest.mark.parametrize(
-    "a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
-@pytest.mark.parametrize(
-    "b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
+@pytest.mark.parametrize("a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
+@pytest.mark.parametrize("b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
 @pytest.mark.parametrize("use_bias", [True, False])
 @pytest.mark.parametrize("device", CUDA_DEVICES)
-def test_cutlass_int8_gemm_devices(
-    a_scale_group_shape, b_scale_group_shape, use_bias: bool, device: str
-):
+def test_cutlass_int8_gemm_devices(a_scale_group_shape, b_scale_group_shape, use_bias: bool, device: str):
     cutlass_int8_gemm_helper(
         512,
         512,
@@ -317,42 +279,26 @@ def test_cutlass_int8_gemm_devices(
 # of a large power of two. In any case, the kernel will have a naive fallback
 # when N and K are not divisible by 16. But M is the number of tokens and the
 # kernel must handle any M thrown at it.
-@pytest.mark.parametrize(
-    "a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
-@pytest.mark.parametrize(
-    "b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
+@pytest.mark.parametrize("a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
+@pytest.mark.parametrize("b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
 @pytest.mark.parametrize("use_bias", [True, False])
 @pytest.mark.skipif(
     not current_platform.has_device_capability(89),
     reason="FP8 is not supported on this GPU type.",
 )
-def test_cutlass_fp8_gemm_m_sweep(
-    a_scale_group_shape, b_scale_group_shape, use_bias: bool
-):
+def test_cutlass_fp8_gemm_m_sweep(a_scale_group_shape, b_scale_group_shape, use_bias: bool):
     for nk in range(32, 128, 32):
         for m in range(1, 128):
-            cutlass_fp8_gemm_helper(
-                m, nk, nk, a_scale_group_shape, b_scale_group_shape, use_bias
-            )
+            cutlass_fp8_gemm_helper(m, nk, nk, a_scale_group_shape, b_scale_group_shape, use_bias)
 
 
-@pytest.mark.parametrize(
-    "a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
-@pytest.mark.parametrize(
-    "b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE]
-)
+@pytest.mark.parametrize("a_scale_group_shape", [PER_TOKEN_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
+@pytest.mark.parametrize("b_scale_group_shape", [PER_OUT_CH_GROUP_SHAPE, TENSORWISE_GROUP_SHAPE])
 @pytest.mark.parametrize("use_bias", [True, False])
-def test_cutlass_int8_gemm_m_sweep(
-    a_scale_group_shape, b_scale_group_shape, use_bias: bool
-):
+def test_cutlass_int8_gemm_m_sweep(a_scale_group_shape, b_scale_group_shape, use_bias: bool):
     for nk in range(32, 128, 32):
         for m in range(1, 128):
-            cutlass_int8_gemm_helper(
-                m, nk, nk, a_scale_group_shape, b_scale_group_shape, use_bias
-            )
+            cutlass_int8_gemm_helper(m, nk, nk, a_scale_group_shape, b_scale_group_shape, use_bias)
 
 
 @pytest.mark.parametrize("m", [32, 64, 128])
@@ -397,9 +343,7 @@ def test_cutlass_int8_azp_bias_fold(m: int, n: int, k: int, out_dtype: torch.dty
         * ((aq_i32 + azp_aq_i8).to(device="cpu") @ bq_i32.to(device="cpu"))
     ).to(dtype=out_dtype, device="cuda")
 
-    out = ops.cutlass_scaled_mm(
-        aq_i8, bq_i8, scale_a, scale_b, out_dtype=out_dtype, bias=azp_bias[0, :]
-    )
+    out = ops.cutlass_scaled_mm(aq_i8, bq_i8, scale_a, scale_b, out_dtype=out_dtype, bias=azp_bias[0, :])
     torch.testing.assert_close(out, baseline_dq, rtol=1e-2, atol=1e0)
     torch.testing.assert_close(out, baseline_q, rtol=1e-2, atol=1e0)
 
@@ -410,9 +354,7 @@ def test_cutlass_int8_azp_bias_fold(m: int, n: int, k: int, out_dtype: torch.dty
 @pytest.mark.parametrize("out_dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("use_bias", [True, False])
 @pytest.mark.parametrize("azp_per_token", [True, False])
-def test_cutlass_int8_azp(
-    m: int, n: int, k: int, out_dtype: torch.dtype, use_bias: bool, azp_per_token: bool
-):
+def test_cutlass_int8_azp(m: int, n: int, k: int, out_dtype: torch.dtype, use_bias: bool, azp_per_token: bool):
     m_azp = m if azp_per_token else 1
     scale_a = torch.randn((m_azp, 1), device="cuda", dtype=torch.float32) / 10
     scale_b = torch.randn((1, n), device="cuda", dtype=torch.float32) / 10
@@ -451,14 +393,10 @@ def test_cutlass_int8_azp(
     func_bias = bias if use_bias else None
 
     if azp_per_token:
-        out = ops.cutlass_scaled_mm_azp(
-            aq_i8, bq_i8, scale_a, scale_b, out_dtype, azp_adj_i32, azp_i32, func_bias
-        )
+        out = ops.cutlass_scaled_mm_azp(aq_i8, bq_i8, scale_a, scale_b, out_dtype, azp_adj_i32, azp_i32, func_bias)
     else:
         azp_with_adj_i32 = azp_i32 * azp_adj_i32
-        out = ops.cutlass_scaled_mm_azp(
-            aq_i8, bq_i8, scale_a, scale_b, out_dtype, azp_with_adj_i32, None, func_bias
-        )
+        out = ops.cutlass_scaled_mm_azp(aq_i8, bq_i8, scale_a, scale_b, out_dtype, azp_with_adj_i32, None, func_bias)
 
     # bfloat16 precision is 7-bit mantissa -> 2^-8 ~ 0.4%
     # float16 precision is 10-bit mantissa -> 2^-11 ~ 0.05%
@@ -508,9 +446,7 @@ class CutlassLayer(torch.nn.Module):
         self.out_dtype = out_dtype
 
     def forward(self, a):
-        return ops.cutlass_scaled_mm(
-            a, self.b, self.scale_a, self.scale_b, self.out_dtype
-        )
+        return ops.cutlass_scaled_mm(a, self.b, self.scale_a, self.scale_b, self.out_dtype)
 
 
 @pytest.mark.parametrize("per_act_token", [True, False])
@@ -539,9 +475,7 @@ def test_cutlass_cuda_graph(per_act_token: bool, per_out_ch: bool):
     out.zero_()
     g.replay()
 
-    baseline = torch.mm(
-        scale_a * a.to(dtype=torch.float32), scale_b * b.to(dtype=torch.float32)
-    ).to(torch.bfloat16)
+    baseline = torch.mm(scale_a * a.to(dtype=torch.float32), scale_b * b.to(dtype=torch.float32)).to(torch.bfloat16)
     torch.testing.assert_close(out, baseline, rtol=1e-1, atol=1e0)
 
 
@@ -554,14 +488,10 @@ def test_cutlass_support_opcheck():
 @pytest.mark.parametrize("per_out_ch", [True, False])
 @pytest.mark.parametrize("use_bias", [False])
 @pytest.mark.skipif(
-    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(
-        current_platform.get_device_capability()
-    ),
+    (lambda x: x is None or not ops.cutlass_group_gemm_supported(x.to_int()))(current_platform.get_device_capability()),
     reason="Grouped gemm is not supported on this GPU type.",
 )
-def test_cutlass_fp8_group_gemm(
-    num_experts: int, per_act_token: bool, per_out_ch: bool, use_bias: bool
-):
+def test_cutlass_fp8_group_gemm(num_experts: int, per_act_token: bool, per_out_ch: bool, use_bias: bool):
     # Device and dtype setup
     device = "cuda"
     out_dtype = torch.half
@@ -615,12 +545,8 @@ def test_cutlass_fp8_group_gemm(
         baseline_g = baseline_scaled_mm(a_g, b_g, scale_a, scale_b, out_dtype, None)
         baseline_tensors.append(baseline_g)
 
-    a_tensors_stacked = torch.empty(
-        (expert_offsets[num_experts], k_g), device=device, dtype=torch.float8_e4m3fn
-    )
-    b_tensors_stacked = torch.empty(
-        (num_experts, n_g, k_g), device=device, dtype=torch.float8_e4m3fn
-    )
+    a_tensors_stacked = torch.empty((expert_offsets[num_experts], k_g), device=device, dtype=torch.float8_e4m3fn)
+    b_tensors_stacked = torch.empty((num_experts, n_g, k_g), device=device, dtype=torch.float8_e4m3fn)
 
     for g in range(num_experts):
         a_tensors_stacked[expert_offsets[g] : expert_offsets[g + 1]] = a_tensors[g]
@@ -628,32 +554,20 @@ def test_cutlass_fp8_group_gemm(
     b_tensors_stacked = b_tensors_stacked.transpose(1, 2)
 
     if per_act_token:
-        a_scales_tensors_stacked = torch.empty(
-            (expert_offsets[num_experts], 1), device=device, dtype=torch.float32
-        )
+        a_scales_tensors_stacked = torch.empty((expert_offsets[num_experts], 1), device=device, dtype=torch.float32)
         for g in range(num_experts):
-            a_scales_tensors_stacked[expert_offsets[g] : expert_offsets[g + 1]] = (
-                a_scales_tensors[g]
-            )
+            a_scales_tensors_stacked[expert_offsets[g] : expert_offsets[g + 1]] = a_scales_tensors[g]
     else:
         a_scales_tensors_stacked = one_scale_a
 
-    b_scales_tensors_stacked = torch.empty(
-        (num_experts, n_b_scales), device=device, dtype=torch.float32
-    )
+    b_scales_tensors_stacked = torch.empty((num_experts, n_b_scales), device=device, dtype=torch.float32)
     for g in range(num_experts):
         b_scales_tensors_stacked[g] = b_scales_tensors[g]
 
-    out_tensors_stacked = torch.zeros(
-        (expert_offsets[num_experts], n_g), device=device, dtype=out_dtype
-    )
+    out_tensors_stacked = torch.zeros((expert_offsets[num_experts], n_g), device=device, dtype=out_dtype)
 
-    ab_strides = torch.full(
-        (num_experts,), a_tensors_stacked.stride(0), device="cuda", dtype=torch.int64
-    )
-    c_strides = torch.full(
-        (num_experts,), out_tensors_stacked.stride(0), device="cuda", dtype=torch.int64
-    )
+    ab_strides = torch.full((num_experts,), a_tensors_stacked.stride(0), device="cuda", dtype=torch.int64)
+    c_strides = torch.full((num_experts,), out_tensors_stacked.stride(0), device="cuda", dtype=torch.int64)
 
     ops.cutlass_moe_mm(
         out_tensors_stacked,

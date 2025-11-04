@@ -2,18 +2,13 @@ from collections.abc import Callable, Generator
 from itertools import accumulate
 
 import torch
-from compressed_tensors.transform import (TransformArgs, TransformConfig,
-                                          TransformLocation, TransformScheme)
+from compressed_tensors.transform import TransformArgs, TransformConfig, TransformLocation, TransformScheme
 from compressed_tensors.utils import is_match
 
-from aphrodite.modeling.layers.linear import (WEIGHT_LOADER_V2_SUPPORTED,
-                                              LinearMethodBase)
-from aphrodite.quantization.compressed_tensors.compressed_tensors import (  # noqa: E501
-    CompressedTensorsScheme)
-from aphrodite.quantization.compressed_tensors.transform.module import (  # noqa: E501
-    HadamardTransform)
-from aphrodite.quantization.compressed_tensors.transform.utils import (  # noqa: E501
-    TransformTuple)
+from aphrodite.modeling.layers.linear import WEIGHT_LOADER_V2_SUPPORTED, LinearMethodBase
+from aphrodite.quantization.compressed_tensors.compressed_tensors import CompressedTensorsScheme  # noqa: E501
+from aphrodite.quantization.compressed_tensors.transform.module import HadamardTransform  # noqa: E501
+from aphrodite.quantization.compressed_tensors.transform.utils import TransformTuple  # noqa: E501
 
 
 class CompressedTensorsLinearTransformMethod(LinearMethodBase):
@@ -31,7 +26,9 @@ class CompressedTensorsLinearTransformMethod(LinearMethodBase):
         output_tfms: dict[int, TransformTuple],
     ) -> "CompressedTensorsLinearTransformMethod":
         from aphrodite.quantization.compressed_tensors.transform.schemes.linear_qutlass_nvfp4 import (  # noqa: E501
-            QutlassNvFP4LinearMethod, is_qutlass_fp4_scheme)
+            QutlassNvFP4LinearMethod,
+            is_qutlass_fp4_scheme,
+        )
 
         assert input_tfms or output_tfms
 
@@ -182,9 +179,7 @@ def get_linear_transform_schemes(
     layer_name: str,
     transform_config: TransformConfig | None,
     packed_modules_mapping: dict[str, list[str]],
-) -> tuple[
-    dict[int, TransformTuple], dict[int, TransformTuple]
-]:  # [input_transform, [output_transform, ...]]
+) -> tuple[dict[int, TransformTuple], dict[int, TransformTuple]]:  # [input_transform, [output_transform, ...]]
     # there can only be one transform input scheme per (fused) module
     input_tfms = {}
     output_tfms = {}
@@ -193,10 +188,7 @@ def get_linear_transform_schemes(
 
     for scheme_name, scheme, args in get_schemes_args(transform_config):
         for part_index, part_name in enumerate(partition_names):
-            if (
-                is_match(part_name, layer, args.targets, args.ignore)
-                and args.is_online()
-            ):
+            if is_match(part_name, layer, args.targets, args.ignore) and args.is_online():
                 if args.location == TransformLocation.INPUT:
                     input_tfms[part_index] = TransformTuple(scheme_name, scheme, args)
 
@@ -204,9 +196,7 @@ def get_linear_transform_schemes(
                     output_tfms[part_index] = TransformTuple(scheme_name, scheme, args)
 
                 else:
-                    raise ValueError(
-                        f"Cannot apply `{args.location}` transform to `{layer_name}`"
-                    )
+                    raise ValueError(f"Cannot apply `{args.location}` transform to `{layer_name}`")
 
     return (input_tfms, output_tfms)
 
@@ -222,9 +212,7 @@ def get_schemes_args(
             yield (scheme_name, scheme, args)
 
 
-def get_layer_partition_names(
-    layer_name: str, packed_modules_mapping: dict[str, list[str]]
-) -> list[str]:
+def get_layer_partition_names(layer_name: str, packed_modules_mapping: dict[str, list[str]]) -> list[str]:
     """
     Get all partition names associated with this layer.
     Names are returned in order of their partition indices.
@@ -239,9 +227,6 @@ def get_layer_partition_names(
     assert get_layer_partition_names("mlp.down_proj", mapping) == ["down_proj"]"""
     for fused_suffix, part_suffixes in packed_modules_mapping.items():
         if layer_name.endswith(fused_suffix):
-            return [
-                layer_name.removesuffix(fused_suffix) + part_suffix
-                for part_suffix in part_suffixes
-            ]
+            return [layer_name.removesuffix(fused_suffix) + part_suffix for part_suffix in part_suffixes]
 
     return [layer_name]

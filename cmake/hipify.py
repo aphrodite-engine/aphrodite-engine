@@ -32,9 +32,7 @@ if __name__ == "__main__":
     )
 
     # Source files to convert.
-    parser.add_argument(
-        "sources", help="Source files to hipify.", nargs="*", default=[]
-    )
+    parser.add_argument("sources", help="Source files to hipify.", nargs="*", default=[])
 
     args = parser.parse_args()
 
@@ -64,10 +62,7 @@ if __name__ == "__main__":
         s_abs = os.path.abspath(source)
         hipified_s_abs = (
             hipify_result[s_abs].hipified_path
-            if (
-                s_abs in hipify_result
-                and hipify_result[s_abs].hipified_path is not None
-            )
+            if (s_abs in hipify_result and hipify_result[s_abs].hipified_path is not None)
             else s_abs
         )
         hipified_sources.append(hipified_s_abs)

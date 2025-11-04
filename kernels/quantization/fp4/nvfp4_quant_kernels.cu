@@ -136,6 +136,7 @@ void scaled_fp4_quant_sm1xxa(torch::Tensor const& output,
     using cuda_type = aphrodite::CUDATypeConverter<scalar_t>::Type;
     auto input_ptr = static_cast<cuda_type const*>(input.data_ptr());
     aphrodite::invokeFP4Quantization(m, n, input_ptr, input_sf_ptr, output_ptr,
-                                sf_out, useUE8M0, multiProcessorCount, stream);
+                                     sf_out, useUE8M0, multiProcessorCount,
+                                     stream);
   });
 }

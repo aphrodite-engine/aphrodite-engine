@@ -5,14 +5,15 @@ the correct prompt format on vision language models for multimodal embedding.
 For most models, the prompt format should follow corresponding examples
 on HuggingFace model repository.
 """
+
 from argparse import Namespace
-from typing import Literal, NamedTuple, Optional, TypedDict, Union, get_args
+from typing import Literal, NamedTuple, TypedDict, get_args
 
 from PIL.Image import Image
 
 from aphrodite import LLM
-from aphrodite.utils import FlexibleArgumentParser
 from aphrodite.multimodal.utils import fetch_image
+from aphrodite.utils import FlexibleArgumentParser
 
 
 class TextQuery(TypedDict):
@@ -32,29 +33,29 @@ class TextImageQuery(TypedDict):
 
 
 QueryModality = Literal["text", "image", "text+image"]
-Query = Union[TextQuery, ImageQuery, TextImageQuery]
+Query = TextQuery | ImageQuery | TextImageQuery
 
 
 class ModelRequestData(NamedTuple):
     llm: LLM
     prompt: str
-    image: Optional[Image]
+    image: Image | None
 
 
 def run_e5_v(query: Query):
-    llama3_template = '<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n \n'  # noqa: E501
+    llama3_template = (
+        "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n \n"  # noqa: E501
+    )
 
     if query["modality"] == "text":
         text = query["text"]
-        prompt = llama3_template.format(
-            f"{text}\nSummary above sentence in one word: ")
+        prompt = llama3_template.format(f"{text}\nSummary above sentence in one word: ")
         image = None
     elif query["modality"] == "image":
-        prompt = llama3_template.format(
-            "<image>\nSummary above image in one word: ")
+        prompt = llama3_template.format("<image>\nSummary above image in one word: ")
         image = query["image"]
     else:
-        modality = query['modality']
+        modality = query["modality"]
         raise ValueError(f"Unsupported query modality: '{modality}'")
 
     llm = LLM(
@@ -83,7 +84,7 @@ def run_vlm2vec(query: Query):
         prompt = f"<|image_1|> Represent the given image with the following question: {text}"  # noqa: E501
         image = query["image"]
     else:
-        modality = query['modality']
+        modality = query["modality"]
         raise ValueError(f"Unsupported query modality: '{modality}'")
 
     llm = LLM(
@@ -133,10 +134,12 @@ def run_encode(model: str, modality: QueryModality):
     if req_data.image is not None:
         mm_data["image"] = req_data.image
 
-    outputs = req_data.llm.encode({
-        "prompt": req_data.prompt,
-        "multi_modal_data": mm_data,
-    })
+    outputs = req_data.llm.encode(
+        {
+            "prompt": req_data.prompt,
+            "multi_modal_data": mm_data,
+        }
+    )
 
     for output in outputs:
         print(output.outputs.embedding)
@@ -153,18 +156,18 @@ model_example_map = {
 
 if __name__ == "__main__":
     parser = FlexibleArgumentParser(
-        description='Demo on using Aphrodite for offline inference with '
-        'vision language models for multimodal embedding')
-    parser.add_argument('--model-name',
-                        '-m',
-                        type=str,
-                        default="vlm2vec",
-                        choices=model_example_map.keys(),
-                        help='The name of the embedding model.')
-    parser.add_argument('--modality',
-                        type=str,
-                        default="image",
-                        choices=get_args(QueryModality),
-                        help='Modality of the input.')
+        description="Demo on using Aphrodite for offline inference with vision language models for multimodal embedding"
+    )
+    parser.add_argument(
+        "--model-name",
+        "-m",
+        type=str,
+        default="vlm2vec",
+        choices=model_example_map.keys(),
+        help="The name of the embedding model.",
+    )
+    parser.add_argument(
+        "--modality", type=str, default="image", choices=get_args(QueryModality), help="Modality of the input."
+    )
     args = parser.parse_args()
     main(args)

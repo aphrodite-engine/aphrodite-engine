@@ -1,9 +1,11 @@
 import torch
 
-from aphrodite.modeling.models.llava import (LlavaDummyInputsBuilder,
-                                             LlavaForConditionalGeneration,
-                                             LlavaMultiModalProcessor,
-                                             LlavaProcessingInfo)
+from aphrodite.modeling.models.llava import (
+    LlavaDummyInputsBuilder,
+    LlavaForConditionalGeneration,
+    LlavaMultiModalProcessor,
+    LlavaProcessingInfo,
+)
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 
 

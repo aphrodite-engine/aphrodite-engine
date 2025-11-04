@@ -4,13 +4,10 @@ import torch
 
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import round_up
-from tests.kernels.quantization.nvfp4_utils import (dequantize_nvfp4_to_dtype,
-                                                    get_nvfp4_global_scale)
+from tests.kernels.quantization.nvfp4_utils import dequantize_nvfp4_to_dtype, get_nvfp4_global_scale
 
 if not current_platform.is_device_capability(100):
-    pytest.skip(
-        "This TRTLLM kernel requires NVIDIA Blackwell.", allow_module_level=True
-    )
+    pytest.skip("This TRTLLM kernel requires NVIDIA Blackwell.", allow_module_level=True)
 
 FLOAT32_BYTES = torch.finfo(torch.float).bits // 8
 FP8_DTYPE = current_platform.fp8_dtype()
@@ -129,9 +126,7 @@ def test_flashinfer_trtllm_decode_with_baseline(
     k_scale = v_scale = kv_scale
 
     max_num_blocks_per_seq = (max_seq_len + block_size - 1) // block_size
-    block_tables = torch.randint(
-        0, NUM_BLOCKS, (batch_size, max_num_blocks_per_seq), dtype=torch.int32
-    )
+    block_tables = torch.randint(0, NUM_BLOCKS, (batch_size, max_num_blocks_per_seq), dtype=torch.int32)
     kv_indptr = [0]
     kv_indices = []
     kv_last_page_lens = []
@@ -222,9 +217,7 @@ def test_flashinfer_trtllm_decode_with_baseline(
     if o_quant_dtype == FP8_DTYPE:
         output_trtllm = output_trtllm.to(dtype) * o_scale
     elif o_quant_dtype == FP4_DTYPE:
-        output_trtllm.data = output_trtllm.data.reshape(
-            -1, query.shape[1] * query.shape[2] // 2
-        )
+        output_trtllm.data = output_trtllm.data.reshape(-1, query.shape[1] * query.shape[2] // 2)
         output_trtllm = dequantize_nvfp4_to_dtype(
             output_trtllm.data, output_trtllm.scale, o_sf_scale, dtype, query.device
         )
@@ -329,9 +322,7 @@ def test_flashinfer_trtllm_prefill_with_baseline(
     k_scale = v_scale = kv_scale
 
     max_num_blocks_per_seq = (max_seq_len + block_size - 1) // block_size
-    block_tables = torch.randint(
-        0, NUM_BLOCKS, (batch_size, max_num_blocks_per_seq), dtype=torch.int32
-    )
+    block_tables = torch.randint(0, NUM_BLOCKS, (batch_size, max_num_blocks_per_seq), dtype=torch.int32)
     kv_indptr = [0]
     kv_indices = []
     kv_last_page_lens = []
@@ -426,9 +417,7 @@ def test_flashinfer_trtllm_prefill_with_baseline(
     if o_quant_dtype == FP8_DTYPE:
         output_trtllm = output_trtllm.to(dtype) * o_scale
     elif o_quant_dtype == FP4_DTYPE:
-        output_trtllm.data = output_trtllm.data.reshape(
-            -1, query.shape[1] * query.shape[2] // 2
-        )
+        output_trtllm.data = output_trtllm.data.reshape(-1, query.shape[1] * query.shape[2] // 2)
         output_trtllm = dequantize_nvfp4_to_dtype(
             output_trtllm.data, output_trtllm.scale, o_sf_scale, dtype, query.device
         )

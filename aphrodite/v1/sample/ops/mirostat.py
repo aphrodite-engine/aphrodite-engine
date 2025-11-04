@@ -7,7 +7,7 @@ from aphrodite.v1.sample.metadata import SamplingMetadata
 
 
 def _fetch_mirostat_args(
-    sampling_metadata: SamplingMetadata
+    sampling_metadata: SamplingMetadata,
 ) -> tuple[list[int], list[float], list[float], list[float]]:
     """Extract mirostat parameters for applicable requests.
 
@@ -19,9 +19,11 @@ def _fetch_mirostat_args(
     etas: list[float] = []
     mus: list[float] = []
 
-    if (sampling_metadata.mirostat_mode is None or 
-        sampling_metadata.mirostat_tau is None or 
-        sampling_metadata.mirostat_eta is None):
+    if (
+        sampling_metadata.mirostat_mode is None
+        or sampling_metadata.mirostat_tau is None
+        or sampling_metadata.mirostat_eta is None
+    ):
         return logit_indices, taus, etas, mus
 
     batch_size = len(sampling_metadata.output_token_ids)
@@ -34,17 +36,14 @@ def _fetch_mirostat_args(
             etas.append(sampling_metadata.mirostat_eta[req_idx].item())
             # Get current mu from persistent data, or initialize
             mu = sampling_metadata.persistent_data.get(req_idx, {}).get(
-                "miro_mu", sampling_metadata.mirostat_tau[req_idx].item() * 2)
+                "miro_mu", sampling_metadata.mirostat_tau[req_idx].item() * 2
+            )
             mus.append(mu)
 
     return logit_indices, taus, etas, mus
 
 
-def _store_mirostat_args(
-    req_indices: list[int], 
-    mus: list[float],
-    sampling_metadata: SamplingMetadata
-) -> None:
+def _store_mirostat_args(req_indices: list[int], mus: list[float], sampling_metadata: SamplingMetadata) -> None:
     """Store updated mu values back to persistent data."""
     for req_idx, mu in zip(req_indices, mus):
         if req_idx not in sampling_metadata.persistent_data:
@@ -56,7 +55,7 @@ def _apply_mirostat_v2(
     logits: Tensor,
     taus: list[float],  # Target surprisal
     etas: list[float],  # Learning rate
-    mus: list[float],   # Current mu accumulator
+    mus: list[float],  # Current mu accumulator
 ) -> Tensor:
     """Apply Mirostat v2 algorithm to logits.
 
@@ -116,17 +115,16 @@ def mirostat(
     Returns:
         Modified logits tensor
     """
-    if (sampling_metadata.mirostat_mode is None or
-        sampling_metadata.mirostat_tau is None or
-        sampling_metadata.mirostat_eta is None):
+    if (
+        sampling_metadata.mirostat_mode is None
+        or sampling_metadata.mirostat_tau is None
+        or sampling_metadata.mirostat_eta is None
+    ):
         return logits
 
     batch_size = len(sampling_metadata.output_token_ids)
 
-    has_mirostat = any(
-        sampling_metadata.mirostat_mode[i].item() == 2
-        for i in range(batch_size)
-    )
+    has_mirostat = any(sampling_metadata.mirostat_mode[i].item() == 2 for i in range(batch_size))
 
     if not has_mirostat:
         return logits
@@ -136,9 +134,7 @@ def mirostat(
     if not logit_indices:  # No mirostat requests
         return logits
 
-    logits[logit_indices] = _apply_mirostat_v2(
-        logits[logit_indices], taus, etas, mus
-    )
+    logits[logit_indices] = _apply_mirostat_v2(logits[logit_indices], taus, etas, mus)
 
     _store_mirostat_args(logit_indices, mus, sampling_metadata)
 

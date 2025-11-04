@@ -27,7 +27,5 @@ def test_model_rtn_startup(
     dtype: str,
     max_tokens: int,
 ) -> None:
-    with aphrodite_runner(
-        model, enforce_eager=True, dtype=dtype, quantization="rtn"
-    ) as aphrodite_model:
+    with aphrodite_runner(model, enforce_eager=True, dtype=dtype, quantization="rtn") as aphrodite_model:
         aphrodite_model.generate_greedy(example_prompts, max_tokens)

@@ -183,9 +183,7 @@ class PriorityRequestQueue(RequestQueue):
     def remove_requests(self, requests: Iterable[Request]) -> None:
         """Remove multiple specific requests from the queue."""
         requests_to_remove = set(requests)
-        self._heap = [
-            (p, t, r) for p, t, r in self._heap if r not in requests_to_remove
-        ]
+        self._heap = [(p, t, r) for p, t, r in self._heap if r not in requests_to_remove]
         heapq.heapify(self._heap)
 
     def __bool__(self) -> bool:

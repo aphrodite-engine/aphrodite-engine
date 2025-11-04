@@ -7,8 +7,7 @@ import pytest
 
 from aphrodite.endpoints.openai.protocol import EmbeddingResponse
 from tests.conftest import HfRunner
-from tests.models.language.pooling.embed_utils import (
-    run_embedding_correctness_test)
+from tests.models.language.pooling.embed_utils import run_embedding_correctness_test
 from tests.models.utils import EmbedModelInfo
 from tests.utils import RemoteOpenAIServer
 
@@ -51,9 +50,7 @@ def server(model_info, dtype: str):
 
     if model_info.name == "Snowflake/snowflake-arctic-embed-m-v1.5":
         # Manually enable Matryoshka Embeddings
-        args.extend(
-            ["--trust_remote_code", "--hf_overrides", '{"matryoshka_dimensions":[256]}']
-        )
+        args.extend(["--trust_remote_code", "--hf_overrides", '{"matryoshka_dimensions":[256]}'])
 
     with RemoteOpenAIServer(model_info.name, args) as remote_server:
         yield remote_server
@@ -61,16 +58,12 @@ def server(model_info, dtype: str):
 
 @pytest.fixture(scope="module")
 def hf_model(hf_runner, model_info, dtype: str):
-    with hf_runner(
-        model_info.name, dtype=dtype, is_sentence_transformer=True
-    ) as hf_model:
+    with hf_runner(model_info.name, dtype=dtype, is_sentence_transformer=True) as hf_model:
         yield hf_model
 
 
 @pytest.mark.asyncio
-async def test_matryoshka(
-    model_info: EmbedModelInfo, server: RemoteOpenAIServer, hf_model: HfRunner
-):
+async def test_matryoshka(model_info: EmbedModelInfo, server: RemoteOpenAIServer, hf_model: HfRunner):
     client = server.get_async_client()
 
     async def make_request_and_correctness_test(dimensions):
@@ -82,9 +75,7 @@ async def test_matryoshka(
             dimensions=dimensions,
             encoding_format="float",
         )
-        embeddings = EmbeddingResponse.model_validate(
-            embedding_response.model_dump(mode="json")
-        )
+        embeddings = EmbeddingResponse.model_validate(embedding_response.model_dump(mode="json"))
 
         assert embeddings.id is not None
         assert len(embeddings.data) == 3

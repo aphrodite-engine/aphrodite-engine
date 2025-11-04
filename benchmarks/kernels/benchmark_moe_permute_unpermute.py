@@ -3,8 +3,6 @@ from typing import Any, TypedDict
 
 import ray
 import torch
-from transformers import AutoConfig
-
 from aphrodite.model_executor.layers.fused_moe.fused_moe import *
 from aphrodite.model_executor.layers.fused_moe.moe_permute_unpermute import (
     _moe_permute,
@@ -13,6 +11,8 @@ from aphrodite.model_executor.layers.fused_moe.moe_permute_unpermute import (
     moe_unpermute,
 )
 from aphrodite.model_executor.layers.fused_moe.utils import _fp8_quantize
+from transformers import AutoConfig
+
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
@@ -52,9 +52,7 @@ def benchmark_permute(
     gating_output = torch.randn(num_iters, num_tokens, num_experts, dtype=torch.float32)
 
     input_gating = torch.randn(num_tokens, num_experts, dtype=torch.float32)
-    topk_weights, topk_ids, token_expert_indices = fused_topk(
-        qhidden_states, input_gating, topk, False
-    )
+    topk_weights, topk_ids, token_expert_indices = fused_topk(qhidden_states, input_gating, topk, False)
 
     def prepare(i: int):
         input_gating.copy_(gating_output[i])
@@ -82,9 +80,7 @@ def benchmark_permute(
                 sorted_token_ids,
                 expert_ids,
                 inv_perm,
-            ) = _moe_permute(
-                qhidden_states, None, topk_ids, num_experts, None, align_block_size
-            )
+            ) = _moe_permute(qhidden_states, None, topk_ids, num_experts, None, align_block_size)
 
     # JIT compilation & warmup
     run()
@@ -143,9 +139,7 @@ def benchmark_unpermute(
 
     input_gating = torch.randn(num_tokens, num_experts, dtype=torch.float32)
 
-    topk_weights, topk_ids, token_expert_indices = fused_topk(
-        qhidden_states, input_gating, topk, False
-    )
+    topk_weights, topk_ids, token_expert_indices = fused_topk(qhidden_states, input_gating, topk, False)
 
     def prepare():
         if use_customized_permute:
@@ -177,9 +171,7 @@ def benchmark_unpermute(
                 sorted_token_ids,
                 expert_ids,
                 inv_perm,
-            ) = _moe_permute(
-                qhidden_states, None, topk_ids, num_experts, None, align_block_size
-            )
+            ) = _moe_permute(qhidden_states, None, topk_ids, num_experts, None, align_block_size)
             # convert to fp16/bf16 as gemm output
             return (
                 permuted_qhidden_states.to(dtype),
@@ -313,9 +305,7 @@ def get_weight_block_size_safety(config, default_value=None):
 def main(args: argparse.Namespace):
     print(args)
 
-    config = AutoConfig.from_pretrained(
-        args.model, trust_remote_code=args.trust_remote_code
-    )
+    config = AutoConfig.from_pretrained(args.model, trust_remote_code=args.trust_remote_code)
     if config.architectures[0] == "DbrxForCausalLM":
         E = config.ffn_config.moe_num_experts
         topk = config.ffn_config.moe_top_k
@@ -410,12 +400,8 @@ def main(args: argparse.Namespace):
 
 if __name__ == "__main__":
     parser = FlexibleArgumentParser()
-    parser.add_argument(
-        "--model", type=str, default="mistralai/Mixtral-8x7B-Instruct-v0.1"
-    )
-    parser.add_argument(
-        "--dtype", type=str, choices=["auto", "fp8_w8a8", "int8_w8a16"], default="auto"
-    )
+    parser.add_argument("--model", type=str, default="mistralai/Mixtral-8x7B-Instruct-v0.1")
+    parser.add_argument("--dtype", type=str, choices=["auto", "fp8_w8a8", "int8_w8a16"], default="auto")
     parser.add_argument("--use-customized-permute", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--batch-size", type=int, required=False)

@@ -61,14 +61,10 @@ def _test_image_prompt_replacements(
     failed_size_excs = list[tuple[ImageSize, Exception]]()
 
     for size in image_sizes:
-        _validate_image_prompt_replacements_one(
-            processor, num_imgs, failed_size_excs, size
-        )
+        _validate_image_prompt_replacements_one(processor, num_imgs, failed_size_excs, size)
 
     if failed_size_excs:
-        msg = "Found failing image sizes:" + "\n========\n".join(
-            f"[{size}]\n{exc}" for size, exc in failed_size_excs
-        )
+        msg = "Found failing image sizes:" + "\n========\n".join(f"[{size}]\n{exc}" for size, exc in failed_size_excs)
         raise AssertionError(msg)
 
 
@@ -91,9 +87,7 @@ def test_processor_prompt_replacements_regression(model_id, num_imgs):
         (488, 183),
         (2560, 1669),
     ]
-    image_sizes = [
-        size for w, h in image_ratios for size in [ImageSize(w, h), ImageSize(h, w)]
-    ]
+    image_sizes = [size for w, h in image_ratios for size in [ImageSize(w, h), ImageSize(h, w)]]
 
     _test_image_prompt_replacements(
         processor,

@@ -79,9 +79,7 @@ class TestBaseThinkingReasoningParserInit:
             def end_token(self) -> str:
                 return "<missing:end>"
 
-        with pytest.raises(
-            RuntimeError, match="could not locate think start/end tokens"
-        ):
+        with pytest.raises(RuntimeError, match="could not locate think start/end tokens"):
             MissingTokenParser(test_tokenizer)
 
     def test_initialization_with_empty_tokens(self, test_tokenizer):
@@ -96,9 +94,7 @@ class TestBaseThinkingReasoningParserInit:
             def end_token(self) -> str:
                 return ""
 
-        with pytest.raises(
-            ValueError, match="start_token and end_token must be defined"
-        ):
+        with pytest.raises(ValueError, match="start_token and end_token must be defined"):
             EmptyTokenParser(test_tokenizer)
 
 
@@ -225,9 +221,7 @@ class TestBaseThinkingReasoningParserStreaming:
             "answer",
         ]
 
-        reasoning, content = run_reasoning_extraction(
-            parser, model_output, streaming=streaming
-        )
+        reasoning, content = run_reasoning_extraction(parser, model_output, streaming=streaming)
 
         assert reasoning == "Some reasoning content"
         assert content == "Final answer"

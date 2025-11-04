@@ -5,25 +5,26 @@ from packaging import version
 from torch.nn.parameter import Parameter
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              set_weight_attrs)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, set_weight_attrs
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
-from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
-                                          GroupQuantScaleParameter,
-                                          PackedAphroditeParameter,
-                                          PackedColumnParameter,
-                                          RowAphroditeParameter)
+from aphrodite.modeling.parameter import (
+    ChannelQuantScaleParameter,
+    GroupQuantScaleParameter,
+    PackedAphroditeParameter,
+    PackedColumnParameter,
+    RowAphroditeParameter,
+)
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig, QuantizationMethods
-from aphrodite.quantization.kernels.mixed_precision import (
-    BitBLASLinearKernel, MPLinearLayerConfig)
+from aphrodite.quantization.kernels.mixed_precision import BitBLASLinearKernel, MPLinearLayerConfig
+from aphrodite.quantization.utils.bitblas_utils import BITBLAS_SUPPORTED_NUM_BITS as GPTQ_BITBLAS_SUPPORTED_NUM_BITS
+from aphrodite.quantization.utils.bitblas_utils import BITBLAS_SUPPORTED_SYM as GPTQ_BITBLAS_SUPPORTED_SYM
 from aphrodite.quantization.utils.bitblas_utils import (
-    BITBLAS_SUPPORTED_NUM_BITS as GPTQ_BITBLAS_SUPPORTED_NUM_BITS)
-from aphrodite.quantization.utils.bitblas_utils import (
-    BITBLAS_SUPPORTED_SYM as GPTQ_BITBLAS_SUPPORTED_SYM)
-from aphrodite.quantization.utils.bitblas_utils import (
-    MINIMUM_BITBLAS_VERSION, bitblas_repeat_scales_on_all_ranks,
-    check_bitblas_supported, verify_bitblas_supported)
+    MINIMUM_BITBLAS_VERSION,
+    bitblas_repeat_scales_on_all_ranks,
+    check_bitblas_supported,
+    verify_bitblas_supported,
+)
 from aphrodite.scalar_type import scalar_types
 
 logger = init_logger(__name__)
@@ -39,9 +40,7 @@ class GPTQBitBLASConfig(QuantizationConfig):
     }
 
     TORCH_DTYPE = torch.float16
-    GPTQ_CKPT_STORAGE_DTYPE = (
-        "int32"  # GPTQ Default Checkpoints use int32 as storage dtype
-    )
+    GPTQ_CKPT_STORAGE_DTYPE = "int32"  # GPTQ Default Checkpoints use int32 as storage dtype
     GPTQ_BITBLAS_STORAGE_DTYPE = "int8"  # BitBLAS uses int8 as storage dtype
     TORCH_BITBLAS_STORAGE_DTYPE = getattr(torch, GPTQ_BITBLAS_STORAGE_DTYPE)
     # "original" or "rescale" or "quantized",
@@ -60,13 +59,8 @@ class GPTQBitBLASConfig(QuantizationConfig):
         try:
             import bitblas
 
-            if version.parse(bitblas.__version__) < version.parse(
-                MINIMUM_BITBLAS_VERSION
-            ):
-                raise ImportError(
-                    "bitblas version is wrong. Please "
-                    f"install bitblas>={MINIMUM_BITBLAS_VERSION}"
-                )
+            if version.parse(bitblas.__version__) < version.parse(MINIMUM_BITBLAS_VERSION):
+                raise ImportError(f"bitblas version is wrong. Please install bitblas>={MINIMUM_BITBLAS_VERSION}")
         except ImportError as e:
             bitblas_import_exception = e
             raise ValueError(
@@ -105,9 +99,7 @@ class GPTQBitBLASConfig(QuantizationConfig):
 
         self.storage_dtype = self.GPTQ_BITBLAS_STORAGE_DTYPE
 
-        storage_nbit = int(
-            "".join(c for c in self.GPTQ_CKPT_STORAGE_DTYPE if c.isdigit())
-        )
+        storage_nbit = int("".join(c for c in self.GPTQ_CKPT_STORAGE_DTYPE if c.isdigit()))
 
         # 4 Bits packed into 32 bit datatype.
         self.pack_factor = storage_nbit // weight_bits
@@ -117,9 +109,7 @@ class GPTQBitBLASConfig(QuantizationConfig):
         self.zeros_mode = self.ZEROS_MODE
 
         if (weight_bits, is_sym) not in self.TYPE_MAP:
-            raise ValueError(
-                f"Unsupported quantization config: bits={weight_bits}, sym={is_sym}"
-            )
+            raise ValueError(f"Unsupported quantization config: bits={weight_bits}, sym={is_sym}")
 
         self.quant_type = self.TYPE_MAP[(weight_bits, is_sym)]
 
@@ -156,26 +146,17 @@ class GPTQBitBLASConfig(QuantizationConfig):
         is_sym = cls.get_from_keys(config, ["sym"])
         quant_method = cls.get_from_keys(config, ["quant_method"])
         lm_head_quantized = cls.get_from_keys_or(config, ["lm_head"], default=False)
-        return cls(
-            weight_bits, group_size, desc_act, is_sym, quant_method, lm_head_quantized
-        )
+        return cls(weight_bits, group_size, desc_act, is_sym, quant_method, lm_head_quantized)
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant
-    ) -> QuantizationMethods | None:
+    def override_quantization_method(cls, hf_quant_cfg, user_quant) -> QuantizationMethods | None:
         can_convert = cls.is_gptq_bitblas_compatible(hf_quant_cfg)
 
-        is_valid_user_quant = (
-            user_quant is None
-            or user_quant == "bitblas"
-            or user_quant == "gptq_bitblas"
-        )
+        is_valid_user_quant = user_quant is None or user_quant == "bitblas" or user_quant == "gptq_bitblas"
 
         if can_convert and is_valid_user_quant:
-            msg = (
-                "The model is convertible to {} during runtime."
-                " Using {} kernel.".format(cls.get_name(), cls.get_name())
+            msg = "The model is convertible to {} during runtime. Using {} kernel.".format(
+                cls.get_name(), cls.get_name()
             )
             logger.info(msg)
             return cls.get_name()
@@ -189,12 +170,8 @@ class GPTQBitBLASConfig(QuantizationConfig):
             )
         return None
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["GPTQBitBLASLinearMethod"]:
-        if isinstance(layer, LinearBase) or (
-            isinstance(layer, ParallelLMHead) and self.lm_head_quantized
-        ):
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["GPTQBitBLASLinearMethod"]:
+        if isinstance(layer, LinearBase) or (isinstance(layer, ParallelLMHead) and self.lm_head_quantized):
             return GPTQBitBLASLinearMethod(self)
         return None
 
@@ -228,9 +205,7 @@ class GPTQBitBLASConfig(QuantizationConfig):
             return False
 
         # Otherwise, can convert if model satisfies bitblas constraints.
-        return check_bitblas_supported(
-            quant_type=cls.TYPE_MAP[(num_bits, sym)], group_size=group_size
-        )
+        return check_bitblas_supported(quant_type=cls.TYPE_MAP[(num_bits, sym)], group_size=group_size)
 
 
 class GPTQBitBLASLinearMethod(LinearMethodBase):
@@ -285,9 +260,7 @@ class GPTQBitBLASLinearMethod(LinearMethodBase):
                 in `quant_config`.
         """
         if params_dtype != torch.float16:
-            raise ValueError(
-                f"Parameter data type must be torch.float16, but got {params_dtype}"
-            )
+            raise ValueError(f"Parameter data type must be torch.float16, but got {params_dtype}")
 
         # Normalize group_size
         if self.quant_config.group_size != -1:
@@ -417,9 +390,7 @@ class GPTQBitBLASLinearMethod(LinearMethodBase):
             )
 
         else:
-            scales = GroupQuantScaleParameter(
-                output_dim=1, input_dim=0, **weight_scale_args
-            )
+            scales = GroupQuantScaleParameter(output_dim=1, input_dim=0, **weight_scale_args)
             qzeros = PackedAphroditeParameter(
                 input_dim=0,
                 output_dim=1,

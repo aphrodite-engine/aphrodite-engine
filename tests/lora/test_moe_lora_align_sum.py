@@ -33,14 +33,10 @@ def sample_data(num_experts, max_loras, num_tokens, topk_num):
 @pytest.mark.parametrize("num_experts", [64, 128])
 @pytest.mark.parametrize("max_loras", [2, 32])
 @pytest.mark.parametrize("block_size", [16])
-def test_moe_lora_align_block_size(
-    num_tokens, topk_num, num_experts, max_loras, block_size
-):
+def test_moe_lora_align_block_size(num_tokens, topk_num, num_experts, max_loras, block_size):
     # sample data
     random.seed(1)
-    topk_ids, token_lora_mapping = sample_data(
-        num_experts, max_loras, num_tokens, topk_num
-    )
+    topk_ids, token_lora_mapping = sample_data(num_experts, max_loras, num_tokens, topk_num)
 
     # compute paddings
     max_num_tokens_padded = topk_ids.numel() + num_experts * (block_size - 1)
@@ -54,9 +50,7 @@ def test_moe_lora_align_block_size(
         dtype=torch.int32,
         device="cuda",
     )
-    expert_ids = torch.full(
-        (max_loras * max_num_m_blocks,), num_experts, dtype=torch.int32, device="cuda"
-    )
+    expert_ids = torch.full((max_loras * max_num_m_blocks,), num_experts, dtype=torch.int32, device="cuda")
     num_tokens_post_pad = torch.zeros((max_loras,), dtype=torch.int32, device="cuda")
 
     # call kernel

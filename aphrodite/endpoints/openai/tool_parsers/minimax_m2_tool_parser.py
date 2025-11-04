@@ -1,16 +1,20 @@
 import json
-import re
 import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaFunctionCall,
-                                                 DeltaMessage, DeltaToolCall,
-                                                 ExtractedToolCallInformation,
-                                                 FunctionCall, ToolCall)
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParser, ToolParserManager)
+import regex as re
+
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    DeltaFunctionCall,
+    DeltaMessage,
+    DeltaToolCall,
+    ExtractedToolCallInformation,
+    FunctionCall,
+    ToolCall,
+)
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
@@ -60,34 +64,20 @@ class MinimaxM2ToolParser(ToolParser):
         self._reset_streaming_state()
 
         # Regex patterns for complete parsing
-        self.tool_call_complete_regex = re.compile(
-            r"<minimax:tool_call>(.*?)</minimax:tool_call>", re.DOTALL
-        )
-        self.invoke_complete_regex = re.compile(
-            r"<invoke name=(.*?)</invoke>", re.DOTALL
-        )
-        self.parameter_complete_regex = re.compile(
-            r"<parameter name=(.*?)</parameter>", re.DOTALL
-        )
+        self.tool_call_complete_regex = re.compile(r"<minimax:tool_call>(.*?)</minimax:tool_call>", re.DOTALL)
+        self.invoke_complete_regex = re.compile(r"<invoke name=(.*?)</invoke>", re.DOTALL)
+        self.parameter_complete_regex = re.compile(r"<parameter name=(.*?)</parameter>", re.DOTALL)
 
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
         self.tool_call_start_token_id = self.vocab.get(self.tool_call_start_token)
         self.tool_call_end_token_id = self.vocab.get(self.tool_call_end_token)
 
         if self.tool_call_start_token_id is None or self.tool_call_end_token_id is None:
-            raise RuntimeError(
-                "MiniMax M2 Tool parser could not locate tool call start/end "
-                "tokens in the tokenizer!"
-            )
+            raise RuntimeError("MiniMax M2 Tool parser could not locate tool call start/end tokens in the tokenizer!")
 
-        logger.info(
-            "Aphrodite Successfully import tool parser %s !", self.__class__.__name__
-        )
+        logger.info("Aphrodite Successfully import tool parser %s !", self.__class__.__name__)
 
     def _generate_tool_call_id(self) -> str:
         """Generate a unique tool call ID."""
@@ -118,12 +108,7 @@ class MinimaxM2ToolParser(ToolParser):
     def _extract_name(self, name_str: str) -> str:
         """Extract name from quoted string."""
         name_str = name_str.strip()
-        if (
-            name_str.startswith('"')
-            and name_str.endswith('"')
-            or name_str.startswith("'")
-            and name_str.endswith("'")
-        ):
+        if name_str.startswith('"') and name_str.endswith('"') or name_str.startswith("'") and name_str.endswith("'"):
             return name_str[1:-1]
         return name_str
 
@@ -160,9 +145,7 @@ class MinimaxM2ToolParser(ToolParser):
             except json.JSONDecodeError:
                 return value
 
-    def _parse_single_invoke(
-        self, invoke_str: str, tools: list | None
-    ) -> ToolCall | None:
+    def _parse_single_invoke(self, invoke_str: str, tools: list | None) -> ToolCall | None:
         """Parse a single <invoke> block."""
         # Extract function name
         name_match = re.search(r"^([^>]+)", invoke_str)
@@ -207,9 +190,7 @@ class MinimaxM2ToolParser(ToolParser):
                     param_type = param_config[param_name]["type"]
 
                 # Convert value
-                param_dict[param_name] = self._convert_param_value(
-                    param_value, param_type
-                )
+                param_dict[param_name] = self._convert_param_value(param_value, param_type)
 
         return ToolCall(
             type="function",
@@ -227,9 +208,7 @@ class MinimaxM2ToolParser(ToolParser):
         """Extract tool calls from complete model output (non-streaming)."""
         # Quick check
         if self.tool_call_start_token not in model_output:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         try:
             tool_calls = []
@@ -238,16 +217,12 @@ class MinimaxM2ToolParser(ToolParser):
             for tool_call_match in self.tool_call_complete_regex.findall(model_output):
                 # Find all invokes within this tool_call
                 for invoke_match in self.invoke_complete_regex.findall(tool_call_match):
-                    tool_call = self._parse_single_invoke(
-                        invoke_match, request.tools if request else None
-                    )
+                    tool_call = self._parse_single_invoke(invoke_match, request.tools if request else None)
                     if tool_call:
                         tool_calls.append(tool_call)
 
             if not tool_calls:
-                return ExtractedToolCallInformation(
-                    tools_called=False, tool_calls=[], content=model_output
-                )
+                return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
             # Update prev_tool_call_arr
             self.prev_tool_call_arr.clear()
@@ -263,15 +238,11 @@ class MinimaxM2ToolParser(ToolParser):
             first_tool_idx = model_output.find(self.tool_call_start_token)
             content = model_output[:first_tool_idx] if first_tool_idx > 0 else None
 
-            return ExtractedToolCallInformation(
-                tools_called=True, tool_calls=tool_calls, content=content
-            )
+            return ExtractedToolCallInformation(tools_called=True, tool_calls=tool_calls, content=content)
 
         except Exception:
             logger.exception("Error extracting tool calls")
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def extract_tool_calls_streaming(
         self,
@@ -295,16 +266,14 @@ class MinimaxM2ToolParser(ToolParser):
             # Check if this is an EOS token after all tool calls are complete
             if delta_token_ids and self.tool_call_end_token_id not in delta_token_ids:
                 # Count complete tool calls
-                complete_calls = len(
-                    self.tool_call_complete_regex.findall(current_text)
-                )
+                complete_calls = len(self.tool_call_complete_regex.findall(current_text))
 
                 # If we have completed tool calls and populated prev_tool_call_arr
                 if complete_calls > 0 and len(self.prev_tool_call_arr) > 0:
                     # Check if all tool calls are closed
-                    open_calls = current_text.count(
-                        self.tool_call_start_token
-                    ) - current_text.count(self.tool_call_end_token)
+                    open_calls = current_text.count(self.tool_call_start_token) - current_text.count(
+                        self.tool_call_end_token
+                    )
                     if open_calls == 0:
                         # Return empty delta for finish_reason processing
                         return DeltaMessage(content="")
@@ -335,25 +304,17 @@ class MinimaxM2ToolParser(ToolParser):
         # Handle normal content before tool calls
         if not self.is_tool_call_started:
             # Check if tool call is starting
-            if (
-                self.tool_call_start_token_id in delta_token_ids
-                or self.tool_call_start_token in delta_text
-            ):
+            if self.tool_call_start_token_id in delta_token_ids or self.tool_call_start_token in delta_text:
                 self.is_tool_call_started = True
                 # Return any content before the tool call
                 if self.tool_call_start_token in delta_text:
-                    content_before = delta_text[
-                        : delta_text.index(self.tool_call_start_token)
-                    ]
+                    content_before = delta_text[: delta_text.index(self.tool_call_start_token)]
                     if content_before:
                         return DeltaMessage(content=content_before)
                 return None
             else:
                 # Check if we're between tool calls - skip whitespace
-                if (
-                    current_text.rstrip().endswith(self.tool_call_end_token)
-                    and delta_text.strip() == ""
-                ):
+                if current_text.rstrip().endswith(self.tool_call_end_token) and delta_text.strip() == "":
                     # We just ended a tool call, skip whitespace
                     return None
                 # Normal content, no tool call
@@ -385,16 +346,12 @@ class MinimaxM2ToolParser(ToolParser):
         if invoke_end_idx == -1:
             tool_text = current_text[invoke_start_idx:]
         else:
-            tool_text = current_text[
-                invoke_start_idx : invoke_end_idx + len(self.invoke_end_token)
-            ]
+            tool_text = current_text[invoke_start_idx : invoke_end_idx + len(self.invoke_end_token)]
 
         # Looking for function header
         if not self.header_sent:
             if self.invoke_start_prefix in tool_text:
-                func_start = tool_text.find(self.invoke_start_prefix) + len(
-                    self.invoke_start_prefix
-                )
+                func_start = tool_text.find(self.invoke_start_prefix) + len(self.invoke_start_prefix)
                 # Find the end quote for the function name
                 func_end = tool_text.find(">", func_start)
 
@@ -423,9 +380,7 @@ class MinimaxM2ToolParser(ToolParser):
                             DeltaToolCall(
                                 index=self.current_tool_index,
                                 id=self.current_tool_id,
-                                function=DeltaFunctionCall(
-                                    name=self.current_function_name, arguments=""
-                                ),
+                                function=DeltaFunctionCall(name=self.current_function_name, arguments=""),
                                 type="function",
                             )
                         ]
@@ -462,30 +417,20 @@ class MinimaxM2ToolParser(ToolParser):
 
                     # Extract complete tool call
                     # Find the invoke content
-                    invoke_start = tool_text.find(self.invoke_start_prefix) + len(
-                        self.invoke_start_prefix
-                    )
-                    invoke_content_end = tool_text.find(
-                        self.invoke_end_token, invoke_start
-                    )
+                    invoke_start = tool_text.find(self.invoke_start_prefix) + len(self.invoke_start_prefix)
+                    invoke_content_end = tool_text.find(self.invoke_end_token, invoke_start)
                     if invoke_content_end != -1:
                         invoke_content = tool_text[invoke_start:invoke_content_end]
                         # Parse to get the complete arguments
                         try:
                             parsed_tool = self._parse_single_invoke(
                                 invoke_content,
-                                self.streaming_request.tools
-                                if self.streaming_request
-                                else None,
+                                self.streaming_request.tools if self.streaming_request else None,
                             )
-                            if parsed_tool and self.current_tool_index < len(
-                                self.prev_tool_call_arr
-                            ):
+                            if parsed_tool and self.current_tool_index < len(self.prev_tool_call_arr):
                                 # Update existing entry in prev_tool_call_arr
                                 args = parsed_tool.function.arguments
-                                self.prev_tool_call_arr[self.current_tool_index][
-                                    "arguments"
-                                ] = args
+                                self.prev_tool_call_arr[self.current_tool_index]["arguments"] = args
                         except Exception:
                             pass  # Ignore parsing errors during streaming
 
@@ -522,11 +467,7 @@ class MinimaxM2ToolParser(ToolParser):
                 idx += len(self.parameter_prefix)
 
             # Check if we should start a new parameter
-            if (
-                not self.in_param
-                and self.param_count < len(param_starts)
-                and len(param_starts) > self.param_count
-            ):
+            if not self.in_param and self.param_count < len(param_starts) and len(param_starts) > self.param_count:
                 # Process the next parameter
                 param_idx = param_starts[self.param_count]
                 param_start = param_idx + len(self.parameter_prefix)
@@ -551,9 +492,7 @@ class MinimaxM2ToolParser(ToolParser):
                         next_param_idx = value_text.find(self.parameter_prefix)
                         func_end_idx = value_text.find(self.invoke_end_token)
 
-                        if next_param_idx != -1 and (
-                            func_end_idx == -1 or next_param_idx < func_end_idx
-                        ):
+                        if next_param_idx != -1 and (func_end_idx == -1 or next_param_idx < func_end_idx):
                             param_end_idx = next_param_idx
                         elif func_end_idx != -1:
                             param_end_idx = func_end_idx
@@ -585,10 +524,7 @@ class MinimaxM2ToolParser(ToolParser):
                                     and hasattr(tool.function, "parameters")
                                 ):
                                     params = tool.function.parameters
-                                    if (
-                                        isinstance(params, dict)
-                                        and "properties" in params
-                                    ):
+                                    if isinstance(params, dict) and "properties" in params:
                                         param_config = params["properties"]
                                     break
 
@@ -602,24 +538,16 @@ class MinimaxM2ToolParser(ToolParser):
                             param_type = param_config[self.current_param_name]["type"]
 
                         # Convert param value to appropriate type
-                        converted_value = self._convert_param_value(
-                            param_value, param_type
-                        )
+                        converted_value = self._convert_param_value(param_value, param_type)
 
                         # Build JSON fragment based on the converted type
                         # Use json.dumps to properly serialize the value
-                        serialized_value = json.dumps(
-                            converted_value, ensure_ascii=False
-                        )
+                        serialized_value = json.dumps(converted_value, ensure_ascii=False)
 
                         if self.param_count == 0:
-                            json_fragment = (
-                                f'"{self.current_param_name}": {serialized_value}'
-                            )
+                            json_fragment = f'"{self.current_param_name}": {serialized_value}'
                         else:
-                            json_fragment = (
-                                f', "{self.current_param_name}": {serialized_value}'
-                            )
+                            json_fragment = f', "{self.current_param_name}": {serialized_value}'
 
                         self.param_count += 1
 

@@ -6,16 +6,20 @@ import torch
 import aphrodite.envs as envs
 from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from aphrodite.compilation.collective_fusion import AllReduceFusionPass
-from aphrodite.compilation.fix_functionalization import (
-    FixFunctionalizationPass)
+from aphrodite.compilation.fix_functionalization import FixFunctionalizationPass
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              CompilationMode, DeviceConfig, ModelConfig,
-                              PassConfig, set_current_aphrodite_config)
+from aphrodite.config import (
+    AphroditeConfig,
+    CompilationConfig,
+    CompilationMode,
+    DeviceConfig,
+    ModelConfig,
+    PassConfig,
+    set_current_aphrodite_config,
+)
 from aphrodite.distributed import tensor_model_parallel_all_reduce
-from aphrodite.distributed.parallel_state import (init_distributed_environment,
-                                                  initialize_model_parallel)
+from aphrodite.distributed.parallel_state import init_distributed_environment, initialize_model_parallel
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, GroupShape
@@ -69,12 +73,7 @@ class TestAllReduceRMSNormStaticQuantFP8Model(torch.nn.Module):
         self.eps = eps
         self.norm = [RMSNorm(hidden_size, eps) for i in range(4)]
         self.wscale = [torch.rand(1, dtype=torch.float32) for _ in range(3)]
-        self.w = [
-            torch.rand(hidden_size, hidden_size)
-            .to(dtype=current_platform.fp8_dtype())
-            .t()
-            for _ in range(3)
-        ]
+        self.w = [torch.rand(hidden_size, hidden_size).to(dtype=current_platform.fp8_dtype()).t() for _ in range(3)]
 
         self.fp8_linear = Fp8LinearOp(
             act_quant_static=True,
@@ -89,23 +88,17 @@ class TestAllReduceRMSNormStaticQuantFP8Model(torch.nn.Module):
         x = resid = tensor_model_parallel_all_reduce(z)
         y = self.norm[0](x)
 
-        z2 = self.fp8_linear.apply(
-            y, self.w[0], self.wscale[0], input_scale=self.scale[0]
-        )
+        z2 = self.fp8_linear.apply(y, self.w[0], self.wscale[0], input_scale=self.scale[0])
 
         x2 = tensor_model_parallel_all_reduce(z2)
         y2, resid = self.norm[1](x2, resid)
 
-        z3 = self.fp8_linear.apply(
-            y2, self.w[1], self.wscale[1], input_scale=self.scale[1]
-        )
+        z3 = self.fp8_linear.apply(y2, self.w[1], self.wscale[1], input_scale=self.scale[1])
 
         x3 = tensor_model_parallel_all_reduce(z3)
         y3, resid = self.norm[2](x3, resid)  # use resid here
 
-        z4 = self.fp8_linear.apply(
-            y3, self.w[2], self.wscale[2], input_scale=self.scale[2]
-        )
+        z4 = self.fp8_linear.apply(y3, self.w[2], self.wscale[2], input_scale=self.scale[2])
         x4 = tensor_model_parallel_all_reduce(z4)
         y4, resid = self.norm[3](x4, resid)  # use resid here
         return y4
@@ -134,9 +127,7 @@ class TestAllReduceFusedAddRMSNormStaticQuantFP4Model(torch.nn.Module):
         wgscale = [torch.rand(1, dtype=torch.float32) for _ in range(3)]
         self.alpha = [1 / (w * a) for w, a in zip(wgscale, self.agscale)]
 
-        wq_gen, wscale_gen = zip(
-            *(scaled_fp4_quant(w, wg) for w, wg in zip(self.w, wgscale))
-        )
+        wq_gen, wscale_gen = zip(*(scaled_fp4_quant(w, wg) for w, wg in zip(self.w, wgscale)))
         self.wq, self.wscale = list(wq_gen), list(wscale_gen)
         print(f"{self.wq=}, {self.wscale=}")
 
@@ -147,25 +138,19 @@ class TestAllReduceFusedAddRMSNormStaticQuantFP4Model(torch.nn.Module):
         y = self.norm[0](x)
 
         yq, y_scale = scaled_fp4_quant(y, self.agscale[0])
-        z2 = cutlass_scaled_fp4_mm(
-            yq, self.wq[0], y_scale, self.wscale[0], self.alpha[0], out_dtype=y.dtype
-        )
+        z2 = cutlass_scaled_fp4_mm(yq, self.wq[0], y_scale, self.wscale[0], self.alpha[0], out_dtype=y.dtype)
 
         x2 = tensor_model_parallel_all_reduce(z2)
         y2, resid = self.norm[1](x2, resid)
 
         yq2, y_scale2 = scaled_fp4_quant(y2, self.agscale[1])
-        z3 = cutlass_scaled_fp4_mm(
-            yq2, self.wq[1], y_scale2, self.wscale[1], self.alpha[1], out_dtype=y2.dtype
-        )
+        z3 = cutlass_scaled_fp4_mm(yq2, self.wq[1], y_scale2, self.wscale[1], self.alpha[1], out_dtype=y2.dtype)
 
         x3 = tensor_model_parallel_all_reduce(z3)
         y3, resid = self.norm[2](x3, resid)  # use resid here
 
         yq3, y_scale3 = scaled_fp4_quant(y3, self.agscale[2])
-        z4 = cutlass_scaled_fp4_mm(
-            yq3, self.wq[2], y_scale3, self.wscale[2], self.alpha[2], out_dtype=y3.dtype
-        )
+        z4 = cutlass_scaled_fp4_mm(yq3, self.wq[2], y_scale3, self.wscale[2], self.alpha[2], out_dtype=y3.dtype)
         x4 = tensor_model_parallel_all_reduce(z4)
         y4, resid = self.norm[3](x4, resid)  # use resid here
         return y4
@@ -197,10 +182,8 @@ class TestAllReduceFusedAddRMSNormStaticQuantFP4Model(torch.nn.Module):
 @pytest.mark.parametrize("enable_rms_norm_custom_op", [True, False])
 @pytest.mark.skipif(envs.APHRODITE_TARGET_DEVICE not in ["cuda"], reason="Only test on CUDA")
 @pytest.mark.skipif(
-    not find_spec("flashinfer")
-    or not has_module_attribute("flashinfer.comm", "trtllm_allreduce_fusion"),
-    reason="flashinfer is not found or flashinfer "
-    "is not compiled with trtllm_allreduce_fusion",
+    not find_spec("flashinfer") or not has_module_attribute("flashinfer.comm", "trtllm_allreduce_fusion"),
+    reason="flashinfer is not found or flashinfer is not compiled with trtllm_allreduce_fusion",
 )
 def test_all_reduce_fusion_pass_replace(
     test_model: torch.nn.Module,
@@ -212,14 +195,10 @@ def test_all_reduce_fusion_pass_replace(
     enable_quant_fp8_custom_op,
 ):
     num_processes = 2
-    if (
-        test_model == TestAllReduceFusedAddRMSNormStaticQuantFP4Model
-        and not current_platform.has_device_capability(100)
+    if test_model == TestAllReduceFusedAddRMSNormStaticQuantFP4Model and not current_platform.has_device_capability(
+        100
     ):
-        pytest.skip(
-            "Skip as nvfp4 is only supported on "
-            "devices with compute capability 10.0 (Blackwell)"
-        )
+        pytest.skip("Skip as nvfp4 is only supported on devices with compute capability 10.0 (Blackwell)")
 
     def run_torch_spawn(fn, nprocs):
         torch.multiprocessing.spawn(
@@ -278,31 +257,23 @@ def all_reduce_fusion_pass_on_test_model(
         custom_ops.append("+quant_fp8")
 
     aphrodite_config = AphroditeConfig(
-        compilation_config=CompilationConfig(
-            mode=CompilationMode.APHRODITE_COMPILE, custom_ops=custom_ops
-        )
+        compilation_config=CompilationConfig(mode=CompilationMode.APHRODITE_COMPILE, custom_ops=custom_ops)
     )
-    aphrodite_config.compilation_config.pass_config = PassConfig(
-        enable_fi_allreduce_fusion=True, enable_noop=True
-    )
+    aphrodite_config.compilation_config.pass_config = PassConfig(enable_fi_allreduce_fusion=True, enable_noop=True)
     aphrodite_config.device_config = DeviceConfig(device=torch.device("cuda"))
     aphrodite_config.parallel_config.rank = local_rank  # Setup rank for debug path
 
     # this is a fake model name to construct the model config
     # in the aphrodite_config, it's not really used.
     model_name = "RedHatAI/Llama-3.2-1B-Instruct-FP8"
-    aphrodite_config.model_config = ModelConfig(
-        model=model_name, trust_remote_code=True, dtype=dtype, seed=42
-    )
+    aphrodite_config.model_config = ModelConfig(model=model_name, trust_remote_code=True, dtype=dtype, seed=42)
     with set_current_aphrodite_config(aphrodite_config):
         all_reduce_fusion_pass = AllReduceFusionPass(aphrodite_config)
         noop_pass = NoOpEliminationPass(aphrodite_config)
         func_pass = FixFunctionalizationPass(aphrodite_config)
         cleanup_pass = PostCleanupPass(aphrodite_config)
 
-        backend = TestBackend(
-            noop_pass, all_reduce_fusion_pass, func_pass, cleanup_pass
-        )
+        backend = TestBackend(noop_pass, all_reduce_fusion_pass, func_pass, cleanup_pass)
 
         token_num = batch_size * seq_len
         model = test_model_cls(hidden_size, token_num)
@@ -312,9 +283,7 @@ def all_reduce_fusion_pass_on_test_model(
         compiled_model = torch.compile(model, backend=backend)
         compiled_model(hidden_states)
 
-        assert all_reduce_fusion_pass.matched_count == 4, (
-            f"{all_reduce_fusion_pass.matched_count=}"
-        )
+        assert all_reduce_fusion_pass.matched_count == 4, f"{all_reduce_fusion_pass.matched_count=}"
         backend.check_before_ops(model.ops_in_model_before(), fully_replaced=False)
         backend.check_after_ops(model.ops_in_model_after())
         del all_reduce_fusion_pass

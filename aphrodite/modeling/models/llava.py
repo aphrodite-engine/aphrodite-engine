@@ -4,9 +4,14 @@ from typing import Annotated, Final, Literal, Protocol, TypeAlias, TypeVar
 
 import torch
 import torch.nn as nn
-from transformers import (BatchFeature, CLIPVisionConfig, LlavaConfig,
-                          PixtralVisionConfig, PretrainedConfig,
-                          SiglipVisionConfig)
+from transformers import (
+    BatchFeature,
+    CLIPVisionConfig,
+    LlavaConfig,
+    PixtralVisionConfig,
+    PretrainedConfig,
+    SiglipVisionConfig,
+)
 from transformers.models.llava import LlavaProcessor
 from transformers.models.pixtral import PixtralProcessor
 
@@ -14,23 +19,25 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import BaseMultiModalProcessorCache
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalInputs,
-                                         MultiModalKwargsItems,
-                                         MultiModalUUIDDict)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             InputProcessingContext,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import (
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalInputs,
+    MultiModalKwargsItems,
+    MultiModalUUIDDict,
+)
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    InputProcessingContext,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
@@ -39,8 +46,7 @@ from .clip import CLIPVisionModel
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
 from .pixtral import PixtralHFEncoderInfo, PixtralHFVisionModel
 from .siglip import SiglipVisionModel
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    init_aphrodite_registered_model, maybe_prefix)
+from .utils import AutoWeightsLoader, WeightsMapper, init_aphrodite_registered_model, maybe_prefix
 from .vision import get_num_selected_vision_tokens, get_vision_encoder_info
 
 
@@ -91,9 +97,7 @@ class LlavaImageEmbeddingInputs(TensorSchema):
     data: Annotated[torch.Tensor, TensorShape("bn", "ifs", "hs")]
 
 
-LlavaImageInputs: TypeAlias = (
-    LlavaImagePixelInputs | PixtralHFImagePixelInputs | LlavaImageEmbeddingInputs
-)
+LlavaImageInputs: TypeAlias = LlavaImagePixelInputs | PixtralHFImagePixelInputs | LlavaImageEmbeddingInputs
 
 
 class LlavaMultiModalProjector(nn.Module):
@@ -252,9 +256,7 @@ class BaseLlavaMultiModalProcessor(BaseMultiModalProcessor[_I]):
         image_token_id = hf_config.image_token_index
 
         def get_replacement(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 num_image_tokens = images.get_feature_size(item_idx)
@@ -315,9 +317,7 @@ class PixtralHFMultiModalProcessor(BaseMultiModalProcessor[PixtralHFProcessingIn
             image_sizes = processed_outputs["image_sizes"]
             assert len(pixel_values) == len(image_sizes)
 
-            processed_outputs["pixel_values"] = [
-                p[:, :h, :w] for p, (h, w) in zip(pixel_values, image_sizes)
-            ]
+            processed_outputs["pixel_values"] = [p[:, :h, :w] for p, (h, w) in zip(pixel_values, image_sizes)]
 
         return processed_outputs
 
@@ -421,9 +421,7 @@ def _get_num_hidden_layers(hf_config: LlavaLikeConfig) -> int:
     # If we have multiple feature layers, initialize up to the deepest one
     elif isinstance(feature_layers, (list, tuple)):
         return max(_get_layer_index(idx, num_hidden_layers) for idx in feature_layers)
-    raise TypeError(
-        f"vision_layer_feature type: {type(feature_layers)} is not supported"
-    )
+    raise TypeError(f"vision_layer_feature type: {type(feature_layers)} is not supported")
 
 
 def _get_layer_index(feature_layer_index: int, num_hidden_layers: int) -> int:
@@ -523,15 +521,9 @@ class LlavaForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
 
         # NOTE: These are special cases for Pixtral-12B in the HF-format
         # https://huggingface.co/mistral-community/pixtral-12b/blob/main/config.json  # noqa
-        if (
-            config.text_config.architectures is None
-            and config.text_config.model_type == "mistral"
-        ):
+        if config.text_config.architectures is None and config.text_config.model_type == "mistral":
             config.text_config.architectures = ["MistralForCausalLM"]
-        if (
-            config.projector_hidden_act is None
-            and config.vision_config.hidden_act == "gelu"
-        ):
+        if config.projector_hidden_act is None and config.vision_config.hidden_act == "gelu":
             config.projector_hidden_act = "gelu"
 
         # TODO: Optionally initializes this for supporting embeddings.
@@ -560,13 +552,9 @@ class LlavaForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
             prefix=maybe_prefix(prefix, "language_model"),
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> LlavaImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> LlavaImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
 
@@ -799,8 +787,7 @@ class MantisMultiModalProcessor(LlavaMultiModalProcessor):
         self._validate_mm_placeholders(mm_placeholders, mm_item_counts)
 
         mm_placeholder_ranges = {
-            modality: [item.to_range() for item in placeholders]
-            for modality, placeholders in mm_placeholders.items()
+            modality: [item.to_range() for item in placeholders] for modality, placeholders in mm_placeholders.items()
         }
 
         return MultiModalInputs(

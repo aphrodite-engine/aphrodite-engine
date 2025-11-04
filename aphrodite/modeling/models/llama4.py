@@ -24,26 +24,20 @@ from torch import nn
 from transformers import Llama4TextConfig
 
 from aphrodite.attention import Attention
-from aphrodite.attention.layers.chunked_local_attention import (
-    ChunkedLocalAttention)
+from aphrodite.attention.layers.chunked_local_attention import ChunkedLocalAttention
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_tensor_model_parallel_world_size,
-                                   tensor_model_parallel_all_gather)
+from aphrodite.distributed import get_tensor_model_parallel_world_size, tensor_model_parallel_all_gather
 from aphrodite.modeling.layers.fused_moe import SharedFusedMoE
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.modeling.models.utils import sequence_parallel_chunk
 from aphrodite.quantization import QuantizationConfig
 
 from .llama import LlamaForCausalLM, LlamaMLP, LlamaModel
-from .utils import (AutoWeightsLoader, extract_layer_index, fast_topk,
-                    is_pp_missing_parameter)
+from .utils import AutoWeightsLoader, extract_layer_index, fast_topk, is_pp_missing_parameter
 
 
 class Llama4MoE(nn.Module):
@@ -122,9 +116,7 @@ class Llama4MoE(nn.Module):
             experts_out = tensor_model_parallel_all_gather(experts_out, 0)
             experts_out = experts_out[:num_tokens]
         elif self.tp_size > 1:
-            experts_out = self.experts.maybe_all_reduce_tensor_model_parallel(
-                experts_out
-            )
+            experts_out = self.experts.maybe_all_reduce_tensor_model_parallel(experts_out)
 
         return experts_out
 
@@ -231,11 +223,7 @@ class Llama4Attention(nn.Module):
             cache_config=cache_config,
             quant_config=quant_config,
             prefix=f"{prefix}.attn",
-            **(
-                {"attention_chunk_size": config.attention_chunk_size}
-                if use_chunked_local_attn
-                else {}
-            ),
+            **({"attention_chunk_size": config.attention_chunk_size} if use_chunked_local_attn else {}),
         )
 
     def _get_attn_scale(self, positions: torch.Tensor) -> torch.Tensor:
@@ -315,8 +303,7 @@ class Llama4DecoderLayer(nn.Module):
             prefix=f"{prefix}.self_attn",
         )
         is_moe_layer = (
-            config.interleave_moe_layer_step > 0
-            and (self.layer_idx + 1) % config.interleave_moe_layer_step == 0
+            config.interleave_moe_layer_step > 0 and (self.layer_idx + 1) % config.interleave_moe_layer_step == 0
         )
         if is_moe_layer:
             self.feed_forward = Llama4MoE(
@@ -333,9 +320,7 @@ class Llama4DecoderLayer(nn.Module):
                 prefix=f"{prefix}.feed_forward",
             )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -444,9 +429,7 @@ class Llama4Model(LlamaModel):
                 continue
 
             # Skip if the current weight is for the bias.
-            if (
-                name.endswith(".bias") or name.endswith("_bias")
-            ) and name not in params_dict:
+            if (name.endswith(".bias") or name.endswith("_bias")) and name not in params_dict:
                 continue
 
             param = params_dict[full_param_name]
@@ -467,12 +450,7 @@ class Llama4Model(LlamaModel):
                 layer_idx = extract_layer_index(name)
                 expert_map = self.layers[layer_idx].feed_forward.experts.expert_map
                 if expert_map is not None:
-                    local_expert_indices = (
-                        (expert_map != -1)
-                        .nonzero()
-                        .flatten()
-                        .to(new_loaded_weight.device)
-                    )
+                    local_expert_indices = (expert_map != -1).nonzero().flatten().to(new_loaded_weight.device)
                     new_loaded_weight = new_loaded_weight[local_expert_indices]
                     expert_id = local_expert_indices[0].item()
             else:
@@ -541,14 +519,10 @@ class Llama4Model(LlamaModel):
             # If kv cache quantization scales exist and the weight name
             # corresponds to one of the kv cache quantization scales, load
             # them.
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(name)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(name)):
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 weight_loader(param, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -565,9 +539,7 @@ class Llama4Model(LlamaModel):
 
                 # For ModelOpt checkpoints, we need to rename the self_attn
                 # weight/weight_scale names except for kv cache scales.
-                if not (
-                    name.endswith((".k_scale", ".v_scale")) and "self_attn" in name
-                ):
+                if not (name.endswith((".k_scale", ".v_scale")) and "self_attn" in name):
                     name = name.replace(weight_name, param_name)
 
                 # Skip if the current weight corresponds to a parameter that
@@ -624,13 +596,9 @@ class Llama4Model(LlamaModel):
                     "w2_input_scale",
                     "w2_weight_scale",
                 ]
-                if "experts." in name and any(
-                    scale_name in name for scale_name in scale_names
-                ):
+                if "experts." in name and any(scale_name in name for scale_name in scale_names):
                     param = params_dict[name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
 
                     # If weight loader supports special moe loading, use it to
                     # avoid expensive runtime reflection
@@ -650,9 +618,7 @@ class Llama4Model(LlamaModel):
 
                         # Load the weight into the module parameter with
                         # corresponding shard id and expert id.
-                        weight_loader(
-                            param, loaded_weight, name, shard_id=shard_id, expert_id=0
-                        )
+                        weight_loader(param, loaded_weight, name, shard_id=shard_id, expert_id=0)
 
                     else:
                         # Regular weight loader (handles both
@@ -688,9 +654,7 @@ class Llama4ForCausalLM(LlamaForCausalLM):
             "attn_temperature_tuning", default_attn_temperature_tuning
         )
 
-        super().__init__(
-            aphrodite_config=aphrodite_config, prefix=prefix, layer_type=Llama4DecoderLayer
-        )
+        super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, layer_type=Llama4DecoderLayer)
 
     def _init_model(
         self,
@@ -698,19 +662,14 @@ class Llama4ForCausalLM(LlamaForCausalLM):
         prefix: str = "",
         layer_type: type[Llama4DecoderLayer] = Llama4DecoderLayer,
     ):
-        return Llama4Model(
-            aphrodite_config=aphrodite_config, prefix=prefix, layer_type=layer_type
-        )
+        return Llama4Model(aphrodite_config=aphrodite_config, prefix=prefix, layer_type=layer_type)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(
             self,
             skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
         )
-        weights = [
-            self.permute_qk_weight_for_rotary(name, loaded_weight)
-            for name, loaded_weight in weights
-        ]
+        weights = [self.permute_qk_weight_for_rotary(name, loaded_weight) for name, loaded_weight in weights]
         return loader.load_weights(weights)
 
     def permute_qk_weight_for_rotary(
@@ -732,26 +691,16 @@ class Llama4ForCausalLM(LlamaForCausalLM):
 
             # If the weight is a weight scale, we need to divide attn_out by
             # block size, which is currently 16.
-            elif (
-                w.dtype == torch.float8_e4m3fn
-                and is_weight_scale
-                and w.shape[1] * 16 == attn_out
-            ):
+            elif w.dtype == torch.float8_e4m3fn and is_weight_scale and w.shape[1] * 16 == attn_out:
                 attn_out = attn_out // 16
 
-            return (
-                w.view(n_heads, attn_in // n_heads // 2, 2, attn_out)
-                .transpose(1, 2)
-                .reshape(attn_in, attn_out)
-            )
+            return w.view(n_heads, attn_in // n_heads // 2, 2, attn_out).transpose(1, 2).reshape(attn_in, attn_out)
 
         modules = name.split(".")
 
         # Permute Q/K weights and weight block scales for rotary embedding
         is_weight = modules[-1] == "weight"
-        is_nvfp4_weight_scale = (
-            modules[-1] == "weight_scale" and loaded_weight.dtype == torch.float8_e4m3fn
-        )
+        is_nvfp4_weight_scale = modules[-1] == "weight_scale" and loaded_weight.dtype == torch.float8_e4m3fn
 
         if is_weight or is_nvfp4_weight_scale:
             if "wk" in modules or "k_proj" in modules:

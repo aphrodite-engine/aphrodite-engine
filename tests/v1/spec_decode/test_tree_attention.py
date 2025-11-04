@@ -5,9 +5,7 @@ import torch
 from aphrodite.attention.backends.registry import _Backend
 from aphrodite.config import ParallelConfig, SpeculativeConfig
 from aphrodite.v1.attention.backends.utils import CommonAttentionMetadata
-from tests.v1.attention.utils import (create_aphrodite_config,
-                                      create_standard_kv_cache_spec,
-                                      try_get_attention_backend)
+from tests.v1.attention.utils import create_aphrodite_config, create_standard_kv_cache_spec, try_get_attention_backend
 
 
 class MockAttentionLayer(torch.nn.Module):
@@ -37,9 +35,7 @@ def forward_attention(
     batch_size, q_len, num_heads, dim_per_head = q.shape
     num_kv_heads = k.shape[-2]
     # Initialize the query and KV sequence lengths.
-    query_start_loc = q_len * torch.arange(
-        batch_size + 1, device=q.device, dtype=torch.int32
-    )
+    query_start_loc = q_len * torch.arange(batch_size + 1, device=q.device, dtype=torch.int32)
     query_lens = torch.diff(query_start_loc)
     seq_lens = torch.full(
         (batch_size,),
@@ -212,9 +208,7 @@ def test_tree_attn_correctness() -> None:
                     if randomize_blocks:
                         # Randomize the block ids.
                         block_ids = block_ids[torch.randperm(block_ids.numel())]
-                    block_table[:, :num_alloc_blocks_per_batch] = block_ids.view(
-                        -1, num_alloc_blocks_per_batch
-                    )
+                    block_table[:, :num_alloc_blocks_per_batch] = block_ids.view(-1, num_alloc_blocks_per_batch)
 
                     # Set up the slot mapping for the input KVs.
                     tree_positions = sequence_position + torch.arange(
@@ -223,9 +217,7 @@ def test_tree_attn_correctness() -> None:
                         device=q.device,
                         dtype=torch.int64,
                     ).repeat(batch_size, 1)
-                    tree_slot_mapping = _gen_slot_mapping(
-                        tree_positions, block_table, block_size
-                    )
+                    tree_slot_mapping = _gen_slot_mapping(tree_positions, block_table, block_size)
 
                     # Compute attention for the tree.
                     tree_attn_output = forward_attention(
@@ -260,9 +252,7 @@ def test_tree_attn_correctness() -> None:
                             device=q.device,
                             dtype=torch.int64,
                         ).repeat(batch_size, 1)
-                        branch_slot_mapping = _gen_slot_mapping(
-                            branch_positions, block_table, block_size
-                        )
+                        branch_slot_mapping = _gen_slot_mapping(branch_positions, block_table, block_size)
 
                         # Compute flash attention for the branch.
                         flash_attn_output = forward_attention(
@@ -291,9 +281,7 @@ def test_tree_attn_correctness() -> None:
                         )
 
 
-def _gen_slot_mapping(
-    positions: torch.Tensor, block_table: torch.Tensor, block_size: int
-):
+def _gen_slot_mapping(positions: torch.Tensor, block_table: torch.Tensor, block_size: int):
     block_indices = positions // block_size
     blocks = block_table.gather(dim=1, index=block_indices)
     return (blocks * block_size + positions % block_size).view(-1)

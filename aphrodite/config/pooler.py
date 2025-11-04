@@ -105,15 +105,11 @@ class PoolerConfig:
 
 def get_use_activation(o: object):
     if softmax := getattr(o, "softmax", None) is not None:
-        logger.warning_once(
-            "softmax will be deprecated, please use use_activation instead."
-        )
+        logger.warning_once("softmax will be deprecated, please use use_activation instead.")
         return softmax
 
     if activation := getattr(o, "activation", None) is not None:
-        logger.warning_once(
-            "activation will be deprecated, please use use_activation instead."
-        )
+        logger.warning_once("activation will be deprecated, please use use_activation instead.")
         return activation
 
     return getattr(o, "use_activation", None)

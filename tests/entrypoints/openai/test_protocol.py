@@ -1,7 +1,6 @@
 from openai_harmony import Message
 
-from aphrodite.endpoints.openai.protocol import (serialize_message,
-                                                 serialize_messages)
+from aphrodite.endpoints.openai.protocol import serialize_message, serialize_messages
 
 
 def test_serialize_message() -> None:

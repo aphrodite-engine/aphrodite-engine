@@ -6,15 +6,10 @@ from torch.nn.parameter import Parameter
 import aphrodite.envs as envs
 from aphrodite._custom_ops import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from aphrodite.logger import init_logger
-from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
-                                          ModelWeightParameter,
-                                          PerTensorScaleParameter)
-from aphrodite.quantization.compressed_tensors.schemes import (
-    CompressedTensorsScheme)
-from aphrodite.quantization.utils.nvfp4_emulation_utils import (  # noqa: E501
-    run_nvfp4_emulations)
-from aphrodite.quantization.utils.quant_utils import (cutlass_fp4_supported,
-                                                      swizzle_blockscale)
+from aphrodite.modeling.parameter import GroupQuantScaleParameter, ModelWeightParameter, PerTensorScaleParameter
+from aphrodite.quantization.compressed_tensors.schemes import CompressedTensorsScheme
+from aphrodite.quantization.utils.nvfp4_emulation_utils import run_nvfp4_emulations  # noqa: E501
+from aphrodite.quantization.utils.quant_utils import cutlass_fp4_supported, swizzle_blockscale
 from aphrodite.utils.flashinfer import flashinfer_scaled_fp4_mm, has_flashinfer
 
 logger = init_logger(__name__)
@@ -44,10 +39,7 @@ class CompressedTensorsW4A4Fp4(CompressedTensorsScheme):
             assert has_flashinfer(), f"FlashInfer is required for {self.backend}"
 
         if self.backend == "none":
-            raise ValueError(
-                "No valid NVFP4 GEMM backend found. "
-                "Please check your platform capability."
-            )
+            raise ValueError("No valid NVFP4 GEMM backend found. Please check your platform capability.")
 
         logger.info_once(f"Using {self.backend} for NVFP4 GEMM")
         self.group_size = 16
@@ -116,9 +108,7 @@ class CompressedTensorsW4A4Fp4(CompressedTensorsScheme):
         global_input_scale = layer.input_global_scale.max().to(torch.float32)
         layer.input_global_scale = Parameter(global_input_scale, requires_grad=False)
 
-        layer.weight_global_scale = Parameter(
-            layer.weight_global_scale.max().to(torch.float32), requires_grad=False
-        )
+        layer.weight_global_scale = Parameter(layer.weight_global_scale.max().to(torch.float32), requires_grad=False)
 
         if self.backend == "flashinfer-trtllm":
             # FlashInfer TRTLLM FP4 GEMM requires a different weight layout.
@@ -145,9 +135,7 @@ class CompressedTensorsW4A4Fp4(CompressedTensorsScheme):
             if self.backend == "fbgemm":
                 swizzled_weight_scale = swizzled_weight_scale.view(-1).view(torch.uint8)
             layer.weight_scale = Parameter(swizzled_weight_scale, requires_grad=False)
-            layer.weight_packed = Parameter(
-                layer.weight_packed.data, requires_grad=False
-            )
+            layer.weight_packed = Parameter(layer.weight_packed.data, requires_grad=False)
 
         layer.alpha = Parameter(
             1 / (layer.input_global_scale * layer.weight_global_scale),

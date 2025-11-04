@@ -2,19 +2,16 @@ import argparse
 import itertools
 
 import torch
-
 from aphrodite.model_executor.layers.fused_moe.moe_align_block_size import (
     moe_align_block_size,
 )
+
 from aphrodite.triton_utils import triton
 
 
 def get_topk_ids(num_tokens: int, num_experts: int, topk: int) -> torch.Tensor:
     return torch.stack(
-        [
-            torch.randperm(num_experts, dtype=torch.int32, device="cuda")[:topk]
-            for _ in range(num_tokens)
-        ]
+        [torch.randperm(num_experts, dtype=torch.int32, device="cuda")[:topk] for _ in range(num_tokens)]
     )
 
 

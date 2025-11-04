@@ -5,8 +5,7 @@ import torch
 from aphrodite.platforms import current_platform
 
 from .base import RotaryEmbeddingBase
-from .common import (rotate_gptj, rotate_neox, yarn_find_correction_range,
-                     yarn_linear_ramp_mask)
+from .common import rotate_gptj, rotate_neox, yarn_find_correction_range, yarn_linear_ramp_mask
 
 
 def yarn_get_mscale(scale: float = 1, mscale: float = 1) -> float:
@@ -49,9 +48,7 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbeddingBase):
             / yarn_get_mscale(self.scaling_factor, float(mscale_all_dim))
             * attn_factor
         )
-        super().__init__(
-            head_size, rotary_dim, max_position_embeddings, base, is_neox_style, dtype
-        )
+        super().__init__(head_size, rotary_dim, max_position_embeddings, base, is_neox_style, dtype)
 
     def _compute_inv_freq(self, scaling_factor: float) -> torch.Tensor:
         pos_freqs = self.base ** (
@@ -76,13 +73,9 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbeddingBase):
         )
         # Get n-d rotational scaling corrected for extrapolation
         inv_freq_mask = (
-            1
-            - yarn_linear_ramp_mask(low, high, self.rotary_dim // 2, dtype=torch.float)
+            1 - yarn_linear_ramp_mask(low, high, self.rotary_dim // 2, dtype=torch.float)
         ) * self.extrapolation_factor
-        inv_freq = (
-            inv_freq_interpolation * (1 - inv_freq_mask)
-            + inv_freq_extrapolation * inv_freq_mask
-        )
+        inv_freq = inv_freq_interpolation * (1 - inv_freq_mask) + inv_freq_extrapolation * inv_freq_mask
         return inv_freq
 
     def _compute_cos_sin_cache(self) -> torch.Tensor:
@@ -114,9 +107,7 @@ class DeepseekScalingRotaryEmbedding(RotaryEmbeddingBase):
             query_pass = query[..., self.rotary_dim :]
             key_pass = key[..., self.rotary_dim :]
 
-        cos_sin = self.cos_sin_cache[
-            torch.add(positions, offsets) if offsets is not None else positions
-        ]
+        cos_sin = self.cos_sin_cache[torch.add(positions, offsets) if offsets is not None else positions]
         cos, sin = cos_sin.chunk(2, dim=-1)
         if self.is_neox_style:
             # NOTE(woosuk): Here we assume that the positions tensor has the

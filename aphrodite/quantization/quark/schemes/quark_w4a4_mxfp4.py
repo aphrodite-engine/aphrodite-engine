@@ -1,16 +1,14 @@
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 import torch
 import torch.nn.functional as F
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
-                                          PackedAphroditeParameter)
+from aphrodite.modeling.parameter import GroupQuantScaleParameter, PackedAphroditeParameter
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.quark.schemes import QuarkScheme
-from aphrodite.quantization.utils.mxfp4_utils import (OCP_MX_BLOCK_SIZE,
-                                                      dequant_mxfp4,
-                                                      quant_dequant_mxfp4)
+from aphrodite.quantization.utils.mxfp4_utils import OCP_MX_BLOCK_SIZE, dequant_mxfp4, quant_dequant_mxfp4
 
 __all__ = ["QuarkW4A4MXFP4"]
 
@@ -18,9 +16,7 @@ logger = init_logger(__name__)
 
 
 class QuarkW4A4MXFP4(QuarkScheme):
-
-    def __init__(self, weight_quant_spec: dict[str, Any],
-                 input_quant_spec: dict[str, Any]):
+    def __init__(self, weight_quant_spec: dict[str, Any], input_quant_spec: dict[str, Any]):
         self.out_dtype = torch.get_default_dtype()
         self.qscheme = "per_group"
         self.weight_quant_spec = weight_quant_spec
@@ -30,8 +26,8 @@ class QuarkW4A4MXFP4(QuarkScheme):
 
         if self.static_input_scales:
             raise NotImplementedError(
-                "QuarkW4A4MXFP4 with static input scales is currently not "
-                "implemented. Please open an issue.")
+                "QuarkW4A4MXFP4 with static input scales is currently not implemented. Please open an issue."
+            )
 
         if not current_platform.supports_mx():
             self.emulate = True
@@ -39,7 +35,8 @@ class QuarkW4A4MXFP4(QuarkScheme):
                 "The current platform does not support native MXFP4 "
                 "computation. Simulated weight dequantization and activation "
                 "QDQ (quantize and dequantize) will be used, with the linear "
-                "layers computed in high precision.")
+                "layers computed in high precision."
+            )
         else:
             self.emulate = True
             logger.warning_once(
@@ -47,23 +44,26 @@ class QuarkW4A4MXFP4(QuarkScheme):
                 "computation, but kernels are not yet integrated in Aphrodite. "
                 "Simulated weight dequantization and activation "
                 "QDQ (quantize and dequantize) will be used, with the linear "
-                "layers computed in high precision.")
+                "layers computed in high precision."
+            )
 
     @classmethod
     def get_min_capability(cls) -> int:
         return 70
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
-        layer.weight = torch.nn.Parameter(layer.weight.data,
-                                          requires_grad=False)
-        layer.weight_scale = torch.nn.Parameter(layer.weight_scale.data,
-                                                requires_grad=False)
+        layer.weight = torch.nn.Parameter(layer.weight.data, requires_grad=False)
+        layer.weight_scale = torch.nn.Parameter(layer.weight_scale.data, requires_grad=False)
 
-    def create_weights(self, layer: torch.nn.Module,
-                       output_partition_sizes: list[int],
-                       input_size_per_partition: int,
-                       params_dtype: torch.dtype, weight_loader: Callable,
-                       **kwargs):
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        output_partition_sizes: list[int],
+        input_size_per_partition: int,
+        params_dtype: torch.dtype,
+        weight_loader: Callable,
+        **kwargs,
+    ):
         output_size_per_partition = sum(output_partition_sizes)
         layer.logical_widths = output_partition_sizes
 
@@ -95,11 +95,7 @@ class QuarkW4A4MXFP4(QuarkScheme):
         )
         layer.register_parameter("weight_scale", weight_scale)
 
-    def apply_weights(self,
-                      layer: torch.nn.Module,
-                      x: torch.Tensor,
-                      bias: Optional[torch.Tensor] = None) -> torch.Tensor:
-
+    def apply_weights(self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
         if self.emulate:
             dq_w = dequant_mxfp4(layer.weight, layer.weight_scale, x.dtype)
 

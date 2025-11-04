@@ -4,26 +4,21 @@ import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
 from aphrodite.modeling.layers.fused_moe.flashinfer_cutlass_prepare_finalize import (  # noqa: E501
-    create_flashinfer_prepare_finalize)
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceNoOP)
-from aphrodite.utils.flashinfer import (flashinfer_cutlass_fused_moe,
-                                        has_flashinfer_cutlass_fused_moe)
+    create_flashinfer_prepare_finalize,
+)
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceNoOP
+from aphrodite.utils.flashinfer import flashinfer_cutlass_fused_moe, has_flashinfer_cutlass_fused_moe
 
 logger = init_logger(__name__)
 
 
-def is_valid_flashinfer_cutlass_fused_moe(
-    hidden_states: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor
-) -> bool:
+def is_valid_flashinfer_cutlass_fused_moe(hidden_states: torch.Tensor, w1: torch.Tensor, w2: torch.Tensor) -> bool:
     """
     Check if the given problem size is supported by the FlashInfer CUTLASS MoE
     kernel.
     """
     if not has_flashinfer_cutlass_fused_moe():
-        logger.debug_once(
-            "FlashInferExperts disabled: flashinfer_cutlass_fused_moe not available."
-        )
+        logger.debug_once("FlashInferExperts disabled: flashinfer_cutlass_fused_moe not available.")
         return False
     # Data type checks
     if (
@@ -52,8 +47,7 @@ class FlashInferExperts(mk.FusedMoEPermuteExpertsUnpermute):
     ):
         super().__init__(quant_config)
         assert quant_config.quant_dtype in ("nvfp4", torch.float8_e4m3fn, None), (
-            "Only nvfp4, fp8, bfloat16 and"
-            " float16 quantization are currently supported."
+            "Only nvfp4, fp8, bfloat16 and float16 quantization are currently supported."
         )
         self.ep_rank = ep_rank
         self.ep_size = ep_size
@@ -133,9 +127,7 @@ class FlashInferExperts(mk.FusedMoEPermuteExpertsUnpermute):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool | None,
     ):
-        assert activation == "silu", (
-            "Only activation silu is supported in FlashInferExperts"
-        )
+        assert activation == "silu", "Only activation silu is supported in FlashInferExperts"
 
         if self.quant_dtype == torch.float8_e4m3fn:
             quant_scales = [

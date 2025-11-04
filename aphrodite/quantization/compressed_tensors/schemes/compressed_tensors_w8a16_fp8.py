@@ -3,13 +3,9 @@ from collections.abc import Callable
 import torch
 from compressed_tensors.quantization import QuantizationStrategy
 
-from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
-                                          ModelWeightParameter,
-                                          PerTensorScaleParameter)
-from aphrodite.quantization.compressed_tensors.schemes import (
-    CompressedTensorsScheme)
-from aphrodite.quantization.utils.marlin_utils_fp8 import (
-    apply_fp8_marlin_linear, prepare_fp8_layer_for_marlin)
+from aphrodite.modeling.parameter import ChannelQuantScaleParameter, ModelWeightParameter, PerTensorScaleParameter
+from aphrodite.quantization.compressed_tensors.schemes import CompressedTensorsScheme
+from aphrodite.quantization.utils.marlin_utils_fp8 import apply_fp8_marlin_linear, prepare_fp8_layer_for_marlin
 from aphrodite.quantization.utils.w8a8_utils import convert_to_channelwise
 
 __all__ = ["CompressedTensorsW8A16Fp8"]
@@ -32,24 +28,18 @@ class CompressedTensorsW8A16Fp8(CompressedTensorsScheme):
     # we expand each scale to its shard's channels.
     def process_weights_after_loading(self, layer) -> None:
         if self.strategy == QuantizationStrategy.TENSOR:
-            ws_channelwise = convert_to_channelwise(
-                layer.weight_scale, layer.logical_widths
-            )
+            ws_channelwise = convert_to_channelwise(layer.weight_scale, layer.logical_widths)
             layer.weight_scale = torch.nn.Parameter(ws_channelwise, requires_grad=False)
         else:
             # required by torch.compile to be torch.nn.Parameter
-            layer.weight_scale = torch.nn.Parameter(
-                layer.weight_scale.data, requires_grad=False
-            )
+            layer.weight_scale = torch.nn.Parameter(layer.weight_scale.data, requires_grad=False)
 
         # Weights must be transposed for marlin
         layer.weight = torch.nn.Parameter(layer.weight.t(), requires_grad=False)
 
         if self.is_static_input_scheme:
             # required by torch.compile to be torch.nn.Parameter
-            layer.input_scale = torch.nn.Parameter(
-                layer.input_scale.data, requires_grad=False
-            )
+            layer.input_scale = torch.nn.Parameter(layer.input_scale.data, requires_grad=False)
         prepare_fp8_layer_for_marlin(layer)
 
     def create_weights(
@@ -96,8 +86,7 @@ class CompressedTensorsW8A16Fp8(CompressedTensorsScheme):
             )
         else:
             raise ValueError(
-                f"Unsupported weight strategy={self.strategy}, "
-                f"supported strategies are {SUPPORTED_STRATEGIES}"
+                f"Unsupported weight strategy={self.strategy}, supported strategies are {SUPPORTED_STRATEGIES}"
             )
 
         weight_scale[:] = torch.finfo(torch.float32).min

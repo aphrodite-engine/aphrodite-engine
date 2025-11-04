@@ -60,9 +60,7 @@ def generate_new_kernels():
     for scalar_type, dtype in itertools.product(SCALAR_TYPES, DTYPES):
         all_template_str_list = []
 
-        for group_blocks, m_blocks, thread_configs in itertools.product(
-            GROUP_BLOCKS, THREAD_M_BLOCKS, THREAD_CONFIGS
-        ):
+        for group_blocks, m_blocks, thread_configs in itertools.product(GROUP_BLOCKS, THREAD_M_BLOCKS, THREAD_CONFIGS):
             # act order case only support gptq-int4 and gptq-int8
             if group_blocks == 0 and scalar_type not in [
                 "aphrodite::kU4B8",

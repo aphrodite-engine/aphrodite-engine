@@ -17,9 +17,7 @@ USE_DEFAULT_FLA_NORM = int(os.getenv("USE_DEFAULT_FLA_NORM", "0"))
 
 
 @triton.autotune(
-    configs=[
-        triton.Config({}, num_warps=num_warps) for num_warps in [1, 2, 4, 8, 16, 32]
-    ],
+    configs=[triton.Config({}, num_warps=num_warps) for num_warps in [1, 2, 4, 8, 16, 32]],
     key=["D"],
 )
 @triton.jit
@@ -46,11 +44,7 @@ def l2norm_fwd_kernel1(
 
 
 @triton.autotune(
-    configs=[
-        triton.Config({"BT": BT}, num_warps=num_warps)
-        for num_warps in [1, 2, 4, 8, 16]
-        for BT in BT_LIST
-    ],
+    configs=[triton.Config({"BT": BT}, num_warps=num_warps) for num_warps in [1, 2, 4, 8, 16] for BT in BT_LIST],
     key=["D"],
 )
 @triton.jit(do_not_specialize=["NB"])
@@ -86,9 +80,7 @@ def l2norm_fwd_kernel2(X, Y, eps, M, N: tl.constexpr, MBLOCK: tl.constexpr):
     tl.store(Y + (rindex + N * row_idx), xs * rsqrt, xmask)
 
 
-def l2norm_fwd(
-    x: torch.Tensor, eps: float = 1e-6, output_dtype: torch.dtype | None = None
-):
+def l2norm_fwd(x: torch.Tensor, eps: float = 1e-6, output_dtype: torch.dtype | None = None):
     x_shape_og = x.shape
     x = x.view(-1, x.shape[-1])
     # allocate output

@@ -3,7 +3,6 @@ import functools
 import weakref
 from copy import copy, deepcopy
 from dataclasses import dataclass, fields
-from typing import List, Optional, Set, Union
 
 import regex
 import torch
@@ -37,7 +36,6 @@ class FastParserState(ParserState):
 
 
 class FastInteractiveParser(InteractiveParser):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.parser_state = FastParserState(
@@ -83,14 +81,13 @@ def get_pattern_validator(pattern: Pattern):
                 if spans:
                     span = complete_terminal_match.spans()[0]
                     if span[0] == 0:
-                        processed_seq = seq[:span[1]]
-                        remainder_seq = seq[span[1]:]
+                        processed_seq = seq[: span[1]]
+                        remainder_seq = seq[span[1] :]
                         return processed_seq, remainder_seq
 
             # match doesn't complete terminal, but the sequence is fully
             # allowed
-            partial_terminal_match = compiled_pattern.fullmatch(seq,
-                                                                partial=True)
+            partial_terminal_match = compiled_pattern.fullmatch(seq, partial=True)
             if partial_terminal_match:
                 return seq, None
 
@@ -104,8 +101,8 @@ def get_pattern_validator(pattern: Pattern):
         @functools.lru_cache(int(1e6))
         def get_str_matched_parts(seq):
             if seq.startswith(base_str):
-                processed_seq = seq[:len(base_str)]
-                remainder_seq = seq[len(base_str):]
+                processed_seq = seq[: len(base_str)]
+                remainder_seq = seq[len(base_str) :]
                 return processed_seq, remainder_seq
             elif base_str.startswith(seq):
                 return seq, None
@@ -121,7 +118,6 @@ def get_pattern_validator(pattern: Pattern):
 def method_lru_cache(*lru_args, **lru_kwargs):
     # https://stackoverflow.com/a/44078118
     def decorator(func):
-
         @functools.wraps(func)
         def wrapped_func(self, *args, **kwargs):
             self_weak = weakref.ref(self)
@@ -143,7 +139,6 @@ memoize_by_instance = method_lru_cache(int(1e7))
 
 
 class TrieNode:
-
     def __init__(self):
         self.children = {}
         self.is_end_of_word = False
@@ -151,7 +146,6 @@ class TrieNode:
 
 
 class Trie:
-
     def __init__(self):
         self.root = TrieNode()
 
@@ -179,7 +173,7 @@ class Trie:
             else:
                 break  # break if char not in trie
 
-        remainder = word[len(best_prefix):]
+        remainder = word[len(best_prefix) :]
         return best_prefix, best_value, remainder
 
 
@@ -227,22 +221,21 @@ class IncrementalParserState:
         )
         base_interactive_parser = lark_parser.parse_interactive()
         interactive_parser = FastInteractiveParser(
-            base_interactive_parser.parser,
-            base_interactive_parser.parser_state,
-            base_interactive_parser.lexer_thread)
+            base_interactive_parser.parser, base_interactive_parser.parser_state, base_interactive_parser.lexer_thread
+        )
         interactive_parser.lexer_thread.state.text = ""
 
-        _seq_validator = {(term.name): get_pattern_validator(term.pattern)
-                          for term in lark_parser.terminals}
-        _seq_validator["$END"] = lambda seq: tuple(
-            ["" if seq is None else None] * 2)
+        _seq_validator = {(term.name): get_pattern_validator(term.pattern) for term in lark_parser.terminals}
+        _seq_validator["$END"] = lambda seq: tuple(["" if seq is None else None] * 2)
 
-        parser = cls(interactive_parser=interactive_parser,
-                     terminal_candidates=None,
-                     _ignored_terms=set(lark_parser.lexer_conf.ignore),
-                     _seq_validator=_seq_validator,
-                     _memo={},
-                     _full_seq_trie=Trie())
+        parser = cls(
+            interactive_parser=interactive_parser,
+            terminal_candidates=None,
+            _ignored_terms=set(lark_parser.lexer_conf.ignore),
+            _seq_validator=_seq_validator,
+            _memo={},
+            _full_seq_trie=Trie(),
+        )
         parser._full_seq_trie.insert("", parser)
         return parser
 
@@ -263,8 +256,7 @@ class IncrementalParserState:
     def __getitem__(self, full_seq):
         """Get the parser state, given a full sequence"""
         # pylint: disable=unused-variable
-        match_seq, parser, remainder_seq = self._full_seq_trie.get_best(
-            full_seq)
+        match_seq, parser, remainder_seq = self._full_seq_trie.get_best(full_seq)
         if parser is None:
             return
         if remainder_seq:
@@ -274,7 +266,7 @@ class IncrementalParserState:
             remainder_seq, parser = result
             processed_seq = full_seq
             if remainder_seq:
-                processed_seq = processed_seq[:-len(remainder_seq)]
+                processed_seq = processed_seq[: -len(remainder_seq)]
             self._full_seq_trie.insert(processed_seq, parser)
         return remainder_seq, parser
 
@@ -292,8 +284,7 @@ class IncrementalParserState:
         if new_seq == "":
             return "", self
 
-        best_terminal, processed_seq, remainder_seq = (
-            self.get_best_matched_terminal(new_seq))
+        best_terminal, processed_seq, remainder_seq = self.get_best_matched_terminal(new_seq)
 
         # invalid
         if best_terminal is None:
@@ -348,7 +339,7 @@ class IncrementalParserState:
         return tuple(sorted(self.accepts()))
 
     @memoize_by_instance
-    def is_valid_next_seq(self, new_seq: Optional[str]):
+    def is_valid_next_seq(self, new_seq: str | None):
         if new_seq is None:
             return "$END" in self.allowed_terminals()
         return self.step(new_seq) is not None
@@ -362,21 +353,15 @@ class TokenVocab:
     - vocab[token_str]: return token id set
     """
 
-    def __init__(self,
-                 tokenizer: Union[PreTrainedTokenizer,
-                                  PreTrainedTokenizerFast],
-                 legal_chars: Optional[Set[str]] = None):
-
+    def __init__(self, tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast, legal_chars: set[str] | None = None):
         self.norm_vocab = collections.defaultdict(set)
         for token_id in tokenizer.vocab.values():
             if token_id == tokenizer.eos_token_id:
                 self.norm_vocab[None].add(token_id)
                 continue
             bos_len = len(tokenizer.bos_token)
-            norm_token = tokenizer.decode([tokenizer.bos_token_id,
-                                           token_id])[bos_len:]
-            if legal_chars is None or all(
-                [char in legal_chars for char in norm_token]):
+            norm_token = tokenizer.decode([tokenizer.bos_token_id, token_id])[bos_len:]
+            if legal_chars is None or all([char in legal_chars for char in norm_token]):
                 self.norm_vocab[norm_token].add(token_id)
 
     def __iter__(self):
@@ -387,18 +372,16 @@ class TokenVocab:
 
 
 class NextTokenValidator:
-
     def __init__(
         self,
         tokenizer,
         grammar: str,
         grammar_start: str = "start",
-        legal_chars: Optional[set[str]] = None,
+        legal_chars: set[str] | None = None,
     ):
         self.tokenizer = tokenizer
         self.vocab = TokenVocab(tokenizer, legal_chars=legal_chars)
-        self.root_parser = IncrementalParserState.from_grammar(
-            grammar, grammar_start)
+        self.root_parser = IncrementalParserState.from_grammar(grammar, grammar_start)
 
     def get_valid_next_token_strs(self, full_seq):
         """
@@ -430,8 +413,7 @@ class GrammarLogitsProcessor(NextTokenValidator):
     Apply NextTokenValidator in __call__ and set excluded tokens logits to -inf
     """
 
-    def __call__(self, logits: torch.Tensor,
-                 token_ids: List[List[int]]) -> None:
+    def __call__(self, logits: torch.Tensor, token_ids: list[list[int]]) -> None:
         for i in range(len(token_ids)):
             # get valid token IDs given prior tokens
             sequence = self.tokenizer.decode(token_ids[i])

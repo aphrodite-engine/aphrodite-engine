@@ -5,9 +5,13 @@ import pytest
 from aphrodite.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, KVConnectorOutput
 from aphrodite.v1.request import FinishReason, RequestStatus
 
-from .utils import (assert_scheduler_empty, create_aphrodite_config,
-                    create_model_runner_output, create_request,
-                    create_scheduler)
+from .utils import (
+    assert_scheduler_empty,
+    create_aphrodite_config,
+    create_model_runner_output,
+    create_request,
+    create_scheduler,
+)
 
 pytestmark = pytest.mark.cpu_test
 
@@ -45,9 +49,7 @@ def test_basic_lifecycle():
     model_runner_output = create_model_runner_output(reqs=[request])
 
     # (1c): update_from_output()
-    engine_core_outputs = scheduler.update_from_output(
-        scheduler_output, model_runner_output
-    )
+    engine_core_outputs = scheduler.update_from_output(scheduler_output, model_runner_output)
 
     # Ensure the request is finished after 1 token.
     assert request.is_finished()
@@ -63,9 +65,7 @@ def test_basic_lifecycle():
 
     # ... but blocks should not be freed.
     assert len(scheduler.requests) == 1
-    blocks = scheduler.kv_cache_manager.coordinator.single_type_managers[
-        0
-    ].req_to_blocks[request_id]
+    blocks = scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks[request_id]
     for block in blocks:
         assert block.ref_cnt == 1
 
@@ -98,9 +98,7 @@ def test_basic_lifecycle():
 
     # (3b): execute_model()
     model_runner_output = copy.deepcopy(EMPTY_MODEL_RUNNER_OUTPUT)
-    model_runner_output.kv_connector_output = KVConnectorOutput(
-        finished_sending={request_id}
-    )
+    model_runner_output.kv_connector_output = KVConnectorOutput(finished_sending={request_id})
 
     # (3c): update_from_output()
     scheduler.update_from_output(scheduler_output, model_runner_output)
@@ -149,9 +147,7 @@ def test_short_prompt_lifecycle():
     # We need to mark sending finish to clear data for persistent batch.
     scheduler_output = scheduler.schedule()
     # Use create_model_runner_output to pass kv_connector_output along
-    model_runner_output = create_model_runner_output(
-        reqs=[request], finished_sending={request.request_id}
-    )
+    model_runner_output = create_model_runner_output(reqs=[request], finished_sending={request.request_id})
     scheduler.update_from_output(scheduler_output, model_runner_output)
     assert_scheduler_empty(scheduler)
 
@@ -167,15 +163,11 @@ def test_prefix_cache_lifecycle():
     NUM_EXTERNAL_FULL_BLOCKS = 3
     NUM_TOKENS = int(BLOCK_SIZE * (NUM_EXTERNAL_FULL_BLOCKS + 0.5))
 
-    request_normal = create_request(
-        request_id=1, block_size=BLOCK_SIZE, num_tokens=NUM_TOKENS
-    )
+    request_normal = create_request(request_id=1, block_size=BLOCK_SIZE, num_tokens=NUM_TOKENS)
 
     scheduler.add_request(request_normal)
     scheduler_output = scheduler.schedule()
-    model_runner_output = create_model_runner_output(
-        reqs=[request_normal], use_eos=True
-    )
+    model_runner_output = create_model_runner_output(reqs=[request_normal], use_eos=True)
     scheduler.update_from_output(scheduler_output, model_runner_output)
     scheduler_output = scheduler.schedule()
     scheduler.update_from_output(scheduler_output, EMPTY_MODEL_RUNNER_OUTPUT)
@@ -207,9 +199,7 @@ def test_prefix_cache_lifecycle():
     # STEP (2): Ensure it is freed.
     scheduler_output = scheduler.schedule()
     model_runner_output = copy.deepcopy(EMPTY_MODEL_RUNNER_OUTPUT)
-    model_runner_output.kv_connector_output = KVConnectorOutput(
-        finished_sending={request_remote.request_id}
-    )
+    model_runner_output.kv_connector_output = KVConnectorOutput(finished_sending={request_remote.request_id})
     scheduler.update_from_output(scheduler_output, model_runner_output)
     assert_scheduler_empty(scheduler)
 
@@ -249,8 +239,6 @@ def test_abort_during_kv_transfer():
     # Simulate a finished sending notification
     scheduler_output = scheduler.schedule()
     model_runner_output = copy.deepcopy(EMPTY_MODEL_RUNNER_OUTPUT)
-    model_runner_output.kv_connector_output = KVConnectorOutput(
-        finished_sending=[request.request_id]
-    )
+    model_runner_output.kv_connector_output = KVConnectorOutput(finished_sending=[request.request_id])
     scheduler.update_from_output(scheduler_output, model_runner_output)
     assert_scheduler_empty(scheduler)

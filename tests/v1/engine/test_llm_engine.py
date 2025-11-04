@@ -4,10 +4,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from aphrodite import LLM
-from aphrodite.common.sampling_params import (SamplingParams,
-                                              StructuredOutputsParams)
-from aphrodite.v1.metrics.reader import (Counter, Gauge, Histogram, Metric,
-                                         Vector)
+from aphrodite.common.sampling_params import SamplingParams, StructuredOutputsParams
+from aphrodite.v1.metrics.reader import Counter, Gauge, Histogram, Metric, Vector
 
 if TYPE_CHECKING:
     from tests.conftest import AphroditeRunner
@@ -96,9 +94,7 @@ def _get_test_sampling_params(
             top_p=0.95,
             n=n,
             seed=seed,
-            structured_outputs=StructuredOutputsParams(regex="[0-9]+")
-            if structured_outputs
-            else None,
+            structured_outputs=StructuredOutputsParams(regex="[0-9]+") if structured_outputs else None,
         )
         for n in n_list
     ], n_list
@@ -143,10 +139,7 @@ def test_parallel_sampling(aphrodite_model, example_prompts) -> None:
         # Assert unique completions
         if len(completion_counts) != n:
             repeats = {txt: num for (txt, num) in completion_counts.items() if num > 1}
-            raise AssertionError(
-                f"{len(completion_counts)} unique completions; expected"
-                f" {n}. Repeats: {repeats}"
-            )
+            raise AssertionError(f"{len(completion_counts)} unique completions; expected {n}. Repeats: {repeats}")
 
 
 def test_engine_metrics(aphrodite_runner, example_prompts):
@@ -204,9 +197,7 @@ def test_engine_metrics(aphrodite_runner, example_prompts):
         assert request_generation_tokens[0].count == n_prompts
         assert request_generation_tokens[0].sum == total_tokens
 
-        num_accepted_tokens_per_pos = find_metric(
-            "aphrodite:spec_decode_num_accepted_tokens_per_pos"
-        )
+        num_accepted_tokens_per_pos = find_metric("aphrodite:spec_decode_num_accepted_tokens_per_pos")
         assert len(num_accepted_tokens_per_pos) == 1
         assert isinstance(num_accepted_tokens_per_pos[0], Vector)
         assert len(num_accepted_tokens_per_pos[0].values) == 5
@@ -227,9 +218,7 @@ def test_skip_tokenizer_initialization(model: str):
     with pytest.raises(ValueError, match="cannot pass text prompts when"):
         llm.generate("abc", sampling_params)
 
-    outputs = llm.generate(
-        {"prompt_token_ids": [1, 2, 3]}, sampling_params=sampling_params
-    )
+    outputs = llm.generate({"prompt_token_ids": [1, 2, 3]}, sampling_params=sampling_params)
     assert len(outputs) > 0
     completions = outputs[0].outputs
     assert len(completions) > 0

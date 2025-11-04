@@ -7,17 +7,14 @@ import numpy as np
 import torch
 
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import (SamplerID, SamplingParams,
-                                              SamplingType)
+from aphrodite.common.sampling_params import SamplerID, SamplingParams, SamplingType
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal.inputs import MultiModalFeatureSpec
 from aphrodite.utils import length_from_prompt_token_ids_or_embeds
 from aphrodite.utils.collection_utils import swap_dict_values
 from aphrodite.v1.outputs import LogprobsTensors
 from aphrodite.v1.pool.metadata import PoolingMetadata
-from aphrodite.v1.sample.logits_processor import (BatchUpdateBuilder,
-                                                  LogitsProcessors,
-                                                  MoveDirectionality)
+from aphrodite.v1.sample.logits_processor import BatchUpdateBuilder, LogitsProcessors, MoveDirectionality
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.spec_decode.utils import is_spec_decode_unsupported
 from aphrodite.v1.utils import copy_slice
@@ -28,7 +25,6 @@ _SAMPLING_EPS = 1e-5
 
 @dataclass
 class CachedRequestState:
-
     req_id: str
     prompt_token_ids: list[int] | None
     mm_features: list[MultiModalFeatureSpec]
@@ -52,9 +48,7 @@ class CachedRequestState:
     persistent_data: dict[str, Any] = None
 
     def __post_init__(self):
-        self.num_prompt_tokens = length_from_prompt_token_ids_or_embeds(
-            self.prompt_token_ids, self.prompt_embeds
-        )
+        self.num_prompt_tokens = length_from_prompt_token_ids_or_embeds(self.prompt_token_ids, self.prompt_embeds)
         if self.persistent_data is None:
             self.persistent_data = {}
 
@@ -76,7 +70,6 @@ class CachedRequestState:
 
 
 class InputBatch:
-
     def __init__(
         self,
         max_num_reqs: int,
@@ -128,7 +121,7 @@ class InputBatch:
         self.num_tokens_no_spec = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_prompt_tokens = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_computed_tokens_cpu_tensor = torch.zeros(
-            (max_num_reqs, ),
+            (max_num_reqs,),
             device="cpu",
             dtype=torch.int32,
             pin_memory=pin_memory,
@@ -148,61 +141,39 @@ class InputBatch:
         )
 
         # Sampling-related.
-        self.temperature = torch.empty((max_num_reqs, ),
-                                       dtype=torch.float32,
-                                       device=device)
-        self.temperature_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                  dtype=torch.float32,
-                                                  device="cpu",
-                                                  pin_memory=pin_memory)
+        self.temperature = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.temperature_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.temperature_cpu = self.temperature_cpu_tensor.numpy()
         self.greedy_reqs: set[str] = set()
         self.random_reqs: set[str] = set()
 
         # Dynatemp parameters
-        self.dynatemp_min = torch.empty((max_num_reqs, ),
-                                         dtype=torch.float32,
-                                         device=device)
-        self.dynatemp_min_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                    dtype=torch.float32,
-                                                    device="cpu",
-                                                    pin_memory=pin_memory)
+        self.dynatemp_min = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.dynatemp_min_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.dynatemp_min_cpu = self.dynatemp_min_cpu_tensor.numpy()
-        self.dynatemp_max = torch.empty((max_num_reqs, ),
-                                         dtype=torch.float32,
-                                         device=device)
-        self.dynatemp_max_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                    dtype=torch.float32,
-                                                    device="cpu",
-                                                    pin_memory=pin_memory)
+        self.dynatemp_max = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.dynatemp_max_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.dynatemp_max_cpu = self.dynatemp_max_cpu_tensor.numpy()
-        self.dynatemp_exp = torch.empty((max_num_reqs, ),
-                                         dtype=torch.float32,
-                                         device=device)
-        self.dynatemp_exp_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                    dtype=torch.float32,
-                                                    device="cpu",
-                                                    pin_memory=pin_memory)
+        self.dynatemp_exp = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.dynatemp_exp_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.dynatemp_exp_cpu = self.dynatemp_exp_cpu_tensor.numpy()
         self.dynatemp_reqs: set[str] = set()
 
-        self.top_p = torch.empty((max_num_reqs, ),
-                                 dtype=torch.float32,
-                                 device=device)
-        self.top_p_cpu_tensor = torch.empty((max_num_reqs, ),
-                                            dtype=torch.float32,
-                                            device="cpu",
-                                            pin_memory=pin_memory)
+        self.top_p = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.top_p_cpu_tensor = torch.empty((max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory)
         self.top_p_cpu = self.top_p_cpu_tensor.numpy()
         self.top_p_reqs: set[str] = set()
 
-        self.top_k = torch.empty((max_num_reqs, ),
-                                 dtype=torch.int32,
-                                 device=device)
-        self.top_k_cpu_tensor = torch.empty((max_num_reqs, ),
-                                            dtype=torch.int32,
-                                            device="cpu",
-                                            pin_memory=pin_memory)
+        self.top_k = torch.empty((max_num_reqs,), dtype=torch.int32, device=device)
+        self.top_k_cpu_tensor = torch.empty((max_num_reqs,), dtype=torch.int32, device="cpu", pin_memory=pin_memory)
         self.top_k_cpu = self.top_k_cpu_tensor.numpy()
         self.top_k_reqs: set[str] = set()
 
@@ -210,254 +181,164 @@ class InputBatch:
         self.spec_decode_unsupported_reqs: set[str] = set()
 
         # Top-a related data structures
-        self.top_a = torch.empty((max_num_reqs, ),
-                                 dtype=torch.float32,
-                                 device=device)
-        self.top_a_cpu_tensor = torch.empty((max_num_reqs, ),
-                                            dtype=torch.float32,
-                                            device="cpu",
-                                            pin_memory=pin_memory)
+        self.top_a = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.top_a_cpu_tensor = torch.empty((max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory)
         self.top_a_cpu = self.top_a_cpu_tensor.numpy()
         self.top_a_reqs: set[str] = set()
 
         # TFS related data structures
-        self.tfs = torch.empty((max_num_reqs, ),
-                               dtype=torch.float32,
-                               device=device)
-        self.tfs_cpu_tensor = torch.empty((max_num_reqs, ),
-                                          dtype=torch.float32,
-                                          device="cpu",
-                                          pin_memory=pin_memory)
+        self.tfs = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.tfs_cpu_tensor = torch.empty((max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory)
         self.tfs_cpu = self.tfs_cpu_tensor.numpy()
         self.tfs_reqs: set[str] = set()
 
         # Eta cutoff related data structures
-        self.eta_cutoff = torch.empty((max_num_reqs, ),
-                                      dtype=torch.float32,
-                                      device=device)
-        self.eta_cutoff_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                 dtype=torch.float32,
-                                                 device="cpu",
-                                                 pin_memory=pin_memory)
+        self.eta_cutoff = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.eta_cutoff_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.eta_cutoff_cpu = self.eta_cutoff_cpu_tensor.numpy()
         self.eta_cutoff_reqs: set[str] = set()
 
         # Epsilon cutoff related data structures
-        self.epsilon_cutoff = torch.empty((max_num_reqs, ),
-                                          dtype=torch.float32,
-                                          device=device)
-        self.epsilon_cutoff_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                     dtype=torch.float32,
-                                                     device="cpu",
-                                                     pin_memory=pin_memory)
+        self.epsilon_cutoff = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.epsilon_cutoff_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.epsilon_cutoff_cpu = self.epsilon_cutoff_cpu_tensor.numpy()
         self.epsilon_cutoff_reqs: set[str] = set()
 
         # Typical p related data structures
-        self.typical_p = torch.empty((max_num_reqs, ),
-                                     dtype=torch.float32,
-                                     device=device)
-        self.typical_p_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                dtype=torch.float32,
-                                                device="cpu",
-                                                pin_memory=pin_memory)
+        self.typical_p = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.typical_p_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.typical_p_cpu = self.typical_p_cpu_tensor.numpy()
         self.typical_p_reqs: set[str] = set()
 
         # Quadratic related data structures
-        self.quadratic_smoothing_factor = torch.empty((max_num_reqs, ),
-                                                      dtype=torch.float32,
-                                                      device=device)
+        self.quadratic_smoothing_factor = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
         self.quadratic_smoothing_factor_cpu_tensor = torch.empty(
-            (max_num_reqs, ),
-            dtype=torch.float32,
-            device="cpu",
-            pin_memory=pin_memory)
-        self.quadratic_smoothing_factor_cpu = (
-            self.quadratic_smoothing_factor_cpu_tensor.numpy())
-        self.quadratic_smoothing_curve = torch.empty((max_num_reqs, ),
-                                                     dtype=torch.float32,
-                                                     device=device)
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
+        self.quadratic_smoothing_factor_cpu = self.quadratic_smoothing_factor_cpu_tensor.numpy()
+        self.quadratic_smoothing_curve = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
         self.quadratic_smoothing_curve_cpu_tensor = torch.empty(
-            (max_num_reqs, ),
-            dtype=torch.float32,
-            device="cpu",
-            pin_memory=pin_memory)
-        self.quadratic_smoothing_curve_cpu = (
-            self.quadratic_smoothing_curve_cpu_tensor.numpy())
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
+        self.quadratic_smoothing_curve_cpu = self.quadratic_smoothing_curve_cpu_tensor.numpy()
         self.quadratic_reqs: set[str] = set()
 
         # XTC related data structures
-        self.xtc_threshold = torch.empty((max_num_reqs, ),
-                                         dtype=torch.float32,
-                                         device=device)
-        self.xtc_threshold_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                    dtype=torch.float32,
-                                                    device="cpu",
-                                                    pin_memory=pin_memory)
+        self.xtc_threshold = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.xtc_threshold_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.xtc_threshold_cpu = self.xtc_threshold_cpu_tensor.numpy()
-        self.xtc_probability = torch.empty((max_num_reqs, ),
-                                           dtype=torch.float32,
-                                           device=device)
-        self.xtc_probability_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                      dtype=torch.float32,
-                                                      device="cpu",
-                                                      pin_memory=pin_memory)
+        self.xtc_probability = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.xtc_probability_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.xtc_probability_cpu = self.xtc_probability_cpu_tensor.numpy()
         self.xtc_reqs: set[str] = set()
 
         # Top-nsigma related data structures
-        self.top_nsigma = torch.empty((max_num_reqs, ),
-                                      dtype=torch.float32,
-                                      device=device)
-        self.top_nsigma_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                 dtype=torch.float32,
-                                                 device="cpu",
-                                                 pin_memory=pin_memory)
+        self.top_nsigma = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.top_nsigma_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.top_nsigma_cpu = self.top_nsigma_cpu_tensor.numpy()
         self.top_nsigma_reqs: set[str] = set()
 
         # Mirostat related data structures
-        self.mirostat_mode = torch.empty((max_num_reqs, ),
-                                         dtype=torch.int32,
-                                         device=device)
-        self.mirostat_mode_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                    dtype=torch.int32,
-                                                    device="cpu",
-                                                    pin_memory=pin_memory)
+        self.mirostat_mode = torch.empty((max_num_reqs,), dtype=torch.int32, device=device)
+        self.mirostat_mode_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.int32, device="cpu", pin_memory=pin_memory
+        )
         self.mirostat_mode_cpu = self.mirostat_mode_cpu_tensor.numpy()
-        self.mirostat_tau = torch.empty((max_num_reqs, ),
-                                        dtype=torch.float32,
-                                        device=device)
-        self.mirostat_tau_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                   dtype=torch.float32,
-                                                   device="cpu",
-                                                   pin_memory=pin_memory)
+        self.mirostat_tau = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.mirostat_tau_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.mirostat_tau_cpu = self.mirostat_tau_cpu_tensor.numpy()
-        self.mirostat_eta = torch.empty((max_num_reqs, ),
-                                        dtype=torch.float32,
-                                        device=device)
-        self.mirostat_eta_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                   dtype=torch.float32,
-                                                   device="cpu",
-                                                   pin_memory=pin_memory)
+        self.mirostat_eta = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.mirostat_eta_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.mirostat_eta_cpu = self.mirostat_eta_cpu_tensor.numpy()
         self.mirostat_reqs: set[str] = set()
 
         # Skew related data structures
-        self.skew = torch.empty((max_num_reqs, ),
-                                dtype=torch.float32,
-                                device=device)
-        self.skew_cpu_tensor = torch.empty((max_num_reqs, ),
-                                           dtype=torch.float32,
-                                           device="cpu",
-                                           pin_memory=pin_memory)
+        self.skew = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.skew_cpu_tensor = torch.empty((max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory)
         self.skew_cpu = self.skew_cpu_tensor.numpy()
         self.skew_reqs: set[str] = set()
 
         # DRY related data structures
-        self.dry_multiplier = torch.empty((max_num_reqs, ),
-                                          dtype=torch.float32,
-                                          device=device)
-        self.dry_multiplier_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                     dtype=torch.float32,
-                                                     device="cpu",
-                                                     pin_memory=pin_memory)
+        self.dry_multiplier = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.dry_multiplier_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.dry_multiplier_cpu = self.dry_multiplier_cpu_tensor.numpy()
-        self.dry_base = torch.empty((max_num_reqs, ),
-                                    dtype=torch.float32,
-                                    device=device)
-        self.dry_base_cpu_tensor = torch.empty((max_num_reqs, ),
-                                               dtype=torch.float32,
-                                               device="cpu",
-                                               pin_memory=pin_memory)
+        self.dry_base = torch.empty((max_num_reqs,), dtype=torch.float32, device=device)
+        self.dry_base_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float32, device="cpu", pin_memory=pin_memory
+        )
         self.dry_base_cpu = self.dry_base_cpu_tensor.numpy()
-        self.dry_allowed_length = torch.empty((max_num_reqs, ),
-                                              dtype=torch.int32,
-                                              device=device)
-        self.dry_allowed_length_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                         dtype=torch.int32,
-                                                         device="cpu",
-                                                         pin_memory=pin_memory)
+        self.dry_allowed_length = torch.empty((max_num_reqs,), dtype=torch.int32, device=device)
+        self.dry_allowed_length_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.int32, device="cpu", pin_memory=pin_memory
+        )
         self.dry_allowed_length_cpu = self.dry_allowed_length_cpu_tensor.numpy()
         self.dry_sequence_breaker_ids: dict[int, list[int]] = {}
-        self.dry_ranges = torch.empty((max_num_reqs, ),
-                                      dtype=torch.int32,
-                                      device=device)
-        self.dry_ranges_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                 dtype=torch.int32,
-                                                 device="cpu",
-                                                 pin_memory=pin_memory)
+        self.dry_ranges = torch.empty((max_num_reqs,), dtype=torch.int32, device=device)
+        self.dry_ranges_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.int32, device="cpu", pin_memory=pin_memory
+        )
         self.dry_ranges_cpu = self.dry_ranges_cpu_tensor.numpy()
-        self.dry_max_ngram = torch.empty((max_num_reqs, ),
-                                         dtype=torch.int32,
-                                         device=device)
-        self.dry_max_ngram_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                    dtype=torch.int32,
-                                                    device="cpu",
-                                                    pin_memory=pin_memory)
+        self.dry_max_ngram = torch.empty((max_num_reqs,), dtype=torch.int32, device=device)
+        self.dry_max_ngram_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.int32, device="cpu", pin_memory=pin_memory
+        )
         self.dry_max_ngram_cpu = self.dry_max_ngram_cpu_tensor.numpy()
-        self.dry_max_occurrences = torch.empty((max_num_reqs, ),
-                                               dtype=torch.int32,
-                                               device=device)
-        self.dry_max_occurrences_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                          dtype=torch.int32,
-                                                          device="cpu",
-                                                          pin_memory=pin_memory)
-        self.dry_max_occurrences_cpu = (
-            self.dry_max_occurrences_cpu_tensor.numpy())
-        self.dry_early_exit_match_len = torch.empty((max_num_reqs, ),
-                                                    dtype=torch.int32,
-                                                    device=device)
-        self.dry_early_exit_match_len_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                               dtype=torch.int32,
-                                                               device="cpu",
-                                                               pin_memory=pin_memory)
-        self.dry_early_exit_match_len_cpu = (
-            self.dry_early_exit_match_len_cpu_tensor.numpy())
+        self.dry_max_occurrences = torch.empty((max_num_reqs,), dtype=torch.int32, device=device)
+        self.dry_max_occurrences_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.int32, device="cpu", pin_memory=pin_memory
+        )
+        self.dry_max_occurrences_cpu = self.dry_max_occurrences_cpu_tensor.numpy()
+        self.dry_early_exit_match_len = torch.empty((max_num_reqs,), dtype=torch.int32, device=device)
+        self.dry_early_exit_match_len_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.int32, device="cpu", pin_memory=pin_memory
+        )
+        self.dry_early_exit_match_len_cpu = self.dry_early_exit_match_len_cpu_tensor.numpy()
         self.dry_reqs: set[str] = set()
 
         # No repeat ngram related data structures
-        self.no_repeat_ngram_size = torch.empty((max_num_reqs, ),
-                                                dtype=torch.int32,
-                                                device=device)
-        self.no_repeat_ngram_size_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                           dtype=torch.int32,
-                                                           device="cpu",
-                                                           pin_memory=pin_memory)
-        self.no_repeat_ngram_size_cpu = (
-            self.no_repeat_ngram_size_cpu_tensor.numpy())
+        self.no_repeat_ngram_size = torch.empty((max_num_reqs,), dtype=torch.int32, device=device)
+        self.no_repeat_ngram_size_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.int32, device="cpu", pin_memory=pin_memory
+        )
+        self.no_repeat_ngram_size_cpu = self.no_repeat_ngram_size_cpu_tensor.numpy()
         self.no_repeat_ngram_reqs: set[str] = set()
 
         # Frequency penalty related data structures
-        self.frequency_penalties = torch.empty((max_num_reqs, ),
-                                               dtype=torch.float,
-                                               device=device)
+        self.frequency_penalties = torch.empty((max_num_reqs,), dtype=torch.float, device=device)
         self.frequency_penalties_cpu_tensor = torch.empty(
-            (max_num_reqs, ),
-            dtype=torch.float,
-            device="cpu",
-            pin_memory=pin_memory)
-        self.frequency_penalties_cpu = \
-            self.frequency_penalties_cpu_tensor.numpy()
+            (max_num_reqs,), dtype=torch.float, device="cpu", pin_memory=pin_memory
+        )
+        self.frequency_penalties_cpu = self.frequency_penalties_cpu_tensor.numpy()
         self.frequency_penalties_reqs: set[str] = set()
 
         # Presence penalty related data structures
-        self.presence_penalties = torch.empty((max_num_reqs, ),
-                                              dtype=torch.float,
-                                              device=device)
-        self.presence_penalties_cpu_tensor = torch.empty((max_num_reqs, ),
-                                                         dtype=torch.float,
-                                                         device="cpu",
-                                                         pin_memory=pin_memory)
-        self.presence_penalties_cpu = self.presence_penalties_cpu_tensor.numpy(
+        self.presence_penalties = torch.empty((max_num_reqs,), dtype=torch.float, device=device)
+        self.presence_penalties_cpu_tensor = torch.empty(
+            (max_num_reqs,), dtype=torch.float, device="cpu", pin_memory=pin_memory
         )
+        self.presence_penalties_cpu = self.presence_penalties_cpu_tensor.numpy()
         self.presence_penalties_reqs: set[str] = set()
 
         # Repetition penalty related data structures
-        self.repetition_penalties = torch.empty((max_num_reqs, ),
-                                                dtype=torch.float,
-                                                device=device)
+        self.repetition_penalties = torch.empty((max_num_reqs,), dtype=torch.float, device=device)
         self.repetition_penalties_cpu_tensor = torch.empty(
             (max_num_reqs,), dtype=torch.float, device="cpu", pin_memory=pin_memory
         )
@@ -471,8 +352,7 @@ class InputBatch:
         self.num_accepted_tokens_cpu = self.num_accepted_tokens_cpu_tensor.numpy()
 
         # lora related
-        self.request_lora_mapping = np.zeros((self.max_num_reqs, ),
-                                             dtype=np.int32)
+        self.request_lora_mapping = np.zeros((self.max_num_reqs,), dtype=np.int32)
         self.lora_id_to_request_ids: dict[int, set[str]] = {}
         self.lora_id_to_lora_request: dict[int, LoRARequest] = {}
 
@@ -506,8 +386,7 @@ class InputBatch:
 
         self.logit_bias: dict[int, dict[int, float]] = {}
 
-        self.logits_processing_needs_token_ids = np.zeros(max_num_reqs,
-                                                          dtype=bool)
+        self.logits_processing_needs_token_ids = np.zeros(max_num_reqs, dtype=bool)
 
         self.req_output_token_ids: list[list[int] | None] = []
 
@@ -591,9 +470,7 @@ class InputBatch:
         self.req_id_to_index[req_id] = req_index
 
         # Copy the prompt token ids and output token ids.
-        num_prompt_tokens = length_from_prompt_token_ids_or_embeds(
-            request.prompt_token_ids, request.prompt_embeds
-        )
+        num_prompt_tokens = length_from_prompt_token_ids_or_embeds(request.prompt_token_ids, request.prompt_embeds)
         self.num_prompt_tokens[req_index] = num_prompt_tokens
         start_idx = num_prompt_tokens
         end_idx = start_idx + len(request.output_token_ids)
@@ -634,8 +511,7 @@ class InputBatch:
             self.dynatemp_min_cpu[req_index] = sampling_params.dynatemp_min
             self.dynatemp_max_cpu[req_index] = sampling_params.dynatemp_max
             self.dynatemp_exp_cpu[req_index] = sampling_params.dynatemp_exponent
-            if (sampling_params.dynatemp_min > _SAMPLING_EPS or
-                sampling_params.dynatemp_max > _SAMPLING_EPS):
+            if sampling_params.dynatemp_min > _SAMPLING_EPS or sampling_params.dynatemp_max > _SAMPLING_EPS:
                 self.dynatemp_reqs.add(req_id)
 
             self.top_p_cpu[req_index] = sampling_params.top_p
@@ -647,16 +523,13 @@ class InputBatch:
             else:
                 top_k = self.vocab_size
             self.top_k_cpu[req_index] = top_k
-            self.frequency_penalties_cpu[
-                req_index] = sampling_params.frequency_penalty
+            self.frequency_penalties_cpu[req_index] = sampling_params.frequency_penalty
             if sampling_params.frequency_penalty != 0.0:
                 self.frequency_penalties_reqs.add(req_id)
-            self.presence_penalties_cpu[
-                req_index] = sampling_params.presence_penalty
+            self.presence_penalties_cpu[req_index] = sampling_params.presence_penalty
             if sampling_params.presence_penalty != 0.0:
                 self.presence_penalties_reqs.add(req_id)
-            self.repetition_penalties_cpu[
-                req_index] = sampling_params.repetition_penalty
+            self.repetition_penalties_cpu[req_index] = sampling_params.repetition_penalty
             if sampling_params.repetition_penalty != 1.0:
                 self.repetition_penalties_reqs.add(req_id)
 
@@ -680,10 +553,8 @@ class InputBatch:
             if sampling_params.typical_p < 1.0:
                 self.typical_p_reqs.add(req_id)
 
-            self.quadratic_smoothing_factor_cpu[req_index] = \
-                sampling_params.smoothing_factor
-            self.quadratic_smoothing_curve_cpu[req_index] = \
-                sampling_params.smoothing_curve
+            self.quadratic_smoothing_factor_cpu[req_index] = sampling_params.smoothing_factor
+            self.quadratic_smoothing_curve_cpu[req_index] = sampling_params.smoothing_curve
             if sampling_params.smoothing_factor > 0:
                 self.quadratic_reqs.add(req_id)
 
@@ -708,22 +579,17 @@ class InputBatch:
 
             self.dry_multiplier_cpu[req_index] = sampling_params.dry_multiplier
             self.dry_base_cpu[req_index] = sampling_params.dry_base
-            self.dry_allowed_length_cpu[req_index] = \
-                sampling_params.dry_allowed_length
+            self.dry_allowed_length_cpu[req_index] = sampling_params.dry_allowed_length
             self.dry_ranges_cpu[req_index] = sampling_params.dry_range
             self.dry_max_ngram_cpu[req_index] = sampling_params.dry_max_ngram
-            self.dry_max_occurrences_cpu[req_index] = \
-                sampling_params.dry_max_occurrences
-            self.dry_early_exit_match_len_cpu[req_index] = \
-                sampling_params.dry_early_exit_match_len
+            self.dry_max_occurrences_cpu[req_index] = sampling_params.dry_max_occurrences
+            self.dry_early_exit_match_len_cpu[req_index] = sampling_params.dry_early_exit_match_len
             if sampling_params.dry_multiplier > 0:
                 self.dry_reqs.add(req_id)
                 if sampling_params.dry_sequence_breaker_ids:
-                    self.dry_sequence_breaker_ids[req_index] = \
-                        sampling_params.dry_sequence_breaker_ids
+                    self.dry_sequence_breaker_ids[req_index] = sampling_params.dry_sequence_breaker_ids
 
-            self.no_repeat_ngram_size_cpu[req_index] = \
-                sampling_params.no_repeat_ngram_size
+            self.no_repeat_ngram_size_cpu[req_index] = sampling_params.no_repeat_ngram_size
             if sampling_params.no_repeat_ngram_size > 0:
                 self.no_repeat_ngram_reqs.add(req_id)
 
@@ -739,9 +605,7 @@ class InputBatch:
                 self.num_logprobs[req_id] = sampling_params.logprobs
             if sampling_params.prompt_logprobs is not None:
                 self.num_prompt_logprobs[req_id] = (
-                    self.vocab_size
-                    if sampling_params.prompt_logprobs == -1
-                    else sampling_params.prompt_logprobs
+                    self.vocab_size if sampling_params.prompt_logprobs == -1 else sampling_params.prompt_logprobs
                 )
             if sampling_params.logit_bias is not None:
                 self.logit_bias[req_index] = sampling_params.logit_bias
@@ -751,27 +615,22 @@ class InputBatch:
                 if self.allowed_token_ids_mask_cpu_tensor is None:
                     # Lazy allocation for this tensor, which can be large.
                     # False means we don't fill with -inf.
-                    self.allowed_token_ids_mask = torch.zeros(self.max_num_reqs,
-                                                            self.vocab_size,
-                                                            dtype=torch.bool,
-                                                            device=self.device)
+                    self.allowed_token_ids_mask = torch.zeros(
+                        self.max_num_reqs, self.vocab_size, dtype=torch.bool, device=self.device
+                    )
                     self.allowed_token_ids_mask_cpu_tensor = torch.zeros(
-                        self.max_num_reqs,
-                        self.vocab_size,
-                        dtype=torch.bool,
-                        device="cpu")
+                        self.max_num_reqs, self.vocab_size, dtype=torch.bool, device="cpu"
+                    )
                 self.allowed_token_ids_mask_cpu_tensor[req_index] = True
                 # False means we don't fill with -inf.
-                self.allowed_token_ids_mask_cpu_tensor[req_index][
-                    sampling_params.allowed_token_ids] = False
+                self.allowed_token_ids_mask_cpu_tensor[req_index][sampling_params.allowed_token_ids] = False
 
             if sampling_params.bad_words_token_ids:
-                self.bad_words_token_ids[
-                    req_index] = sampling_params.bad_words_token_ids
+                self.bad_words_token_ids[req_index] = sampling_params.bad_words_token_ids
 
             if sampling_params.logit_bias:
                 self.logit_bias[req_index] = sampling_params.logit_bias
-                
+
         # Speculative decoding: by default 1 token is generated.
         self.num_accepted_tokens_cpu[req_index] = 1
 
@@ -930,79 +789,79 @@ class InputBatch:
 
         # For autoregressive models, track detailed request reordering info
         # to support logitsprocs.
-        self.batch_update_builder.moved.append(
-            (i1, i2, MoveDirectionality.SWAP))
+        self.batch_update_builder.moved.append((i1, i2, MoveDirectionality.SWAP))
 
-        self.temperature_cpu[i1], self.temperature_cpu[i2] =\
-            self.temperature_cpu[i2], self.temperature_cpu[i1]
-        self.dynatemp_min_cpu[i1], self.dynatemp_min_cpu[i2] =\
-            self.dynatemp_min_cpu[i2], self.dynatemp_min_cpu[i1]
-        self.dynatemp_max_cpu[i1], self.dynatemp_max_cpu[i2] =\
-            self.dynatemp_max_cpu[i2], self.dynatemp_max_cpu[i1]
-        self.dynatemp_exp_cpu[i1], self.dynatemp_exp_cpu[i2] =\
-            self.dynatemp_exp_cpu[i2], self.dynatemp_exp_cpu[i1]
-        self.top_p_cpu[i1], self.top_p_cpu[i2] =\
-            self.top_p_cpu[i2], self.top_p_cpu[i1]
-        self.top_k_cpu[i1], self.top_k_cpu[i2] =\
-            self.top_k_cpu[i2], self.top_k_cpu[i1]
-        self.frequency_penalties_cpu[i1], self.frequency_penalties_cpu[i2] =\
-            self.frequency_penalties_cpu[i2], self.frequency_penalties_cpu[i1]
-        self.presence_penalties_cpu[i1], self.presence_penalties_cpu[i2] =\
-            self.presence_penalties_cpu[i2], self.presence_penalties_cpu[i1]
-        self.repetition_penalties_cpu[i1], self.repetition_penalties_cpu[i2] =\
-            self.repetition_penalties_cpu[i2], self.repetition_penalties_cpu[i1]
-        self.top_a_cpu[i1], self.top_a_cpu[i2] =\
-            self.top_a_cpu[i2], self.top_a_cpu[i1]
-        self.tfs_cpu[i1], self.tfs_cpu[i2] =\
-            self.tfs_cpu[i2], self.tfs_cpu[i1]
-        self.eta_cutoff_cpu[i1], self.eta_cutoff_cpu[i2] =\
-            self.eta_cutoff_cpu[i2], self.eta_cutoff_cpu[i1]
-        self.epsilon_cutoff_cpu[i1], self.epsilon_cutoff_cpu[i2] =\
-            self.epsilon_cutoff_cpu[i2], self.epsilon_cutoff_cpu[i1]
-        self.typical_p_cpu[i1], self.typical_p_cpu[i2] =\
-            self.typical_p_cpu[i2], self.typical_p_cpu[i1]
-        self.quadratic_smoothing_factor_cpu[i1], \
-            self.quadratic_smoothing_factor_cpu[i2] =\
-            self.quadratic_smoothing_factor_cpu[i2], \
-                self.quadratic_smoothing_factor_cpu[i1]
-        self.quadratic_smoothing_curve_cpu[i1], \
-            self.quadratic_smoothing_curve_cpu[i2] =\
-            self.quadratic_smoothing_curve_cpu[i2], \
-                self.quadratic_smoothing_curve_cpu[i1]
-        self.xtc_threshold_cpu[i1], self.xtc_threshold_cpu[i2] =\
-            self.xtc_threshold_cpu[i2], self.xtc_threshold_cpu[i1]
-        self.xtc_probability_cpu[i1], self.xtc_probability_cpu[i2] =\
-            self.xtc_probability_cpu[i2], self.xtc_probability_cpu[i1]
-        self.top_nsigma_cpu[i1], self.top_nsigma_cpu[i2] =\
-            self.top_nsigma_cpu[i2], self.top_nsigma_cpu[i1]
-        self.mirostat_mode_cpu[i1], self.mirostat_mode_cpu[i2] =\
-            self.mirostat_mode_cpu[i2], self.mirostat_mode_cpu[i1]
-        self.mirostat_tau_cpu[i1], self.mirostat_tau_cpu[i2] =\
-            self.mirostat_tau_cpu[i2], self.mirostat_tau_cpu[i1]
-        self.mirostat_eta_cpu[i1], self.mirostat_eta_cpu[i2] =\
-            self.mirostat_eta_cpu[i2], self.mirostat_eta_cpu[i1]
-        self.skew_cpu[i1], self.skew_cpu[i2] =\
-            self.skew_cpu[i2], self.skew_cpu[i1]
-        self.dry_multiplier_cpu[i1], self.dry_multiplier_cpu[i2] =\
-            self.dry_multiplier_cpu[i2], self.dry_multiplier_cpu[i1]
-        self.dry_base_cpu[i1], self.dry_base_cpu[i2] =\
-            self.dry_base_cpu[i2], self.dry_base_cpu[i1]
-        self.dry_allowed_length_cpu[i1], self.dry_allowed_length_cpu[i2] =\
-            self.dry_allowed_length_cpu[i2], self.dry_allowed_length_cpu[i1]
-        self.dry_ranges_cpu[i1], self.dry_ranges_cpu[i2] =\
-            self.dry_ranges_cpu[i2], self.dry_ranges_cpu[i1]
-        self.dry_max_ngram_cpu[i1], self.dry_max_ngram_cpu[i2] =\
-            self.dry_max_ngram_cpu[i2], self.dry_max_ngram_cpu[i1]
-        self.dry_max_occurrences_cpu[i1], self.dry_max_occurrences_cpu[i2] =\
-            self.dry_max_occurrences_cpu[i2], self.dry_max_occurrences_cpu[i1]
-        self.dry_early_exit_match_len_cpu[i1], \
-            self.dry_early_exit_match_len_cpu[i2] =\
-            self.dry_early_exit_match_len_cpu[i2], \
-                self.dry_early_exit_match_len_cpu[i1]
-        self.no_repeat_ngram_size_cpu[i1], self.no_repeat_ngram_size_cpu[i2] =\
-            self.no_repeat_ngram_size_cpu[i2], self.no_repeat_ngram_size_cpu[i1]
-        self.num_accepted_tokens_cpu[i1], self.num_accepted_tokens_cpu[i2] =\
-            self.num_accepted_tokens_cpu[i2], self.num_accepted_tokens_cpu[i1]
+        self.temperature_cpu[i1], self.temperature_cpu[i2] = self.temperature_cpu[i2], self.temperature_cpu[i1]
+        self.dynatemp_min_cpu[i1], self.dynatemp_min_cpu[i2] = self.dynatemp_min_cpu[i2], self.dynatemp_min_cpu[i1]
+        self.dynatemp_max_cpu[i1], self.dynatemp_max_cpu[i2] = self.dynatemp_max_cpu[i2], self.dynatemp_max_cpu[i1]
+        self.dynatemp_exp_cpu[i1], self.dynatemp_exp_cpu[i2] = self.dynatemp_exp_cpu[i2], self.dynatemp_exp_cpu[i1]
+        self.top_p_cpu[i1], self.top_p_cpu[i2] = self.top_p_cpu[i2], self.top_p_cpu[i1]
+        self.top_k_cpu[i1], self.top_k_cpu[i2] = self.top_k_cpu[i2], self.top_k_cpu[i1]
+        self.frequency_penalties_cpu[i1], self.frequency_penalties_cpu[i2] = (
+            self.frequency_penalties_cpu[i2],
+            self.frequency_penalties_cpu[i1],
+        )
+        self.presence_penalties_cpu[i1], self.presence_penalties_cpu[i2] = (
+            self.presence_penalties_cpu[i2],
+            self.presence_penalties_cpu[i1],
+        )
+        self.repetition_penalties_cpu[i1], self.repetition_penalties_cpu[i2] = (
+            self.repetition_penalties_cpu[i2],
+            self.repetition_penalties_cpu[i1],
+        )
+        self.top_a_cpu[i1], self.top_a_cpu[i2] = self.top_a_cpu[i2], self.top_a_cpu[i1]
+        self.tfs_cpu[i1], self.tfs_cpu[i2] = self.tfs_cpu[i2], self.tfs_cpu[i1]
+        self.eta_cutoff_cpu[i1], self.eta_cutoff_cpu[i2] = self.eta_cutoff_cpu[i2], self.eta_cutoff_cpu[i1]
+        self.epsilon_cutoff_cpu[i1], self.epsilon_cutoff_cpu[i2] = (
+            self.epsilon_cutoff_cpu[i2],
+            self.epsilon_cutoff_cpu[i1],
+        )
+        self.typical_p_cpu[i1], self.typical_p_cpu[i2] = self.typical_p_cpu[i2], self.typical_p_cpu[i1]
+        self.quadratic_smoothing_factor_cpu[i1], self.quadratic_smoothing_factor_cpu[i2] = (
+            self.quadratic_smoothing_factor_cpu[i2],
+            self.quadratic_smoothing_factor_cpu[i1],
+        )
+        self.quadratic_smoothing_curve_cpu[i1], self.quadratic_smoothing_curve_cpu[i2] = (
+            self.quadratic_smoothing_curve_cpu[i2],
+            self.quadratic_smoothing_curve_cpu[i1],
+        )
+        self.xtc_threshold_cpu[i1], self.xtc_threshold_cpu[i2] = self.xtc_threshold_cpu[i2], self.xtc_threshold_cpu[i1]
+        self.xtc_probability_cpu[i1], self.xtc_probability_cpu[i2] = (
+            self.xtc_probability_cpu[i2],
+            self.xtc_probability_cpu[i1],
+        )
+        self.top_nsigma_cpu[i1], self.top_nsigma_cpu[i2] = self.top_nsigma_cpu[i2], self.top_nsigma_cpu[i1]
+        self.mirostat_mode_cpu[i1], self.mirostat_mode_cpu[i2] = self.mirostat_mode_cpu[i2], self.mirostat_mode_cpu[i1]
+        self.mirostat_tau_cpu[i1], self.mirostat_tau_cpu[i2] = self.mirostat_tau_cpu[i2], self.mirostat_tau_cpu[i1]
+        self.mirostat_eta_cpu[i1], self.mirostat_eta_cpu[i2] = self.mirostat_eta_cpu[i2], self.mirostat_eta_cpu[i1]
+        self.skew_cpu[i1], self.skew_cpu[i2] = self.skew_cpu[i2], self.skew_cpu[i1]
+        self.dry_multiplier_cpu[i1], self.dry_multiplier_cpu[i2] = (
+            self.dry_multiplier_cpu[i2],
+            self.dry_multiplier_cpu[i1],
+        )
+        self.dry_base_cpu[i1], self.dry_base_cpu[i2] = self.dry_base_cpu[i2], self.dry_base_cpu[i1]
+        self.dry_allowed_length_cpu[i1], self.dry_allowed_length_cpu[i2] = (
+            self.dry_allowed_length_cpu[i2],
+            self.dry_allowed_length_cpu[i1],
+        )
+        self.dry_ranges_cpu[i1], self.dry_ranges_cpu[i2] = self.dry_ranges_cpu[i2], self.dry_ranges_cpu[i1]
+        self.dry_max_ngram_cpu[i1], self.dry_max_ngram_cpu[i2] = self.dry_max_ngram_cpu[i2], self.dry_max_ngram_cpu[i1]
+        self.dry_max_occurrences_cpu[i1], self.dry_max_occurrences_cpu[i2] = (
+            self.dry_max_occurrences_cpu[i2],
+            self.dry_max_occurrences_cpu[i1],
+        )
+        self.dry_early_exit_match_len_cpu[i1], self.dry_early_exit_match_len_cpu[i2] = (
+            self.dry_early_exit_match_len_cpu[i2],
+            self.dry_early_exit_match_len_cpu[i1],
+        )
+        self.no_repeat_ngram_size_cpu[i1], self.no_repeat_ngram_size_cpu[i2] = (
+            self.no_repeat_ngram_size_cpu[i2],
+            self.no_repeat_ngram_size_cpu[i1],
+        )
+        self.num_accepted_tokens_cpu[i1], self.num_accepted_tokens_cpu[i2] = (
+            self.num_accepted_tokens_cpu[i2],
+            self.num_accepted_tokens_cpu[i1],
+        )
 
         swap_dict_values(self.generators, i1, i2)
         swap_dict_values(self.bad_words_token_ids, i1, i2)
@@ -1018,8 +877,7 @@ class InputBatch:
             )
 
         # Swap persistent data
-        self.persistent_data[i1], self.persistent_data[i2] = \
-            self.persistent_data[i2], self.persistent_data[i1]
+        self.persistent_data[i1], self.persistent_data[i2] = self.persistent_data[i2], self.persistent_data[i1]
 
     def condense(self) -> None:
         """Slide non-empty requests down into lower, empty indices.
@@ -1075,36 +933,24 @@ class InputBatch:
             self.spec_token_ids[last_req_index] = None
 
             # Move persistent data
-            self.persistent_data[empty_index] = \
-                self.persistent_data[last_req_index]
+            self.persistent_data[empty_index] = self.persistent_data[last_req_index]
             self.persistent_data[last_req_index] = {}
 
             # Copy token data
             num_tokens = self.num_tokens[last_req_index]
-            self.token_ids_cpu[empty_index, :num_tokens] = self.token_ids_cpu[
-                last_req_index, :num_tokens
-            ]
-            self.is_token_ids[empty_index, :num_tokens] = self.is_token_ids[
-                last_req_index, :num_tokens
-            ]
+            self.token_ids_cpu[empty_index, :num_tokens] = self.token_ids_cpu[last_req_index, :num_tokens]
+            self.is_token_ids[empty_index, :num_tokens] = self.is_token_ids[last_req_index, :num_tokens]
             if last_req_index in self.req_prompt_embeds:
-                self.req_prompt_embeds[empty_index] = self.req_prompt_embeds.pop(
-                    last_req_index
-                )
+                self.req_prompt_embeds[empty_index] = self.req_prompt_embeds.pop(last_req_index)
             self.num_tokens[empty_index] = num_tokens
-            self.num_tokens_no_spec[empty_index] = self.num_tokens_no_spec[
-                last_req_index
-            ]
+            self.num_tokens_no_spec[empty_index] = self.num_tokens_no_spec[last_req_index]
             self.num_prompt_tokens[empty_index] = self.num_prompt_tokens[last_req_index]
-            self.num_computed_tokens_cpu[empty_index] = self.num_computed_tokens_cpu[
-                last_req_index
-            ]
+            self.num_computed_tokens_cpu[empty_index] = self.num_computed_tokens_cpu[last_req_index]
 
             # Update the block table.
             self.block_table.move_row(last_req_index, empty_index)
 
-            self.request_lora_mapping[empty_index] = self.request_lora_mapping[
-                last_req_index]
+            self.request_lora_mapping[empty_index] = self.request_lora_mapping[last_req_index]
 
             if self.is_pooling_model:
                 last_req_index -= 1
@@ -1113,91 +959,58 @@ class InputBatch:
 
             # Autoregressive models require detailed tracking of condense
             # operations to support logitsprocs
-            self.batch_update_builder.moved.append(
-                (last_req_index, empty_index,
-                 MoveDirectionality.UNIDIRECTIONAL))
+            self.batch_update_builder.moved.append((last_req_index, empty_index, MoveDirectionality.UNIDIRECTIONAL))
 
-            self.temperature_cpu[empty_index] = self.temperature_cpu[
-                last_req_index]
-            self.dynatemp_min_cpu[empty_index] = \
-                self.dynatemp_min_cpu[last_req_index]
-            self.dynatemp_max_cpu[empty_index] = \
-                self.dynatemp_max_cpu[last_req_index]
-            self.dynatemp_exp_cpu[empty_index] = \
-                self.dynatemp_exp_cpu[last_req_index]
+            self.temperature_cpu[empty_index] = self.temperature_cpu[last_req_index]
+            self.dynatemp_min_cpu[empty_index] = self.dynatemp_min_cpu[last_req_index]
+            self.dynatemp_max_cpu[empty_index] = self.dynatemp_max_cpu[last_req_index]
+            self.dynatemp_exp_cpu[empty_index] = self.dynatemp_exp_cpu[last_req_index]
             self.top_p_cpu[empty_index] = self.top_p_cpu[last_req_index]
             self.top_k_cpu[empty_index] = self.top_k_cpu[last_req_index]
-            self.frequency_penalties_cpu[empty_index] = self.frequency_penalties_cpu[
-                last_req_index
-            ]
-            self.presence_penalties_cpu[empty_index] = self.presence_penalties_cpu[
-                last_req_index
-            ]
-            self.repetition_penalties_cpu[empty_index] = self.repetition_penalties_cpu[
-                last_req_index
-            ]
-            self.num_accepted_tokens_cpu[empty_index] = self.num_accepted_tokens_cpu[
-                last_req_index
-            ]
+            self.frequency_penalties_cpu[empty_index] = self.frequency_penalties_cpu[last_req_index]
+            self.presence_penalties_cpu[empty_index] = self.presence_penalties_cpu[last_req_index]
+            self.repetition_penalties_cpu[empty_index] = self.repetition_penalties_cpu[last_req_index]
+            self.num_accepted_tokens_cpu[empty_index] = self.num_accepted_tokens_cpu[last_req_index]
             self.top_a_cpu[empty_index] = self.top_a_cpu[last_req_index]
             self.tfs_cpu[empty_index] = self.tfs_cpu[last_req_index]
-            self.eta_cutoff_cpu[empty_index] = \
-                self.eta_cutoff_cpu[last_req_index]
-            self.epsilon_cutoff_cpu[empty_index] = \
-                self.epsilon_cutoff_cpu[last_req_index]
+            self.eta_cutoff_cpu[empty_index] = self.eta_cutoff_cpu[last_req_index]
+            self.epsilon_cutoff_cpu[empty_index] = self.epsilon_cutoff_cpu[last_req_index]
             self.typical_p_cpu[empty_index] = self.typical_p_cpu[last_req_index]
-            self.quadratic_smoothing_factor_cpu[empty_index] = \
-                self.quadratic_smoothing_factor_cpu[last_req_index]
-            self.quadratic_smoothing_curve_cpu[empty_index] = \
-                self.quadratic_smoothing_curve_cpu[last_req_index]
-            self.xtc_threshold_cpu[empty_index] = \
-                self.xtc_threshold_cpu[last_req_index]
-            self.xtc_probability_cpu[empty_index] = \
-                self.xtc_probability_cpu[last_req_index]
-            self.top_nsigma_cpu[empty_index] = \
-                self.top_nsigma_cpu[last_req_index]
-            self.mirostat_mode_cpu[empty_index] = self.mirostat_mode_cpu[
-                last_req_index]
-            self.mirostat_tau_cpu[empty_index] = self.mirostat_tau_cpu[
-                last_req_index]
-            self.mirostat_eta_cpu[empty_index] = self.mirostat_eta_cpu[
-                last_req_index]
+            self.quadratic_smoothing_factor_cpu[empty_index] = self.quadratic_smoothing_factor_cpu[last_req_index]
+            self.quadratic_smoothing_curve_cpu[empty_index] = self.quadratic_smoothing_curve_cpu[last_req_index]
+            self.xtc_threshold_cpu[empty_index] = self.xtc_threshold_cpu[last_req_index]
+            self.xtc_probability_cpu[empty_index] = self.xtc_probability_cpu[last_req_index]
+            self.top_nsigma_cpu[empty_index] = self.top_nsigma_cpu[last_req_index]
+            self.mirostat_mode_cpu[empty_index] = self.mirostat_mode_cpu[last_req_index]
+            self.mirostat_tau_cpu[empty_index] = self.mirostat_tau_cpu[last_req_index]
+            self.mirostat_eta_cpu[empty_index] = self.mirostat_eta_cpu[last_req_index]
             self.skew_cpu[empty_index] = self.skew_cpu[last_req_index]
-            self.dry_multiplier_cpu[empty_index] = \
-                self.dry_multiplier_cpu[last_req_index]
+            self.dry_multiplier_cpu[empty_index] = self.dry_multiplier_cpu[last_req_index]
             self.dry_base_cpu[empty_index] = self.dry_base_cpu[last_req_index]
-            self.dry_allowed_length_cpu[empty_index] = \
-                self.dry_allowed_length_cpu[last_req_index]
-            self.dry_ranges_cpu[empty_index] = \
-                self.dry_ranges_cpu[last_req_index]
-            self.dry_max_ngram_cpu[empty_index] = \
-                self.dry_max_ngram_cpu[last_req_index]
-            self.dry_max_occurrences_cpu[empty_index] = \
-                self.dry_max_occurrences_cpu[last_req_index]
-            self.dry_early_exit_match_len_cpu[empty_index] = \
-                self.dry_early_exit_match_len_cpu[last_req_index]
-            self.no_repeat_ngram_size_cpu[empty_index] = \
-                self.no_repeat_ngram_size_cpu[last_req_index]
-            self.num_accepted_tokens_cpu[
-                empty_index] = self.num_accepted_tokens_cpu[last_req_index]
+            self.dry_allowed_length_cpu[empty_index] = self.dry_allowed_length_cpu[last_req_index]
+            self.dry_ranges_cpu[empty_index] = self.dry_ranges_cpu[last_req_index]
+            self.dry_max_ngram_cpu[empty_index] = self.dry_max_ngram_cpu[last_req_index]
+            self.dry_max_occurrences_cpu[empty_index] = self.dry_max_occurrences_cpu[last_req_index]
+            self.dry_early_exit_match_len_cpu[empty_index] = self.dry_early_exit_match_len_cpu[last_req_index]
+            self.no_repeat_ngram_size_cpu[empty_index] = self.no_repeat_ngram_size_cpu[last_req_index]
+            self.num_accepted_tokens_cpu[empty_index] = self.num_accepted_tokens_cpu[last_req_index]
             generator = self.generators.pop(last_req_index, None)
             if generator is not None:
                 self.generators[empty_index] = generator
 
             if self.allowed_token_ids_mask_cpu_tensor is not None:
-                self.allowed_token_ids_mask_cpu_tensor[
-                    empty_index] = self.allowed_token_ids_mask_cpu_tensor[
-                        last_req_index]
+                self.allowed_token_ids_mask_cpu_tensor[empty_index] = self.allowed_token_ids_mask_cpu_tensor[
+                    last_req_index
+                ]
 
-            bad_words_token_ids = self.bad_words_token_ids.pop(
-                last_req_index, None)
+            bad_words_token_ids = self.bad_words_token_ids.pop(last_req_index, None)
             if bad_words_token_ids is not None:
                 self.bad_words_token_ids[empty_index] = bad_words_token_ids
-            
+
             logit_bias = self.logit_bias.pop(last_req_index, None)
             if logit_bias is not None:
                 self.logit_bias[empty_index] = logit_bias
-            
+
             # Decrement last_req_index since it is now empty.
             last_req_index -= 1
 
@@ -1232,12 +1045,9 @@ class InputBatch:
             temperature = None
 
         if not self.no_dynatemp:
-            copy_slice(self.dynatemp_min_cpu_tensor,
-                       self.dynatemp_min, num_reqs)
-            copy_slice(self.dynatemp_max_cpu_tensor,
-                       self.dynatemp_max, num_reqs)
-            copy_slice(self.dynatemp_exp_cpu_tensor,
-                       self.dynatemp_exp, num_reqs)
+            copy_slice(self.dynatemp_min_cpu_tensor, self.dynatemp_min, num_reqs)
+            copy_slice(self.dynatemp_max_cpu_tensor, self.dynatemp_max, num_reqs)
+            copy_slice(self.dynatemp_exp_cpu_tensor, self.dynatemp_exp, num_reqs)
         if not self.no_top_p:
             copy_slice(self.top_p_cpu_tensor, self.top_p, num_reqs)
         if not self.no_top_k:
@@ -1250,88 +1060,59 @@ class InputBatch:
         if not self.no_eta_cutoff:
             copy_slice(self.eta_cutoff_cpu_tensor, self.eta_cutoff, num_reqs)
         if not self.no_epsilon_cutoff:
-            copy_slice(self.epsilon_cutoff_cpu_tensor,
-                       self.epsilon_cutoff, num_reqs)
+            copy_slice(self.epsilon_cutoff_cpu_tensor, self.epsilon_cutoff, num_reqs)
         if not self.no_typical_p:
             copy_slice(self.typical_p_cpu_tensor, self.typical_p, num_reqs)
         if not self.no_quadratic:
-            copy_slice(self.quadratic_smoothing_factor_cpu_tensor,
-                       self.quadratic_smoothing_factor, num_reqs)
-            copy_slice(self.quadratic_smoothing_curve_cpu_tensor,
-                       self.quadratic_smoothing_curve, num_reqs)
+            copy_slice(self.quadratic_smoothing_factor_cpu_tensor, self.quadratic_smoothing_factor, num_reqs)
+            copy_slice(self.quadratic_smoothing_curve_cpu_tensor, self.quadratic_smoothing_curve, num_reqs)
         if not self.no_xtc:
-            copy_slice(self.xtc_threshold_cpu_tensor,
-                       self.xtc_threshold, num_reqs)
-            copy_slice(self.xtc_probability_cpu_tensor,
-                       self.xtc_probability, num_reqs)
+            copy_slice(self.xtc_threshold_cpu_tensor, self.xtc_threshold, num_reqs)
+            copy_slice(self.xtc_probability_cpu_tensor, self.xtc_probability, num_reqs)
         if not self.no_top_nsigma:
             copy_slice(self.top_nsigma_cpu_tensor, self.top_nsigma, num_reqs)
         if not self.no_mirostat:
-            copy_slice(self.mirostat_mode_cpu_tensor,
-                       self.mirostat_mode, num_reqs)
-            copy_slice(self.mirostat_tau_cpu_tensor,
-                       self.mirostat_tau, num_reqs)
-            copy_slice(self.mirostat_eta_cpu_tensor,
-                       self.mirostat_eta, num_reqs)
+            copy_slice(self.mirostat_mode_cpu_tensor, self.mirostat_mode, num_reqs)
+            copy_slice(self.mirostat_tau_cpu_tensor, self.mirostat_tau, num_reqs)
+            copy_slice(self.mirostat_eta_cpu_tensor, self.mirostat_eta, num_reqs)
         if not self.no_skew:
             copy_slice(self.skew_cpu_tensor, self.skew, num_reqs)
         if not self.no_dry:
-            copy_slice(self.dry_multiplier_cpu_tensor,
-                       self.dry_multiplier, num_reqs)
+            copy_slice(self.dry_multiplier_cpu_tensor, self.dry_multiplier, num_reqs)
             copy_slice(self.dry_base_cpu_tensor, self.dry_base, num_reqs)
-            copy_slice(self.dry_allowed_length_cpu_tensor,
-                       self.dry_allowed_length, num_reqs)
+            copy_slice(self.dry_allowed_length_cpu_tensor, self.dry_allowed_length, num_reqs)
             copy_slice(self.dry_ranges_cpu_tensor, self.dry_ranges, num_reqs)
-            copy_slice(self.dry_max_ngram_cpu_tensor,
-                       self.dry_max_ngram, num_reqs)
-            copy_slice(self.dry_max_occurrences_cpu_tensor,
-                       self.dry_max_occurrences, num_reqs)
-            copy_slice(self.dry_early_exit_match_len_cpu_tensor,
-                       self.dry_early_exit_match_len, num_reqs)
+            copy_slice(self.dry_max_ngram_cpu_tensor, self.dry_max_ngram, num_reqs)
+            copy_slice(self.dry_max_occurrences_cpu_tensor, self.dry_max_occurrences, num_reqs)
+            copy_slice(self.dry_early_exit_match_len_cpu_tensor, self.dry_early_exit_match_len, num_reqs)
         if not self.no_no_repeat_ngram:
-            copy_slice(self.no_repeat_ngram_size_cpu_tensor,
-                       self.no_repeat_ngram_size, num_reqs)
+            copy_slice(self.no_repeat_ngram_size_cpu_tensor, self.no_repeat_ngram_size, num_reqs)
 
         if not self.no_penalties:
             # Since syncing these tensors is expensive only copy them
             # if necessary i.e. if there are requests which require
             # penalties to be applied during sampling.
-            copy_slice(
-                self.frequency_penalties_cpu_tensor, self.frequency_penalties, num_reqs
-            )
-            copy_slice(
-                self.presence_penalties_cpu_tensor, self.presence_penalties, num_reqs
-            )
+            copy_slice(self.frequency_penalties_cpu_tensor, self.frequency_penalties, num_reqs)
+            copy_slice(self.presence_penalties_cpu_tensor, self.presence_penalties, num_reqs)
             copy_slice(
                 self.repetition_penalties_cpu_tensor,
                 self.repetition_penalties,
                 num_reqs,
             )
 
-        needs_prompt_token_ids = (
-            not self.no_penalties
-            or self.logits_processing_needs_token_ids[:num_reqs].any()
-        )
+        needs_prompt_token_ids = not self.no_penalties or self.logits_processing_needs_token_ids[:num_reqs].any()
         # The prompt tokens are used only for applying penalties or
         # step pooling during the sampling/pooling process.
         # Hence copy these tensors only when there are requests which
         # need penalties/step_pooler to be applied.
-        prompt_token_ids = (
-            self._make_prompt_token_ids_tensor() if needs_prompt_token_ids else None
-        )
+        prompt_token_ids = self._make_prompt_token_ids_tensor() if needs_prompt_token_ids else None
 
         # Only set output_token_ids if required by the current requests'
         # sampling parameters.
         needs_output_token_ids = (
-            not self.no_penalties
-            or bool(self.bad_words_token_ids)
-            or self.logitsprocs_need_output_token_ids
+            not self.no_penalties or bool(self.bad_words_token_ids) or self.logitsprocs_need_output_token_ids
         )
-        output_token_ids = (
-            cast(list[list[int]], self.req_output_token_ids)
-            if needs_output_token_ids
-            else []
-        )
+        output_token_ids = cast(list[list[int]], self.req_output_token_ids) if needs_output_token_ids else []
 
         allowed_token_ids_mask: torch.Tensor | None = None
         if not self.no_allowed_token_ids:
@@ -1349,69 +1130,40 @@ class InputBatch:
             # Take the first non-None priority list as the batch priority
             for priority_list in self.sampler_priority[:num_reqs]:
                 if priority_list is not None:
-                    sampler_priority_processed = [
-                        SamplerID(pid) for pid in priority_list
-                    ]
+                    sampler_priority_processed = [SamplerID(pid) for pid in priority_list]
                     break
 
         return SamplingMetadata(
             temperature=temperature,
-            dynatemp_min=(
-                None if self.no_dynatemp else self.dynatemp_min[:num_reqs]),
-            dynatemp_max=(
-                None if self.no_dynatemp else self.dynatemp_max[:num_reqs]),
-            dynatemp_exp=(
-                None if self.no_dynatemp else self.dynatemp_exp[:num_reqs]),
+            dynatemp_min=(None if self.no_dynatemp else self.dynatemp_min[:num_reqs]),
+            dynatemp_max=(None if self.no_dynatemp else self.dynatemp_max[:num_reqs]),
+            dynatemp_exp=(None if self.no_dynatemp else self.dynatemp_exp[:num_reqs]),
             all_greedy=self.all_greedy,
             all_random=self.all_random,
             top_p=None if self.no_top_p else self.top_p[:num_reqs],
             top_k=None if self.no_top_k else self.top_k[:num_reqs],
             top_a=None if self.no_top_a else self.top_a[:num_reqs],
-            dry_multiplier=(
-                None if self.no_dry else self.dry_multiplier[:num_reqs]),
-            dry_base=(
-                None if self.no_dry else self.dry_base[:num_reqs]),
-            dry_allowed_length=(
-                None if self.no_dry else self.dry_allowed_length[:num_reqs]),
-            dry_sequence_breaker_ids=(
-                None if self.no_dry else
-                self._make_dry_sequence_breaker_ids_tensor(num_reqs)),
+            dry_multiplier=(None if self.no_dry else self.dry_multiplier[:num_reqs]),
+            dry_base=(None if self.no_dry else self.dry_base[:num_reqs]),
+            dry_allowed_length=(None if self.no_dry else self.dry_allowed_length[:num_reqs]),
+            dry_sequence_breaker_ids=(None if self.no_dry else self._make_dry_sequence_breaker_ids_tensor(num_reqs)),
             dry_ranges=None if self.no_dry else self.dry_ranges[:num_reqs],
-            dry_max_ngram=(
-                None if self.no_dry else self.dry_max_ngram[:num_reqs]),
-            dry_max_occurrences=(
-                None if self.no_dry else self.dry_max_occurrences[:num_reqs]),
-            dry_early_exit_match_len=(
-                None if self.no_dry else
-                self.dry_early_exit_match_len[:num_reqs]),
-            no_repeat_ngram_size=(
-                None if self.no_no_repeat_ngram else
-                self.no_repeat_ngram_size[:num_reqs]),
+            dry_max_ngram=(None if self.no_dry else self.dry_max_ngram[:num_reqs]),
+            dry_max_occurrences=(None if self.no_dry else self.dry_max_occurrences[:num_reqs]),
+            dry_early_exit_match_len=(None if self.no_dry else self.dry_early_exit_match_len[:num_reqs]),
+            no_repeat_ngram_size=(None if self.no_no_repeat_ngram else self.no_repeat_ngram_size[:num_reqs]),
             tfs=None if self.no_tfs else self.tfs[:num_reqs],
-            eta_cutoff=(
-                None if self.no_eta_cutoff else self.eta_cutoff[:num_reqs]),
-            epsilon_cutoff=(
-                None if self.no_epsilon_cutoff else
-                self.epsilon_cutoff[:num_reqs]),
+            eta_cutoff=(None if self.no_eta_cutoff else self.eta_cutoff[:num_reqs]),
+            epsilon_cutoff=(None if self.no_epsilon_cutoff else self.epsilon_cutoff[:num_reqs]),
             typical_p=None if self.no_typical_p else self.typical_p[:num_reqs],
-            quadratic_smoothing_factor=(
-                None if self.no_quadratic else
-                self.quadratic_smoothing_factor[:num_reqs]),
-            quadratic_smoothing_curve=(
-                None if self.no_quadratic else
-                self.quadratic_smoothing_curve[:num_reqs]),
-            xtc_threshold=(
-                None if self.no_xtc else self.xtc_threshold[:num_reqs]),
-            xtc_probability=(
-                None if self.no_xtc else self.xtc_probability[:num_reqs]),
-            top_nsigma=(
-                None if self.no_top_nsigma else self.top_nsigma[:num_reqs]),
-            mirostat_mode=(
-                None if self.no_mirostat else self.mirostat_mode[:num_reqs]),
-            mirostat_tau=(
-                None if self.no_mirostat else self.mirostat_tau[:num_reqs]),
-            mirostat_eta=(
-                None if self.no_mirostat else self.mirostat_eta[:num_reqs]),
+            quadratic_smoothing_factor=(None if self.no_quadratic else self.quadratic_smoothing_factor[:num_reqs]),
+            quadratic_smoothing_curve=(None if self.no_quadratic else self.quadratic_smoothing_curve[:num_reqs]),
+            xtc_threshold=(None if self.no_xtc else self.xtc_threshold[:num_reqs]),
+            xtc_probability=(None if self.no_xtc else self.xtc_probability[:num_reqs]),
+            top_nsigma=(None if self.no_top_nsigma else self.top_nsigma[:num_reqs]),
+            mirostat_mode=(None if self.no_mirostat else self.mirostat_mode[:num_reqs]),
+            mirostat_tau=(None if self.no_mirostat else self.mirostat_tau[:num_reqs]),
+            mirostat_eta=(None if self.no_mirostat else self.mirostat_eta[:num_reqs]),
             skew=None if self.no_skew else self.skew[:num_reqs],
             generators=self.generators,
             max_num_logprobs=self.max_num_logprobs,
@@ -1461,16 +1213,13 @@ class InputBatch:
             prompt_token_ids[i, self.num_prompt_tokens[i] :] = self.vocab_size
         return prompt_token_ids_cpu_tensor.to(device=self.device, non_blocking=True)
 
-    def _make_dry_sequence_breaker_ids_tensor(
-        self, num_reqs: int) -> torch.Tensor:
+    def _make_dry_sequence_breaker_ids_tensor(self, num_reqs: int) -> torch.Tensor:
         """Convert dry_sequence_breaker_ids dict to padded tensor like V0."""
         if not self.dry_sequence_breaker_ids:
-            return torch.empty((num_reqs, 0), device=self.device,
-                                dtype=torch.long)
+            return torch.empty((num_reqs, 0), device=self.device, dtype=torch.long)
 
         # Find max length
-        max_len = max(
-            len(ids) for ids in self.dry_sequence_breaker_ids.values())
+        max_len = max(len(ids) for ids in self.dry_sequence_breaker_ids.values())
 
         # Create padded tensor
         tensor_data = []
@@ -1499,12 +1248,10 @@ class InputBatch:
             3. lora_requests: Set of relevant LoRA requests.
         """
 
-        req_lora_mapping = self.request_lora_mapping[:self.num_reqs]
+        req_lora_mapping = self.request_lora_mapping[: self.num_reqs]
         prompt_lora_mapping = tuple(req_lora_mapping)
-        token_lora_mapping = tuple(
-            req_lora_mapping.repeat(num_scheduled_tokens))
-        active_lora_requests: set[LoRARequest] = set(
-            self.lora_id_to_lora_request.values())
+        token_lora_mapping = tuple(req_lora_mapping.repeat(num_scheduled_tokens))
+        active_lora_requests: set[LoRARequest] = set(self.lora_id_to_lora_request.values())
 
         return prompt_lora_mapping, token_lora_mapping, active_lora_requests
 
@@ -1576,9 +1323,11 @@ class InputBatch:
 
     @property
     def no_penalties(self) -> bool:
-        return (len(self.presence_penalties_reqs) == 0
-                and len(self.frequency_penalties_reqs) == 0
-                and len(self.repetition_penalties_reqs) == 0)
+        return (
+            len(self.presence_penalties_reqs) == 0
+            and len(self.frequency_penalties_reqs) == 0
+            and len(self.repetition_penalties_reqs) == 0
+        )
 
     @property
     def max_num_logprobs(self) -> int | None:

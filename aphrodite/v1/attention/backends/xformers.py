@@ -5,22 +5,26 @@ from typing import Optional
 
 import torch
 
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionImpl,
-                                                   AttentionMetadata,
-                                                   AttentionType, MultipleOf)
+from aphrodite.attention.backends.abstract import (
+    AttentionBackend,
+    AttentionImpl,
+    AttentionMetadata,
+    AttentionType,
+    MultipleOf,
+)
 from aphrodite.attention.ops.triton_unified_attention import unified_attention
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata,
-                                                   split_decodes_and_prefills)
+from aphrodite.v1.attention.backends.utils import (
+    AttentionMetadataBuilder,
+    CommonAttentionMetadata,
+    split_decodes_and_prefills,
+)
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 try:
     from xformers import ops as xops
-    from xformers.ops.fmha.attn_bias import (
-        AttentionBias, PagedBlockDiagonalCausalWithOffsetPaddedKeysMask)
+    from xformers.ops.fmha.attn_bias import AttentionBias, PagedBlockDiagonalCausalWithOffsetPaddedKeysMask
 
     XFORMERS_AVAILABLE = True
 except ImportError:
@@ -195,9 +199,7 @@ class XFormersAttentionMetadata:
         return self._cached_decode_metadata
 
 
-class XFormersAttentionMetadataBuilder(
-    AttentionMetadataBuilder[XFormersAttentionMetadata]
-):
+class XFormersAttentionMetadataBuilder(AttentionMetadataBuilder[XFormersAttentionMetadata]):
     reorder_batch_threshold: int = 1
 
     def __init__(
@@ -220,10 +222,8 @@ class XFormersAttentionMetadataBuilder(
         common_attn_metadata: CommonAttentionMetadata,
         fast_build: bool = False,
     ) -> XFormersAttentionMetadata:
-        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
-            split_decodes_and_prefills(
-                common_attn_metadata, decode_threshold=self.reorder_batch_threshold
-            )
+        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
+            common_attn_metadata, decode_threshold=self.reorder_batch_threshold
         )
 
         num_actual_tokens = common_attn_metadata.num_actual_tokens
@@ -338,10 +338,7 @@ class XFormersAttentionImpl(AttentionImpl):
         assert output is not None, "Output tensor must be provided."
 
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported"
-                " for XFormersAttentionImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for XFormersAttentionImpl")
 
         if attn_metadata is None:
             # Profiling run.
@@ -396,22 +393,16 @@ class XFormersAttentionImpl(AttentionImpl):
             # Query for decode. KV is not needed because it is already cached.
             decode_query = query[:num_decode_tokens]
             # Reshape query to [1, B_T, G, H, D].
-            q = decode_query.view(
-                1, -1, self.num_kv_heads, self.num_queries_per_kv, self.head_size
-            )
+            q = decode_query.view(1, -1, self.num_kv_heads, self.num_queries_per_kv, self.head_size)
             # Reshape the k and v caches to [1, Bkv_T, G, H, D]
-            cache_k = key_cache.view(
-                1, -1, self.num_kv_heads, 1, self.head_size
-            ).expand(
+            cache_k = key_cache.view(1, -1, self.num_kv_heads, 1, self.head_size).expand(
                 1,
                 -1,
                 self.num_kv_heads,
                 self.num_queries_per_kv,
                 self.head_size,
             )
-            cache_v = value_cache.view(
-                1, -1, self.num_kv_heads, 1, self.head_size
-            ).expand(
+            cache_v = value_cache.view(1, -1, self.num_kv_heads, 1, self.head_size).expand(
                 1,
                 -1,
                 self.num_kv_heads,

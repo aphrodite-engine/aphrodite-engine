@@ -5,8 +5,7 @@ import torch
 from aphrodite.modeling._custom_op import CustomOp
 
 from .common import apply_rotary_emb_torch
-from .rocm_aiter_rope_ops import (is_rocm_triton_rotary_embedding_enabled,
-                                  rocm_aiter_rotary_emb)
+from .rocm_aiter_rope_ops import is_rocm_triton_rotary_embedding_enabled, rocm_aiter_rotary_emb
 
 
 @CustomOp.register("rotary_embedding")
@@ -44,9 +43,7 @@ class RotaryEmbeddingBase(CustomOp):
             cache = cache.to(dtype)
         self.cos_sin_cache: torch.Tensor
         self.register_buffer("cos_sin_cache", cache, persistent=False)
-        self.is_rocm_triton_rotary_embedding_enabled = (
-            is_rocm_triton_rotary_embedding_enabled()
-        )
+        self.is_rocm_triton_rotary_embedding_enabled = is_rocm_triton_rotary_embedding_enabled()
 
     def _compute_inv_freq(self, base: float) -> torch.Tensor:
         """Compute the inverse frequency."""
@@ -54,12 +51,7 @@ class RotaryEmbeddingBase(CustomOp):
         # use CPU to compute the cache and then move it to GPU. However, we
         # create the cache on GPU for faster initialization. This may cause
         # a slight numerical difference between the HF implementation and ours.
-        inv_freq = 1.0 / (
-            base
-            ** (
-                torch.arange(0, self.rotary_dim, 2, dtype=torch.float) / self.rotary_dim
-            )
-        )
+        inv_freq = 1.0 / (base ** (torch.arange(0, self.rotary_dim, 2, dtype=torch.float) / self.rotary_dim))
         return inv_freq
 
     def _compute_cos_sin_cache(self) -> torch.Tensor:
@@ -76,10 +68,7 @@ class RotaryEmbeddingBase(CustomOp):
     def _match_cos_sin_cache_dtype(self, query: torch.Tensor) -> None:
         # __setattr__ in nn.Module (called by `self.cos_sin_cache = ...`)
         # is expensive, so avoid calling it if possible
-        if (
-            self.cos_sin_cache.device != query.device
-            or self.cos_sin_cache.dtype != query.dtype
-        ):
+        if self.cos_sin_cache.device != query.device or self.cos_sin_cache.dtype != query.dtype:
             self.cos_sin_cache = self.cos_sin_cache.to(query.device, dtype=query.dtype)
 
 
@@ -93,9 +82,7 @@ class RotaryEmbedding(RotaryEmbeddingBase):
         is_neox_style: bool,
         dtype: torch.dtype,
     ) -> None:
-        super().__init__(
-            head_size, rotary_dim, max_position_embeddings, base, is_neox_style, dtype
-        )
+        super().__init__(head_size, rotary_dim, max_position_embeddings, base, is_neox_style, dtype)
 
     def forward_native(
         self,

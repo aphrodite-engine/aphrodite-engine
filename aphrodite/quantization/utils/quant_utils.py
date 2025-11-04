@@ -64,17 +64,10 @@ class ScaleDesc:
         group_shape = (
             "per_tensor"
             if self.group_shape == GroupShape.PER_TENSOR
-            else (
-                "per_token"
-                if self.group_shape == GroupShape.PER_TOKEN
-                else str(self.group_shape)
-            )
+            else ("per_token" if self.group_shape == GroupShape.PER_TOKEN else str(self.group_shape))
         )
 
-        return (
-            f"{fx.graph.dtype_abbrs[self.dtype]},"
-            f"{'static' if self.static else 'dynamic'},{group_shape}"
-        )
+        return f"{fx.graph.dtype_abbrs[self.dtype]},{'static' if self.static else 'dynamic'},{group_shape}"
 
 
 @dataclass(frozen=True)
@@ -141,11 +134,7 @@ def group_broadcast(t, shape):
     for i, s in enumerate(shape):
         if t.shape[i] != s and t.shape[i] != 1:
             assert s % t.shape[i] == 0
-            t = (
-                t.unsqueeze(i + 1)
-                .expand(*t.shape[: i + 1], s // t.shape[i], *t.shape[i + 1 :])
-                .flatten(i, i + 1)
-            )
+            t = t.unsqueeze(i + 1).expand(*t.shape[: i + 1], s // t.shape[i], *t.shape[i + 1 :]).flatten(i, i + 1)
     return t
 
 
@@ -164,8 +153,7 @@ def scaled_quantize(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     group_shape = _normalize_quant_group_shape(x, group_shape)
     assert quant_dtype.is_floating_point, (
-        "currently `scaled_quantize` only supports floating point dtypes "
-        "but could be extended to support other dtypes"
+        "currently `scaled_quantize` only supports floating point dtypes but could be extended to support other dtypes"
     )
 
     finfo = torch.finfo(quant_dtype)
@@ -225,8 +213,7 @@ def scaled_dequantize(
             x_s = x_s.unsqueeze(-1)
         else:
             raise AssertionError(
-                "if x_s is a vector we should be broadcasting it to the full "
-                "extent of one of the dimensions"
+                "if x_s is a vector we should be broadcasting it to the full extent of one of the dimensions"
             )
 
     if group_shape is not None:
@@ -236,9 +223,7 @@ def scaled_dequantize(
     return (x_q.to(torch.float32) * x_s).to(out_dtype)
 
 
-def pack_quantized_values_into_int32(
-    w_q: torch.Tensor, wtype: ScalarType, packed_dim: int = 0
-):
+def pack_quantized_values_into_int32(w_q: torch.Tensor, wtype: ScalarType, packed_dim: int = 0):
     # move dim to pack to the end
     perm = (*[i for i in range(len(w_q.shape)) if i != packed_dim], packed_dim)
     inv_perm = tuple(perm.index(i) for i in range(len(perm)))
@@ -258,9 +243,7 @@ def pack_quantized_values_into_int32(
     return res.permute(inv_perm)
 
 
-def unpack_quantized_values_into_int32(
-    w_q: torch.Tensor, wtype: ScalarType, packed_dim: int = 0
-):
+def unpack_quantized_values_into_int32(w_q: torch.Tensor, wtype: ScalarType, packed_dim: int = 0):
     # move dim to pack to the end
     perm = (*[i for i in range(len(w_q.shape)) if i != packed_dim], packed_dim)
     inv_perm = tuple(perm.index(i) for i in range(len(perm)))
@@ -304,10 +287,7 @@ def is_layer_skipped(
     # from the fused version to unfused + check to make sure that
     # each shard of the fused layer has the same scheme.
     if proj_name in fused_mapping:
-        shard_prefixes = [
-            prefix.replace(proj_name, shard_proj_name)
-            for shard_proj_name in fused_mapping[proj_name]
-        ]
+        shard_prefixes = [prefix.replace(proj_name, shard_proj_name) for shard_proj_name in fused_mapping[proj_name]]
 
         is_skipped = None
         for shard_prefix in shard_prefixes:
@@ -322,9 +302,7 @@ def is_layer_skipped(
                     "to have the same precision."
                 )
     elif "experts" in prefix and not skip_with_substr:
-        expert_ignore_layers = filter(
-            lambda layer_name: "experts" in layer_name, ignored_layers
-        )
+        expert_ignore_layers = filter(lambda layer_name: "experts" in layer_name, ignored_layers)
         return any(
             prefix in layer_name if not skip_with_substr else layer_name in prefix
             for layer_name in expert_ignore_layers
@@ -378,12 +356,9 @@ def quantize_weights(
     zero_points: bool = False,
     ref_zero_points_after_scales: bool = False,
 ):
-    assert quant_type.is_integer(), (
-        "Floating point quantization may work but has not been tested"
-    )
+    assert quant_type.is_integer(), "Floating point quantization may work but has not been tested"
     assert not zero_points or group_size is not None, (
-        "to have group zero points, group_size must be provided "
-        "(-1 group_size is channelwise)"
+        "to have group zero points, group_size must be provided (-1 group_size is channelwise)"
     )
 
     orig_device = w.device
@@ -414,9 +389,7 @@ def quantize_weights(
         if zero_points:
             assert not quant_type.is_signed() and quant_type.max() > 0
             w_s = (max_val - min_val).clamp(min=1e-5) / quant_type.max()
-            maybe_w_zp = (
-                torch.round(torch.abs(min_val / w_s)).clamp(min_q_val, max_q_val).int()
-            )
+            maybe_w_zp = torch.round(torch.abs(min_val / w_s)).clamp(min_q_val, max_q_val).int()
         else:
             # If the bias is such that there are no possible negative/positive
             #  values, set the max value to inf to avoid divide by 0
@@ -480,12 +453,8 @@ def gptq_quantize_weights(
     size_k, _ = w.shape
 
     assert w.is_floating_point(), "w must be float"
-    assert quant_type in SUPPORTED_GPTQ_QUANT_TYPES, (
-        f"Unsupported gptq type = {quant_type}"
-    )
-    assert group_size in SUPPORTED_GROUP_SIZES + [size_k], (
-        f"Unsupported groupsize = {group_size}"
-    )
+    assert quant_type in SUPPORTED_GPTQ_QUANT_TYPES, f"Unsupported gptq type = {quant_type}"
+    assert group_size in SUPPORTED_GROUP_SIZES + [size_k], f"Unsupported groupsize = {group_size}"
 
     w_ref, w_q, w_s, _ = quantize_weights(w, quant_type, group_size)
 
@@ -493,10 +462,8 @@ def gptq_quantize_weights(
     g_idx = torch.empty(0, dtype=torch.int, device=w.device)
     rand_perm = torch.empty(0, dtype=torch.int, device=w.device)
     if act_order:
-        assert group_size < size_k, (
-            "For act_order, groupsize = {} must be less than size_k = {}".format(
-                group_size, size_k
-            )
+        assert group_size < size_k, "For act_order, groupsize = {} must be less than size_k = {}".format(
+            group_size, size_k
         )
 
         w_ref, w_q, g_idx, rand_perm = permute_rows(w_q, w_ref, group_size, test_perm)
@@ -646,8 +613,7 @@ def swizzle_blockscale(scale: torch.Tensor) -> torch.Tensor:
         The swizzled tensor with the same logical shape as *scale*.
     """
     assert scale.dtype == torch.float8_e4m3fn, (
-        "swizzle_blockscale expects the input tensor to be in "
-        "torch.float8_e4m3fn format."
+        "swizzle_blockscale expects the input tensor to be in torch.float8_e4m3fn format."
     )
 
     scale_ndim = scale.ndim
@@ -663,9 +629,7 @@ def swizzle_blockscale(scale: torch.Tensor) -> torch.Tensor:
     M_padded = _round_up(M, 128)
     K_padded = _round_up(K, 4)
 
-    padded = torch.zeros(
-        (B, M_padded, K_padded), dtype=scale.dtype, device=scale.device
-    )
+    padded = torch.zeros((B, M_padded, K_padded), dtype=scale.dtype, device=scale.device)
     padded[:B, :M, :K] = scale
 
     # Reshape / permute to the layout required by the kernel.

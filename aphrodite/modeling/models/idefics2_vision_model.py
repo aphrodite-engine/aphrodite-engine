@@ -19,15 +19,12 @@ from collections.abc import Iterable
 
 import torch
 from torch import nn
-from transformers.models.idefics2.configuration_idefics2 import (
-    Idefics2Config, Idefics2VisionConfig)
+from transformers.models.idefics2.configuration_idefics2 import Idefics2Config, Idefics2VisionConfig
 
 from aphrodite.attention.layer import MultiHeadAttention
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
@@ -79,12 +76,8 @@ class Idefics2VisionEmbeddings(nn.Module):
             max_im_h // self.patch_size,
             max_im_w // self.patch_size,
         )
-        boundaries = torch.arange(
-            1 / self.num_patches_per_side, 1.0, 1 / self.num_patches_per_side
-        )
-        position_ids = torch.full(
-            size=(batch_size, max_nb_patches_h * max_nb_patches_w), fill_value=0
-        )
+        boundaries = torch.arange(1 / self.num_patches_per_side, 1.0, 1 / self.num_patches_per_side)
+        position_ids = torch.full(size=(batch_size, max_nb_patches_h * max_nb_patches_w), fill_value=0)
 
         for batch_idx, p_attn_mask in enumerate(patch_attention_mask):
             if tgt_sizes is not None:
@@ -95,15 +88,9 @@ class Idefics2VisionEmbeddings(nn.Module):
                 nb_patches_w = p_attn_mask[0].sum()
             fractional_coords_h = torch.arange(0, 1 - 1e-6, 1 / nb_patches_h)
             fractional_coords_w = torch.arange(0, 1 - 1e-6, 1 / nb_patches_w)
-            bucket_coords_h = torch.bucketize(
-                fractional_coords_h, boundaries, right=True
-            )
-            bucket_coords_w = torch.bucketize(
-                fractional_coords_w, boundaries, right=True
-            )
-            pos_ids = (
-                bucket_coords_h[:, None] * self.num_patches_per_side + bucket_coords_w
-            ).flatten()
+            bucket_coords_h = torch.bucketize(fractional_coords_h, boundaries, right=True)
+            bucket_coords_w = torch.bucketize(fractional_coords_w, boundaries, right=True)
+            pos_ids = (bucket_coords_h[:, None] * self.num_patches_per_side + bucket_coords_w).flatten()
             position_ids[batch_idx][p_attn_mask.view(-1).cpu()] = pos_ids
         position_ids = position_ids.to(self.position_embedding.weight.device)
         embeddings += self.position_embedding(position_ids)
@@ -154,17 +141,13 @@ class Idefics2VisionAttention(nn.Module):
             disable_tp=use_data_parallel,
         )
         # Use unified MultiHeadAttention with Flash Attention support
-        self.attn = MultiHeadAttention(
-            self.num_heads_per_partition, self.head_dim, self.scale
-        )
+        self.attn = MultiHeadAttention(self.num_heads_per_partition, self.head_dim, self.scale)
 
     def forward(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(
-            hidden_states
-        )  # batch_size, q_len, 3 * num_heads_per_partition * head_dim
+        qkv, _ = self.qkv_proj(hidden_states)  # batch_size, q_len, 3 * num_heads_per_partition * head_dim
         query_states, key_states, value_states = qkv.chunk(3, dim=-1)
 
         # Use unified MultiHeadAttention implementation

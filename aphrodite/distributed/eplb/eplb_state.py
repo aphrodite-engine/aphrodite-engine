@@ -32,8 +32,7 @@ import torch
 from torch.distributed import ProcessGroup, all_reduce
 
 from aphrodite.config import ParallelConfig
-from aphrodite.distributed.parallel_state import (get_ep_group, get_node_count,
-                                                  in_the_same_node_as)
+from aphrodite.distributed.parallel_state import get_ep_group, get_node_count, in_the_same_node_as
 from aphrodite.distributed.utils import StatelessProcessGroup
 from aphrodite.logger import init_logger
 from aphrodite.modeling.models.interfaces import MixtureOfExperts
@@ -169,9 +168,7 @@ class EplbState:
                 that the corresponding physical expert maps to.
         """
         global_physical_to_logical_map = list(range(num_routed_experts))
-        global_physical_to_logical_map += [
-            i % num_routed_experts for i in range(num_redundant_experts)
-        ]
+        global_physical_to_logical_map += [i % num_routed_experts for i in range(num_redundant_experts)]
         return global_physical_to_logical_map
 
     @classmethod
@@ -200,8 +197,7 @@ class EplbState:
         # TODO(rui): make this configurable
         MAX_EXPERT_REDUNDANCY = 1023
         assert model.num_redundant_experts <= MAX_EXPERT_REDUNDANCY, (
-            f"num_redundant_experts {model.num_redundant_experts} "
-            f"must be less than or equal to {MAX_EXPERT_REDUNDANCY}"
+            f"num_redundant_experts {model.num_redundant_experts} must be less than or equal to {MAX_EXPERT_REDUNDANCY}"
         )
         max_slots_per_logical_expert = MAX_EXPERT_REDUNDANCY + 1
         logical_to_physical_map = torch.full(
@@ -381,11 +377,7 @@ class EplbState:
 
             # num_tokens_per_rank: (num_moe_layers, num_ranks)
             num_tokens_per_rank = (
-                total_expert_load_pass.reshape(
-                    total_expert_load_pass.shape[0], ep_group.size(), -1
-                )
-                .sum(dim=-1)
-                .float()
+                total_expert_load_pass.reshape(total_expert_load_pass.shape[0], ep_group.size(), -1).sum(dim=-1).float()
             )
 
             # Compute balancedness ratio:
@@ -395,9 +387,7 @@ class EplbState:
             max_tokens_tensor = num_tokens_per_rank.max(dim=0).values.sum(dim=0)
 
             # Just to make type checker happy
-            tokens_tensors: list[float] = torch.stack(
-                [avg_tokens_tensor, max_tokens_tensor]
-            ).tolist()
+            tokens_tensors: list[float] = torch.stack([avg_tokens_tensor, max_tokens_tensor]).tolist()
             avg_tokens, max_tokens = tokens_tensors
             balancedness = avg_tokens / max_tokens if max_tokens > 0 else 0.0
 
@@ -411,9 +401,7 @@ class EplbState:
 
         # Update the expert load sliding window
         if not is_dummy:
-            self.expert_load_window[self.expert_load_window_step] = (
-                self.expert_load_pass.clone()
-            )
+            self.expert_load_window[self.expert_load_window_step] = self.expert_load_pass.clone()
             self.expert_load_window_step += 1
             if self.expert_load_window_step >= self.expert_load_window_size:
                 self.expert_load_window_step = 0
@@ -461,9 +449,7 @@ class EplbState:
             )
             logical_expert_load_window.scatter_add_(
                 dim=-1,
-                index=self.physical_to_logical_map.unsqueeze(0)
-                .expand_as(self.expert_load_window)
-                .long(),
+                index=self.physical_to_logical_map.unsqueeze(0).expand_as(self.expert_load_window).long(),
                 src=self.expert_load_window,
             )
 
@@ -477,9 +463,7 @@ class EplbState:
                     dtype=torch.int32,
                     device="cpu",
                 )
-                torch.distributed.broadcast(
-                    metadata, group=get_ep_group().cpu_group, group_src=0
-                )
+                torch.distributed.broadcast(metadata, group=get_ep_group().cpu_group, group_src=0)
 
             # Perform all-reduce to get the expert load across all ranks
             global_expert_load_window = logical_expert_load_window.sum(dim=0)
@@ -488,9 +472,7 @@ class EplbState:
             if not execute_shuffle:
                 # (num_moe_layers, old_num_physical_experts)
                 old_global_expert_indices = self.physical_to_logical_map
-                torch.distributed.broadcast(
-                    old_global_expert_indices, group=ep_group, group_src=0
-                )
+                torch.distributed.broadcast(old_global_expert_indices, group=ep_group, group_src=0)
                 return global_expert_load_window
         else:
             assert execute_shuffle
@@ -506,9 +488,7 @@ class EplbState:
             cpu_group = get_ep_group().cpu_group
             num_nodes = _node_count_with_rank_mapping(cpu_group, rank_mapping)
             num_gpus = sum(new_rank != -1 for new_rank in rank_mapping.values())
-            num_replicas = (
-                num_replicas // ep_group.size() * num_gpus
-            )  # handle num replicas change
+            num_replicas = num_replicas // ep_group.size() * num_gpus  # handle num replicas change
         else:
             num_nodes = get_node_count()
             num_gpus = ep_group.size()
@@ -516,9 +496,7 @@ class EplbState:
         if num_gpus % num_nodes != 0:
             self.num_nodes = 1
             logger.warning_once(
-                f"num_gpus % num_nodes != 0, "
-                "not using hierarchical rearrangement algorithm.\n"
-                f"{num_gpus=}, {num_nodes=}"
+                f"num_gpus % num_nodes != 0, not using hierarchical rearrangement algorithm.\n{num_gpus=}, {num_nodes=}"
             )
 
         # Get new expert mappings
@@ -545,13 +523,8 @@ class EplbState:
         )
 
         if not is_profile:
-            if (
-                self.physical_to_logical_map.shape[1]
-                != new_physical_to_logical_map.shape[1]
-            ):
-                self.physical_to_logical_map = new_physical_to_logical_map.to(
-                    self.physical_to_logical_map.device
-                )
+            if self.physical_to_logical_map.shape[1] != new_physical_to_logical_map.shape[1]:
+                self.physical_to_logical_map = new_physical_to_logical_map.to(self.physical_to_logical_map.device)
             else:
                 self.physical_to_logical_map.copy_(new_physical_to_logical_map)
             max_physical_slots = new_logical_to_physical_map.shape[-1]
@@ -583,9 +556,7 @@ class EplbState:
         ep_group = get_ep_group()
         metadata = torch.empty(3, dtype=torch.int32, device="cpu")
         torch.distributed.broadcast(metadata, group=ep_group.cpu_group, group_src=0)
-        num_moe_layers, num_logical_experts, num_old_physical_experts = (
-            metadata.tolist()
-        )
+        num_moe_layers, num_logical_experts, num_old_physical_experts = metadata.tolist()
         global_expert_load = torch.zeros(
             (num_moe_layers, num_logical_experts),
             dtype=torch.int64,
@@ -597,9 +568,7 @@ class EplbState:
             dtype=torch.int64,
             device=ep_group.device,
         )
-        torch.distributed.broadcast(
-            old_global_expert_indices, group=ep_group.device_group, group_src=0
-        )
+        torch.distributed.broadcast(old_global_expert_indices, group=ep_group.device_group, group_src=0)
 
         return global_expert_load, old_global_expert_indices
 

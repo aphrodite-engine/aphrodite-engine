@@ -107,9 +107,7 @@ class LoadConfig:
         return load_format.lower()
 
     @field_validator("ignore_patterns", mode="after")
-    def _validate_ignore_patterns(
-        cls, ignore_patterns: list[str] | str
-    ) -> list[str] | str:
+    def _validate_ignore_patterns(cls, ignore_patterns: list[str] | str) -> list[str] | str:
         if ignore_patterns != ["original/**/*"] and len(ignore_patterns) > 0:
             logger.info(
                 "Ignoring the following patterns when downloading weights: %s",

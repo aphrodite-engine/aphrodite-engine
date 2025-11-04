@@ -26,22 +26,14 @@ def run_intern_vit_test(
 
     img_processor = CLIPImageProcessor.from_pretrained(model)
     images = [asset.pil_image for asset in image_assets]
-    pixel_values = [
-        img_processor(images, return_tensors="pt").pixel_values.to(torch_dtype)
-        for images in images
-    ]
+    pixel_values = [img_processor(images, return_tensors="pt").pixel_values.to(torch_dtype) for images in images]
 
     config = AutoConfig.from_pretrained(model, trust_remote_code=True)
     if not getattr(config, "norm_type", None):
         config.norm_type = "rms_norm"
 
-    hf_model = AutoModel.from_pretrained(
-        model, dtype=torch_dtype, trust_remote_code=True
-    ).to("cuda")
-    hf_outputs_per_image = [
-        hf_model(pixel_value.to("cuda")).last_hidden_state
-        for pixel_value in pixel_values
-    ]
+    hf_model = AutoModel.from_pretrained(model, dtype=torch_dtype, trust_remote_code=True).to("cuda")
+    hf_outputs_per_image = [hf_model(pixel_value.to("cuda")).last_hidden_state for pixel_value in pixel_values]
 
     from aphrodite.modeling.models.intern_vit import InternVisionModel
 
@@ -52,9 +44,7 @@ def run_intern_vit_test(
     cleanup_dist_env_and_memory()
 
     aphrodite_model = aphrodite_model.to("cuda", torch_dtype)
-    aphrodite_outputs_per_image = [
-        aphrodite_model(pixel_values=pixel_value.to("cuda")) for pixel_value in pixel_values
-    ]
+    aphrodite_outputs_per_image = [aphrodite_model(pixel_values=pixel_value.to("cuda")) for pixel_value in pixel_values]
     del aphrodite_model
     cleanup_dist_env_and_memory()
 

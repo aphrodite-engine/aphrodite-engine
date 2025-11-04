@@ -30,26 +30,24 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, row_parallel_weight_loader)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, row_parallel_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP, SupportsQuant
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 def _get_alibi_slopes(total_num_heads: int) -> torch.Tensor:
@@ -66,12 +64,8 @@ def _get_alibi_slopes(total_num_heads: int) -> torch.Tensor:
             2 ** (-(2 ** -(math.log2(2 * closest_power_of_2) - 3))),
             dtype=torch.float32,
         )
-        num_remaining_heads = min(
-            closest_power_of_2, total_num_heads - closest_power_of_2
-        )
-        extra_powers = torch.arange(
-            start=1, end=1 + 2 * num_remaining_heads, step=2, dtype=torch.int32
-        )
+        num_remaining_heads = min(closest_power_of_2, total_num_heads - closest_power_of_2)
+        extra_powers = torch.arange(start=1, end=1 + 2 * num_remaining_heads, step=2, dtype=torch.int32)
         slopes = torch.cat([slopes, torch.pow(extra_base, extra_powers)], dim=0)
     return slopes
 
@@ -88,13 +82,9 @@ class BaiChuanMLP(nn.Module):
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size, [intermediate_size] * 2, bias=False, quant_config=quant_config
         )
-        self.down_proj = RowParallelLinear(
-            intermediate_size, hidden_size, bias=False, quant_config=quant_config
-        )
+        self.down_proj = RowParallelLinear(intermediate_size, hidden_size, bias=False, quant_config=quant_config)
         if hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {hidden_act}. Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -222,9 +212,7 @@ class BaiChuanDecoderLayer(nn.Module):
             quant_config=quant_config,
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -272,9 +260,7 @@ class BaiChuanModel(nn.Module):
         )
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: BaiChuanDecoderLayer(
-                config, position_embedding, cache_config, quant_config, prefix=prefix
-            ),
+            lambda prefix: BaiChuanDecoderLayer(config, position_embedding, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -395,9 +381,7 @@ class BaiChuanBaseForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsQuant
         if self.config.tie_word_embeddings:
             self.lm_head.weight = self.model.embed_tokens.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -409,9 +393,7 @@ class BaiChuanBaseForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsQuant
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(
@@ -449,13 +431,9 @@ class BaichuanForCausalLM(BaiChuanBaseForCausalLM):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         config = aphrodite_config.model_config.hf_config
         if config.hidden_size == 4096:  # baichuan2 7b
-            super().__init__(
-                aphrodite_config=aphrodite_config, prefix=prefix, position_embedding="ROPE"
-            )
+            super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, position_embedding="ROPE")
         else:  # baichuan 13b, baichuan2 13b
-            super().__init__(
-                aphrodite_config=aphrodite_config, prefix=prefix, position_embedding="ALIBI"
-            )
+            super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, position_embedding="ALIBI")
 
 
 class BaiChuanForCausalLM(BaiChuanBaseForCausalLM):
@@ -464,6 +442,4 @@ class BaiChuanForCausalLM(BaiChuanBaseForCausalLM):
     """
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
-        super().__init__(
-            aphrodite_config=aphrodite_config, prefix=prefix, position_embedding="ROPE"
-        )
+        super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, position_embedding="ROPE")

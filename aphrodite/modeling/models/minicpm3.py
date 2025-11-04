@@ -32,13 +32,9 @@ from aphrodite.attention import Attention
 from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, ReplicatedLinear, RowParallelLinear
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.models.minicpm import (MiniCPMDecoderLayer,
-                                               MiniCPMForCausalLM,
-                                               MiniCPMModel)
+from aphrodite.modeling.models.minicpm import MiniCPMDecoderLayer, MiniCPMForCausalLM, MiniCPMModel
 from aphrodite.quantization import QuantizationConfig
 
 from .utils import make_layers
@@ -80,9 +76,7 @@ class MiniCPM3Attention(nn.Module):
         self.rope_theta = rope_theta
         self.max_position_embeddings = max_position_embeddings
 
-        self.q_a_proj = ReplicatedLinear(
-            self.hidden_size, self.q_lora_rank, bias=False, quant_config=quant_config
-        )
+        self.q_a_proj = ReplicatedLinear(self.hidden_size, self.q_lora_rank, bias=False, quant_config=quant_config)
         self.q_a_layernorm = RMSNorm(self.q_lora_rank, eps=config.rms_norm_eps)
         self.q_b_proj = ColumnParallelLinear(
             q_lora_rank,
@@ -166,14 +160,14 @@ class MiniCPM3Attention(nn.Module):
 
         q = q.reshape(-1, self.num_local_heads * self.qk_head_dim)
         k = k.view(-1, self.num_local_heads * self.qk_head_dim)
-        v = torch.nn.functional.pad(
-            v, [0, self.qk_head_dim - self.v_head_dim], value=0
-        ).view(-1, self.num_local_heads * self.qk_head_dim)
+        v = torch.nn.functional.pad(v, [0, self.qk_head_dim - self.v_head_dim], value=0).view(
+            -1, self.num_local_heads * self.qk_head_dim
+        )
 
         attn_output = self.attn(q, k, v)
-        attn_output = attn_output.view(-1, self.num_local_heads, self.qk_head_dim)[
-            ..., : self.v_head_dim
-        ].reshape(-1, self.num_local_heads * self.v_head_dim)
+        attn_output = attn_output.view(-1, self.num_local_heads, self.qk_head_dim)[..., : self.v_head_dim].reshape(
+            -1, self.num_local_heads * self.v_head_dim
+        )
 
         output, _ = self.o_proj(attn_output)
         return output
@@ -181,9 +175,7 @@ class MiniCPM3Attention(nn.Module):
 
 class MiniCPM3DecoderLayer(MiniCPMDecoderLayer):
     def _init_attn_block(self):
-        self.input_layernorm = RMSNorm(
-            self.config.hidden_size, eps=self.config.rms_norm_eps
-        )
+        self.input_layernorm = RMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps)
         self.self_attn = MiniCPM3Attention(
             config=self.config,
             hidden_size=self.hidden_size,
@@ -212,9 +204,7 @@ class MiniCPM3Model(MiniCPMModel):
     ):
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: MiniCPM3DecoderLayer(
-                config, cache_config, quant_config, prefix=prefix
-            ),
+            lambda prefix: MiniCPM3DecoderLayer(config, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
 

@@ -10,17 +10,24 @@ from typing_extensions import override
 
 import aphrodite.envs as envs
 from aphrodite.distributed.device_communicators.shm_object_storage import (
-    MsgpackSerde, SingleWriterShmObjectStorage, SingleWriterShmRingBuffer)
+    MsgpackSerde,
+    SingleWriterShmObjectStorage,
+    SingleWriterShmRingBuffer,
+)
 from aphrodite.logger import init_logger
 from aphrodite.utils.cache import CacheInfo, LRUCache
-from aphrodite.utils.jsontree import (json_count_leaves, json_map_leaves,
-                                      json_reduce_leaves)
+from aphrodite.utils.jsontree import json_count_leaves, json_map_leaves, json_reduce_leaves
 from aphrodite.utils.mem_constants import GiB_bytes, MiB_bytes
 
-from .inputs import (MultiModalBatchedField, MultiModalFeatureSpec,
-                     MultiModalFieldElem, MultiModalKwargs,
-                     MultiModalKwargsItem, MultiModalKwargsItems,
-                     NestedTensors)
+from .inputs import (
+    MultiModalBatchedField,
+    MultiModalFeatureSpec,
+    MultiModalFieldElem,
+    MultiModalKwargs,
+    MultiModalKwargsItem,
+    MultiModalKwargsItems,
+    NestedTensors,
+)
 
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig, ModelConfig
@@ -121,9 +128,7 @@ class MultiModalCache:
         *,
         debug: bool = False,
     ) -> int:
-        size = json_reduce_leaves(
-            operator.add, json_map_leaves(cls.get_leaf_size, value)
-        )
+        size = json_reduce_leaves(operator.add, json_map_leaves(cls.get_leaf_size, value))
 
         if debug:
             leaf_count = json_count_leaves(value)
@@ -236,10 +241,7 @@ class BaseMultiModalCache(ABC, Generic[_I, _O]):
         """
         assert len(mm_items) == len(mm_hashes)
 
-        return [
-            self.get_and_update_item(mm_item, mm_hash)
-            for mm_item, mm_hash in zip(mm_items, mm_hashes)
-        ]
+        return [self.get_and_update_item(mm_item, mm_hash) for mm_item, mm_hash in zip(mm_items, mm_hashes)]
 
     @abstractmethod
     def clear_cache(self) -> None:
@@ -247,14 +249,10 @@ class BaseMultiModalCache(ABC, Generic[_I, _O]):
         raise NotImplementedError
 
 
-MultiModalProcessorCacheInItem: TypeAlias = (
-    tuple[MultiModalKwargsItem, Sequence["ResolvedPromptUpdate"]] | None
-)
+MultiModalProcessorCacheInItem: TypeAlias = tuple[MultiModalKwargsItem, Sequence["ResolvedPromptUpdate"]] | None
 
 
-MultiModalProcessorCacheOutItem: TypeAlias = tuple[
-    MultiModalKwargsItem | None, Sequence["ResolvedPromptUpdate"]
-]
+MultiModalProcessorCacheOutItem: TypeAlias = tuple[MultiModalKwargsItem | None, Sequence["ResolvedPromptUpdate"]]
 
 
 class BaseMultiModalProcessorCache(
@@ -481,9 +479,7 @@ class ShmObjectStoreSenderCache(BaseMultiModalProcessorCache):
             if len(self._p0_cache) >= 2 * len(self._shm_cache.key_index):
                 self.remove_dangling_items()
             self._p0_cache[mm_hash] = mm_item[1], mm_item[0].modality
-            address_item = self.address_as_item(
-                address, monotonic_id, mm_item[0].modality
-            )
+            address_item = self.address_as_item(address, monotonic_id, mm_item[0].modality)
             return address_item, mm_item[1]
         except (ValueError, MemoryError) as e:
             # put may fail if the object is too large or
@@ -512,9 +508,7 @@ class ShmObjectStoreSenderCache(BaseMultiModalProcessorCache):
         for mm_hash in dangling_hashes:
             del self._p0_cache[mm_hash]
 
-    def address_as_item(
-        self, address: int, monotonic_id: int, modality: str
-    ) -> MultiModalKwargsItem:
+    def address_as_item(self, address: int, monotonic_id: int, modality: str) -> MultiModalKwargsItem:
         addr_elem = MultiModalFieldElem(
             modality=modality,
             key="address",
@@ -545,8 +539,7 @@ def _enable_processor_cache(
 def _enable_ipc_cache(aphrodite_config: "AphroditeConfig") -> bool:
     parallel_config = aphrodite_config.parallel_config
     supports_ipc_cache = (
-        parallel_config._api_process_count == 1
-        and parallel_config.data_parallel_size == 1
+        parallel_config._api_process_count == 1 and parallel_config.data_parallel_size == 1
     ) or parallel_config.data_parallel_external_lb
 
     return supports_ipc_cache
@@ -592,9 +585,7 @@ def processor_only_cache_from_config(
     return MultiModalProcessorOnlyCache(model_config)
 
 
-class BaseMultiModalReceiverCache(
-    BaseMultiModalCache[MultiModalKwargsItem | None, MultiModalKwargsItem]
-):
+class BaseMultiModalReceiverCache(BaseMultiModalCache[MultiModalKwargsItem | None, MultiModalKwargsItem]):
     """The required interface for caches on P1."""
 
     def get_and_update_features(

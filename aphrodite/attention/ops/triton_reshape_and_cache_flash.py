@@ -45,9 +45,7 @@ def reshape_and_cache_kernel_flash(
     tgt_idx = block_idx * block_stride + block_offset * page_stride
 
     # [TILE_SIZE]
-    key_load = tl.load(
-        key_ptr + src_key_idx + tile_pos, mask=tile_pos < (num_heads * head_size)
-    )
+    key_load = tl.load(key_ptr + src_key_idx + tile_pos, mask=tile_pos < (num_heads * head_size))
     if FP8_KV_CACHE:
         # tl.store will do the correct implicit cast to fp8,
         # based on the key_cache_ptr.dtype.element_ty
@@ -56,9 +54,7 @@ def reshape_and_cache_kernel_flash(
         key_tile = key_load
 
     # [TILE_SIZE]
-    value_load = tl.load(
-        value_ptr + src_value_idx + tile_pos, mask=tile_pos < (num_heads * head_size)
-    )
+    value_load = tl.load(value_ptr + src_value_idx + tile_pos, mask=tile_pos < (num_heads * head_size))
     if FP8_KV_CACHE:
         if value_load.dtype.is_fp8():
             value_tile = value_load
@@ -111,11 +107,7 @@ def triton_reshape_and_cache_flash(
     assert kv_cache_dtype == "auto" or kv_cache_dtype.startswith("fp8"), (
         f"unsupported kv_cache_dtype (str), got {kv_cache_dtype}."
     )
-    kv_cache_torch_dtype = (
-        current_platform.fp8_dtype()
-        if kv_cache_dtype.startswith("fp8")
-        else key_cache.dtype
-    )
+    kv_cache_torch_dtype = current_platform.fp8_dtype() if kv_cache_dtype.startswith("fp8") else key_cache.dtype
 
     if key_cache.dtype != kv_cache_torch_dtype and kv_cache_dtype.startswith("fp8"):
         # to avoid erounous implicit cast in triton kernel (tl.store to uint8)
@@ -123,8 +115,7 @@ def triton_reshape_and_cache_flash(
         key_cache = key_cache.view(kv_cache_torch_dtype)
         value_cache = value_cache.view(kv_cache_torch_dtype)
     assert kv_cache_dtype != torch.uint8, (
-        "explicit fp8 cast and store to "
-        "uint8 is not supported by triton reshape_and_cache_flash"
+        "explicit fp8 cast and store to uint8 is not supported by triton reshape_and_cache_flash"
     )
 
     FP8_KV_CACHE = kv_cache_dtype.startswith("fp8")

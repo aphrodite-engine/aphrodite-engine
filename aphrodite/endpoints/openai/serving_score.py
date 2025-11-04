@@ -6,27 +6,35 @@ from typing import Any
 from fastapi import Request
 
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (ErrorResponse, RerankDocument,
-                                                 RerankRequest, RerankResponse,
-                                                 RerankResult, RerankUsage,
-                                                 ScoreRequest, ScoreResponse,
-                                                 ScoreResponseData, UsageInfo)
+from aphrodite.endpoints.openai.protocol import (
+    ErrorResponse,
+    RerankDocument,
+    RerankRequest,
+    RerankResponse,
+    RerankResult,
+    RerankUsage,
+    ScoreRequest,
+    ScoreResponse,
+    ScoreResponseData,
+    UsageInfo,
+)
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
-from aphrodite.endpoints.score_utils import (ScoreContentPartParam,
-                                             ScoreMultiModalParam,
-                                             _cosine_similarity,
-                                             _validate_score_input_lens,
-                                             compress_token_type_ids,
-                                             get_score_prompt)
+from aphrodite.endpoints.score_utils import (
+    ScoreContentPartParam,
+    ScoreMultiModalParam,
+    _cosine_similarity,
+    _validate_score_input_lens,
+    compress_token_type_ids,
+    get_score_prompt,
+)
 from aphrodite.endpoints.utils import _validate_truncation_size
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import TokensPrompt
 from aphrodite.logger import init_logger
 from aphrodite.lora.request import LoRARequest
 from aphrodite.outputs import PoolingRequestOutput, ScoringRequestOutput
-from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
-                                                    MistralTokenizer)
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer
 from aphrodite.utils.async_utils import make_async, merge_async_iterators
 
 logger = init_logger(__name__)
@@ -64,23 +72,15 @@ class ServingScores(OpenAIServing):
         input_texts = texts_1 + texts_2
 
         engine_prompts: list[TokensPrompt] = []
-        tokenize_async = make_async(
-            tokenizer.__call__, executor=self._tokenizer_executor
-        )
+        tokenize_async = make_async(tokenizer.__call__, executor=self._tokenizer_executor)
 
         tokenization_kwargs = tokenization_kwargs or {}
-        tokenized_prompts = await asyncio.gather(
-            *(tokenize_async(t, **tokenization_kwargs) for t in input_texts)
-        )
+        tokenized_prompts = await asyncio.gather(*(tokenize_async(t, **tokenization_kwargs) for t in input_texts))
 
         for tok_result, input_text in zip(tokenized_prompts, input_texts):
-            text_token_prompt = self._validate_input(
-                request, tok_result["input_ids"], input_text
-            )
+            text_token_prompt = self._validate_input(request, tok_result["input_ids"], input_text)
 
-            engine_prompts.append(
-                TokensPrompt(prompt_token_ids=text_token_prompt["prompt_token_ids"])
-            )
+            engine_prompts.append(TokensPrompt(prompt_token_ids=text_token_prompt["prompt_token_ids"]))
 
         # Schedule the request and get the result generator.
         generators: list[AsyncGenerator[PoolingRequestOutput, None]] = []
@@ -136,9 +136,7 @@ class ServingScores(OpenAIServing):
         if len(emb_texts_1) == 1:
             emb_texts_1 = emb_texts_1 * len(emb_texts_2)
 
-        final_res_batch = _cosine_similarity(
-            tokenizer=tokenizer, embed_1=emb_texts_1, embed_2=emb_texts_2
-        )
+        final_res_batch = _cosine_similarity(tokenizer=tokenizer, embed_1=emb_texts_1, embed_2=emb_texts_2)
 
         return final_res_batch
 
@@ -189,9 +187,7 @@ class ServingScores(OpenAIServing):
 
         input_pairs = [(t1, t2) for t1, t2 in zip(data_1, data_2)]
 
-        preprocess_async = make_async(
-            self._preprocess_score, executor=self._tokenizer_executor
-        )
+        preprocess_async = make_async(self._preprocess_score, executor=self._tokenizer_executor)
 
         preprocessed_prompts = await asyncio.gather(
             *(
@@ -251,9 +247,7 @@ class ServingScores(OpenAIServing):
         result_generator = merge_async_iterators(*generators)
 
         # Non-streaming response
-        final_res_batch: list[PoolingRequestOutput | None] = [None] * len(
-            engine_prompts
-        )
+        final_res_batch: list[PoolingRequestOutput | None] = [None] * len(engine_prompts)
 
         async for i, res in result_generator:
             final_res_batch[i] = res
@@ -275,19 +269,11 @@ class ServingScores(OpenAIServing):
         truncate_prompt_tokens = getattr(request, "truncate_prompt_tokens", None)
 
         tokenization_kwargs: dict[str, Any] = {}
-        _validate_truncation_size(
-            self.max_model_len, truncate_prompt_tokens, tokenization_kwargs
-        )
+        _validate_truncation_size(self.max_model_len, truncate_prompt_tokens, tokenization_kwargs)
 
-        trace_headers = (
-            None
-            if raw_request is None
-            else await self._get_trace_headers(raw_request.headers)
-        )
+        trace_headers = None if raw_request is None else await self._get_trace_headers(raw_request.headers)
 
-        if not self.model_config.is_multimodal_model and (
-            isinstance(data_1, dict) or isinstance(data_2, dict)
-        ):
+        if not self.model_config.is_multimodal_model and (isinstance(data_1, dict) or isinstance(data_2, dict)):
             raise ValueError(
                 f"MultiModalParam is not supported for {self.model_config.architecture}"  # noqa: E501
             )
@@ -389,11 +375,7 @@ class ServingScores(OpenAIServing):
         top_n = (
             request.top_n
             if request.top_n > 0
-            else (
-                len(documents)
-                if isinstance(documents, list)
-                else len(documents["content"])
-            )
+            else (len(documents) if isinstance(documents, list) else len(documents["content"]))
         )
 
         try:

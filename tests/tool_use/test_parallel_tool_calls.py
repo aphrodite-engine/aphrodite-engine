@@ -3,9 +3,13 @@ import json
 import openai
 import pytest
 
-from .utils import (MESSAGES_ASKING_FOR_PARALLEL_TOOLS,
-                    MESSAGES_WITH_PARALLEL_TOOL_RESPONSE, SEARCH_TOOL,
-                    WEATHER_TOOL, ServerConfig)
+from .utils import (
+    MESSAGES_ASKING_FOR_PARALLEL_TOOLS,
+    MESSAGES_WITH_PARALLEL_TOOL_RESPONSE,
+    SEARCH_TOOL,
+    WEATHER_TOOL,
+    ServerConfig,
+)
 
 
 # test: getting the model to generate parallel tool calls (streaming/not)
@@ -13,15 +17,9 @@ from .utils import (MESSAGES_ASKING_FOR_PARALLEL_TOOLS,
 # may be added in the future. e.g. llama 3.1 models are not designed to support
 # parallel tool calls.
 @pytest.mark.asyncio
-async def test_parallel_tool_calls(
-    client: openai.AsyncOpenAI, server_config: ServerConfig
-):
+async def test_parallel_tool_calls(client: openai.AsyncOpenAI, server_config: ServerConfig):
     if not server_config.get("supports_parallel", True):
-        pytest.skip(
-            "The {} model doesn't support parallel tool calls".format(
-                server_config["model"]
-            )
-        )
+        pytest.skip("The {} model doesn't support parallel tool calls".format(server_config["model"]))
 
     models = await client.models.list()
     model_name: str = models.data[0].id
@@ -140,15 +138,9 @@ async def test_parallel_tool_calls(
 # test: providing parallel tool calls back to the model to get a response
 # (streaming/not)
 @pytest.mark.asyncio
-async def test_parallel_tool_calls_with_results(
-    client: openai.AsyncOpenAI, server_config: ServerConfig
-):
+async def test_parallel_tool_calls_with_results(client: openai.AsyncOpenAI, server_config: ServerConfig):
     if not server_config.get("supports_parallel", True):
-        pytest.skip(
-            "The {} model doesn't support parallel tool calls".format(
-                server_config["model"]
-            )
-        )
+        pytest.skip("The {} model doesn't support parallel tool calls".format(server_config["model"]))
 
     models = await client.models.list()
     model_name: str = models.data[0].id

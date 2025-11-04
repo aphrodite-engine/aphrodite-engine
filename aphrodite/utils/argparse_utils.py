@@ -3,9 +3,15 @@
 import json
 import sys
 import textwrap
-from argparse import (Action, ArgumentDefaultsHelpFormatter, ArgumentParser,
-                      ArgumentTypeError, Namespace,
-                      RawDescriptionHelpFormatter, _ArgumentGroup)
+from argparse import (
+    Action,
+    ArgumentDefaultsHelpFormatter,
+    ArgumentParser,
+    ArgumentTypeError,
+    Namespace,
+    RawDescriptionHelpFormatter,
+    _ArgumentGroup,
+)
 from collections import defaultdict
 from typing import Any
 
@@ -75,10 +81,7 @@ class FlexibleArgumentParser(ArgumentParser):
                 )
             namespace, args = super().parse_known_args(args, namespace)
             for action in FlexibleArgumentParser._deprecated:
-                if (
-                    hasattr(namespace, dest := action.dest)
-                    and getattr(namespace, dest) != action.default
-                ):
+                if hasattr(namespace, dest := action.dest) and getattr(namespace, dest) != action.default:
                     logger.warning_once("argument '%s' is deprecated", dest)
             return namespace, args
 
@@ -133,9 +136,7 @@ class FlexibleArgumentParser(ArgumentParser):
             for group in self._action_groups:
                 for action in group._group_actions:
                     # search option name
-                    if any(
-                        search_keyword in opt.lower() for opt in action.option_strings
-                    ):
+                    if any(search_keyword in opt.lower() for opt in action.option_strings):
                         matched_actions.append(action)
             if matched_actions:
                 formatter.start_section(f"Arguments matching '{search_keyword}'")
@@ -187,11 +188,7 @@ class FlexibleArgumentParser(ArgumentParser):
         # Check for --model in command line arguments first
         if args and args[0] == "serve":
             try:
-                model_idx = next(
-                    i
-                    for i, arg in enumerate(args)
-                    if arg == "--model" or arg.startswith("--model=")
-                )
+                model_idx = next(i for i, arg in enumerate(args) if arg == "--model" or arg.startswith("--model="))
                 logger.warning(
                     "With `aphrodite serve`, you should provide the model as a "
                     "positional argument or in a config file instead of via "
@@ -250,11 +247,7 @@ class FlexibleArgumentParser(ArgumentParser):
                 # also handle -O=<mode> here
                 mode = arg[3:] if arg[2] == "=" else arg[2:]
                 processed_args.append(f"-O.mode={mode}")
-            elif (
-                arg == "-O"
-                and i + 1 < len(args)
-                and args[i + 1] in {"0", "1", "2", "3"}
-            ):
+            elif arg == "-O" and i + 1 < len(args) and args[i + 1] in {"0", "1", "2", "3"}:
                 # Convert -O <n> to -O.mode <n>
                 processed_args.append("-O.mode")
             else:
@@ -409,19 +402,12 @@ class FlexibleArgumentParser(ArgumentParser):
 
             if not model_in_cli and not model_in_config:
                 raise ValueError(
-                    "No model specified! Please specify model either "
-                    "as a positional argument or in a config file."
+                    "No model specified! Please specify model either as a positional argument or in a config file."
                 )
 
             if model_in_cli:
                 # Model specified as positional arg, keep CLI version
-                args = (
-                    [args[0]]
-                    + [args[1]]
-                    + config_args
-                    + args[2:index]
-                    + args[index + 2 :]
-                )
+                args = [args[0]] + [args[1]] + config_args + args[2:index] + args[index + 2 :]
             else:
                 # No model in CLI, use config if available
                 args = [args[0]] + config_args + args[1:index] + args[index + 2 :]
@@ -445,9 +431,7 @@ class FlexibleArgumentParser(ArgumentParser):
         """
         extension: str = file_path.split(".")[-1]
         if extension not in ("yaml", "yml"):
-            raise ValueError(
-                f"Config file must be of a yaml/yml type. {extension} supplied"
-            )
+            raise ValueError(f"Config file must be of a yaml/yml type. {extension} supplied")
 
         # only expecting a flat dictionary of atomic types
         processed_args: list[str] = []

@@ -3,8 +3,8 @@ import datetime
 import os
 
 import albumentations
-import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 import regex as re
@@ -31,12 +31,8 @@ datamodule_config = {
     "no_label_replace": -1,
     "num_workers": 8,
     "test_transform": [
-        albumentations.Resize(
-            always_apply=False, height=448, interpolation=1, p=1, width=448
-        ),
-        albumentations.pytorch.ToTensorV2(
-            transpose_mask=False, always_apply=True, p=1.0
-        ),
+        albumentations.Resize(always_apply=False, height=448, interpolation=1, p=1, width=448),
+        albumentations.pytorch.ToTensorV2(transpose_mask=False, always_apply=True, p=1.0),
     ],
 }
 
@@ -204,11 +200,7 @@ def load_example(
                 if len(julian_day) == 3:
                     julian_day = int(julian_day)
                 else:
-                    julian_day = (
-                        datetime.datetime.strptime(julian_day, "%m%d")
-                        .timetuple()
-                        .tm_yday
-                    )
+                    julian_day = datetime.datetime.strptime(julian_day, "%m%d").timetuple().tm_yday
                 temporal_coords.append([year, julian_day])
         except Exception as e:
             print(f"Could not extract timestamp for {file} ({e})")
@@ -233,9 +225,7 @@ def run_model(
     original_h, original_w = input_data.shape[-2:]
     pad_h = (img_size - (original_h % img_size)) % img_size
     pad_w = (img_size - (original_w % img_size)) % img_size
-    input_data = np.pad(
-        input_data, ((0, 0), (0, 0), (0, 0), (0, pad_h), (0, pad_w)), mode="reflect"
-    )
+    input_data = np.pad(input_data, ((0, 0), (0, 0), (0, 0), (0, pad_h), (0, pad_w)), mode="reflect")
 
     # Build sliding window
 
@@ -244,9 +234,7 @@ def run_model(
     batch = torch.tensor(input_data)
     windows = batch.unfold(3, img_size, img_size).unfold(4, img_size, img_size)
     h1, w1 = windows.shape[3:5]
-    windows = rearrange(
-        windows, "b c t h1 w1 h w -> (b h1 w1) c t h w", h=img_size, w=img_size
-    )
+    windows = rearrange(windows, "b c t h1 w1 h w -> (b h1 w1) c t h w", h=img_size, w=img_size)
 
     # Split into batches if number of windows > batch_size
     num_batches = windows.shape[0] // batch_size if windows.shape[0] > batch_size else 1
@@ -266,9 +254,7 @@ def run_model(
             pred = model.run(x, location_coords=location_coords)
         y_hat = pred.argmax(dim=1)
 
-        y_hat = torch.nn.functional.interpolate(
-            y_hat.unsqueeze(1).float(), size=img_size, mode="nearest"
-        )
+        y_hat = torch.nn.functional.interpolate(y_hat.unsqueeze(1).float(), size=img_size, mode="nearest")
 
         pred_imgs.append(y_hat)
 
@@ -300,47 +286,45 @@ def create_visualization(pred_file: str, output_dir: str, data_file: str):
     with rasterio.open(pred_file) as src:
         prediction = src.read(1)
         bounds = src.bounds
-    
+
     fig, ax = plt.subplots(figsize=(12, 10))
 
     # Create custom colormap: 0 = blue (no flood), 255 = red (flood)
-    cmap = mcolors.ListedColormap(['#2E86AB', '#A23B72'])
+    cmap = mcolors.ListedColormap(["#2E86AB", "#A23B72"])
     bounds_list = [0, 127, 255]
     norm = mcolors.BoundaryNorm(bounds_list, cmap.N)
 
-    im = ax.imshow(prediction, cmap=cmap, norm=norm, 
-                   extent=[bounds.left, bounds.right, bounds.bottom, bounds.top])
+    im = ax.imshow(prediction, cmap=cmap, norm=norm, extent=[bounds.left, bounds.right, bounds.bottom, bounds.top])
 
     cbar = plt.colorbar(im, ax=ax, ticks=[63.75, 191.25])
-    cbar.ax.set_yticklabels(['No Flood', 'Flood'])
+    cbar.ax.set_yticklabels(["No Flood", "Flood"])
 
-    ax.set_xlabel('Longitude', fontsize=12)
-    ax.set_ylabel('Latitude', fontsize=12)
-    ax.set_title('Flood Segmentation Prediction\nPrithvi-EO-2.0-300M on Sen1Floods11', 
-                 fontsize=14, fontweight='bold')
+    ax.set_xlabel("Longitude", fontsize=12)
+    ax.set_ylabel("Latitude", fontsize=12)
+    ax.set_title("Flood Segmentation Prediction\nPrithvi-EO-2.0-300M on Sen1Floods11", fontsize=14, fontweight="bold")
 
-    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+    ax.grid(True, alpha=0.3, linestyle="--", linewidth=0.5)
 
     flood_pixels = np.sum(prediction == 255)
     total_pixels = prediction.size
     flood_percentage = (flood_pixels / total_pixels) * 100
 
-    ax.text(0.02, 0.98, 
-            f'Flood Coverage: {flood_percentage:.2f}%\n'
-            f'Flood Pixels: {flood_pixels:,}\n'
-            f'Total Pixels: {total_pixels:,}',
-            transform=ax.transAxes, fontsize=10, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    ax.text(
+        0.02,
+        0.98,
+        f"Flood Coverage: {flood_percentage:.2f}%\nFlood Pixels: {flood_pixels:,}\nTotal Pixels: {total_pixels:,}",
+        transform=ax.transAxes,
+        fontsize=10,
+        verticalalignment="top",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
 
     plt.tight_layout()
 
-    viz_file = os.path.join(
-        output_dir, 
-        f"pred_{os.path.splitext(os.path.basename(data_file))[0]}_viz.png"
-    )
-    plt.savefig(viz_file, dpi=150, bbox_inches='tight')
+    viz_file = os.path.join(output_dir, f"pred_{os.path.splitext(os.path.basename(data_file))[0]}_viz.png")
+    plt.savefig(viz_file, dpi=150, bbox_inches="tight")
     plt.close()
-    
+
     print(f"Visualization saved to {viz_file}")
     print(f"  - Image dimensions: {prediction.shape[0]} x {prediction.shape[1]} pixels")
     print(f"  - Flood coverage: {flood_percentage:.2f}%")
@@ -369,20 +353,14 @@ def main(
     if input_data.mean() > 1:
         input_data = input_data / 10000  # Convert to range 0-1
 
-    channels = [
-        datamodule_config["bands"].index(b) for b in ["RED", "GREEN", "BLUE"]
-    ]  # BGR -> RGB
+    channels = [datamodule_config["bands"].index(b) for b in ["RED", "GREEN", "BLUE"]]  # BGR -> RGB
 
-    pred = run_model(
-        input_data, temporal_coords, location_coords, model_obj, datamodule, img_size
-    )
+    pred = run_model(input_data, temporal_coords, location_coords, model_obj, datamodule, img_size)
     # Save pred
     meta_data.update(count=1, dtype="uint8", compress="lzw", nodata=0)
-    pred_file = os.path.join(
-        output_dir, f"pred_{os.path.splitext(os.path.basename(data_file))[0]}.tiff"
-    )
+    pred_file = os.path.join(output_dir, f"pred_{os.path.splitext(os.path.basename(data_file))[0]}.tiff")
     save_geotiff(_convert_np_uint8(pred), pred_file, meta_data)
-    
+
     # Create visualization
     create_visualization(pred_file, output_dir, data_file)
 
@@ -402,9 +380,7 @@ def main(
     img_pred = rgb_orig * 0.7 + pred * 0.3
     img_pred[img_pred.isnan()] = rgb_orig[img_pred.isnan()]
 
-    img_pred_file = os.path.join(
-        output_dir, f"rgb_pred_{os.path.splitext(os.path.basename(data_file))[0]}.tiff"
-    )
+    img_pred_file = os.path.join(output_dir, f"rgb_pred_{os.path.splitext(os.path.basename(data_file))[0]}.tiff")
     save_geotiff(
         image=_convert_np_uint8(img_pred),
         output_path=img_pred_file,
@@ -459,8 +435,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rgb_outputs",
         action="store_true",
-        help="If present, output files will only contain RGB channels. "
-        "Otherwise, all bands will be saved.",
+        help="If present, output files will only contain RGB channels. Otherwise, all bands will be saved.",
     )
     args = parser.parse_args()
 

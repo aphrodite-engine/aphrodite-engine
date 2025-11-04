@@ -24,9 +24,7 @@ def generate_test_data(
     """Generate test data for given configuration."""
     current_platform.seed_everything(42)
     # Create 2D positions (3, num_tokens) for multimodal case
-    positions = torch.randint(
-        0, max_position_embeddings // 4, (3, num_tokens), device=device
-    )
+    positions = torch.randint(0, max_position_embeddings // 4, (3, num_tokens), device=device)
 
     # Create query and key tensors
     query = torch.randn(num_tokens, num_q_heads * head_size, dtype=dtype, device=device)
@@ -73,15 +71,10 @@ MODELS_TO_TEST = [
 num_tokens_list = [11, 8192]
 
 
-@pytest.mark.skipif(
-    not current_platform.is_cuda_alike(), reason="Skipping CUDA/ROCm only tests."
-)
+@pytest.mark.skipif(not current_platform.is_cuda_alike(), reason="Skipping CUDA/ROCm only tests.")
 @pytest.mark.parametrize(
     "model_info, model_name",
-    [
-        pytest.param(test_config, test_config.model_name, marks=test_config.marks)
-        for test_config in MODELS_TO_TEST
-    ],
+    [pytest.param(test_config, test_config.model_name, marks=test_config.marks) for test_config in MODELS_TO_TEST],
 )
 @pytest.mark.parametrize("tp_size", [1, 2])
 @pytest.mark.parametrize("dtype", [torch.bfloat16])
@@ -104,11 +97,7 @@ def test_mrope(
     total_num_heads = config.num_attention_heads
     num_heads = total_num_heads // tp_size
     num_kv_heads = max(1, total_num_kv_heads // tp_size)
-    head_dim = (
-        config.head_dim
-        if hasattr(config, "head_dim")
-        else config.hidden_size // total_num_heads
-    )
+    head_dim = config.head_dim if hasattr(config, "head_dim") else config.hidden_size // total_num_heads
     is_neox_style = True
 
     rope_theta = config.rope_theta
@@ -148,15 +137,10 @@ def test_mrope(
     torch.testing.assert_close(key_native, key_cuda, atol=atol, rtol=rtol)
 
 
-@pytest.mark.skipif(
-    not current_platform.is_cuda_alike(), reason="Skipping CUDA/ROCm only tests."
-)
+@pytest.mark.skipif(not current_platform.is_cuda_alike(), reason="Skipping CUDA/ROCm only tests.")
 @pytest.mark.parametrize(
     "model_info, model_name",
-    [
-        pytest.param(test_config, test_config.model_name, marks=test_config.marks)
-        for test_config in MODELS_TO_TEST
-    ],
+    [pytest.param(test_config, test_config.model_name, marks=test_config.marks) for test_config in MODELS_TO_TEST],
 )
 @pytest.mark.parametrize("tp_size", [1, 2])
 @pytest.mark.parametrize("dtype", [torch.bfloat16])
@@ -179,11 +163,7 @@ def test_mrope_torch_compile_tracing(
     total_num_heads = config.num_attention_heads
     num_heads = total_num_heads // tp_size
     num_kv_heads = max(1, total_num_kv_heads // tp_size)
-    head_dim = (
-        config.head_dim
-        if hasattr(config, "head_dim")
-        else config.hidden_size // total_num_heads
-    )
+    head_dim = config.head_dim if hasattr(config, "head_dim") else config.hidden_size // total_num_heads
     is_neox_style = True
     rope_theta = config.rope_theta
     max_position = config.max_position_embeddings
@@ -248,13 +228,9 @@ def test_mrope_torch_compile_tracing(
         mrope_helper_class.forward_cuda(positions, query_cuda, key_cuda)
 
         # Verify results
-        torch.testing.assert_close(
-            query_compiled_cuda, query_cuda, atol=atol, rtol=rtol
-        )
+        torch.testing.assert_close(query_compiled_cuda, query_cuda, atol=atol, rtol=rtol)
         torch.testing.assert_close(key_compiled_cuda, key_cuda, atol=atol, rtol=rtol)
-        torch.testing.assert_close(
-            query_compiled_cuda, query_native, atol=atol, rtol=rtol
-        )
+        torch.testing.assert_close(query_compiled_cuda, query_native, atol=atol, rtol=rtol)
         torch.testing.assert_close(key_compiled_cuda, key_native, atol=atol, rtol=rtol)
 
         print("✓ forward_cuda successfully traced with torch.compile inductor")

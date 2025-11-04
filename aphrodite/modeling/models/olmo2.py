@@ -33,26 +33,26 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
-from aphrodite.distributed.communication_op import (
-    tensor_model_parallel_all_gather)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
+from aphrodite.distributed.communication_op import tensor_model_parallel_all_gather
 from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank
 from aphrodite.distributed.utils import split_tensor_along_last_dim
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.interfaces import SupportsLoRA, SupportsPP
 from aphrodite.modeling.models.utils import (
-    AutoWeightsLoader, extract_layer_index, is_pp_missing_parameter,
-    make_empty_intermediate_tensors_factory, make_layers, maybe_prefix)
+    AutoWeightsLoader,
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 from aphrodite.transformers_utils.configs import Olmo3Config
 
 
@@ -76,9 +76,7 @@ class Olmo2Attention(nn.Module):
         assert self.total_num_heads % self.tp_size == 0
 
         self.num_heads = self.total_num_heads // self.tp_size
-        self.total_num_kv_heads = (
-            self.config.num_key_value_heads or self.total_num_heads
-        )
+        self.total_num_kv_heads = self.config.num_key_value_heads or self.total_num_heads
         if self.total_num_kv_heads >= self.tp_size:
             assert self.total_num_kv_heads % self.tp_size == 0
         else:
@@ -113,9 +111,9 @@ class Olmo2Attention(nn.Module):
 
         layer_idx = extract_layer_index(prefix)
         sliding_window = None
-        if (
-            layer_types := getattr(self.config, "layer_types", None)
-        ) is not None and layer_types[layer_idx] == "sliding_attention":
+        if (layer_types := getattr(self.config, "layer_types", None)) is not None and layer_types[
+            layer_idx
+        ] == "sliding_attention":
             sliding_window = self.config.sliding_window
 
         self.attn = Attention(
@@ -149,9 +147,7 @@ class Olmo2Attention(nn.Module):
             prefix=f"{prefix}.o_proj",
         )
 
-    def _apply_qk_norm(
-        self, q: torch.Tensor, k: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _apply_qk_norm(self, q: torch.Tensor, k: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         if self.tp_size > 1:
             q = tensor_model_parallel_all_gather(q.contiguous())
             k = tensor_model_parallel_all_gather(k.contiguous())
@@ -234,21 +230,15 @@ class Olmo2DecoderLayer(nn.Module):
         config = aphrodite_config.model_config.hf_config
         assert isinstance(config, (Olmo2Config, Olmo3Config))
         # Attention block.
-        self.self_attn = Olmo2Attention(
-            aphrodite_config=aphrodite_config, prefix=f"{prefix}.self_attn"
-        )
+        self.self_attn = Olmo2Attention(aphrodite_config=aphrodite_config, prefix=f"{prefix}.self_attn")
 
         # MLP block.
         self.mlp = Olmo2MLP(aphrodite_config=aphrodite_config, prefix=f"{prefix}.mlp")
 
         # LayerNorm
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
-        self.post_feedforward_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_feedforward_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -392,9 +382,7 @@ class Olmo2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
         config = aphrodite_config.model_config.hf_config
         assert isinstance(config, (Olmo2Config, Olmo3Config))
         self.config = config
-        self.model = Olmo2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Olmo2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         if config.tie_word_embeddings:
             self.lm_head = self.model.embed_tokens
         else:
@@ -407,9 +395,7 @@ class Olmo2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
                 prefix=maybe_prefix(prefix, "lm_head"),
             )
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -439,8 +425,6 @@ class Olmo2ForCausalLM(nn.Module, SupportsPP, SupportsLoRA):
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(
-                ["lm_head.weight"] if self.config.tie_word_embeddings else None
-            ),
+            skip_prefixes=(["lm_head.weight"] if self.config.tie_word_embeddings else None),
         )
         return loader.load_weights(weights)

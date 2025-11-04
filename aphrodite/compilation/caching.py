@@ -40,9 +40,7 @@ class AphroditeSerializableFunction(SerializableCallable):
         self.prefix = prefix
         self.optimized_call = optimized_call
         self.shape_env = None
-        sym_input = next(
-            (i for i in self.example_inputs if isinstance(i, torch.SymInt)), None
-        )
+        sym_input = next((i for i in self.example_inputs if isinstance(i, torch.SymInt)), None)
         if sym_input is not None:
             self.shape_env = sym_input.node.shape_env
 
@@ -50,9 +48,7 @@ class AphroditeSerializableFunction(SerializableCallable):
         return self.optimized_call(*args, **kwargs)
 
     @classmethod
-    def serialize_compile_artifacts(
-        cls, compiled_fn: "AphroditeSerializableFunction"
-    ) -> bytes:
+    def serialize_compile_artifacts(cls, compiled_fn: "AphroditeSerializableFunction") -> bytes:
         import sympy
         from torch._subclasses import FakeTensorMode
         from torch.fx._graph_pickler import GraphPickler, Options
@@ -67,24 +63,16 @@ class AphroditeSerializableFunction(SerializableCallable):
         graph_reducer_override = GraphPickler.reducer_override
 
         def _graph_reducer_override(self, obj):
-            if (
-                inspect.isclass(obj)
-                and issubclass(obj, sympy.Function)
-                and hasattr(obj, "_torch_unpickler")
-            ):
+            if inspect.isclass(obj) and issubclass(obj, sympy.Function) and hasattr(obj, "_torch_unpickler"):
                 return obj._torch_unpickler, (obj._torch_handler_name,)
             if isinstance(obj, FakeTensorMode):
                 return type(None), ()
             return graph_reducer_override(self, obj)
 
         # Mask off tensor inputs since they are large and not needed.
-        state["example_inputs"] = pytree.tree_map_only(
-            torch.Tensor, lambda _: None, state["example_inputs"]
-        )
+        state["example_inputs"] = pytree.tree_map_only(torch.Tensor, lambda _: None, state["example_inputs"])
         with patch.object(GraphPickler, "reducer_override", _graph_reducer_override):
-            state["graph_module"] = GraphPickler.dumps(
-                state["graph_module"], Options(ops_filter=None)
-            )
+            state["graph_module"] = GraphPickler.dumps(state["graph_module"], Options(ops_filter=None))
             state["example_inputs"] = GraphPickler.dumps(state["example_inputs"])
         return pickle.dumps(state)
 
@@ -111,13 +99,9 @@ class AphroditeSerializableFunction(SerializableCallable):
             call with the compiled function, so that subsequent calls are on
             the AOT compiled path.
             """
-            compile_inputs = [
-                inp or example_inputs[i] for i, inp in enumerate(fn.example_inputs)
-            ]
+            compile_inputs = [inp or example_inputs[i] for i, inp in enumerate(fn.example_inputs)]
             with tracing(TracingContext(fake_mode)):
-                fn.optimized_call = aphrodite_backend(
-                    state["graph_module"], compile_inputs
-                ).optimized_call
+                fn.optimized_call = aphrodite_backend(state["graph_module"], compile_inputs).optimized_call
             return fn.optimized_call(*example_inputs)
 
         fn = cls(**state, optimized_call=optimized_call)
@@ -155,15 +139,11 @@ def _compute_code_hash_with_content(file_contents: dict[str, str]) -> str:
             # e.g. exec(). We can't actually check these.
             continue
         hash_content.append(content)
-    return hashlib.md5(
-        "\n".join(hash_content).encode(), usedforsecurity=False
-    ).hexdigest()
+    return hashlib.md5("\n".join(hash_content).encode(), usedforsecurity=False).hexdigest()
 
 
 def _compute_code_hash(files: set[str]) -> str:
-    logger.debug(
-        "Traced files (to be considered for compilation cache):\n%s", "\n".join(files)
-    )
+    logger.debug("Traced files (to be considered for compilation cache):\n%s", "\n".join(files))
     file_contents = {}
     for filepath in files:
         # Skip files that don't exist (e.g., <string>, <frozen modules>, etc.)

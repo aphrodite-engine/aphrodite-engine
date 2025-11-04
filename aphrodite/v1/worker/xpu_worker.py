@@ -9,8 +9,7 @@ from aphrodite.distributed import get_world_group
 from aphrodite.logger import init_logger
 from aphrodite.modeling import set_random_seed
 from aphrodite.platforms import current_platform
-from aphrodite.v1.worker.gpu_worker import (
-    Worker, init_worker_distributed_environment)
+from aphrodite.v1.worker.gpu_worker import Worker, init_worker_distributed_environment
 from aphrodite.v1.worker.xpu_model_runner import XPUModelRunner
 
 logger = init_logger(__name__)
@@ -27,9 +26,7 @@ class XPUWorker(Worker):
         distributed_init_method: str,
         is_driver_worker: bool = False,
     ):
-        super().__init__(
-            aphrodite_config, local_rank, rank, distributed_init_method, is_driver_worker
-        )
+        super().__init__(aphrodite_config, local_rank, rank, distributed_init_method, is_driver_worker)
         device_config = self.device_config
         assert device_config.device_type == "xpu"
         assert current_platform.is_xpu()
@@ -44,8 +41,7 @@ class XPUWorker(Worker):
                 torch_profiler_trace_dir,
             )
             logger.debug(
-                "Profiler config: record_shapes=%s,"
-                "profile_memory=%s,with_stack=%s,with_flops=%s",
+                "Profiler config: record_shapes=%s,profile_memory=%s,with_stack=%s,with_flops=%s",
                 envs.APHRODITE_TORCH_PROFILER_RECORD_SHAPES,
                 envs.APHRODITE_TORCH_PROFILER_WITH_PROFILE_MEMORY,
                 envs.APHRODITE_TORCH_PROFILER_WITH_STACK,
@@ -131,9 +127,7 @@ class XPUWorker(Worker):
         non_torch_allocations = total_allocated_bytes - torch_allocated_bytes
         if non_torch_allocations > 0:
             peak_memory += non_torch_allocations
-        available_kv_cache_memory = (
-            total_gpu_memory * self.cache_config.gpu_memory_utilization - peak_memory
-        )
+        available_kv_cache_memory = total_gpu_memory * self.cache_config.gpu_memory_utilization - peak_memory
 
         msg = (
             "After memory profiling run, "
@@ -152,17 +146,13 @@ class XPUWorker(Worker):
             current_platform.set_device(self.device)
             current_platform.check_if_supports_dtype(self.model_config.dtype)
             torch.xpu.empty_cache()
-            self.init_gpu_memory = torch.xpu.get_device_properties(
-                self.local_rank
-            ).total_memory
+            self.init_gpu_memory = torch.xpu.get_device_properties(self.local_rank).total_memory
         else:
             raise RuntimeError(f"Not support device type: {self.device_config.device}")
 
         ENV_CCL_ZE_IPC_EXCHANGE = os.getenv("CCL_ZE_IPC_EXCHANGE", "pidfd")
         ENV_CCL_ATL_TRANSPORT = os.getenv("CCL_ATL_TRANSPORT", "ofi")
-        ENV_LOCAL_WORLD_SIZE = os.getenv(
-            "LOCAL_WORLD_SIZE", str(self.parallel_config.world_size)
-        )
+        ENV_LOCAL_WORLD_SIZE = os.getenv("LOCAL_WORLD_SIZE", str(self.parallel_config.world_size))
         os.environ["CCL_ZE_IPC_EXCHANGE"] = ENV_CCL_ZE_IPC_EXCHANGE
         os.environ["CCL_ATL_TRANSPORT"] = ENV_CCL_ATL_TRANSPORT
         os.environ["LOCAL_WORLD_SIZE"] = ENV_LOCAL_WORLD_SIZE
@@ -177,9 +167,7 @@ class XPUWorker(Worker):
         )
 
         # global all_reduce needed for overall oneccl warm up
-        torch.distributed.all_reduce(
-            torch.zeros(1).xpu(), group=get_world_group().device_group
-        )
+        torch.distributed.all_reduce(torch.zeros(1).xpu(), group=get_world_group().device_group)
 
         # Set random seed.
         set_random_seed(self.model_config.seed)

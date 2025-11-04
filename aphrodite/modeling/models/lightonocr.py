@@ -7,20 +7,30 @@ from transformers import BatchFeature, PixtralVisionConfig
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.mistral3 import (
-    Mistral3DummyInputsBuilder, Mistral3ForConditionalGeneration,
-    Mistral3MultiModalProjector, Mistral3ProcessingInfo, _build_mistral3_info,
-    init_vision_tower_for_llava)
+    Mistral3DummyInputsBuilder,
+    Mistral3ForConditionalGeneration,
+    Mistral3MultiModalProjector,
+    Mistral3ProcessingInfo,
+    _build_mistral3_info,
+    init_vision_tower_for_llava,
+)
 from aphrodite.modeling.models.pixtral import PixtralHFEncoderInfo
-from aphrodite.modeling.models.utils import (AutoWeightsLoader, WeightsMapper,
-                                             init_aphrodite_registered_model,
-                                             maybe_prefix)
+from aphrodite.modeling.models.utils import (
+    AutoWeightsLoader,
+    WeightsMapper,
+    init_aphrodite_registered_model,
+    maybe_prefix,
+)
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.cache import BaseMultiModalProcessorCache
 from aphrodite.multimodal.inputs import MultiModalFieldConfig, MultiModalKwargs
 from aphrodite.multimodal.parse import ImageProcessorItems, MultiModalDataItems
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 
 _I = TypeVar("_I", bound=Mistral3ProcessingInfo)
@@ -59,18 +69,14 @@ class LightOnOCRMultiModalProcessor(BaseMultiModalProcessor[Mistral3ProcessingIn
 
             processed_outputs["input_ids"] = input_ids[keep_mask].unsqueeze(0)
             if "attention_mask" in processed_outputs:
-                processed_outputs["attention_mask"] = processed_outputs[
-                    "attention_mask"
-                ][keep_mask].unsqueeze(0)
+                processed_outputs["attention_mask"] = processed_outputs["attention_mask"][keep_mask].unsqueeze(0)
 
         # un-pad pixel_values per-image so caches remain independent.
         pixel_values = processed_outputs.get("pixel_values")
         if pixel_values is not None:
             image_sizes = processed_outputs["image_sizes"]
             assert len(pixel_values) == len(image_sizes)
-            processed_outputs["pixel_values"] = [
-                p[:, :h, :w] for p, (h, w) in zip(pixel_values, image_sizes)
-            ]
+            processed_outputs["pixel_values"] = [p[:, :h, :w] for p, (h, w) in zip(pixel_values, image_sizes)]
 
         return processed_outputs
 
@@ -99,18 +105,12 @@ class LightOnOCRMultiModalProcessor(BaseMultiModalProcessor[Mistral3ProcessingIn
         def replace(item_idx: int):
             images = mm_items.get_items("image", ImageProcessorItems)
             size = images.get_image_size(item_idx)
-            ncols, nrows = encoder_info.get_patch_grid_size(
-                image_width=size.width, image_height=size.height
-            )
+            ncols, nrows = encoder_info.get_patch_grid_size(image_width=size.width, image_height=size.height)
             # break/end tokens are not used in LightOnOCR
             tokens = [image_token_id] * (ncols * nrows)
             return PromptUpdateDetails.select_token_id(tokens, image_token_id)
 
-        return [
-            PromptReplacement(
-                modality="image", target=[image_token_id], replacement=replace
-            )
-        ]
+        return [PromptReplacement(modality="image", target=[image_token_id], replacement=replace)]
 
 
 def _build_LightOnOCR_processor(
@@ -171,9 +171,7 @@ class LightOnOCRForConditionalGeneration(Mistral3ForConditionalGeneration):
             prefix=maybe_prefix(prefix, "language_model"),
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)

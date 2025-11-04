@@ -5,10 +5,16 @@ from aphrodite.logger import init_logger
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.quantization.utils import replace_parameter
 from aphrodite.quantization.utils.bitblas_utils import (
-    BITBLAS_OPTIMIZE_FEATURES, BITBLAS_SUPPORTED_GROUP_SIZES,
-    MINIMUM_BITBLAS_VERSION, bitblas_make_empty_g_idx, bitblas_sort_g_idx,
-    check_bitblas_supports_shape, query_bitblas_supported_quant_types,
-    unpack_gptq_qweight, unpack_gptq_qzeros)
+    BITBLAS_OPTIMIZE_FEATURES,
+    BITBLAS_SUPPORTED_GROUP_SIZES,
+    MINIMUM_BITBLAS_VERSION,
+    bitblas_make_empty_g_idx,
+    bitblas_sort_g_idx,
+    check_bitblas_supports_shape,
+    query_bitblas_supported_quant_types,
+    unpack_gptq_qweight,
+    unpack_gptq_qzeros,
+)
 
 from .MPLinearKernel import MPLinearKernel, MPLinearLayerConfig
 
@@ -38,9 +44,7 @@ class BitBLASLinearKernel(MPLinearKernel):
         bitblas_quant_config: QuantizationConfig | None = None,
     ):
         self.quant_config = bitblas_quant_config
-        super().__init__(
-            c, w_q_param_name, w_s_param_name, w_zp_param_name, w_gidx_param_name
-        )
+        super().__init__(c, w_q_param_name, w_s_param_name, w_zp_param_name, w_gidx_param_name)
 
     def repack_bitblas_from_gptq(
         self,
@@ -108,13 +112,8 @@ class BitBLASLinearKernel(MPLinearKernel):
         try:
             import bitblas
 
-            if version.parse(bitblas.__version__) < version.parse(
-                MINIMUM_BITBLAS_VERSION
-            ):
-                raise ImportError(
-                    "bitblas version is wrong. Please "
-                    f"install bitblas>={MINIMUM_BITBLAS_VERSION}"
-                )
+            if version.parse(bitblas.__version__) < version.parse(MINIMUM_BITBLAS_VERSION):
+                raise ImportError(f"bitblas version is wrong. Please install bitblas>={MINIMUM_BITBLAS_VERSION}")
         except ImportError:
             is_bitblas_installed = False
 
@@ -129,8 +128,7 @@ class BitBLASLinearKernel(MPLinearKernel):
         quant_types = query_bitblas_supported_quant_types(c.zero_points)
         if c.weight_type not in quant_types:
             return False, (
-                f"Quant type ({c.weight_type}) not supported by"
-                f"  BitBLAS, supported types are: {quant_types}"
+                f"Quant type ({c.weight_type}) not supported by  BitBLAS, supported types are: {quant_types}"
             )
 
         if c.group_size not in BITBLAS_SUPPORTED_GROUP_SIZES:
@@ -163,9 +161,7 @@ class BitBLASLinearKernel(MPLinearKernel):
             self.w_zp_name: str = "qzeros"
 
         if c.has_g_idx:
-            g_idx, g_idx_sort_indices = bitblas_sort_g_idx(
-                getattr(layer, self.w_gidx_name)
-            )
+            g_idx, g_idx_sort_indices = bitblas_sort_g_idx(getattr(layer, self.w_gidx_name))
             self._transform_param(layer, self.w_gidx_name, lambda _: g_idx)
             layer.g_idx_sort_indices = g_idx_sort_indices
         else:
@@ -255,9 +251,7 @@ class BitBLASLinearKernel(MPLinearKernel):
             layout=layout,
             zeros_mode=zeros_mode,
         )
-        self.bitblas_matmul = self._get_or_create_bitblas_operator(
-            matmul_config, enable_tuning
-        )
+        self.bitblas_matmul = self._get_or_create_bitblas_operator(matmul_config, enable_tuning)
 
     def _get_or_create_bitblas_operator(self, config, enable_tuning):
         from bitblas import Matmul, auto_detect_nvidia_target
@@ -267,9 +261,7 @@ class BitBLASLinearKernel(MPLinearKernel):
         BITBLAS_TARGET = auto_detect_nvidia_target()
 
         if global_operator_cache.size() == 0:
-            global_operator_cache.load_from_database(
-                BITBLAS_DATABASE_PATH, BITBLAS_TARGET
-            )
+            global_operator_cache.load_from_database(BITBLAS_DATABASE_PATH, BITBLAS_TARGET)
 
         bitblas_matmul = global_operator_cache.get(config)
         if bitblas_matmul is None:
@@ -277,12 +269,8 @@ class BitBLASLinearKernel(MPLinearKernel):
             if enable_tuning:
                 bitblas_matmul.hardware_aware_finetune(topk=20)
                 global_operator_cache.add(config, bitblas_matmul)
-                global_operator_cache.save_into_database(
-                    BITBLAS_DATABASE_PATH, BITBLAS_TARGET
-                )
-                TUNING_MESSAGE = (
-                    f"BitBLAS Operator {config} tuned and saved to database."
-                )
+                global_operator_cache.save_into_database(BITBLAS_DATABASE_PATH, BITBLAS_TARGET)
+                TUNING_MESSAGE = f"BitBLAS Operator {config} tuned and saved to database."
                 logger.info(TUNING_MESSAGE)
             else:
                 _message = f"BitBLAS Operator {config} created without tuning. "

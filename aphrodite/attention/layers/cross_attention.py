@@ -5,15 +5,12 @@ import numpy as np
 import torch
 
 from aphrodite import envs
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionMetadata,
-                                                   AttentionType)
+from aphrodite.attention.backends.abstract import AttentionBackend, AttentionMetadata, AttentionType
 from aphrodite.attention.layer import Attention
 from aphrodite.attention.selector import get_attn_backend
 from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.utils.math_utils import cdiv
-from aphrodite.v1.attention.backends.utils import (CommonAttentionMetadata,
-                                                   subclass_attention_backend)
+from aphrodite.v1.attention.backends.utils import CommonAttentionMetadata, subclass_attention_backend
 from aphrodite.v1.kv_cache_interface import CrossAttentionSpec, KVCacheSpec
 
 
@@ -146,9 +143,7 @@ class CrossAttention(Attention):
             block_size = 16
 
         if envs.APHRODITE_USE_V1:
-            underlying_attn_backend = get_attn_backend(
-                head_size, dtype, kv_cache_dtype, block_size
-            )
+            underlying_attn_backend = get_attn_backend(head_size, dtype, kv_cache_dtype, block_size)
 
             attn_backend = create_cross_attention_backend(
                 underlying_attn_backend,

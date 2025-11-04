@@ -3,12 +3,13 @@ from collections.abc import Callable
 import torch
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          ChannelQuantScaleParameter,
-                                          ModelWeightParameter,
-                                          PerTensorScaleParameter)
-from aphrodite.quantization.kernels.scaled_mm import (
-    ScaledMMLinearLayerConfig, choose_scaled_mm_linear_kernel)
+from aphrodite.modeling.parameter import (
+    BaseAphroditeParameter,
+    ChannelQuantScaleParameter,
+    ModelWeightParameter,
+    PerTensorScaleParameter,
+)
+from aphrodite.quantization.kernels.scaled_mm import ScaledMMLinearLayerConfig, choose_scaled_mm_linear_kernel
 from aphrodite.quantization.quark.schemes import QuarkScheme
 
 logger = init_logger(__name__)
@@ -57,9 +58,7 @@ class QuarkW8A8Int8(QuarkScheme):
 
         # WEIGHT
         weight = ModelWeightParameter(
-            data=torch.empty(
-                sum(output_partition_sizes), input_size_per_partition, dtype=torch.int8
-            ),
+            data=torch.empty(sum(output_partition_sizes), input_size_per_partition, dtype=torch.int8),
             input_dim=1,
             output_dim=0,
             weight_loader=weight_loader,
@@ -96,9 +95,7 @@ class QuarkW8A8Int8(QuarkScheme):
 
         # INPUT SCALE
         if self.is_static_input_scheme:
-            input_scale = BaseAphroditeParameter(
-                data=torch.empty(1, dtype=torch.float32), weight_loader=weight_loader
-            )
+            input_scale = BaseAphroditeParameter(data=torch.empty(1, dtype=torch.float32), weight_loader=weight_loader)
             layer.register_parameter("input_scale", input_scale)
 
             input_zero_point = BaseAphroditeParameter(
@@ -126,7 +123,5 @@ class QuarkW8A8Int8(QuarkScheme):
 
         self.kernel.process_weights_after_loading(layer)
 
-    def apply_weights(
-        self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None
-    ) -> torch.Tensor:
+    def apply_weights(self, layer: torch.nn.Module, x: torch.Tensor, bias: torch.Tensor | None) -> torch.Tensor:
         return self.kernel.apply_weights(layer, x, bias)

@@ -14,19 +14,19 @@ class MambaCacheParams:
     state_indices_tensor: torch.Tensor = torch.Tensor()
 
     def at_layer_idx(self, layer_idx):
-        return MambaCacheParams(self.conv_state[layer_idx],
-                                self.ssm_state[layer_idx],
-                                self.state_indices_tensor)
+        return MambaCacheParams(self.conv_state[layer_idx], self.ssm_state[layer_idx], self.state_indices_tensor)
 
 
 class MambaCacheManager(ConstantSizeCache):
-
-    def __init__(self, aphrodite_config: AphroditeConfig, num_mamba_layers: int,
-                 conv_state_shape: tuple[int, int],
-                 temporal_state_shape: tuple[int, int],
-                 conv_state_dtype: torch.dtype,
-                 temporal_state_dtype: torch.dtype):
-
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+        num_mamba_layers: int,
+        conv_state_shape: tuple[int, int],
+        temporal_state_shape: tuple[int, int],
+        conv_state_dtype: torch.dtype,
+        temporal_state_dtype: torch.dtype,
+    ):
         self.conv_state_dtype = conv_state_dtype
         self.temporal_state_dtype = temporal_state_dtype
 
@@ -40,14 +40,16 @@ class MambaCacheManager(ConstantSizeCache):
 
         # assume conv_state = (dim, state_len)
         assert conv_state_shape[0] > conv_state_shape[1]
-        conv_state = torch.empty(size=(num_mamba_layers, max_batch_size) +
-                                 (conv_state_shape[1], conv_state_shape[0]),
-                                 dtype=self.conv_state_dtype,
-                                 device="cuda").transpose(-1, -2)
-        temporal_state = torch.empty(size=(num_mamba_layers, max_batch_size) +
-                                     temporal_state_shape,
-                                     dtype=self.temporal_state_dtype,
-                                     device="cuda")
+        conv_state = torch.empty(
+            size=(num_mamba_layers, max_batch_size) + (conv_state_shape[1], conv_state_shape[0]),
+            dtype=self.conv_state_dtype,
+            device="cuda",
+        ).transpose(-1, -2)
+        temporal_state = torch.empty(
+            size=(num_mamba_layers, max_batch_size) + temporal_state_shape,
+            dtype=self.temporal_state_dtype,
+            device="cuda",
+        )
 
         self._mamba_cache = (conv_state, temporal_state)
 
@@ -57,17 +59,14 @@ class MambaCacheManager(ConstantSizeCache):
 
     def _copy_cache(self, from_index: int, to_index: int):
         for cache_t in self.cache:
-            cache_t[:, to_index].copy_(cache_t[:, from_index],
-                                       non_blocking=True)
+            cache_t[:, to_index].copy_(cache_t[:, from_index], non_blocking=True)
 
     def current_run_tensors(self, **kwargs) -> MambaCacheParams:
         """
         Return the tensors for the current run's conv and ssm state.
         """
-        cache_tensors, state_indices_tensor = super().current_run_tensors(
-            **kwargs)
-        return MambaCacheParams(cache_tensors[0], cache_tensors[1],
-                                state_indices_tensor)
+        cache_tensors, state_indices_tensor = super().current_run_tensors(**kwargs)
+        return MambaCacheParams(cache_tensors[0], cache_tensors[1], state_indices_tensor)
 
     def get_seqlen_agnostic_capture_inputs(self, batch_size: int):
         """
@@ -75,6 +74,4 @@ class MambaCacheManager(ConstantSizeCache):
         The buffer is used to maintain the Mamba Cache during the CUDA graph
         replay runs.
         """
-        return self._mamba_cache, torch.as_tensor([PAD_SLOT_ID] * batch_size,
-                                                  dtype=torch.int32,
-                                                  device="cuda")
+        return self._mamba_cache, torch.as_tensor([PAD_SLOT_ID] * batch_size, dtype=torch.int32, device="cuda")

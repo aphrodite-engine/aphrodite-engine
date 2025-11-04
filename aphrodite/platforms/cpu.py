@@ -77,15 +77,8 @@ class CpuPlatform(Platform):
     def supported_dtypes(self) -> list[torch.dtype]:
         if self.get_cpu_architecture() == CpuArchEnum.POWERPC:
             return [torch.bfloat16, torch.float32]
-        elif self.get_cpu_architecture() == CpuArchEnum.ARM and sys.platform.startswith(
-            "darwin"
-        ):
-            if (
-                subprocess.check_output(
-                    ["sysctl -n hw.optional.arm.FEAT_BF16"], shell=True
-                ).strip()
-                == b"1"
-            ):
+        elif self.get_cpu_architecture() == CpuArchEnum.ARM and sys.platform.startswith("darwin"):
+            if subprocess.check_output(["sysctl -n hw.optional.arm.FEAT_BF16"], shell=True).strip() == b"1":
                 return [torch.bfloat16, torch.float16, torch.float32]
             return [torch.float16, torch.float32]
         elif self.get_cpu_architecture() == CpuArchEnum.RISCV:
@@ -155,8 +148,7 @@ class CpuPlatform(Platform):
         if kv_cache_space is None:
             kv_cache_space = 4 * GiB_bytes  # type: ignore
             logger.warning_once(
-                "Environment variable APHRODITE_CPU_KVCACHE_SPACE (GiB) "
-                "for CPU backend is not set, using 4 by default."
+                "Environment variable APHRODITE_CPU_KVCACHE_SPACE (GiB) for CPU backend is not set, using 4 by default."
             )
         else:
             kv_cache_space *= GiB_bytes
@@ -189,36 +181,22 @@ class CpuPlatform(Platform):
             cache_config.block_size = 128 if ipex_available else 16
 
         if not ipex_available and cache_config.block_size != 16:
-            raise RuntimeError(
-                f"--block-size={cache_config.block_size} requires"
-                " intel_extension_for_pytorch"
-            )
+            raise RuntimeError(f"--block-size={cache_config.block_size} requires intel_extension_for_pytorch")
 
         scheduler_config = aphrodite_config.scheduler_config
         if (
-            scheduler_config.chunked_prefill_enabled
-            or cache_config.enable_prefix_caching
+            scheduler_config.chunked_prefill_enabled or cache_config.enable_prefix_caching
         ) and cache_config.cache_dtype != "auto":
             raise RuntimeError(
-                "Chunked-prefill and prefix-cache on the CPU "
-                "backend is not compatible with FP8 KV cache."
+                "Chunked-prefill and prefix-cache on the CPU backend is not compatible with FP8 KV cache."
             )
 
         if cache_config.cache_dtype == "fp8_e4m3":
             cache_config.cache_dtype = "fp8_e5m2"
-            logger.warning(
-                "CPU backend doesn't support fp8_e4m3 KV cache type, cast to fp8_e5m2."
-            )
+            logger.warning("CPU backend doesn't support fp8_e4m3 KV cache type, cast to fp8_e5m2.")
 
-        if (
-            cache_config.cache_dtype != "auto"
-            and model_config is not None
-            and model_config.dtype == torch.half
-        ):
-            logger.warning(
-                "FP8 KV cache on the CPU backend only does not"
-                " support fp16 for now, cast to bf16."
-            )
+        if cache_config.cache_dtype != "auto" and model_config is not None and model_config.dtype == torch.half:
+            logger.warning("FP8 KV cache on the CPU backend only does not support fp16 for now, cast to bf16.")
             model_config.dtype = torch.bfloat16
 
         cache_config.cpu_kvcache_space_bytes = CpuPlatform.get_device_total_memory()
@@ -230,10 +208,7 @@ class CpuPlatform(Platform):
             and parallel_config.distributed_executor_backend != "mp"
         ):
             logger.warning(
-                (
-                    "%s is not supported on CPU, fallback to mp "
-                    "distributed executor backend."
-                ),
+                ("%s is not supported on CPU, fallback to mp distributed executor backend."),
                 parallel_config.distributed_executor_backend,
             )
             parallel_config.distributed_executor_backend = "mp"
@@ -326,9 +301,7 @@ class CpuPlatform(Platform):
             torch_pkg = os.path.dirname(torch.__file__)
             site_root = os.path.dirname(torch_pkg)
             torch_libs = os.path.join(site_root, "torch.libs")
-            pytorch_libgomp_so_candidates = glob.glob(
-                os.path.join(torch_libs, "libgomp-*.so*")
-            )
+            pytorch_libgomp_so_candidates = glob.glob(os.path.join(torch_libs, "libgomp-*.so*"))
             if pytorch_libgomp_so_candidates:
                 pytorch_libgomp_so = pytorch_libgomp_so_candidates[0]
                 if ld_preload_str:
@@ -337,14 +310,11 @@ class CpuPlatform(Platform):
                 os.environ["LD_PRELOAD"] = ld_preload_str
 
         # To hint IPEX uses shared memory based AllReduce
-        os.environ["LOCAL_WORLD_SIZE"] = str(
-            aphrodite_config.parallel_config.tensor_parallel_size
-        )
+        os.environ["LOCAL_WORLD_SIZE"] = str(aphrodite_config.parallel_config.tensor_parallel_size)
 
         if model_config is not None and model_config.use_mla:
             logger.info(
-                "MLA is enabled on a non-GPU platform; forcing chunked "
-                "prefill and prefix caching to be disabled."
+                "MLA is enabled on a non-GPU platform; forcing chunked prefill and prefix caching to be disabled."
             )
             aphrodite_config.scheduler_config.enable_chunked_prefill = False
             aphrodite_config.scheduler_config.chunked_prefill_enabled = False
@@ -358,20 +328,14 @@ class CpuPlatform(Platform):
         assert platform.system() == "Linux"
 
         # Init LogicalCPUInfo from lscpu
-        lscpu_output = subprocess.check_output(
-            "lscpu -J -e=CPU,CORE,NODE", shell=True, text=True
-        )
+        lscpu_output = subprocess.check_output("lscpu -J -e=CPU,CORE,NODE", shell=True, text=True)
         lscpu_output = re.sub(r'"node":\s*-\s*(,|\n)', r'"node": 0\1', lscpu_output)
-        logical_cpu_list: list[LogicalCPUInfo] = json.loads(
-            lscpu_output, object_hook=LogicalCPUInfo.json_decoder
-        )["cpus"]
+        logical_cpu_list: list[LogicalCPUInfo] = json.loads(lscpu_output, object_hook=LogicalCPUInfo.json_decoder)[
+            "cpus"
+        ]
 
         # Filter CPUs with invalid attributes
-        logical_cpu_list = [
-            x
-            for x in logical_cpu_list
-            if -1 not in (x.id, x.physical_core, x.numa_node)
-        ]
+        logical_cpu_list = [x for x in logical_cpu_list if -1 not in (x.id, x.physical_core, x.numa_node)]
 
         # Filter allowed CPUs
         if hasattr(os, "sched_getaffinity"):
@@ -389,9 +353,7 @@ class CpuPlatform(Platform):
         env_key = CpuPlatform.device_control_env_var
         if env_key in os.environ and os.environ[env_key] != "":
             visible_nodes = [int(s) for s in os.environ[env_key].split(",")]
-            allowed_numa_nodes_list = [
-                x for x in visible_nodes if x in allowed_cpu_id_list
-            ]
+            allowed_numa_nodes_list = [x for x in visible_nodes if x in allowed_cpu_id_list]
 
         return allowed_numa_nodes_list, logical_cpu_list
 

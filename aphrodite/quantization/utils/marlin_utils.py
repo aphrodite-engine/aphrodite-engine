@@ -35,9 +35,7 @@ def query_marlin_supported_quant_types(
 ):
     if device_capability is None:
         capability_tuple = current_platform.get_device_capability()
-        device_capability = (
-            -1 if capability_tuple is None else capability_tuple.to_int()
-        )
+        device_capability = -1 if capability_tuple is None else capability_tuple.to_int()
 
     if device_capability < 80:
         return []
@@ -46,12 +44,8 @@ def query_marlin_supported_quant_types(
     # - has_zp is False: return quant_types that has not zero points
     # - has_zp is None: both
     if has_zp is None:
-        types0 = query_marlin_supported_quant_types(
-            False, include_fp_type, device_capability
-        )
-        types1 = query_marlin_supported_quant_types(
-            True, include_fp_type, device_capability
-        )
+        types0 = query_marlin_supported_quant_types(False, include_fp_type, device_capability)
+        types1 = query_marlin_supported_quant_types(True, include_fp_type, device_capability)
         return types0 + types1
 
     if has_zp:
@@ -73,13 +67,9 @@ def _check_marlin_supported(
 ) -> tuple[bool, str | None]:
     if device_capability is None:
         capability_tuple = current_platform.get_device_capability()
-        device_capability = (
-            -1 if capability_tuple is None else capability_tuple.to_int()
-        )
+        device_capability = -1 if capability_tuple is None else capability_tuple.to_int()
 
-    supported_types = query_marlin_supported_quant_types(
-        has_zp, True, device_capability
-    )
+    supported_types = query_marlin_supported_quant_types(has_zp, True, device_capability)
 
     if quant_type not in supported_types:
         return (
@@ -110,9 +100,7 @@ def check_marlin_supported(
     return cond
 
 
-def verify_marlin_supported(
-    quant_type: ScalarType, group_size: int, has_zp: bool = False
-) -> None:
+def verify_marlin_supported(quant_type: ScalarType, group_size: int, has_zp: bool = False) -> None:
     cond, err_msg = _check_marlin_supported(quant_type, group_size, has_zp)
     if not cond:
         assert err_msg is not None
@@ -161,21 +149,15 @@ def check_marlin_supports_shape(
     group_size: int,
 ) -> tuple[bool, str | None]:
     try:
-        verify_marlin_supports_shape(
-            output_size_per_partition, input_size_per_partition, input_size, group_size
-        )
+        verify_marlin_supports_shape(output_size_per_partition, input_size_per_partition, input_size, group_size)
     except ValueError as e:
         return False, e.__str__()
     return True, None
 
 
 def check_marlin_supports_layer(layer: LinearBase, group_size: int) -> bool:
-    output_size_per_partition = (
-        getattr(layer, "output_size_per_partition", None) or layer.output_size
-    )
-    input_size_per_partition = (
-        getattr(layer, "input_size_per_partition", None) or layer.input_size
-    )
+    output_size_per_partition = getattr(layer, "output_size_per_partition", None) or layer.output_size
+    input_size_per_partition = getattr(layer, "input_size_per_partition", None) or layer.input_size
 
     return check_marlin_supports_shape(
         output_size_per_partition=output_size_per_partition,
@@ -196,17 +178,9 @@ def check_moe_marlin_supports_layer(layer: LinearBase, group_size: int) -> bool:
     # gate-up: (n, k) = (intermediate_size_per_partition * 2, hidden_size)
     # down: (n, k) = (hidden_size, intermediate_size_per_partition)
     # moe marlin requires n % 128 == 0 and k % 64 == 0
-    supports_shape = (
-        hidden_size % 128 == 0
-        and intermediate_size_per_partition % max(64, group_size) == 0
-    )
+    supports_shape = hidden_size % 128 == 0 and intermediate_size_per_partition % max(64, group_size) == 0
     supports_group_size = group_size in [-1, 32, 64, 128]
-    return (
-        supports_shape
-        and supports_group_size
-        and supports_router_weight
-        and supports_activation
-    )
+    return supports_shape and supports_group_size and supports_router_weight and supports_activation
 
 
 def marlin_moe_intermediate_size(w1_packed: torch.Tensor, w2_packed: torch.Tensor):
@@ -218,36 +192,24 @@ def marlin_moe_intermediate_size(w1_packed: torch.Tensor, w2_packed: torch.Tenso
     return w2_packed.size(1) * marlin_tile_size
 
 
-def marlin_make_workspace(
-    output_size_per_partition: int, device: torch.device
-) -> torch.Tensor:
-    max_workspace_size = (
-        output_size_per_partition // GPTQ_MARLIN_MIN_THREAD_N
-    ) * GPTQ_MARLIN_MAX_PARALLEL
+def marlin_make_workspace(output_size_per_partition: int, device: torch.device) -> torch.Tensor:
+    max_workspace_size = (output_size_per_partition // GPTQ_MARLIN_MIN_THREAD_N) * GPTQ_MARLIN_MAX_PARALLEL
 
-    return torch.zeros(
-        max_workspace_size, dtype=torch.int, device=device, requires_grad=False
-    )
+    return torch.zeros(max_workspace_size, dtype=torch.int, device=device, requires_grad=False)
 
 
-def marlin_make_workspace_new(
-    device: torch.device, max_blocks_per_sm: int = 1
-) -> torch.Tensor:
+def marlin_make_workspace_new(device: torch.device, max_blocks_per_sm: int = 1) -> torch.Tensor:
     # In the new marlin kernel, we use the num of threadblocks as workspace
     # size. The num of threadblocks is sms_count * max_blocks_per_sm.
     sms = torch.cuda.get_device_properties(device).multi_processor_count
-    return torch.zeros(
-        sms * max_blocks_per_sm, dtype=torch.int, device=device, requires_grad=False
-    )
+    return torch.zeros(sms * max_blocks_per_sm, dtype=torch.int, device=device, requires_grad=False)
 
 
 def marlin_is_k_full(act_order: bool, is_row_parallel: bool) -> bool:
     return (not act_order) or (act_order and not is_row_parallel)
 
 
-def marlin_repeat_scales_on_all_ranks(
-    act_order: bool, group_size: int, is_row_parallel: bool
-) -> bool:
+def marlin_repeat_scales_on_all_ranks(act_order: bool, group_size: int, is_row_parallel: bool) -> bool:
     # Need to repeat scales on every rank if act_ordering or
     # channelwise and RowParallelLinear
     is_channelwise = group_size == -1
@@ -255,15 +217,11 @@ def marlin_repeat_scales_on_all_ranks(
 
 
 def marlin_make_empty_g_idx(device: torch.device) -> torch.Tensor:
-    return torch.nn.Parameter(
-        torch.empty(0, dtype=torch.int, device=device), requires_grad=False
-    )
+    return torch.nn.Parameter(torch.empty(0, dtype=torch.int, device=device), requires_grad=False)
 
 
 def marlin_make_empty_zp(device: torch.device) -> torch.Tensor:
-    return torch.nn.Parameter(
-        torch.empty(0, dtype=torch.int, device=device), requires_grad=False
-    )
+    return torch.nn.Parameter(torch.empty(0, dtype=torch.int, device=device), requires_grad=False)
 
 
 def marlin_sort_g_idx(g_idx: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -281,9 +239,7 @@ def get_scale_perms():
     return scale_perm, scale_perm_single
 
 
-def marlin_permute_scales(
-    s: torch.Tensor, size_k: int, size_n: int, group_size: int
-) -> torch.Tensor:
+def marlin_permute_scales(s: torch.Tensor, size_k: int, size_n: int, group_size: int) -> torch.Tensor:
     scale_perm, scale_perm_single = get_scale_perms()
     if group_size < size_k and group_size != -1:
         s = s.reshape((-1, len(scale_perm)))[:, scale_perm]
@@ -319,9 +275,7 @@ def marlin_moe_permute_scales(
     return output
 
 
-def marlin_zero_points(
-    zp: torch.Tensor, size_k: int, size_n: int, num_bits: int
-) -> torch.Tensor:
+def marlin_zero_points(zp: torch.Tensor, size_k: int, size_n: int, num_bits: int) -> torch.Tensor:
     # Permute zero-points in a similar way to scales, but do not use the
     # "single" permutation, since zero-points are applied on every MMA
     scale_perm, _ = get_scale_perms()
@@ -342,9 +296,7 @@ def marlin_zero_points(
     return zp
 
 
-def awq_to_marlin_zero_points(
-    q_zp_packed: torch.Tensor, size_k: int, size_n: int, num_bits: int
-) -> torch.Tensor:
+def awq_to_marlin_zero_points(q_zp_packed: torch.Tensor, size_k: int, size_n: int, num_bits: int) -> torch.Tensor:
     # AWQ zero-points are quantized and packed on the column dim.
     # In addition, the values are permuted based on dequantizer.
     # Here we undo both of these, and then apply marlin permutation
@@ -366,9 +318,7 @@ def awq_to_marlin_zero_points(
     return marlin_zp
 
 
-def moe_awq_to_marlin_zero_points(
-    q_zp_packed: torch.Tensor, size_k: int, size_n: int, num_bits: int
-):
+def moe_awq_to_marlin_zero_points(q_zp_packed: torch.Tensor, size_k: int, size_n: int, num_bits: int):
     num_experts = q_zp_packed.shape[0]
     output = torch.empty(
         (num_experts, q_zp_packed.shape[1], q_zp_packed.shape[2]),
@@ -405,9 +355,7 @@ def maybe_warn_marlin_atomic_add_env():
     )
 
 
-def should_use_atomic_add_reduce(
-    m: int, n: int, k: int, device: torch.device, dtype: torch.dtype
-) -> bool:
+def should_use_atomic_add_reduce(m: int, n: int, k: int, device: torch.device, dtype: torch.dtype) -> bool:
     # the performance of atomicAdd is better than global reduce
     # only when m*n is small and k is large
     if n >= 2048 or k < 2048 or device.type != "cuda":

@@ -22,7 +22,8 @@ for input_dtype in DTYPES:
             kernel_definition = TEMPLATE.format(
                 input_dtype=DTYPE_MAP[input_dtype],
                 output_dtype=DTYPE_MAP[output_dtype],
-                weight_dtype=DTYPE_MAP[weight_dtype])
+                weight_dtype=DTYPE_MAP[weight_dtype],
+            )
             filename = f"bgmv_{input_dtype}_{output_dtype}_{weight_dtype}.cu"
             with open(filename, "w") as f:
                 f.write(kernel_definition)

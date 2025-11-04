@@ -40,9 +40,7 @@ def ref_int8_scaled_mm(
 ):
     if azp is not None:
         a = a.to(dtype=torch.float32) - azp.to(dtype=torch.float32)
-    output = torch.mm(
-        (scale_a * a.to(dtype=torch.float32)), (scale_b * b.to(dtype=torch.float32))
-    )
+    output = torch.mm((scale_a * a.to(dtype=torch.float32)), (scale_b * b.to(dtype=torch.float32)))
     if bias is not None:
         output += bias.float()
 
@@ -137,18 +135,14 @@ def onednn_gemm_test_helper(
     )
 
     out = ops.onednn_mm(handler, a, bias)
-    baseline = torch.nn.functional.linear(a.float(), b.float(), bias_f32).to(
-        dtype=a.dtype
-    )
+    baseline = torch.nn.functional.linear(a.float(), b.float(), bias_f32).to(dtype=a.dtype)
 
     torch.testing.assert_close(out, baseline)
 
     if use_bias:
         # To test runtime bias setting
         out = ops.onednn_mm(handler, a, None)
-        baseline = torch.nn.functional.linear(a.float(), b.float(), None).to(
-            dtype=a.dtype
-        )
+        baseline = torch.nn.functional.linear(a.float(), b.float(), None).to(dtype=a.dtype)
 
         torch.testing.assert_close(out, baseline)
 

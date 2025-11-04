@@ -16,7 +16,5 @@ def test_mm_encoder_attn_backend_invalid():
 
 def test_mm_encoder_attn_backend_hash_updates():
     base_hash = MultiModalConfig().compute_hash()
-    overridden_hash = MultiModalConfig(
-        mm_encoder_attn_backend=_Backend.FLASH_ATTN
-    ).compute_hash()
+    overridden_hash = MultiModalConfig(mm_encoder_attn_backend=_Backend.FLASH_ATTN).compute_hash()
     assert base_hash != overridden_hash

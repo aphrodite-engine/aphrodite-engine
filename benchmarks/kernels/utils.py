@@ -101,9 +101,7 @@ class Bench:
 
         for i in range(argpool_size):
             # collapse args; Just pick the ith value
-            args_list[i] = tuple(
-                [arg[i] if isinstance(arg, ArgPool) else arg for arg in args_list[i]]
-            )
+            args_list[i] = tuple([arg[i] if isinstance(arg, ArgPool) else arg for arg in args_list[i]])
 
             # collapse kwargs
             kwargs_i = kwargs_list[i]
@@ -145,10 +143,7 @@ class Bench:
         return TBenchmark.Timer(
             stmt="g.replay()",
             globals=globals,
-            label=(
-                f"{self.label}"
-                f" | cugraph {self.cuda_graph_params.num_ops_in_cuda_graph} ops"
-            ),
+            label=(f"{self.label} | cugraph {self.cuda_graph_params.num_ops_in_cuda_graph} ops"),
             sub_label=self.sub_label,
             description=self.description,
         ).blocked_autorange(min_run_time=self.min_run_time)

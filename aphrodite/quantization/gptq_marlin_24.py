@@ -6,10 +6,12 @@ from torch.nn.parameter import Parameter
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          ChannelQuantScaleParameter,
-                                          GroupQuantScaleParameter,
-                                          PackedAphroditeParameter)
+from aphrodite.modeling.parameter import (
+    BaseAphroditeParameter,
+    ChannelQuantScaleParameter,
+    GroupQuantScaleParameter,
+    PackedAphroditeParameter,
+)
 from aphrodite.quantization import QuantizationConfig, QuantizationMethods
 from aphrodite.scalar_type import scalar_types
 
@@ -76,9 +78,7 @@ class GPTQMarlin24Config(QuantizationConfig):
         self.perm_len = 1024
 
     def __repr__(self) -> str:
-        return "Marlin24Config(quant_type={}, group_size={})".format(
-            self.quant_type, self.group_size
-        )
+        return "Marlin24Config(quant_type={}, group_size={})".format(self.quant_type, self.group_size)
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
@@ -104,27 +104,19 @@ class GPTQMarlin24Config(QuantizationConfig):
         return cls(weight_bits, group_size)
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant
-    ) -> QuantizationMethods | None:
+    def override_quantization_method(cls, hf_quant_cfg, user_quant) -> QuantizationMethods | None:
         is_marlin_24_format = hf_quant_cfg.get("checkpoint_format") == "marlin_24"
 
-        is_valid_user_quant = (
-            user_quant is None or user_quant == "gptq" or user_quant == "gptq_marlin_24"
-        )
+        is_valid_user_quant = user_quant is None or user_quant == "gptq" or user_quant == "gptq_marlin_24"
 
         if is_marlin_24_format and is_valid_user_quant:
-            msg = "The model is serialized in {} format. Using {} kernel.".format(
-                cls.get_name(), cls.get_name()
-            )
+            msg = "The model is serialized in {} format. Using {} kernel.".format(cls.get_name(), cls.get_name())
             logger.info(msg)
             return cls.get_name()
 
         return None
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["GPTQMarlin24LinearMethod"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["GPTQMarlin24LinearMethod"]:
         if isinstance(layer, LinearBase):
             return GPTQMarlin24LinearMethod(self)
         return None
@@ -153,9 +145,7 @@ class GPTQMarlin24LinearMethod(LinearMethodBase):
         del output_size  # Unused.
         weight_loader = extra_weight_attrs["weight_loader"]
         if params_dtype != torch.float16:
-            raise ValueError(
-                f"The params dtype must be float16, but got {params_dtype}"
-            )
+            raise ValueError(f"The params dtype must be float16, but got {params_dtype}")
 
         # Validate output_size_per_partition
         output_size_per_partition = sum(output_partition_sizes)
@@ -179,10 +169,7 @@ class GPTQMarlin24LinearMethod(LinearMethodBase):
                 f"{input_size_per_partition} is not divisible by "
                 f"min_k_threads = {self.quant_config.min_k_threads}."
             )
-        if (
-            self.quant_config.group_size != -1
-            and input_size_per_partition % self.quant_config.group_size != 0
-        ):
+        if self.quant_config.group_size != -1 and input_size_per_partition % self.quant_config.group_size != 0:
             raise ValueError(
                 f"Weight input_size_per_partition = "
                 f"{input_size_per_partition} is not divisible by "
@@ -190,9 +177,7 @@ class GPTQMarlin24LinearMethod(LinearMethodBase):
             )
 
         # Check that we have at least 4 tiles horizontally in the shard
-        num_tiles_per_perm = self.quant_config.perm_len // (
-            self.quant_config.tile_size**2
-        )
+        num_tiles_per_perm = self.quant_config.perm_len // (self.quant_config.tile_size**2)
         if output_size_per_partition % num_tiles_per_perm != 0:
             raise ValueError("Each permutation group must reside on the same gpu")
 
@@ -200,9 +185,7 @@ class GPTQMarlin24LinearMethod(LinearMethodBase):
         qweight = PackedAphroditeParameter(
             data=torch.empty(
                 input_size_per_partition // self.quant_config.tile_size // 2,
-                output_size_per_partition
-                * self.quant_config.tile_size
-                // self.quant_config.pack_factor,
+                output_size_per_partition * self.quant_config.tile_size // self.quant_config.pack_factor,
                 device="cuda",
                 dtype=torch.int32,
             ),
@@ -232,9 +215,7 @@ class GPTQMarlin24LinearMethod(LinearMethodBase):
 
         # Determine if channelwise or not
         input_groups = (
-            1
-            if self.quant_config.group_size == -1
-            else input_size_per_partition // self.quant_config.group_size
+            1 if self.quant_config.group_size == -1 else input_size_per_partition // self.quant_config.group_size
         )
 
         weight_scale_args = {
@@ -249,9 +230,7 @@ class GPTQMarlin24LinearMethod(LinearMethodBase):
         if input_groups == 1:
             scales = ChannelQuantScaleParameter(output_dim=1, **weight_scale_args)
         else:
-            scales = GroupQuantScaleParameter(
-                output_dim=1, input_dim=0, **weight_scale_args
-            )
+            scales = GroupQuantScaleParameter(output_dim=1, input_dim=0, **weight_scale_args)
 
         # Allocate workspace (Used for internal locking mechanism)
         max_workspace_size = (

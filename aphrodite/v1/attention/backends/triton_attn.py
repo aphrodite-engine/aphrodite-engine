@@ -5,21 +5,20 @@ from typing import ClassVar
 
 import torch
 
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionImpl,
-                                                   AttentionMetadata,
-                                                   AttentionType, MultipleOf)
-from aphrodite.attention.ops.triton_reshape_and_cache_flash import (
-    triton_reshape_and_cache_flash)
+from aphrodite.attention.backends.abstract import (
+    AttentionBackend,
+    AttentionImpl,
+    AttentionMetadata,
+    AttentionType,
+    MultipleOf,
+)
+from aphrodite.attention.ops.triton_reshape_and_cache_flash import triton_reshape_and_cache_flash
 from aphrodite.attention.ops.triton_unified_attention import unified_attention
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import (QuantKey,
-                                                      kFp8StaticTensorSym)
-from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
-                                                   AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata)
+from aphrodite.quantization.utils.quant_utils import QuantKey, kFp8StaticTensorSym
+from aphrodite.v1.attention.backends.utils import AttentionCGSupport, AttentionMetadataBuilder, CommonAttentionMetadata
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 logger = init_logger(__name__)
@@ -70,15 +69,11 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
         self.block_size = kv_cache_spec.block_size
 
         model_config = aphrodite_config.model_config
-        self.num_heads_q = model_config.get_num_attention_heads(
-            aphrodite_config.parallel_config
-        )
+        self.num_heads_q = model_config.get_num_attention_heads(aphrodite_config.parallel_config)
         self.num_heads_kv = model_config.get_num_kv_heads(aphrodite_config.parallel_config)
         self.headdim = model_config.get_head_size()
 
-    def build_for_cudagraph_capture(
-        self, common_attn_metadata: CommonAttentionMetadata
-    ) -> TritonAttentionMetadata:
+    def build_for_cudagraph_capture(self, common_attn_metadata: CommonAttentionMetadata) -> TritonAttentionMetadata:
         attn_metadata = self.build(0, common_attn_metadata)
         # When doing full graph capture, setting seq_lens to
         # max_model_len will cause graph capture to be extremely
@@ -104,12 +99,8 @@ class TritonAttentionMetadataBuilder(AttentionMetadataBuilder[TritonAttentionMet
         use_cascade = common_prefix_len > 0
 
         if use_cascade:
-            cu_prefix_query_lens = torch.tensor(
-                [0, num_actual_tokens], dtype=torch.int32, device=self.device
-            )
-            prefix_kv_lens = torch.tensor(
-                [common_prefix_len], dtype=torch.int32, device=self.device
-            )
+            cu_prefix_query_lens = torch.tensor([0, num_actual_tokens], dtype=torch.int32, device=self.device)
+            prefix_kv_lens = torch.tensor([common_prefix_len], dtype=torch.int32, device=self.device)
             suffix_kv_lens = common_attn_metadata.seq_lens_cpu - common_prefix_len
             suffix_kv_lens = suffix_kv_lens.to(self.device)
         else:
@@ -236,10 +227,7 @@ class TritonAttentionImpl(AttentionImpl):
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and "
-                "encoder/decoder cross-attention "
-                "are not implemented for "
-                "TritonAttentionImpl"
+                "Encoder self-attention and encoder/decoder cross-attention are not implemented for TritonAttentionImpl"
             )
 
         self.fp8_dtype = current_platform.fp8_dtype()
@@ -280,8 +268,7 @@ class TritonAttentionImpl(AttentionImpl):
 
         if output_block_scale is not None:
             raise NotImplementedError(
-                "fused block_scale output quantization is not yet supported"
-                " for TritonAttentionImpl"
+                "fused block_scale output quantization is not yet supported for TritonAttentionImpl"
             )
 
         if attn_metadata is None:
@@ -326,9 +313,7 @@ class TritonAttentionImpl(AttentionImpl):
             if key_cache.dtype != self.fp8_dtype:
                 key_cache = key_cache.view(self.fp8_dtype)
                 value_cache = value_cache.view(self.fp8_dtype)
-            assert layer._q_scale_float == 1.0, (
-                "A non 1.0 q_scale is not currently supported."
-            )
+            assert layer._q_scale_float == 1.0, "A non 1.0 q_scale is not currently supported."
 
         cu_seqlens_q = attn_metadata.query_start_loc
         seqused_k = attn_metadata.seq_lens

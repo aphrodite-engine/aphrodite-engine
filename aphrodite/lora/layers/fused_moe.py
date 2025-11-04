@@ -6,17 +6,16 @@ from transformers import PretrainedConfig
 
 from aphrodite import envs
 from aphrodite.config.lora import LoRAConfig
-from aphrodite.distributed.parallel_state import (
-    get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size)
+from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.lora.layers.base import BaseLayerWithLoRA
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.fused_moe.config import (
-    FUSED_MOE_UNQUANTIZED_CONFIG, _get_config_dtype_str,
-    mxfp4_w4a16_moe_quant_config)
-from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import (
-    modular_marlin_fused_moe)
-from aphrodite.modeling.layers.fused_moe.fused_moe import (
-    modular_triton_fused_moe, try_get_optimal_moe_config)
+    FUSED_MOE_UNQUANTIZED_CONFIG,
+    _get_config_dtype_str,
+    mxfp4_w4a16_moe_quant_config,
+)
+from aphrodite.modeling.layers.fused_moe.fused_marlin_moe import modular_marlin_fused_moe
+from aphrodite.modeling.layers.fused_moe.fused_moe import modular_triton_fused_moe, try_get_optimal_moe_config
 from aphrodite.quantization.mxfp4 import Mxfp4Config
 
 
@@ -46,13 +45,9 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
             )
 
         m_fused_moe_fn = (
-            modular_triton_fused_moe(
-                quant_config, shared_experts=self.base_layer.shared_experts
-            )
+            modular_triton_fused_moe(quant_config, shared_experts=self.base_layer.shared_experts)
             if not quant_config.use_mxfp4_w4a16
-            else modular_marlin_fused_moe(
-                quant_config, shared_experts=self.base_layer.shared_experts
-            )
+            else modular_marlin_fused_moe(quant_config, shared_experts=self.base_layer.shared_experts)
         )
 
         def fwd_decorator(layer, func):
@@ -62,9 +57,7 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
                 moe_state_dict["topk_weights"] = kwargs["topk_weights"]
                 moe_state_dict["global_num_experts"] = kwargs["global_num_experts"]
                 moe_state_dict["expert_map"] = kwargs["expert_map"]
-                moe_state_dict["apply_router_weight_on_input"] = kwargs[
-                    "apply_router_weight_on_input"
-                ]
+                moe_state_dict["apply_router_weight_on_input"] = kwargs["apply_router_weight_on_input"]
                 result = func(*args, **kwargs)
                 return result
 
@@ -116,9 +109,7 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
 
                 moe_state_dict["sorted_token_ids_lora"] = sorted_token_ids_lora
                 moe_state_dict["expert_ids_lora"] = expert_ids_lora
-                moe_state_dict["num_tokens_post_padded_lora"] = (
-                    num_tokens_post_padded_lora
-                )
+                moe_state_dict["num_tokens_post_padded_lora"] = num_tokens_post_padded_lora
 
                 w13_lora_a_stacked = [self.w1_lora_a_stacked, self.w3_lora_a_stacked]
                 w13_lora_b_stacked = [self.w1_lora_b_stacked, self.w3_lora_b_stacked]
@@ -175,9 +166,7 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
 
                 sorted_token_ids_lora = moe_state_dict["sorted_token_ids_lora"]
                 expert_ids_lora = moe_state_dict["expert_ids_lora"]
-                num_tokens_post_padded_lora = moe_state_dict[
-                    "num_tokens_post_padded_lora"
-                ]
+                num_tokens_post_padded_lora = moe_state_dict["num_tokens_post_padded_lora"]
                 max_loras = self.w1_lora_a_stacked.shape[0]
                 expert_ids_lora = expert_ids_lora.view(max_loras, -1)
                 sorted_token_ids_lora = sorted_token_ids_lora.view(max_loras, -1)
@@ -207,16 +196,10 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
         fused_experts = m_fused_moe_fn.fused_experts
 
         m_fused_moe_fn.forward = fwd_decorator(self.base_layer, m_fused_moe_fn.forward)
-        fused_experts.activation = act_decorator(
-            self.base_layer, fused_experts.activation
-        )
-        fused_experts.moe_sum = moe_sum_decorator(
-            self.base_layer, fused_experts.moe_sum
-        )
+        fused_experts.activation = act_decorator(self.base_layer, fused_experts.activation)
+        fused_experts.moe_sum = moe_sum_decorator(self.base_layer, fused_experts.moe_sum)
 
-        self.base_layer.quant_method.old_fused_experts = (
-            self.base_layer.quant_method.fused_experts
-        )
+        self.base_layer.quant_method.old_fused_experts = self.base_layer.quant_method.fused_experts
         self.base_layer.quant_method.fused_experts = m_fused_moe_fn
 
     def create_lora_weights(
@@ -227,9 +210,7 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
     ) -> None:
         """Initializes lora matrices."""
 
-        assert not self.base_layer.use_ep, (
-            "EP support for Fused MoE LoRA is not implemented yet."
-        )
+        assert not self.base_layer.use_ep, "EP support for Fused MoE LoRA is not implemented yet."
 
         self.w1_lora_a_stacked = torch.zeros(
             (
@@ -349,27 +330,27 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
                 w3_lora_b = w3_lora_b[start_idx:end_idx, :]
                 w2_lora_a = w2_lora_a[:, start_idx:end_idx]
 
-            self.w1_lora_a_stacked[
-                index, eid, : w1_lora_a.shape[0], : w1_lora_a.shape[1]
-            ].copy_(w1_lora_a, non_blocking=True)
+            self.w1_lora_a_stacked[index, eid, : w1_lora_a.shape[0], : w1_lora_a.shape[1]].copy_(
+                w1_lora_a, non_blocking=True
+            )
 
-            self.w3_lora_a_stacked[
-                index, eid, : w3_lora_a.shape[0], : w3_lora_a.shape[1]
-            ].copy_(w3_lora_a, non_blocking=True)
+            self.w3_lora_a_stacked[index, eid, : w3_lora_a.shape[0], : w3_lora_a.shape[1]].copy_(
+                w3_lora_a, non_blocking=True
+            )
 
-            self.w2_lora_b_stacked[
-                index, eid, : w2_lora_b.shape[0], : w2_lora_b.shape[1]
-            ].copy_(w2_lora_b, non_blocking=True)
+            self.w2_lora_b_stacked[index, eid, : w2_lora_b.shape[0], : w2_lora_b.shape[1]].copy_(
+                w2_lora_b, non_blocking=True
+            )
 
-            self.w1_lora_b_stacked[
-                index, eid, : w1_lora_b.shape[0], : w1_lora_b.shape[1]
-            ].copy_(w1_lora_b, non_blocking=True)
-            self.w3_lora_b_stacked[
-                index, eid, : w3_lora_b.shape[0], : w3_lora_b.shape[1]
-            ].copy_(w3_lora_b, non_blocking=True)
-            self.w2_lora_a_stacked[
-                index, eid, : w2_lora_a.shape[0], : w2_lora_a.shape[1]
-            ].copy_(w2_lora_a, non_blocking=True)
+            self.w1_lora_b_stacked[index, eid, : w1_lora_b.shape[0], : w1_lora_b.shape[1]].copy_(
+                w1_lora_b, non_blocking=True
+            )
+            self.w3_lora_b_stacked[index, eid, : w3_lora_b.shape[0], : w3_lora_b.shape[1]].copy_(
+                w3_lora_b, non_blocking=True
+            )
+            self.w2_lora_a_stacked[index, eid, : w2_lora_a.shape[0], : w2_lora_a.shape[1]].copy_(
+                w2_lora_a, non_blocking=True
+            )
 
     @classmethod
     def can_replace_layer(

@@ -7,15 +7,18 @@ import openai
 import pytest
 import pytest_asyncio
 
-from tests.utils import (RemoteOpenAIServerCustom,
-                         create_new_process_for_each_test)
-from tests.v1.logits_processors.utils import (DUMMY_LOGITPROC_ARG,
-                                              DUMMY_LOGITPROC_FQCN,
-                                              DUMMY_LOGITPROC_MODULE,
-                                              MAX_TOKENS, MODEL_NAME,
-                                              TEMP_GREEDY, dummy_module)
+from tests.utils import RemoteOpenAIServerCustom, create_new_process_for_each_test
+from tests.v1.logits_processors.utils import (
+    DUMMY_LOGITPROC_ARG,
+    DUMMY_LOGITPROC_FQCN,
+    DUMMY_LOGITPROC_MODULE,
+    MAX_TOKENS,
+    MODEL_NAME,
+    TEMP_GREEDY,
+    dummy_module,
+    prompts,
+)
 from tests.v1.logits_processors.utils import entry_points as fake_entry_points
-from tests.v1.logits_processors.utils import prompts
 
 
 def _server_with_logitproc_entrypoint(
@@ -76,9 +79,7 @@ def default_server_args():
     ]
 
 
-@pytest.fixture(
-    scope="function", params=[[], ["--logits-processors", DUMMY_LOGITPROC_FQCN]]
-)
+@pytest.fixture(scope="function", params=[[], ["--logits-processors", DUMMY_LOGITPROC_FQCN]])
 def server(default_server_args, request, monkeypatch):
     """Consider two server configurations:
     (1) --logits-processors cli arg specifies dummy logits processor via fully-
@@ -152,9 +153,7 @@ async def test_custom_logitsprocs(client: openai.AsyncOpenAI, model_name: str):
             target_token = random.choice([128, 67])
             # For requests which activate the dummy logitproc, choose one of
             # two `target_token` values which are known not to be EOS tokens
-            request_keyword_args["extra_body"] = {
-                "aphrodite_xargs": {DUMMY_LOGITPROC_ARG: target_token}
-            }
+            request_keyword_args["extra_body"] = {"aphrodite_xargs": {DUMMY_LOGITPROC_ARG: target_token}}
         batch = await client.completions.create(
             model=model_name,
             prompt=prompt,

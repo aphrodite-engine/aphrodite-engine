@@ -26,9 +26,7 @@ def test_ranks(
             logprobs=num_top_logprobs,
             prompt_logprobs=num_prompt_logprobs,
         )
-        aphrodite_results = aphrodite_model.generate_w_logprobs(
-            example_prompts, aphrodite_sampling_params
-        )
+        aphrodite_results = aphrodite_model.generate_w_logprobs(example_prompts, aphrodite_sampling_params)
 
         ## Test non-greedy logprobs ranks
         sampling_params = SamplingParams(

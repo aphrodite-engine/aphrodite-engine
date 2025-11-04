@@ -10,26 +10,28 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.logger import init_logger
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalInputs,
-                                         MultiModalKwargsItems,
-                                         MultiModalUUIDDict)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptIndexTargets,
-                                             PromptInsertion, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import (
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalInputs,
+    MultiModalKwargsItems,
+    MultiModalUUIDDict,
+)
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptIndexTargets,
+    PromptInsertion,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
 from .siglip import SiglipVisionModel
-from .utils import (AutoWeightsLoader, WeightsMapper, flatten_bn,
-                    init_aphrodite_registered_model, maybe_prefix)
+from .utils import AutoWeightsLoader, WeightsMapper, flatten_bn, init_aphrodite_registered_model, maybe_prefix
 from .vision import get_vision_encoder_info
 
 logger = init_logger(__name__)
@@ -60,9 +62,7 @@ class PaliGemmaImageEmbeddingInputs(TensorSchema):
     data: Annotated[torch.Tensor, TensorShape("bn", "ifs", "hs")]
 
 
-PaliGemmaImageInputs: TypeAlias = (
-    PaliGemmaImagePixelInputs | PaliGemmaImageEmbeddingInputs
-)
+PaliGemmaImageInputs: TypeAlias = PaliGemmaImagePixelInputs | PaliGemmaImageEmbeddingInputs
 
 
 class PaliGemmaMultiModalProjector(nn.Module):
@@ -170,9 +170,7 @@ class PaliGemmaMultiModalProcessor(BaseMultiModalProcessor[PaliGemmaProcessingIn
         assert isinstance(bos_token_id, int)
 
         def get_insertion(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 num_image_tokens = images.get_feature_size(item_idx)
@@ -196,9 +194,7 @@ class PaliGemmaMultiModalProcessor(BaseMultiModalProcessor[PaliGemmaProcessingIn
         return [
             PromptInsertion(
                 modality="image",
-                target=PromptIndexTargets.prefix(
-                    [bos_token_id] if tokenizer.add_bos_token else []
-                ),
+                target=PromptIndexTargets.prefix([bos_token_id] if tokenizer.add_bos_token else []),
                 insertion=get_insertion,
             )
         ]
@@ -299,13 +295,9 @@ class PaliGemmaForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsP
         logit_scale = getattr(config, "logit_scale", 1.0)
         self.language_model.logits_processor.scale *= logit_scale
 
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> PaliGemmaImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> PaliGemmaImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
 

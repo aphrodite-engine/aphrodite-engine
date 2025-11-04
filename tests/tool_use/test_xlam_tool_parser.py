@@ -3,12 +3,9 @@ from collections.abc import Generator
 
 import pytest
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage, FunctionCall,
-                                                 ToolCall)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage, FunctionCall, ToolCall
 from aphrodite.endpoints.openai.tool_parsers import xLAMToolParser
-from aphrodite.transformers_utils.detokenizer_utils import (
-    detokenize_incrementally)
+from aphrodite.transformers_utils.detokenizer_utils import detokenize_incrementally
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, get_tokenizer
 
 pytestmark = pytest.mark.cpu_test
@@ -27,14 +24,10 @@ def xlam_tool_parser(xlam_tokenizer):
     return xLAMToolParser(xlam_tokenizer)
 
 
-def assert_tool_calls(
-    actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]
-):
+def assert_tool_calls(actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]):
     assert len(actual_tool_calls) == len(expected_tool_calls)
 
-    for actual_tool_call, expected_tool_call in zip(
-        actual_tool_calls, expected_tool_calls
-    ):
+    for actual_tool_call, expected_tool_call in zip(actual_tool_calls, expected_tool_calls):
         assert isinstance(actual_tool_call.id, str)
         assert len(actual_tool_call.id) > 16
 
@@ -59,16 +52,14 @@ def stream_delta_message_generator(
         previous_token_ids = all_token_ids[:i]
         current_token_ids = all_token_ids[: i + 1]
 
-        (new_tokens, delta_text, new_prefix_offset, new_read_offset) = (
-            detokenize_incrementally(
-                tokenizer=xlam_tokenizer,
-                all_input_ids=current_token_ids,
-                prev_tokens=previous_tokens,
-                prefix_offset=prefix_offset,
-                read_offset=read_offset,
-                skip_special_tokens=False,
-                spaces_between_special_tokens=True,
-            )
+        (new_tokens, delta_text, new_prefix_offset, new_read_offset) = detokenize_incrementally(
+            tokenizer=xlam_tokenizer,
+            all_input_ids=current_token_ids,
+            prev_tokens=previous_tokens,
+            prefix_offset=prefix_offset,
+            read_offset=read_offset,
+            skip_special_tokens=False,
+            spaces_between_special_tokens=True,
         )
 
         current_text = previous_text + delta_text
@@ -86,18 +77,14 @@ def stream_delta_message_generator(
             yield delta_message
 
         previous_text = current_text
-        previous_tokens = (
-            previous_tokens + new_tokens if previous_tokens else new_tokens
-        )
+        previous_tokens = previous_tokens + new_tokens if previous_tokens else new_tokens
         prefix_offset = new_prefix_offset
         read_offset = new_read_offset
 
 
 def test_extract_tool_calls_no_tools(xlam_tool_parser):
     model_output = "This is a test"
-    extracted_tool_calls = xlam_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = xlam_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert not extracted_tool_calls.tools_called
     assert extracted_tool_calls.tool_calls == []
     assert extracted_tool_calls.content == model_output
@@ -217,12 +204,8 @@ def test_extract_tool_calls_no_tools(xlam_tool_parser):
         ),
     ],
 )
-def test_extract_tool_calls(
-    xlam_tool_parser, model_output, expected_tool_calls, expected_content
-):
-    extracted_tool_calls = xlam_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+def test_extract_tool_calls(xlam_tool_parser, model_output, expected_tool_calls, expected_content):
+    extracted_tool_calls = xlam_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert extracted_tool_calls.tools_called
 
     assert_tool_calls(extracted_tool_calls.tool_calls, expected_tool_calls)
@@ -254,13 +237,9 @@ def test_extract_tool_calls(
         ),
     ],
 )
-def test_extract_tool_calls_list_structure(
-    xlam_tool_parser, model_output, expected_tool_calls, expected_content
-):
+def test_extract_tool_calls_list_structure(xlam_tool_parser, model_output, expected_tool_calls, expected_content):
     """Test extraction of tool calls when the model outputs a list-structured tool call."""  # noqa: E501
-    extracted_tool_calls = xlam_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = xlam_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert extracted_tool_calls.tools_called
 
     assert_tool_calls(extracted_tool_calls.tool_calls, expected_tool_calls)
@@ -271,42 +250,31 @@ def test_extract_tool_calls_list_structure(
 # Test for preprocess_model_output method
 def test_preprocess_model_output(xlam_tool_parser):
     # Test with list structure
-    model_output = (
-        """[{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]"""  # noqa: E501
-    )
-    content, potential_tool_calls = xlam_tool_parser.preprocess_model_output(
-        model_output
-    )
+    model_output = """[{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]"""  # noqa: E501
+    content, potential_tool_calls = xlam_tool_parser.preprocess_model_output(model_output)
     assert content is None
     assert potential_tool_calls == model_output
 
     # Test with thinking tag
-    model_output = """<think>I'll help you with that.</think>[{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]"""  # noqa: E501
-    content, potential_tool_calls = xlam_tool_parser.preprocess_model_output(
-        model_output
+    model_output = (
+        """<think>I'll help you with that.</think>[{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]"""  # noqa: E501
     )
+    content, potential_tool_calls = xlam_tool_parser.preprocess_model_output(model_output)
     assert content == "<think>I'll help you with that.</think>"
-    assert (
-        potential_tool_calls
-        == '[{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]'
-    )
+    assert potential_tool_calls == '[{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]'
 
     # Test with JSON code block
     model_output = """I'll help you with that.
 ```json
 [{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]
 ```"""
-    content, potential_tool_calls = xlam_tool_parser.preprocess_model_output(
-        model_output
-    )
+    content, potential_tool_calls = xlam_tool_parser.preprocess_model_output(model_output)
     assert content == "I'll help you with that."
     assert "get_current_weather" in potential_tool_calls
 
     # Test with no tool calls
     model_output = """I'll help you with that."""
-    content, potential_tool_calls = xlam_tool_parser.preprocess_model_output(
-        model_output
-    )
+    content, potential_tool_calls = xlam_tool_parser.preprocess_model_output(model_output)
     assert content == model_output
     assert potential_tool_calls is None
 
@@ -320,9 +288,7 @@ def test_streaming_with_list_structure(xlam_tool_parser):
     xlam_tool_parser.current_tool_id = -1
 
     # Simulate receiving a message with list structure
-    current_text = (
-        """[{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]"""  # noqa: E501
-    )
+    current_text = """[{"name": "get_current_weather", "arguments": {"city": "Seattle"}}]"""  # noqa: E501
 
     # First call to set up the tool
     xlam_tool_parser.extract_tool_calls_streaming(
@@ -484,9 +450,7 @@ def test_extract_tool_calls_streaming_incremental(
     request = ChatCompletionRequest(model=MODEL, messages=[], tools=[])
 
     chunks = []
-    for delta_message in stream_delta_message_generator(
-        xlam_tool_parser, xlam_tokenizer, model_output, request
-    ):
+    for delta_message in stream_delta_message_generator(xlam_tool_parser, xlam_tokenizer, model_output, request):
         chunks.append(delta_message)
 
     # Should have multiple chunks
@@ -498,9 +462,7 @@ def test_extract_tool_calls_streaming_incremental(
     for chunk in chunks:
         if chunk.tool_calls and chunk.tool_calls[0].id:
             header_found = True
-            assert (
-                chunk.tool_calls[0].function.name == expected_first_tool.function.name
-            )
+            assert chunk.tool_calls[0].function.name == expected_first_tool.function.name
             assert chunk.tool_calls[0].type == "function"
             # Arguments may be empty initially or None
             if chunk.tool_calls[0].function.arguments is not None:
@@ -516,8 +478,7 @@ def test_extract_tool_calls_streaming_incremental(
             chunk.tool_calls
             and chunk.tool_calls[0].function.arguments
             and chunk.tool_calls[0].function.arguments != ""
-            and chunk.tool_calls[0].index
-            == 0  # Only collect arguments from the first tool call
+            and chunk.tool_calls[0].index == 0  # Only collect arguments from the first tool call
         ):
             arg_chunks.append(chunk.tool_calls[0].function.arguments)
 

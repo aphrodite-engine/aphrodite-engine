@@ -8,8 +8,7 @@ from typing import Annotated, Literal
 
 import torch
 from torch import nn
-from transformers import (BatchFeature, SiglipConfig, SiglipProcessor,
-                          SiglipTextConfig, SiglipVisionConfig)
+from transformers import BatchFeature, SiglipConfig, SiglipProcessor, SiglipTextConfig, SiglipVisionConfig
 
 from aphrodite.attention.layer import MultiHeadAttention
 from aphrodite.common.sequence import IntermediateTensors
@@ -17,26 +16,26 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.pooler import DispatchPooler, Pooler
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalInputs,
-                                         MultiModalKwargsItems,
-                                         MultiModalUUIDDict)
-from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptIndexTargets,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.inputs import (
+    MultiModalDataDict,
+    MultiModalFieldConfig,
+    MultiModalInputs,
+    MultiModalKwargsItems,
+    MultiModalUUIDDict,
+)
+from aphrodite.multimodal.parse import ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    PromptIndexTargets,
+    PromptReplacement,
+    PromptUpdate,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
@@ -44,10 +43,13 @@ from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsQuant
 from .interfaces_base import default_pooling_type
 from .utils import AutoWeightsLoader, maybe_prefix
-from .vision import (VisionEncoderInfo, VisionFeatureSelectStrategy,
-                     VisionFeatureSelectStrategyStr,
-                     get_num_selected_vision_tokens,
-                     resolve_visual_encoder_outputs)
+from .vision import (
+    VisionEncoderInfo,
+    VisionFeatureSelectStrategy,
+    VisionFeatureSelectStrategyStr,
+    get_num_selected_vision_tokens,
+    resolve_visual_encoder_outputs,
+)
 
 
 class SiglipImagePixelInputs(TensorSchema):
@@ -76,10 +78,7 @@ def _get_vision_feature_select_strategy(
     try:
         return _POOLING_TYPE_TO_STRATEGY[pooling_type]
     except KeyError:
-        raise ValueError(
-            f"No feature selection strategy is defined for "
-            f"pooling_type: {pooling_type!r}"
-        ) from None
+        raise ValueError(f"No feature selection strategy is defined for pooling_type: {pooling_type!r}") from None
 
 
 class SiglipProcessingInfo(BaseProcessingInfo):
@@ -122,9 +121,7 @@ class SiglipProcessingInfo(BaseProcessingInfo):
     def get_max_image_tokens(self) -> int:
         target_width, target_height = self.get_image_size_with_most_features()
 
-        return self.get_num_image_tokens(
-            image_width=target_width, image_height=target_height
-        )
+        return self.get_num_image_tokens(image_width=target_width, image_height=target_height)
 
 
 class SiglipDummyInputsBuilder(BaseDummyInputsBuilder[SiglipProcessingInfo]):
@@ -158,9 +155,7 @@ class SiglipMultiModalProcessor(BaseMultiModalProcessor[SiglipProcessingInfo]):
     def image_token_id(self) -> int:
         tokenizer = self.info.get_tokenizer()
         dummy_token_id = next(
-            token_id
-            for token_id in range(tokenizer.vocab_size)
-            if token_id not in tokenizer.all_special_ids
+            token_id for token_id in range(tokenizer.vocab_size) if token_id not in tokenizer.all_special_ids
         )
 
         return dummy_token_id
@@ -278,18 +273,14 @@ class SiglipVisionEmbeddings(nn.Module):
 
         self.num_patches = (self.image_size // self.patch_size) ** 2
         self.num_positions = self.num_patches
-        self.position_embedding = VocabParallelEmbedding(
-            self.num_positions, self.embed_dim
-        )
+        self.position_embedding = VocabParallelEmbedding(self.num_positions, self.embed_dim)
         self.register_buffer(
             "position_ids",
             torch.arange(self.num_positions, dtype=torch.int64).expand((1, -1)),
             persistent=False,
         )
 
-    def interpolate_pos_encoding(
-        self, embeddings: torch.Tensor, height: int, width: int
-    ) -> torch.Tensor:
+    def interpolate_pos_encoding(self, embeddings: torch.Tensor, height: int, width: int) -> torch.Tensor:
         """
         This method is an adapted method for SigLIP (due to SigLIP not having
         class embedding unlike other ViTs) that allows the model to interpolate
@@ -326,26 +317,16 @@ class SiglipVisionEmbeddings(nn.Module):
             mode="bicubic",
             align_corners=False,
         )
-        if (
-            int(height) != patch_pos_embed.shape[-2]
-            or int(width) != patch_pos_embed.shape[-1]
-        ):
-            raise ValueError(
-                "Width or height does not match with "
-                "the interpolated position embeddings"
-            )
+        if int(height) != patch_pos_embed.shape[-2] or int(width) != patch_pos_embed.shape[-1]:
+            raise ValueError("Width or height does not match with the interpolated position embeddings")
 
         patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return patch_pos_embed
 
-    def forward(
-        self, pixel_values: torch.Tensor, interpolate_pos_encoding: bool = False
-    ) -> torch.Tensor:
+    def forward(self, pixel_values: torch.Tensor, interpolate_pos_encoding: bool = False) -> torch.Tensor:
         _, _, height, width = pixel_values.shape
         target_dtype = self.patch_embedding.weight.dtype
-        patch_embeds = self.patch_embedding(
-            pixel_values.to(dtype=target_dtype)
-        )  # shape = [*, width, grid, grid]
+        patch_embeds = self.patch_embedding(pixel_values.to(dtype=target_dtype))  # shape = [*, width, grid, grid]
         embeddings = patch_embeds.flatten(2).transpose(1, 2)
 
         if interpolate_pos_encoding:
@@ -396,9 +377,7 @@ class SiglipAttention(nn.Module):
         self.tp_size = get_tensor_model_parallel_world_size()
         self.num_heads_per_partition = divide(self.num_heads, self.tp_size)
 
-        self.attn = MultiHeadAttention(
-            self.num_heads_per_partition, self.head_dim, self.scale
-        )
+        self.attn = MultiHeadAttention(self.num_heads_per_partition, self.head_dim, self.scale)
 
     def forward(
         self,
@@ -448,9 +427,7 @@ class SiglipMLP(nn.Module):
         else:
             # For other quantization, we require the hidden size to be a
             # multiple of 64
-            quantizable = (
-                config.hidden_size % 64 == 0 and config.intermediate_size % 64 == 0
-            )
+            quantizable = config.hidden_size % 64 == 0 and config.intermediate_size % 64 == 0
         self.fc1 = ColumnParallelLinear(
             config.hidden_size,
             config.intermediate_size,
@@ -597,9 +574,7 @@ class SiglipTextTransformer(nn.Module):
     ) -> torch.Tensor:
         hidden_states = self.embeddings(input_ids, position_ids, inputs_embeds)
 
-        last_hidden_state = self.encoder(
-            inputs_embeds=hidden_states, return_all_hidden_states=False
-        )
+        last_hidden_state = self.encoder(inputs_embeds=hidden_states, return_all_hidden_states=False)
 
         last_hidden_state = self.final_layer_norm(last_hidden_state)
 
@@ -645,13 +620,9 @@ class SiglipMultiheadAttentionPoolingHead(nn.Module):
 
         self.probe = nn.Parameter(torch.randn(1, 1, config.hidden_size))
         # TODO(ChristopherCho): Implement Aphrodite version of MultiheadAttention
-        self.attention = torch.nn.MultiheadAttention(
-            config.hidden_size, config.num_attention_heads, batch_first=True
-        )
+        self.attention = torch.nn.MultiheadAttention(config.hidden_size, config.num_attention_heads, batch_first=True)
         self.layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.mlp = SiglipMLP(
-            config=config, quant_config=quant_config, prefix=f"{prefix}.mlp"
-        )
+        self.mlp = SiglipMLP(config=config, quant_config=quant_config, prefix=f"{prefix}.mlp")
 
     def forward(self, hidden_state: torch.Tensor) -> torch.Tensor:
         batch_size = hidden_state.size(0)
@@ -710,9 +681,7 @@ class SiglipVisionTransformer(nn.Module):
         else:
             self.post_layernorm = None
 
-        self.use_head = (
-            True if not hasattr(config, "vision_use_head") else config.vision_use_head
-        )
+        self.use_head = True if not hasattr(config, "vision_use_head") else config.vision_use_head
         if self.use_head:
             self.head = SiglipMultiheadAttentionPoolingHead(
                 config=config,
@@ -863,10 +832,7 @@ class SiglipVisionModel(nn.Module):
 
         for name, loaded_weight in weights:
             # post_layernorm is optional in SiglipVisionModel
-            if (
-                name.startswith("vision_model.post_layernorm")
-                and self.vision_model.post_layernorm is None
-            ):
+            if name.startswith("vision_model.post_layernorm") and self.vision_model.post_layernorm is None:
                 continue
 
             # omit layers when num_hidden_layers_override is set
@@ -882,9 +848,7 @@ class SiglipVisionModel(nn.Module):
                 if remapped_name is not None and remapped_name in params_dict:
                     # Successfully remapped, use the remapped name
                     param = params_dict[remapped_name]
-                    weight_loader = getattr(
-                        param, "weight_loader", default_weight_loader
-                    )
+                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
                     loaded_params.add(remapped_name)
                     continue
@@ -913,13 +877,9 @@ class SiglipTextEmbeddings(nn.Module):
         super().__init__()
         self.config = config
 
-        self.token_embedding = VocabParallelEmbedding(
-            config.vocab_size, config.hidden_size
-        )
+        self.token_embedding = VocabParallelEmbedding(config.vocab_size, config.hidden_size)
 
-        self.position_embedding = VocabParallelEmbedding(
-            config.max_position_embeddings, config.hidden_size
-        )
+        self.position_embedding = VocabParallelEmbedding(config.max_position_embeddings, config.hidden_size)
 
         self.register_buffer(
             "position_ids",
@@ -1027,9 +987,7 @@ class SiglipEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
         feature_select_strategy: VisionFeatureSelectStrategy | None = None,
     ) -> torch.Tensor:
         if feature_select_strategy is None:
-            feature_select_strategy = _get_vision_feature_select_strategy(
-                self.pooler_config.pooling_type
-            )
+            feature_select_strategy = _get_vision_feature_select_strategy(self.pooler_config.pooling_type)
 
         pooled_output = self.vision_model(
             pixel_values=pixel_values,
@@ -1039,9 +997,7 @@ class SiglipEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
 
         return pooled_output
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> SiglipImagePixelInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> SiglipImagePixelInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         if pixel_values is None:
             return None
@@ -1069,9 +1025,7 @@ class SiglipEmbeddingModel(nn.Module, SupportsMultiModal, SupportsQuant):
         is_multimodal: torch.Tensor | None = None,
         handle_oov_mm_token: bool = False,
     ) -> torch.Tensor:
-        self._is_text_input = (
-            multimodal_embeddings is None or len(multimodal_embeddings) == 0
-        )
+        self._is_text_input = multimodal_embeddings is None or len(multimodal_embeddings) == 0
 
         if multimodal_embeddings is None or is_multimodal is None:
             return super().get_input_embeddings(input_ids)

@@ -261,9 +261,7 @@ def compute_encoder_budget(
             from the input sequence.
     """
     if mm_registry.supports_multimodal_inputs(model_config):
-        max_tokens_by_modality = mm_registry.get_max_tokens_per_item_by_modality(
-            model_config
-        )
+        max_tokens_by_modality = mm_registry.get_max_tokens_per_item_by_modality(model_config)
 
         return compute_mm_encoder_budget(
             scheduler_config,
@@ -319,10 +317,7 @@ def compute_mm_encoder_budget(
 
     max_tokens_per_mm_item = max(max_tokens_by_modality.values())
 
-    if (
-        scheduler_config.disable_chunked_mm_input
-        and max_tokens_per_mm_item > scheduler_config.max_num_batched_tokens
-    ):
+    if scheduler_config.disable_chunked_mm_input and max_tokens_per_mm_item > scheduler_config.max_num_batched_tokens:
         raise ValueError(
             "Chunked MM input disabled but max_tokens_per_mm_item "
             f"({max_tokens_per_mm_item}) is larger than max_num_batched_tokens"
@@ -330,11 +325,7 @@ def compute_mm_encoder_budget(
             "max_num_batched_tokens."
         )
 
-    encoder_compute_budget = max(
-        scheduler_config.max_num_encoder_input_tokens, max_tokens_per_mm_item
-    )
-    encoder_cache_size = max(
-        scheduler_config.encoder_cache_size, max_tokens_per_mm_item
-    )
+    encoder_compute_budget = max(scheduler_config.max_num_encoder_input_tokens, max_tokens_per_mm_item)
+    encoder_cache_size = max(scheduler_config.encoder_cache_size, max_tokens_per_mm_item)
 
     return encoder_compute_budget, encoder_cache_size

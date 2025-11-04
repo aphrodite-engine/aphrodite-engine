@@ -7,8 +7,7 @@ import torch
 from aphrodite import _custom_ops as ops
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.activation import SiluAndMul
-from aphrodite.modeling.layers.fused_moe.config import (
-    fp8_w8a8_moe_quant_config)
+from aphrodite.modeling.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 from aphrodite.platforms import current_platform
 from tests.kernels.moe.utils import fused_moe
 
@@ -82,18 +81,12 @@ def torch_w8a8_per_column_moe(a, w1, w2, w1_s, w2_s, score, topk):
             # Activation function
             act_out = SiluAndMul().forward_native(inter_out)
             # Quantize activation output with per-token
-            act_out_q, act_out_s = ops.scaled_fp8_quant(
-                act_out, use_per_token_if_dynamic=True
-            )
+            act_out_q, act_out_s = ops.scaled_fp8_quant(act_out, use_per_token_if_dynamic=True)
 
             # Second MLP layer
-            out[mask] = native_w8a8_per_token_matmul(
-                act_out_q, w2[i], act_out_s, w2_s[i], output_dtype=a.dtype
-            )
+            out[mask] = native_w8a8_per_token_matmul(act_out_q, w2[i], act_out_s, w2_s[i], output_dtype=a.dtype)
     # Apply routing weights and sum
-    return (
-        out.view(B, -1, w2.shape[1]) * topk_weight.view(B, -1, 1).to(out.dtype)
-    ).sum(dim=1)
+    return (out.view(B, -1, w2.shape[1]) * topk_weight.view(B, -1, 1).to(out.dtype)).sum(dim=1)
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -158,7 +151,7 @@ def test_w8a8_fp8_fused_moe(M, N, K, E, topk, dtype, seed):
         )
 
     # Check results
-    rel_diff = torch.mean(
-        torch.abs(out.to(torch.float32) - ref_out.to(torch.float32))
-    ) / torch.mean(torch.abs(ref_out.to(torch.float32)))
+    rel_diff = torch.mean(torch.abs(out.to(torch.float32) - ref_out.to(torch.float32))) / torch.mean(
+        torch.abs(ref_out.to(torch.float32))
+    )
     assert rel_diff < 0.05

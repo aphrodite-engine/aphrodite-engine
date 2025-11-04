@@ -170,10 +170,7 @@ def _estimate_sla_bounds(
             for k in sla_comb
         }
 
-        sla_results = [
-            criterion.print_and_validate(iter_data_mean, k)
-            for k, criterion in sla_comb.items()
-        ]
+        sla_results = [criterion.print_and_validate(iter_data_mean, k) for k, criterion in sla_comb.items()]
 
         if all(sla_results):
             print("SLA criteria are met.")
@@ -231,10 +228,7 @@ def _find_sla_value(
             for k in sla_comb
         }
 
-        sla_results = [
-            criterion.print_and_validate(iter_data_mean, k)
-            for k, criterion in sla_comb.items()
-        ]
+        sla_results = [criterion.print_and_validate(iter_data_mean, k) for k, criterion in sla_comb.items()]
 
         if all(sla_results):
             print("SLA criteria are met.")
@@ -280,10 +274,7 @@ def search_sla(
         print("[SLA END]")
         return None
 
-    sla_init_value = math.ceil(
-        sum(_estimate_sla_value(item, sla_variable) for item in sla_data_0)
-        / len(sla_data_0)
-    )
+    sla_init_value = math.ceil(sum(_estimate_sla_value(item, sla_variable) for item in sla_data_0) / len(sla_data_0))
     print(f"Initial {sla_variable} to search: {sla_init_value} req/s.")
 
     sla_data_1, (sla_min, sla_max) = _estimate_sla_bounds(
@@ -444,8 +435,7 @@ class SweepServeSLAArgs(SweepServeArgs):
             type=str,
             choices=get_args(SLAVariable),
             default="request_rate",
-            help="Whether to tune request rate or maximum concurrency to satisfy "
-            "the SLA constraints.",
+            help="Whether to tune request rate or maximum concurrency to satisfy the SLA constraints.",
         )
 
         return parser

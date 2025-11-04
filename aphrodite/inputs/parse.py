@@ -1,14 +1,20 @@
 from collections.abc import Sequence
-from typing import (TYPE_CHECKING, Literal, NamedTuple, TypeAlias, TypedDict,
-                    cast)
+from typing import TYPE_CHECKING, Literal, NamedTuple, TypeAlias, TypedDict, cast
 
 from typing_extensions import TypeIs
 
 from aphrodite.utils.collection_utils import is_list_of
 
-from .data import (EmbedsPrompt, ExplicitEncoderDecoderPrompt, ProcessorInputs,
-                   PromptType, SingletonInputs, SingletonPrompt, TextPrompt,
-                   TokensPrompt)
+from .data import (
+    EmbedsPrompt,
+    ExplicitEncoderDecoderPrompt,
+    ProcessorInputs,
+    PromptType,
+    SingletonInputs,
+    SingletonPrompt,
+    TextPrompt,
+    TokensPrompt,
+)
 
 if TYPE_CHECKING:
     import torch
@@ -42,10 +48,7 @@ def parse_raw_prompts(
                 # case 4: array of token arrays
                 return [TokensPrompt(prompt_token_ids=elem) for elem in prompt]
 
-    raise TypeError(
-        "prompt must be a string, array of strings, "
-        "array of tokens, or array of token arrays"
-    )
+    raise TypeError("prompt must be a string, array of strings, array of tokens, or array of token arrays")
 
 
 class ParsedStrPrompt(TypedDict):
@@ -68,9 +71,7 @@ class ParsedEmbedsPrompt(TypedDict):
     content: EmbedsPrompt
 
 
-ParsedSingletonPrompt: TypeAlias = (
-    ParsedStrPrompt | ParsedTextPrompt | ParsedTokensPrompt | ParsedEmbedsPrompt
-)
+ParsedSingletonPrompt: TypeAlias = ParsedStrPrompt | ParsedTextPrompt | ParsedTokensPrompt | ParsedEmbedsPrompt
 
 
 def parse_singleton_prompt(prompt: SingletonPrompt) -> ParsedSingletonPrompt:
@@ -85,9 +86,7 @@ def parse_singleton_prompt(prompt: SingletonPrompt) -> ParsedSingletonPrompt:
             return ParsedTokensPrompt(type="tokens", content=prompt)  # type: ignore[typeddict-item]
         elif "prompt" in prompt:
             return ParsedTextPrompt(type="text", content=prompt)
-    raise TypeError(
-        "inputs must be a string, TextPrompt, TokensPrompt, or EmbedsPrompt"
-    )
+    raise TypeError("inputs must be a string, TextPrompt, TokensPrompt, or EmbedsPrompt")
 
 
 def is_explicit_encoder_decoder_prompt(

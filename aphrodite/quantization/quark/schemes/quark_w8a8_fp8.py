@@ -4,22 +4,17 @@ from typing import Any, cast
 import torch
 from torch.nn import Parameter
 
-from aphrodite.modeling.parameter import (ChannelQuantScaleParameter,
-                                          ModelWeightParameter,
-                                          PerTensorScaleParameter)
+from aphrodite.modeling.parameter import ChannelQuantScaleParameter, ModelWeightParameter, PerTensorScaleParameter
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.quark.schemes import QuarkScheme
 from aphrodite.quantization.utils.quant_utils import GroupShape
-from aphrodite.quantization.utils.w8a8_utils import (
-    Fp8LinearOp, normalize_e4m3fn_to_e4m3fnuz, requantize_with_max_scale)
+from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, normalize_e4m3fn_to_e4m3fnuz, requantize_with_max_scale
 
 __all__ = ["QuarkW8A8Fp8"]
 
 
 class QuarkW8A8Fp8(QuarkScheme):
-    def __init__(
-        self, weight_config: dict[str, Any], input_config: dict[str, Any] | None
-    ):
+    def __init__(self, weight_config: dict[str, Any], input_config: dict[str, Any] | None):
         self.weight_qscheme = cast(str, weight_config.get("qscheme"))
         self.is_static_input_scheme: bool = False
         self.input_qscheme: str | None = None
@@ -27,12 +22,8 @@ class QuarkW8A8Fp8(QuarkScheme):
             self.is_static_input_scheme = not cast(bool, input_config.get("is_dynamic"))
             self.input_qscheme = cast(str, input_config.get("qscheme"))
 
-        per_token = (
-            not self.is_static_input_scheme and self.input_qscheme == "per_channel"
-        )
-        self.act_quant_group_shape = (
-            GroupShape.PER_TOKEN if per_token else GroupShape.PER_TENSOR
-        )
+        per_token = not self.is_static_input_scheme and self.input_qscheme == "per_channel"
+        self.act_quant_group_shape = GroupShape.PER_TOKEN if per_token else GroupShape.PER_TENSOR
         self.fp8_linear = Fp8LinearOp(
             act_quant_static=self.is_static_input_scheme,
             act_quant_group_shape=self.act_quant_group_shape,

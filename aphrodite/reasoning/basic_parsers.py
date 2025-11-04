@@ -1,9 +1,7 @@
 from abc import abstractmethod
 from collections.abc import Sequence
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage,
-                                                 ResponsesRequest)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage, ResponsesRequest
 from aphrodite.reasoning.abs_reasoning_parsers import ReasoningParser
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
@@ -37,8 +35,7 @@ class BaseThinkingReasoningParser(ReasoningParser):
 
         if not self.model_tokenizer:
             raise ValueError(
-                "The model tokenizer must be passed to the ReasoningParser "
-                "constructor during construction."
+                "The model tokenizer must be passed to the ReasoningParser constructor during construction."
             )
 
         if not self.start_token or not self.end_token:
@@ -48,8 +45,7 @@ class BaseThinkingReasoningParser(ReasoningParser):
         self.end_token_id = self.vocab.get(self.end_token)
         if self.start_token_id is None or self.end_token_id is None:
             raise RuntimeError(
-                f"{self.__class__.__name__} reasoning parser could not locate "
-                "think start/end tokens in the tokenizer!"
+                f"{self.__class__.__name__} reasoning parser could not locate think start/end tokens in the tokenizer!"
             )
 
     def is_reasoning_end(self, input_ids: list[int]) -> bool:
@@ -80,9 +76,7 @@ class BaseThinkingReasoningParser(ReasoningParser):
         Uses token IDs for faster processing.
         """
         # Skip single special tokens
-        if len(delta_token_ids) == 1 and (
-            delta_token_ids[0] in [self.start_token_id, self.end_token_id]
-        ):
+        if len(delta_token_ids) == 1 and (delta_token_ids[0] in [self.start_token_id, self.end_token_id]):
             return None
 
         # Check if start token is present in previous or delta.
@@ -112,9 +106,7 @@ class BaseThinkingReasoningParser(ReasoningParser):
                 # extract reasoning content
                 start_index = delta_text.find(self.start_token)
                 end_index = delta_text.find(self.end_token)
-                reasoning_content = delta_text[
-                    start_index + len(self.start_token) : end_index
-                ]
+                reasoning_content = delta_text[start_index + len(self.start_token) : end_index]
                 content = delta_text[end_index + len(self.end_token) :]
                 return DeltaMessage(
                     reasoning_content=reasoning_content,
@@ -140,9 +132,7 @@ class BaseThinkingReasoningParser(ReasoningParser):
         # Check if the start token is present in the model output, remove it
         # if it is present.
         model_output_parts = model_output.partition(self.start_token)
-        model_output = (
-            model_output_parts[2] if model_output_parts[1] else model_output_parts[0]
-        )
+        model_output = model_output_parts[2] if model_output_parts[1] else model_output_parts[0]
 
         # For models that may not generate start token,
         # assume the reasoning content is always at the start.

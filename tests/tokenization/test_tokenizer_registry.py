@@ -1,8 +1,7 @@
 from typing import TYPE_CHECKING, Any
 
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
-from aphrodite.transformers_utils.tokenizer_base import (TokenizerBase,
-                                                         TokenizerRegistry)
+from aphrodite.transformers_utils.tokenizer_base import TokenizerBase, TokenizerRegistry
 
 if TYPE_CHECKING:
     from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam
@@ -107,9 +106,7 @@ class TestTokenizer(TokenizerBase):
 
 
 def test_customized_tokenizer():
-    TokenizerRegistry.register(
-        "test_tokenizer", "tests.tokenization.test_tokenizer_registry", "TestTokenizer"
-    )
+    TokenizerRegistry.register("test_tokenizer", "tests.tokenization.test_tokenizer_registry", "TestTokenizer")
 
     tokenizer = TokenizerRegistry.get_tokenizer("test_tokenizer")
     assert isinstance(tokenizer, TestTokenizer)

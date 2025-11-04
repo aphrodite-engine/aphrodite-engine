@@ -38,9 +38,7 @@ def convert_to_pytorch_benchmark_format(
         tp = record["benchmark"]["extra_info"]["args"].get("tensor_parallel_size")
         # Save tensor_parallel_size parameter if it's part of the metadata
         if not tp and "tensor_parallel_size" in extra_info:
-            record["benchmark"]["extra_info"]["args"]["tensor_parallel_size"] = (
-                extra_info["tensor_parallel_size"]
-            )
+            record["benchmark"]["extra_info"]["args"]["tensor_parallel_size"] = extra_info["tensor_parallel_size"]
 
         records.append(record)
 
@@ -51,9 +49,7 @@ class InfEncoder(json.JSONEncoder):
     def clear_inf(self, o: Any):
         if isinstance(o, dict):
             return {
-                str(k)
-                if not isinstance(k, (str, int, float, bool, type(None)))
-                else k: self.clear_inf(v)
+                str(k) if not isinstance(k, (str, int, float, bool, type(None))) else k: self.clear_inf(v)
                 for k, v in o.items()
             }
         elif isinstance(o, list):

@@ -8,16 +8,12 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import TYPE_CHECKING  # noqa: UP035
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.distributed.kv_transfer import (ensure_kv_transfer_shutdown,
-                                               get_kv_transfer_group,
-                                               has_kv_transfer_group)
+from aphrodite.distributed.kv_transfer import ensure_kv_transfer_shutdown, get_kv_transfer_group, has_kv_transfer_group
 from aphrodite.distributed.kv_transfer.kv_connector.base import KVConnectorBase
-from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import (
-    KVConnectorStats)
+from aphrodite.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
 from aphrodite.forward_context import get_forward_context, set_forward_context
 from aphrodite.logger import init_logger
-from aphrodite.v1.outputs import (EMPTY_MODEL_RUNNER_OUTPUT, KVConnectorOutput,
-                                  ModelRunnerOutput)
+from aphrodite.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, KVConnectorOutput, ModelRunnerOutput
 
 if TYPE_CHECKING:
     from aphrodite.v1.core.sched.output import SchedulerOutput
@@ -58,9 +54,7 @@ class KVConnectorModelRunnerMixin:
         scheduler_output: "SchedulerOutput",
     ) -> tuple[set[str] | None, set[str] | None]:
         if has_kv_transfer_group():
-            return get_kv_transfer_group().get_finished(
-                scheduler_output.finished_req_ids
-            )
+            return get_kv_transfer_group().get_finished(scheduler_output.finished_req_ids)
         return None, None
 
     @staticmethod
@@ -119,14 +113,12 @@ class KVConnectorModelRunnerMixin:
             if wait_for_save:
                 kv_connector.wait_for_save()
 
-            output.finished_sending, output.finished_recving = (
-                kv_connector.get_finished(scheduler_output.finished_req_ids)
+            output.finished_sending, output.finished_recving = kv_connector.get_finished(
+                scheduler_output.finished_req_ids
             )
             output.invalid_block_ids = kv_connector.get_block_ids_with_load_errors()
 
-            output.kv_connector_stats = (
-                KVConnectorModelRunnerMixin.get_kv_connector_stats()
-            )
+            output.kv_connector_stats = KVConnectorModelRunnerMixin.get_kv_connector_stats()
             kv_connector.clear_connector_metadata()
 
     @staticmethod

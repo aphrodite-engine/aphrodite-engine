@@ -1,12 +1,10 @@
 import gc
 import time
-from typing import List
 
 from aphrodite import LLM, SamplingParams
 
 
-def time_generation(llm: LLM, prompts: List[str],
-                    sampling_params: SamplingParams):
+def time_generation(llm: LLM, prompts: list[str], sampling_params: SamplingParams):
     # Generate texts from the prompts. The output is a list of RequestOutput
     # objects that contain the prompt, generated text, and other information.
     # Warmup first
@@ -23,11 +21,11 @@ def time_generation(llm: LLM, prompts: List[str],
 
 
 if __name__ == "__main__":
-
     template = (
         "Below is an instruction that describes a task. Write a response "
         "that appropriately completes the request.\n\n### Instruction:\n{}"
-        "\n\n### Response:\n")
+        "\n\n### Response:\n"
+    )
 
     # Sample prompts.
     prompts = [
@@ -38,8 +36,7 @@ if __name__ == "__main__":
     sampling_params = SamplingParams(temperature=0.0, max_tokens=200)
 
     # Create an LLM without spec decoding
-    llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct",
-              max_model_len=8192)
+    llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct", max_model_len=8192)
 
     print("Without speculation")
     time_generation(llm, prompts, sampling_params)

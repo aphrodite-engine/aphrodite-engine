@@ -3,8 +3,7 @@ from collections.abc import Sequence
 import pytest
 
 from tests.conftest import HfRunner
-from tests.models.utils import (EmbedModelInfo, check_embeddings_close,
-                                matryoshka_fy)
+from tests.models.utils import EmbedModelInfo, check_embeddings_close, matryoshka_fy
 
 
 def run_embedding_correctness_test(

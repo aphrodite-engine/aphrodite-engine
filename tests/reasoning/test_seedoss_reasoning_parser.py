@@ -88,9 +88,7 @@ def test_simple_reasoning(seedoss_tokenizer, streaming):
     parser_cls = ReasoningParserManager.get_reasoning_parser(parser_name)
     parser = parser_cls(seedoss_tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, [cast(str, SIMPLE_REASONING["output"])], streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, [cast(str, SIMPLE_REASONING["output"])], streaming=streaming)
 
     assert reasoning == SIMPLE_REASONING["reasoning_content"]
     assert content == SIMPLE_REASONING["content"]
@@ -116,9 +114,7 @@ def test_no_content(seedoss_tokenizer, streaming):
     parser_cls = ReasoningParserManager.get_reasoning_parser(parser_name)
     parser = parser_cls(seedoss_tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, [cast(str, NO_CONTENT["output"])], streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, [cast(str, NO_CONTENT["output"])], streaming=streaming)
 
     assert reasoning == NO_CONTENT["reasoning_content"]
     assert content == NO_CONTENT["content"]
@@ -130,9 +126,7 @@ def test_multiple_lines(seedoss_tokenizer, streaming):
     parser_cls = ReasoningParserManager.get_reasoning_parser(parser_name)
     parser = parser_cls(seedoss_tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, [cast(str, MULTIPLE_LINES["output"])], streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, [cast(str, MULTIPLE_LINES["output"])], streaming=streaming)
 
     assert reasoning == MULTIPLE_LINES["reasoning_content"]
     assert content == MULTIPLE_LINES["content"]
@@ -144,9 +138,7 @@ def test_with_start_token(seedoss_tokenizer, streaming):
     parser_cls = ReasoningParserManager.get_reasoning_parser(parser_name)
     parser = parser_cls(seedoss_tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, [cast(str, WITH_START_TOKEN["output"])], streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, [cast(str, WITH_START_TOKEN["output"])], streaming=streaming)
 
     assert reasoning == WITH_START_TOKEN["reasoning_content"]
     assert content == WITH_START_TOKEN["content"]
@@ -161,9 +153,7 @@ def test_only_end_token(seedoss_tokenizer, streaming):
     parser_cls = ReasoningParserManager.get_reasoning_parser(parser_name)
     parser = parser_cls(seedoss_tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, [cast(str, ONLY_END_TOKEN["output"])], streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, [cast(str, ONLY_END_TOKEN["output"])], streaming=streaming)
 
     assert reasoning == ONLY_END_TOKEN["reasoning_content"]
     assert content == ONLY_END_TOKEN["content"]
@@ -175,9 +165,7 @@ def test_no_tokens(seedoss_tokenizer, streaming):
     parser_cls = ReasoningParserManager.get_reasoning_parser(parser_name)
     parser = parser_cls(seedoss_tokenizer)
 
-    reasoning, content = run_reasoning_extraction(
-        parser, [cast(str, NO_TOKENS["output"])], streaming=streaming
-    )
+    reasoning, content = run_reasoning_extraction(parser, [cast(str, NO_TOKENS["output"])], streaming=streaming)
 
     assert reasoning == NO_TOKENS["reasoning_content"]
     assert content == NO_TOKENS["content"]

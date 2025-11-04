@@ -17,11 +17,7 @@ def test_preempt_and_async_scheduling_e2e(monkeypatch: pytest.MonkeyPatch):
     """Test consistency of combos of async scheduling, preemption,
     uni/multiproc executor, and various sampling parameters."""
 
-    first_prompt = (
-        "The following numbers of the sequence "
-        + ", ".join(str(i) for i in range(10))
-        + " are:"
-    )
+    first_prompt = "The following numbers of the sequence " + ", ".join(str(i) for i in range(10)) + " are:"
     example_prompts = [first_prompt, "In one word, the capital of France is "] + [
         f"Tell me about the number {i}: " for i in range(32)
     ]
@@ -49,14 +45,9 @@ def test_preempt_and_async_scheduling_e2e(monkeypatch: pytest.MonkeyPatch):
             for executor in ["mp", "uni"]:
                 for async_scheduling in [False, True]:
                     cache_arg: dict[str, Any] = (
-                        dict(num_gpu_blocks_override=32)
-                        if test_preemption
-                        else dict(gpu_memory_utilization=0.7)
+                        dict(num_gpu_blocks_override=32) if test_preemption else dict(gpu_memory_utilization=0.7)
                     )
-                    test_config = (
-                        f"executor={executor}, preemption={test_preemption},"
-                        f" async_sched={async_scheduling}"
-                    )
+                    test_config = f"executor={executor}, preemption={test_preemption}, async_sched={async_scheduling}"
                     print("-" * 80)
                     print(f"---- TESTING: {test_config}")
                     print("-" * 80)
@@ -75,9 +66,7 @@ def test_preempt_and_async_scheduling_e2e(monkeypatch: pytest.MonkeyPatch):
                             results.append(
                                 aphrodite_model.generate(
                                     example_prompts,
-                                    sampling_params=SamplingParams(
-                                        **default_params, **override_params
-                                    ),
+                                    sampling_params=SamplingParams(**default_params, **override_params),
                                     return_logprobs=True,
                                 )
                             )
@@ -95,9 +84,7 @@ def test_preempt_and_async_scheduling_e2e(monkeypatch: pytest.MonkeyPatch):
                                         name_0=f"baseline params={params}",
                                         name_1=f"other params={params}",
                                     )
-                                    assert _all_logprobs_match(
-                                        results[0][1], other_test_logprobs
-                                    )
+                                    assert _all_logprobs_match(results[0][1], other_test_logprobs)
 
                         outputs.append((test_config, results))
 
@@ -123,8 +110,7 @@ def _all_logprobs_match(req_a, req_b) -> bool:
         req_a == req_b
         or len(req_a) == len(req_b)
         and all(
-            len(seq_a) == len(seq_b)
-            and all(_logprobs_match(a, b) for a, b in zip(seq_a, seq_b))
+            len(seq_a) == len(seq_b) and all(_logprobs_match(a, b) for a, b in zip(seq_a, seq_b))
             for seq_a, seq_b in zip(req_a, req_b)
         )
     )

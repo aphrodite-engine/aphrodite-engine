@@ -109,9 +109,7 @@ def test_custom_executor_async(distributed_executor_backend, tmp_path):
         sampling_params = SamplingParams(max_tokens=1)
 
         async def t():
-            stream = engine.generate(
-                request_id="0", prompt="foo", sampling_params=sampling_params
-            )
+            stream = engine.generate(request_id="0", prompt="foo", sampling_params=sampling_params)
             async for x in stream:
                 ...
 

@@ -57,9 +57,7 @@ class TestCase(NamedTuple):
         TestCase(model_name=MODEL_NAME, echo=False),
     ],
 )
-async def test_chat_session_with_echo_and_continue_final_message(
-    client: openai.AsyncOpenAI, test_case: TestCase
-):
+async def test_chat_session_with_echo_and_continue_final_message(client: openai.AsyncOpenAI, test_case: TestCase):
     saying: str = "Here is a common saying about apple. An apple a day, keeps"
     # test echo with continue_final_message parameter
     chat_completion = await client.chat.completions.create(
@@ -124,6 +122,4 @@ async def test_top_logprobs(client: openai.AsyncOpenAI):
     assert completion.choices[0].logprobs is not None
     assert completion.choices[0].logprobs.content is not None
     assert len(completion.choices[0].logprobs.content) > 0
-    assert len(
-        completion.choices[0].logprobs.content[0].top_logprobs
-    ) == get_vocab_size(MODEL_NAME)
+    assert len(completion.choices[0].logprobs.content[0].top_logprobs) == get_vocab_size(MODEL_NAME)

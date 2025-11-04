@@ -83,14 +83,10 @@ class TestGptOssStructuralTagsIntegration:
         assert "<|channel|>analysis" in parsed_result["format"]["triggers"]
         assert "<|channel|>commentary to=" in parsed_result["format"]["triggers"]
 
-    def test_structured_outputs_params_integration(
-        self, gptoss_parser, tool_server_with_python
-    ):
+    def test_structured_outputs_params_integration(self, gptoss_parser, tool_server_with_python):
         """Test integration with StructuredOutputsParams."""
         # Generate structural tag
-        structural_tag = gptoss_parser.prepare_structured_tag(
-            None, tool_server_with_python
-        )
+        structural_tag = gptoss_parser.prepare_structured_tag(None, tool_server_with_python)
 
         # Create StructuredOutputsParams
         params = StructuredOutputsParams(structural_tag=structural_tag)
@@ -115,9 +111,7 @@ class TestGptOssStructuralTagsIntegration:
             (True, True, True, 7),
         ],
     )
-    def test_tool_server_interaction_flow(
-        self, gptoss_parser, browser, python, container, expected_tags
-    ):
+    def test_tool_server_interaction_flow(self, gptoss_parser, browser, python, container, expected_tags):
         """Test the complete tool server interaction flow."""
 
         # Create a mock ToolServer
@@ -154,9 +148,7 @@ class TestGptOssStructuralTagsIntegration:
         """Test that original tags are preserved when provided."""
         original_tag = '{"type": "custom_tag", "data": "preserved"}'
 
-        result = gptoss_parser.prepare_structured_tag(
-            original_tag, tool_server_with_python
-        )
+        result = gptoss_parser.prepare_structured_tag(original_tag, tool_server_with_python)
 
         # Should return original tag unchanged
         assert result == original_tag
@@ -237,9 +229,7 @@ class TestGptOssStructuralTagsIntegration:
     def test_tag_format_consistency(self, gptoss_parser):
         """Test that all generated tags follow consistent format."""
         tool_server = Mock(spec=ToolServer)
-        tool_server.has_tool = Mock(
-            side_effect=lambda tool: tool in ["python", "browser"]
-        )
+        tool_server.has_tool = Mock(side_effect=lambda tool: tool in ["python", "browser"])
 
         result = gptoss_parser.prepare_structured_tag(None, tool_server)
         parsed_result = json.loads(result)

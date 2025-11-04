@@ -7,12 +7,14 @@ from typing_extensions import override
 
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (ClassificationData,
-                                                 ClassificationRequest,
-                                                 ClassificationResponse,
-                                                 ErrorResponse, UsageInfo)
-from aphrodite.endpoints.openai.serving_engine import (
-    ClassificationServeContext, OpenAIServing, ServeContext)
+from aphrodite.endpoints.openai.protocol import (
+    ClassificationData,
+    ClassificationRequest,
+    ClassificationResponse,
+    ErrorResponse,
+    UsageInfo,
+)
+from aphrodite.endpoints.openai.serving_engine import ClassificationServeContext, OpenAIServing, ServeContext
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
 from aphrodite.endpoints.renderer import RenderConfig
 from aphrodite.engine.protocol import EngineClient
@@ -77,9 +79,7 @@ class ClassificationMixin(OpenAIServing):
 
             probs = classify_res.probs
             predicted_index = int(np.argmax(probs))
-            label = getattr(self.model_config.hf_config, "id2label", {}).get(
-                predicted_index
-            )
+            label = getattr(self.model_config.hf_config, "id2label", {}).get(predicted_index)
 
             item = ClassificationData(
                 index=idx,

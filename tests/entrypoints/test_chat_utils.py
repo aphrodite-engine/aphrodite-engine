@@ -10,14 +10,17 @@ from aphrodite.assets.image import ImageAsset
 from aphrodite.assets.video import VideoAsset
 from aphrodite.config import ModelConfig
 from aphrodite.endpoints.chat_utils import (
-    _try_extract_ast, apply_mistral_chat_template, load_chat_template,
-    parse_chat_messages, parse_chat_messages_futures,
-    resolve_chat_template_content_format, resolve_chat_template_kwargs,
-    resolve_hf_chat_template)
+    _try_extract_ast,
+    apply_mistral_chat_template,
+    load_chat_template,
+    parse_chat_messages,
+    parse_chat_messages_futures,
+    resolve_chat_template_content_format,
+    resolve_chat_template_kwargs,
+    resolve_hf_chat_template,
+)
 from aphrodite.multimodal import MultiModalDataDict, MultiModalUUIDDict
-from aphrodite.multimodal.utils import (encode_audio_base64,
-                                        encode_image_base64,
-                                        encode_video_base64)
+from aphrodite.multimodal.utils import encode_audio_base64, encode_image_base64, encode_video_base64
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 from aphrodite.transformers_utils.tokenizers.mistral import MistralTokenizer
 
@@ -235,9 +238,7 @@ def test_parse_chat_messages_single_image(
         content_format="string",
     )
 
-    assert conversation == [
-        {"role": "user", "content": "<|image_1|>\nWhat's in the image?"}
-    ]
+    assert conversation == [{"role": "user", "content": "<|image_1|>\nWhat's in the image?"}]
     _assert_mm_data_is_image_input(mm_data, 1)
     _assert_mm_uuids(mm_uuids, 1, expected_uuids=[None])
 
@@ -269,9 +270,7 @@ def test_parse_chat_messages_single_image_with_uuid(
         content_format="string",
     )
 
-    assert conversation == [
-        {"role": "user", "content": "<|image_1|>\nWhat's in the image?"}
-    ]
+    assert conversation == [{"role": "user", "content": "<|image_1|>\nWhat's in the image?"}]
     _assert_mm_data_is_image_input(mm_data, 1)
     _assert_mm_uuids(mm_uuids, 1, expected_uuids=[image_uuid])
 
@@ -301,9 +300,7 @@ def test_parse_chat_messages_single_empty_image_with_uuid(
         content_format="string",
     )
 
-    assert conversation == [
-        {"role": "user", "content": "<|image_1|>\nWhat's in the image?"}
-    ]
+    assert conversation == [{"role": "user", "content": "<|image_1|>\nWhat's in the image?"}]
     _assert_mm_data_is_image_input(mm_data, 1, skipped_image_indices=[0])
     _assert_mm_uuids(mm_uuids, 1, expected_uuids=[image_uuid])
 
@@ -336,9 +333,7 @@ def test_parse_chat_messages_single_image_with_bad_uuid_format(
         content_format="string",
     )
 
-    assert conversation == [
-        {"role": "user", "content": "<|image_1|>\nWhat's in the image?"}
-    ]
+    assert conversation == [{"role": "user", "content": "<|image_1|>\nWhat's in the image?"}]
     _assert_mm_data_is_image_input(mm_data, 1)
     _assert_mm_uuids(mm_uuids, 1, expected_uuids=[None])
 
@@ -501,9 +496,7 @@ async def test_parse_chat_messages_single_image_with_uuid_async(
         content_format="string",
     )
 
-    assert conversation == [
-        {"role": "user", "content": "<|image_1|>\nWhat's in the image?"}
-    ]
+    assert conversation == [{"role": "user", "content": "<|image_1|>\nWhat's in the image?"}]
     _assert_mm_data_is_image_input(await mm_future, 1)
     _assert_mm_uuids(mm_uuids, 1, expected_uuids=[image_uuid])
 
@@ -534,9 +527,7 @@ async def test_parse_chat_messages_empty_image_with_uuid_async(
         content_format="string",
     )
 
-    assert conversation == [
-        {"role": "user", "content": "<|image_1|>\nWhat's in the image?"}
-    ]
+    assert conversation == [{"role": "user", "content": "<|image_1|>\nWhat's in the image?"}]
     _assert_mm_data_is_image_input(await mm_future, 1, skipped_image_indices=[0])
     _assert_mm_uuids(mm_uuids, 1, expected_uuids=[image_uuid])
 
@@ -730,9 +721,7 @@ async def test_parse_chat_messages_single_image_async(
         content_format="string",
     )
 
-    assert conversation == [
-        {"role": "user", "content": "<|image_1|>\nWhat's in the image?"}
-    ]
+    assert conversation == [{"role": "user", "content": "<|image_1|>\nWhat's in the image?"}]
     _assert_mm_data_is_image_input(await mm_future, 1)
     _assert_mm_uuids(mm_uuids, 1, expected_uuids=[None])
 
@@ -949,8 +938,7 @@ def test_parse_chat_messages_placeholder_one_already_in_prompt(
                     {"type": "image_url", "image_url": {"url": image_url}},
                     {
                         "type": "text",
-                        "text": "What's in <|image_1|> and how does it compare to "
-                        "the other one?",
+                        "text": "What's in <|image_1|> and how does it compare to the other one?",
                     },
                 ],
             }
@@ -963,8 +951,7 @@ def test_parse_chat_messages_placeholder_one_already_in_prompt(
     assert conversation == [
         {
             "role": "user",
-            "content": "<|image_2|>\nWhat's in <|image_1|> and how does it compare to "
-            "the other one?",
+            "content": "<|image_2|>\nWhat's in <|image_1|> and how does it compare to the other one?",
         }
     ]
     _assert_mm_data_is_image_input(mm_data, 2)
@@ -1536,9 +1523,7 @@ def test_parse_chat_messages_multiple_modals_with_uuids_multiple_messages_interl
     ]
 
     _assert_mm_data_inputs(mm_data, {"image": 2, "video": 1, "audio": 1})
-    _assert_mm_uuids(
-        mm_uuids, 2, modality="image", expected_uuids=["image_123", "image_123"]
-    )
+    _assert_mm_uuids(mm_uuids, 2, modality="image", expected_uuids=["image_123", "image_123"])
     _assert_mm_uuids(mm_uuids, 1, modality="video", expected_uuids=["video_123"])
     _assert_mm_uuids(mm_uuids, 1, modality="audio", expected_uuids=["audio_123"])
 
@@ -1612,9 +1597,7 @@ def test_parse_chat_messages_multiple_modals_with_uuids_multiple_empty_media_mes
         {"image": 2, "video": 1, "audio": 1},
         skipped_media_indices={"image": [0, 1], "video": [0], "audio": [0]},
     )
-    _assert_mm_uuids(
-        mm_uuids, 2, modality="image", expected_uuids=["image_123", "image_123"]
-    )
+    _assert_mm_uuids(mm_uuids, 2, modality="image", expected_uuids=["image_123", "image_123"])
     _assert_mm_uuids(mm_uuids, 1, modality="video", expected_uuids=["video_123"])
     _assert_mm_uuids(mm_uuids, 1, modality="audio", expected_uuids=["audio_123"])
 
@@ -1854,9 +1837,7 @@ def test_resolve_hf_chat_template_kwargs(sample_json_schema, model, expected_kwa
         tools=tools,
         model_config=model_config,
     )
-    with pytest.raises(
-        ValueError, match="Found unexpected chat template kwargs from request"
-    ):
+    with pytest.raises(ValueError, match="Found unexpected chat template kwargs from request"):
         # should raise error if `chat_template_kwargs` contains
         # `chat_template` or `tokenize`
         resolve_chat_template_kwargs(
@@ -1875,14 +1856,13 @@ def test_resolve_hf_chat_template_kwargs(sample_json_schema, model, expected_kwa
     # Additional test: Verify HF base parameters work with **kwargs tokenizers
     # This validates the fix for tokenizers like Kimi K2 that use **kwargs
     # to receive standard HuggingFace parameters instead of declaring them explicitly
-    from aphrodite.endpoints.chat_utils import (
-        _get_hf_base_chat_template_params)
+    from aphrodite.endpoints.chat_utils import _get_hf_base_chat_template_params
 
     hf_base_params = _get_hf_base_chat_template_params()
     # Verify common HF parameters are in the base class
-    assert {"add_generation_prompt", "tools", "continue_final_message"}.issubset(
-        hf_base_params
-    ), f"Expected HF base params not found in {hf_base_params}"
+    assert {"add_generation_prompt", "tools", "continue_final_message"}.issubset(hf_base_params), (
+        f"Expected HF base params not found in {hf_base_params}"
+    )
 
     # Test with a mock tokenizer that uses **kwargs (like Kimi K2)
     class MockTokenizerWithKwargs:
@@ -1896,9 +1876,7 @@ def test_resolve_hf_chat_template_kwargs(sample_json_schema, model, expected_kwa
         "continue_final_message": False,
         "unknown_param": "should_be_filtered",
     }
-    resolved_mock = resolve_chat_template_kwargs(
-        mock_tokenizer, chat_template, mock_kwargs, raise_on_unexpected=False
-    )
+    resolved_mock = resolve_chat_template_kwargs(mock_tokenizer, chat_template, mock_kwargs, raise_on_unexpected=False)
     # HF base params should pass through even with **kwargs tokenizer
     assert "add_generation_prompt" in resolved_mock
     assert "tools" in resolved_mock
@@ -2084,9 +2062,7 @@ def test_resolve_content_format_examples(template_path, expected_format):
     assert resolved_format == expected_format
 
 
-def test_parse_chat_messages_include_thinking_chunk(
-    mistral_model_config, mistral_tokenizer
-):
+def test_parse_chat_messages_include_thinking_chunk(mistral_model_config, mistral_tokenizer):
     messages = [
         {
             "role": "system",
@@ -2175,17 +2151,11 @@ def test_apply_mistral_chat_template_thinking_chunk():
         },
         {"role": "user", "content": "Thanks, what is 3+3?"},
     ]
-    mistral_tokenizer = MistralTokenizer.from_pretrained(
-        "mistralai/Magistral-Small-2509"
-    )
+    mistral_tokenizer = MistralTokenizer.from_pretrained("mistralai/Magistral-Small-2509")
 
-    tokens_ids = apply_mistral_chat_template(
-        mistral_tokenizer, messages, chat_template=None, tools=None
-    )
+    tokens_ids = apply_mistral_chat_template(mistral_tokenizer, messages, chat_template=None, tools=None)
 
-    string_tokens = mistral_tokenizer.mistral.decode(
-        tokens_ids, special_token_policy=SpecialTokenPolicy.KEEP
-    )
+    string_tokens = mistral_tokenizer.mistral.decode(tokens_ids, special_token_policy=SpecialTokenPolicy.KEEP)
 
     expected_tokens = (
         r"<s>[SYSTEM_PROMPT]You are a helpful assistant.[THINK]Only return the"
@@ -2225,8 +2195,7 @@ def test_parse_chat_messages_single_empty_audio_with_uuid(
     assert conversation == [
         {
             "role": "user",
-            "content": "Audio 1: <|audio_bos|><|AUDIO|><|audio_eos|>\nWhat does the "
-            "audio say?",
+            "content": "Audio 1: <|audio_bos|><|AUDIO|><|audio_eos|>\nWhat does the audio say?",
         }
     ]
     _assert_mm_data_inputs(mm_data, {"audio": 1})
@@ -2261,8 +2230,7 @@ async def test_parse_chat_messages_single_empty_audio_with_uuid_async(
     assert conversation == [
         {
             "role": "user",
-            "content": "Audio 1: <|audio_bos|><|AUDIO|><|audio_eos|>\nWhat does the "
-            "audio say?",
+            "content": "Audio 1: <|audio_bos|><|AUDIO|><|audio_eos|>\nWhat does the audio say?",
         }
     ]
     _assert_mm_data_inputs(await mm_future, {"audio": 1})

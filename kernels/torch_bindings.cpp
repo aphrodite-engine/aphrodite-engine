@@ -12,21 +12,20 @@
 // VMM operations for elastic KV cache
 namespace {
 
-void init_kvcached(const std::string &dev_str, int64_t page_size,
+void init_kvcached(const std::string& dev_str, int64_t page_size,
                    bool contiguous_layout) {
-  aphrodite::vmm::FTensorAllocator::init(dev_str, static_cast<size_t>(page_size),
-                                          contiguous_layout);
+  aphrodite::vmm::FTensorAllocator::init(
+      dev_str, static_cast<size_t>(page_size), contiguous_layout);
 }
 
-void shutdown_kvcached() {
-  aphrodite::vmm::FTensorAllocator::shutdown();
-}
+void shutdown_kvcached() { aphrodite::vmm::FTensorAllocator::shutdown(); }
 
 std::vector<torch::Tensor> create_kv_tensors(int64_t size, int64_t dtype_size,
-                                              const std::string &dev_str,
-                                              int64_t num_layers) {
+                                             const std::string& dev_str,
+                                             int64_t num_layers) {
   auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
-  auto dtype = aphrodite::vmm::torch_dtype_from_size(static_cast<size_t>(dtype_size));
+  auto dtype =
+      aphrodite::vmm::torch_dtype_from_size(static_cast<size_t>(dtype_size));
   return allocator->create_kv_tensors(static_cast<size_t>(size), dtype, dev_str,
                                       num_layers);
 }
@@ -36,12 +35,12 @@ bool kv_tensors_created() {
   return allocator->kv_tensors_created();
 }
 
-void map_to_kv_tensors(const std::vector<int64_t> &offsets) {
+void map_to_kv_tensors(const std::vector<int64_t>& offsets) {
   auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
   allocator->map_to_kv_tensors(offsets);
 }
 
-void unmap_from_kv_tensors(const std::vector<int64_t> &offsets) {
+void unmap_from_kv_tensors(const std::vector<int64_t>& offsets) {
   auto allocator = aphrodite::vmm::FTensorAllocator::global_allocator();
   allocator->unmap_from_kv_tensors(offsets);
 }
@@ -59,15 +58,15 @@ void unmap_from_kv_tensors(const std::vector<int64_t> &offsets) {
 // https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md#annotations
 
 TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
-  // Aphrodite custom ops
+// Aphrodite custom ops
 
-  // The default behavior in PyTorch 2.6 was changed to "requires_contiguous",
-  // so we need
-  // to override this for many GEMMs with the following tag. Otherwise,
-  // torch.compile will force all input tensors to be contiguous(), which
-  // will break many custom ops that require column-major weight matrices.
-  // This was a bug and PyTorch 2.7 has since fixed this.
-  #if TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR == 6
+// The default behavior in PyTorch 2.6 was changed to "requires_contiguous",
+// so we need
+// to override this for many GEMMs with the following tag. Otherwise,
+// torch.compile will force all input tensors to be contiguous(), which
+// will break many custom ops that require column-major weight matrices.
+// This was a bug and PyTorch 2.7 has since fixed this.
+#if TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR == 6
   #define stride_tag at::Tag::needs_fixed_stride_order
 #else
   #define stride_tag
@@ -293,7 +292,6 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       {stride_tag});
   ops.impl("awq_gemm", torch::kCUDA, &awq_gemm);
 
-
   // Dequantization for AWQ.
   ops.def(
       "awq_dequantize(Tensor _kernel, Tensor _scaling_factors, "
@@ -330,7 +328,8 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "  Tensor? residual_centroids,"
       "  Tensor? q_indice_outliers,"
       "  Tensor? outliers_centroids,"
-      "  Tensor? invperm) -> Tensor", {stride_tag});
+      "  Tensor? invperm) -> Tensor",
+      {stride_tag});
   ops.impl("vptq_dequant", torch::kCUDA, &vptq_dequant);
 
   // Note about marlin kernel 'workspace' arguments:
@@ -420,27 +419,27 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
 
   // awq_marlin repack from AWQ.
   ops.def(
-    "awq_marlin_repack(Tensor b_q_weight, SymInt size_k, "
-    "SymInt size_n, int num_bits) -> Tensor");
-// conditionally compiled so impl registrations are in source file
+      "awq_marlin_repack(Tensor b_q_weight, SymInt size_k, "
+      "SymInt size_n, int num_bits) -> Tensor");
+  // conditionally compiled so impl registrations are in source file
 
-// CUTLASS w4a8 GEMM
-ops.def(
-    "cutlass_w4a8_mm("
-    "   Tensor A,"
-    "   Tensor B,"
-    "   Tensor group_scales,"
-    "   int    group_size,"
-    "   Tensor channel_scales,"
-    "   Tensor token_scales,"
-    "   ScalarType? out_type,"
-    "   str?   maybe_schedule"
-    ") -> Tensor",
-    {stride_tag});
-// pack scales
-ops.def("cutlass_pack_scale_fp8(Tensor scales) -> Tensor");
-// encode and reorder weight matrix
-ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
+  // CUTLASS w4a8 GEMM
+  ops.def(
+      "cutlass_w4a8_mm("
+      "   Tensor A,"
+      "   Tensor B,"
+      "   Tensor group_scales,"
+      "   int    group_size,"
+      "   Tensor channel_scales,"
+      "   Tensor token_scales,"
+      "   ScalarType? out_type,"
+      "   str?   maybe_schedule"
+      ") -> Tensor",
+      {stride_tag});
+  // pack scales
+  ops.def("cutlass_pack_scale_fp8(Tensor scales) -> Tensor");
+  // encode and reorder weight matrix
+  ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
 // conditionally compiled so impl registration is in source file
 #endif
 
@@ -632,14 +631,14 @@ ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
 
   // SM100 CUTLASS MLA decode
   ops.def(
-    "sm100_cutlass_mla_decode(Tensor! out, Tensor! lse, Tensor q_nope,"
-    "                         Tensor q_pe, Tensor kv_c_and_k_pe_cache,"
-    "                         Tensor seq_lens, Tensor page_table,"
-    "                         Tensor workspace, float scale,"
-    "                         int num_kv_splits) -> ()");
-// conditionally compiled so impl in source file
+      "sm100_cutlass_mla_decode(Tensor! out, Tensor! lse, Tensor q_nope,"
+      "                         Tensor q_pe, Tensor kv_c_and_k_pe_cache,"
+      "                         Tensor seq_lens, Tensor page_table,"
+      "                         Tensor workspace, float scale,"
+      "                         int num_kv_splits) -> ()");
+  // conditionally compiled so impl in source file
 
-// SM100 CUTLASS MLA workspace
+  // SM100 CUTLASS MLA workspace
   ops.def(
       "sm100_cutlass_mla_get_workspace_size(int max_seq_len, int num_batches,"
       "                                     int sm_count, int num_kv_splits) "
@@ -833,13 +832,18 @@ ops.def("cutlass_encode_and_reorder_int4b(Tensor B) -> Tensor");
 #endif
 
   // VMM ops for elastic KV cache
-  // These ops have no tensor arguments, so we register them as CompositeImplicitAutograd
-  // which acts as a fallback for all backends
-  ops.def("init_kvcached(str dev_str, int page_size, bool contiguous_layout) -> ()", &init_kvcached);
+  // These ops have no tensor arguments, so we register them as
+  // CompositeImplicitAutograd which acts as a fallback for all backends
+  ops.def(
+      "init_kvcached(str dev_str, int page_size, bool contiguous_layout) -> ()",
+      &init_kvcached);
 
   ops.def("shutdown_kvcached() -> ()", &shutdown_kvcached);
 
-  ops.def("create_kv_tensors(int size, int dtype_size, str dev_str, int num_layers) -> Tensor[]", &create_kv_tensors);
+  ops.def(
+      "create_kv_tensors(int size, int dtype_size, str dev_str, int "
+      "num_layers) -> Tensor[]",
+      &create_kv_tensors);
 
   ops.def("kv_tensors_created() -> bool", &kv_tensors_created);
 
@@ -911,22 +915,22 @@ TORCH_LIBRARY_EXPAND(CONCAT(TORCH_EXTENSION_NAME, _cache_ops), cache_ops) {
   cache_ops.impl("gather_and_maybe_dequant_cache", torch::kCUDA,
                  &gather_and_maybe_dequant_cache);
   cache_ops.def(
-    "cp_gather_cache(Tensor src_cache, Tensor! dst, Tensor block_table, "
-    "Tensor cu_seq_lens, int batch_size, Tensor? seq_starts) -> ()");
-cache_ops.impl("cp_gather_cache", torch::kCUDA, &cp_gather_cache);
+      "cp_gather_cache(Tensor src_cache, Tensor! dst, Tensor block_table, "
+      "Tensor cu_seq_lens, int batch_size, Tensor? seq_starts) -> ()");
+  cache_ops.impl("cp_gather_cache", torch::kCUDA, &cp_gather_cache);
 
-cache_ops.def(
-    "indexer_k_quant_and_cache(Tensor k, Tensor! kv_cache, Tensor "
-    "slot_mapping, "
-    "int quant_block_size, str kv_cache_dtype) -> ()");
-cache_ops.impl("indexer_k_quant_and_cache", torch::kCUDA,
-               &indexer_k_quant_and_cache);
+  cache_ops.def(
+      "indexer_k_quant_and_cache(Tensor k, Tensor! kv_cache, Tensor "
+      "slot_mapping, "
+      "int quant_block_size, str kv_cache_dtype) -> ()");
+  cache_ops.impl("indexer_k_quant_and_cache", torch::kCUDA,
+                 &indexer_k_quant_and_cache);
 
-cache_ops.def(
-    "cp_gather_indexer_k_quant_cache(Tensor kv_cache, Tensor! dst_k, Tensor! "
-    "dst_scale, Tensor block_table, Tensor cu_seq_lens) -> ()");
-cache_ops.impl("cp_gather_indexer_k_quant_cache", torch::kCUDA,
-               &cp_gather_indexer_k_quant_cache);
+  cache_ops.def(
+      "cp_gather_indexer_k_quant_cache(Tensor kv_cache, Tensor! dst_k, Tensor! "
+      "dst_scale, Tensor block_table, Tensor cu_seq_lens) -> ()");
+  cache_ops.impl("cp_gather_indexer_k_quant_cache", torch::kCUDA,
+                 &cp_gather_indexer_k_quant_cache);
 }
 
 TORCH_LIBRARY_EXPAND(CONCAT(TORCH_EXTENSION_NAME, _cuda_utils), cuda_utils) {

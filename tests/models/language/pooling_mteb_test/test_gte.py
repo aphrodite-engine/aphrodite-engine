@@ -1,10 +1,13 @@
 import pytest
 
-from tests.models.language.pooling.embed_utils import (
-    correctness_test_embed_models)
-from tests.models.utils import (CLSPoolingEmbedModelInfo,
-                                CLSPoolingRerankModelInfo, EmbedModelInfo,
-                                LASTPoolingEmbedModelInfo, RerankModelInfo)
+from tests.models.language.pooling.embed_utils import correctness_test_embed_models
+from tests.models.utils import (
+    CLSPoolingEmbedModelInfo,
+    CLSPoolingRerankModelInfo,
+    EmbedModelInfo,
+    LASTPoolingEmbedModelInfo,
+    RerankModelInfo,
+)
 
 from .mteb_utils import mteb_test_embed_models, mteb_test_rerank_models
 
@@ -16,21 +19,11 @@ MODELS = [
         architecture="BertModel",
         enable_test=True,
     ),
-    CLSPoolingEmbedModelInfo(
-        "thenlper/gte-base", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "thenlper/gte-small", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "thenlper/gte-large-zh", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "thenlper/gte-base-zh", architecture="BertModel", enable_test=False
-    ),
-    CLSPoolingEmbedModelInfo(
-        "thenlper/gte-small-zh", architecture="BertModel", enable_test=False
-    ),
+    CLSPoolingEmbedModelInfo("thenlper/gte-base", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("thenlper/gte-small", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("thenlper/gte-large-zh", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("thenlper/gte-base-zh", architecture="BertModel", enable_test=False),
+    CLSPoolingEmbedModelInfo("thenlper/gte-small-zh", architecture="BertModel", enable_test=False),
     ########### NewModel
     # These three architectures are almost the same, but not exactly the same.
     # For example,
@@ -110,14 +103,10 @@ def test_embed_models_mteb(hf_runner, aphrodite_runner, model_info: EmbedModelIn
 
 
 @pytest.mark.parametrize("model_info", MODELS)
-def test_embed_models_correctness(
-    hf_runner, aphrodite_runner, model_info: EmbedModelInfo, example_prompts
-) -> None:
+def test_embed_models_correctness(hf_runner, aphrodite_runner, model_info: EmbedModelInfo, example_prompts) -> None:
     correctness_test_embed_models(hf_runner, aphrodite_runner, model_info, example_prompts)
 
 
 @pytest.mark.parametrize("model_info", RERANK_MODELS)
-def test_rerank_models_mteb(
-    hf_runner, aphrodite_runner, model_info: RerankModelInfo
-) -> None:
+def test_rerank_models_mteb(hf_runner, aphrodite_runner, model_info: RerankModelInfo) -> None:
     mteb_test_rerank_models(hf_runner, aphrodite_runner, model_info)

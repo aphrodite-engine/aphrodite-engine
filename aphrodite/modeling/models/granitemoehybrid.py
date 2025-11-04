@@ -14,25 +14,29 @@ from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
 from .granitemoe import GraniteMoeMoE
 from .granitemoeshared import GraniteMoeSharedMLP
-from .interfaces import (HasInnerState, IsHybrid, SupportsLoRA,
-                         SupportsMambaPrefixCaching, SupportsPP, SupportsQuant)
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .interfaces import HasInnerState, IsHybrid, SupportsLoRA, SupportsMambaPrefixCaching, SupportsPP, SupportsQuant
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class GraniteMoeHybridMambaDecoderLayer(nn.Module):
@@ -82,15 +86,11 @@ class GraniteMoeHybridMambaDecoderLayer(nn.Module):
         self.shared_mlp = (
             None
             if getattr(config, "shared_intermediate_size", 0) == 0
-            else GraniteMoeSharedMLP(
-                config, quant_config=quant_config, prefix=f"{prefix}.shared_mlp"
-            )
+            else GraniteMoeSharedMLP(config, quant_config=quant_config, prefix=f"{prefix}.shared_mlp")
         )
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -159,15 +159,11 @@ class GraniteMoeHybridAttentionDecoderLayer(nn.Module):
         self.shared_mlp = (
             None
             if getattr(config, "shared_intermediate_size", 0) == 0
-            else GraniteMoeSharedMLP(
-                config, quant_config=quant_config, prefix=f"{prefix}.shared_mlp"
-            )
+            else GraniteMoeSharedMLP(config, quant_config=quant_config, prefix=f"{prefix}.shared_mlp")
         )
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -322,11 +318,7 @@ class GraniteMoeHybridModel(nn.Module):
 
         self.config = config
         self.quant_config = quant_config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -385,14 +377,10 @@ class GraniteMoeHybridModel(nn.Module):
         for i, layer in enumerate(self.layers):
             if isinstance(layer, GraniteMoeHybridAttentionDecoderLayer):
                 num_attn += 1
-            hidden_states, residual = layer(
-                positions=positions, hidden_states=hidden_states, residual=residual
-            )
+            hidden_states, residual = layer(positions=positions, hidden_states=hidden_states, residual=residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states = self.norm(hidden_states)
         return hidden_states
@@ -490,14 +478,10 @@ class GraniteMoeHybridModel(nn.Module):
             if "A_log" in n:
                 n = n.replace("A_log", "A")
 
-            if self.quant_config is not None and (
-                scale_name := self.quant_config.get_cache_scale(n)
-            ):
+            if self.quant_config is not None and (scale_name := self.quant_config.get_cache_scale(n)):
                 # Loading kv cache quantization scales
                 loaded_weight = p
-                loaded_weight = (
-                    loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
-                )
+                loaded_weight = loaded_weight if loaded_weight.dim() == 0 else loaded_weight[0]
                 _load(scale_name, loaded_weight)
                 loaded_params.add(scale_name)
                 continue
@@ -564,9 +548,7 @@ class GraniteMoeHybridModel(nn.Module):
                 loaded = False
                 for param_name, weight_name, shard_id in stacked_params_mapping:
                     if weight_name in n:
-                        _load_shard(
-                            n.replace(weight_name, param_name), p, shard_id=shard_id
-                        )
+                        _load_shard(n.replace(weight_name, param_name), p, shard_id=shard_id)
                         loaded = True
                 if not loaded:
                     _load(n, p)
@@ -647,9 +629,7 @@ class GraniteMoeHybridForCausalLM(
         self.quant_config = aphrodite_config.quant_config
         self.config = config
         self.scheduler_config = scheduler_config
-        self.model = GraniteMoeHybridModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = GraniteMoeHybridModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -674,9 +654,7 @@ class GraniteMoeHybridForCausalLM(
             scale=1 / self.config.logits_scaling,
         )
 
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -689,9 +667,7 @@ class GraniteMoeHybridForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
 

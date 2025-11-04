@@ -14,9 +14,12 @@ import torch
 
 try:
     from pplx_kernels import AllToAll
-    from pplx_kernels.nvshmem import (nvshmem_alloc_empty_unique_id,
-                                      nvshmem_finalize, nvshmem_get_unique_id,
-                                      nvshmem_init)
+    from pplx_kernels.nvshmem import (
+        nvshmem_alloc_empty_unique_id,
+        nvshmem_finalize,
+        nvshmem_get_unique_id,
+        nvshmem_init,
+    )
 
     has_pplx = True
 except ImportError:
@@ -25,19 +28,14 @@ except ImportError:
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
 from aphrodite.modeling.layers.fused_moe import fused_topk, override_config
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.fused_batched_moe import (
-    BatchedTritonExperts)
+from aphrodite.modeling.layers.fused_moe.fused_batched_moe import BatchedTritonExperts
 from aphrodite.modeling.layers.fused_moe.fused_moe import get_default_config
-from aphrodite.modeling.layers.fused_moe.modular_kernel import (
-    FusedMoEModularKernel)
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceDelegate)
+from aphrodite.modeling.layers.fused_moe.modular_kernel import FusedMoEModularKernel
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceDelegate
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import round_up
-from tests.kernels.moe.modular_kernel_tools.parallel_utils import (
-    _set_aphrodite_config)
-from tests.kernels.moe.utils import (make_shared_experts, make_test_weights,
-                                     naive_batched_moe)
+from tests.kernels.moe.modular_kernel_tools.parallel_utils import _set_aphrodite_config
+from tests.kernels.moe.utils import make_shared_experts, make_test_weights, naive_batched_moe
 from tests.kernels.quant_utils import dequant
 from tests.kernels.utils import torch_experts
 
@@ -98,9 +96,7 @@ def torch_prepare(
     if max_num_tokens is None:
         max_num_tokens = int(tokens_per_expert.max().item())
 
-    b_a = torch.zeros(
-        (num_experts, max_num_tokens, hidden_dim), dtype=a.dtype, device=a.device
-    )
+    b_a = torch.zeros((num_experts, max_num_tokens, hidden_dim), dtype=a.dtype, device=a.device)
 
     token_counts = torch.zeros(num_experts, dtype=torch.int, device=a.device)
 
@@ -114,9 +110,7 @@ def torch_prepare(
     return b_a, tokens_per_expert
 
 
-def torch_finalize(
-    b_out: torch.Tensor, topk_weight: torch.Tensor, topk_ids: torch.Tensor
-) -> torch.Tensor:
+def torch_finalize(b_out: torch.Tensor, topk_weight: torch.Tensor, topk_ids: torch.Tensor) -> torch.Tensor:
     num_tokens = topk_ids.shape[0]
     num_experts = b_out.shape[0]
     K = b_out.shape[-1]
@@ -127,10 +121,7 @@ def torch_finalize(
         for i in range(expert_ids.numel()):
             expert_id = expert_ids[i]
             idx = expert_counts[expert_id]
-            out[token, :] = (
-                out[token, :]
-                + b_out[expert_id, idx : idx + 1, :] * topk_weight[token, i]
-            )
+            out[token, :] = out[token, :] + b_out[expert_id, idx : idx + 1, :] * topk_weight[token, i]
             expert_counts[expert_id] = expert_counts[expert_id] + 1
 
     return out
@@ -149,18 +140,12 @@ def torch_batched_moe(
     num_tokens, topk = topk_ids.shape
     _, max_num_tokens, K = b_a.shape
     assert num_experts == b_a.shape[0] and w2.shape[1] == K
-    out = torch.zeros(
-        (num_experts, max_num_tokens, K), dtype=b_a.dtype, device=b_a.device
-    )
-    tmp = torch.empty(
-        (max_num_tokens, w1.shape[1] // 2), dtype=b_a.dtype, device=b_a.device
-    )
+    out = torch.zeros((num_experts, max_num_tokens, K), dtype=b_a.dtype, device=b_a.device)
+    tmp = torch.empty((max_num_tokens, w1.shape[1] // 2), dtype=b_a.dtype, device=b_a.device)
     for expert in range(num_experts):
         num = tokens_per_expert[expert]
         if num > 0:
-            torch.ops._C.silu_and_mul(
-                tmp[:num], b_a[expert, :num, :] @ w1[expert].transpose(0, 1)
-            )
+            torch.ops._C.silu_and_mul(tmp[:num], b_a[expert, :num, :] @ w1[expert].transpose(0, 1))
             out[expert, :num, :] = tmp[:num] @ w2[expert].transpose(0, 1)
 
     return torch_finalize(out, topk_weight, topk_ids)
@@ -187,13 +172,9 @@ def test_fused_moe_batched_experts(
 
     with set_current_aphrodite_config(aphrodite_config):
         topk_weight, topk_ids, _ = fused_topk(a, score, topk, False)
-        baseline_output = torch_experts(
-            a, w1, w2, topk_weight, topk_ids
-        )  # only for baseline
+        baseline_output = torch_experts(a, w1, w2, topk_weight, topk_ids)  # only for baseline
         torch_output = torch_batched_moe(a, w1, w2, topk_weight, topk_ids)
-        batched_output = naive_batched_moe(
-            a, w1, w2, topk_weight, topk_ids
-        )  # pick torch_experts or this
+        batched_output = naive_batched_moe(a, w1, w2, topk_weight, topk_ids)  # pick torch_experts or this
 
     torch.testing.assert_close(baseline_output, torch_output, atol=2e-2, rtol=0)
     torch.testing.assert_close(baseline_output, batched_output, atol=2e-2, rtol=0)
@@ -214,7 +195,9 @@ def create_pplx_prepare_finalize(
     group_name: str | None,
 ):
     from aphrodite.modeling.layers.fused_moe.pplx_prepare_finalize import (
-        PplxPrepareAndFinalize, pplx_hidden_dim_scale_bytes)
+        PplxPrepareAndFinalize,
+        pplx_hidden_dim_scale_bytes,
+    )
 
     max_num_tokens = max(rank_chunk(num_tokens, 0, world_size), 1)
     num_local_experts = rank_chunk(num_experts, 0, world_size)
@@ -402,11 +385,7 @@ def _pplx_prepare_finalize(
 ):
     try:
         if use_internode:
-            uid = (
-                nvshmem_get_unique_id()
-                if pgi.rank == 0
-                else nvshmem_alloc_empty_unique_id()
-            )
+            uid = nvshmem_get_unique_id() if pgi.rank == 0 else nvshmem_alloc_empty_unique_id()
             torch.distributed.broadcast(uid, src=0)
             nvshmem_init(uid, pgi.rank, pgi.world_size)
             group_name = None
@@ -420,9 +399,7 @@ def _pplx_prepare_finalize(
 
         a_rep = torch.repeat_interleave(dummy_work(a), topk, dim=0)
 
-        torch_output = (
-            a_rep.view(m, topk, k) * topk_weight.view(m, topk, 1).to(a_rep.dtype)
-        ).sum(dim=1)
+        torch_output = (a_rep.view(m, topk, k) * topk_weight.view(m, topk, 1).to(a_rep.dtype)).sum(dim=1)
 
         pplx_output = pplx_prepare_finalize(
             pgi,
@@ -437,9 +414,7 @@ def _pplx_prepare_finalize(
             group_name,
         )
 
-        torch_output = chunk_by_rank(torch_output, pgi.rank, pgi.world_size).to(
-            pgi.device
-        )
+        torch_output = chunk_by_rank(torch_output, pgi.rank, pgi.world_size).to(pgi.device)
 
         torch.testing.assert_close(pplx_output, torch_output, atol=3e-2, rtol=3e-2)
     finally:
@@ -588,9 +563,7 @@ def pplx_moe(
     # large enough to trigger chunking. I'm leaving the flag and
     # setup code in case we are able to revisit this later.
     if use_compile:
-        _fused_experts = torch.compile(
-            fused_experts, backend="inductor", fullgraph=True
-        )
+        _fused_experts = torch.compile(fused_experts, backend="inductor", fullgraph=True)
         torch._dynamo.mark_dynamic(a_chunk, 0)
         torch._dynamo.mark_dynamic(chunk_topk_weight, 0)
         torch._dynamo.mark_dynamic(chunk_topk_ids, 0)
@@ -653,11 +626,7 @@ def _pplx_moe(
 ):
     try:
         if use_internode:
-            uid = (
-                nvshmem_get_unique_id()
-                if pgi.rank == 0
-                else nvshmem_alloc_empty_unique_id()
-            )
+            uid = nvshmem_get_unique_id() if pgi.rank == 0 else nvshmem_alloc_empty_unique_id()
             torch.distributed.broadcast(uid, src=0)
             nvshmem_init(uid, pgi.rank, pgi.world_size)
             group_name = None
@@ -752,28 +721,20 @@ def _pplx_moe(
 
         if shared_output is not None:
             assert pplx_shared_output is not None
-            chunked_shared_output = chunk_by_rank(
-                shared_output, pgi.rank, pgi.world_size
-            ).to(pplx_shared_output.device)
+            chunked_shared_output = chunk_by_rank(shared_output, pgi.rank, pgi.world_size).to(pplx_shared_output.device)
         else:
             chunked_shared_output = None
 
-        chunked_batch_output = chunk_by_rank(
-            batched_output, pgi.rank, pgi.world_size
-        ).to(pplx_output.device)
+        chunked_batch_output = chunk_by_rank(batched_output, pgi.rank, pgi.world_size).to(pplx_output.device)
 
         torch.testing.assert_close(batched_output, torch_output, atol=3e-2, rtol=3e-2)
 
-        torch.testing.assert_close(
-            pplx_output, chunked_batch_output, atol=3e-2, rtol=3e-2
-        )
+        torch.testing.assert_close(pplx_output, chunked_batch_output, atol=3e-2, rtol=3e-2)
 
         if shared_experts is not None:
             assert chunked_shared_output is not None
             assert pplx_shared_output is not None
-            torch.testing.assert_close(
-                pplx_shared_output, chunked_shared_output, atol=3e-2, rtol=3e-2
-            )
+            torch.testing.assert_close(pplx_shared_output, chunked_shared_output, atol=3e-2, rtol=3e-2)
 
     finally:
         if use_internode:
@@ -878,9 +839,7 @@ def _pplx_test_loop(
         _set_aphrodite_config(new_aphrodite_config, pgi.world_size, pgi.rank, pgi.local_rank)
 
     current_platform.seed_everything(7)
-    combos = itertools.product(
-        PPLX_COMBOS, NUM_EXPERTS, TOP_KS, DTYPES, [False, True], [None, [128, 128]]
-    )
+    combos = itertools.product(PPLX_COMBOS, NUM_EXPERTS, TOP_KS, DTYPES, [False, True], [None, [128, 128]])
     exceptions = []
     count = 0
     for mnk, e, topk, dtype, per_act_token_quant, block_shape in combos:
@@ -955,10 +914,7 @@ def _pplx_test_loop(
             exceptions.append(ex)
 
     if len(exceptions) > 0:
-        raise RuntimeError(
-            f"{len(exceptions)} of {count} tests failed in child process, "
-            f"rank={pgi.rank}."
-        )
+        raise RuntimeError(f"{len(exceptions)} of {count} tests failed in child process, rank={pgi.rank}.")
     else:
         print(f"{count} of {count} tests passed in child process, rank={pgi.rank}.")
 

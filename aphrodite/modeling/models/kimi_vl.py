@@ -58,23 +58,15 @@ from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.fused_moe import FusedMoE
 from aphrodite.modeling.layers.linear import ReplicatedLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+from aphrodite.modeling.layers.vocab_parallel_embedding import DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.modeling.models.deepseek_v2 import DeepseekV2Model
 from aphrodite.modeling.models.interfaces import SupportsMultiModal, SupportsPP
 from aphrodite.modeling.models.moonvit import MoonVitPretrainedModel
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems, NestedTensors)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             PromptReplacement, PromptUpdate)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems, NestedTensors
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, MultiModalDataItems
+from aphrodite.multimodal.processing import BaseMultiModalProcessor, BaseProcessingInfo, PromptReplacement, PromptUpdate
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.transformers_utils.configs import KimiVLConfig, MoonViTConfig
 from aphrodite.transformers_utils.configs.deepseek_vl2 import DeepseekV2Config
@@ -92,9 +84,7 @@ class MaxImageTokenMeta:
 
 
 class KimiVLMultiModalProjector(nn.Module):
-    def __init__(
-        self, config: KimiVLConfig, use_data_parallel: bool = False, prefix: str = ""
-    ):
+    def __init__(self, config: KimiVLConfig, use_data_parallel: bool = False, prefix: str = ""):
         super().__init__()
         self.use_data_parallel = use_data_parallel
 
@@ -175,20 +165,14 @@ class KimiVLProcessingInfo(BaseProcessingInfo):
         assert kernel_size is not None, "kernel_size must be specified"
 
         if (width // patch_size) * (height // patch_size) > in_token_limit:
-            scale = math.sqrt(
-                in_token_limit / ((width // patch_size) * (height // patch_size))
-            )
+            scale = math.sqrt(in_token_limit / ((width // patch_size) * (height // patch_size)))
             new_w, new_h = int(width * scale), int(height * scale)
             width, height = new_w, new_h
 
         kernel_height, kernel_width = kernel_size
 
-        pad_height = (
-            kernel_height * patch_size - height % (kernel_height * patch_size)
-        ) % (kernel_height * patch_size)
-        pad_width = (
-            kernel_width * patch_size - width % (kernel_width * patch_size)
-        ) % (kernel_width * patch_size)
+        pad_height = (kernel_height * patch_size - height % (kernel_height * patch_size)) % (kernel_height * patch_size)
+        pad_width = (kernel_width * patch_size - width % (kernel_width * patch_size)) % (kernel_width * patch_size)
 
         # Calculate new dimensions after padding and patching
         token_height = (height + pad_height) // (kernel_size[0] * patch_size)
@@ -241,9 +225,7 @@ class KimiVLMultiModalProcessor(BaseMultiModalProcessor[KimiVLProcessingInfo]):
         # pixel_values is merged as a single large tensor
         # image_grid_hws is shapes for each subtensor in pixel_values
         return dict(
-            pixel_values=MultiModalFieldConfig.flat_from_sizes(
-                "image", image_grid_sizes
-            ),
+            pixel_values=MultiModalFieldConfig.flat_from_sizes("image", image_grid_sizes),
             image_grid_hws=MultiModalFieldConfig.batched("image"),
         )
 
@@ -256,9 +238,7 @@ class KimiVLMultiModalProcessor(BaseMultiModalProcessor[KimiVLProcessingInfo]):
         image_token_id = self.info.image_token_id
 
         def get_replacement(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 num_image_tokens = images.get_feature_size(item_idx)
@@ -309,9 +289,7 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
         quant_config = aphrodite_config.quant_config
 
         assert isinstance(config.vision_config, MoonViTConfig)
-        self.use_data_parallel = (
-            model_config.multimodal_config.mm_encoder_tp_mode == "data"
-        )
+        self.use_data_parallel = model_config.multimodal_config.mm_encoder_tp_mode == "data"
         self.hidden_size = config.text_config.hidden_size
         self.vision_tower = MoonVitPretrainedModel(
             config.vision_config,
@@ -327,9 +305,7 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
 
         self.quant_config = quant_config
         sub_aphrodite_config = copy.deepcopy(aphrodite_config)
-        sub_aphrodite_config.model_config.hf_config = (
-            sub_aphrodite_config.model_config.hf_config.text_config
-        )
+        sub_aphrodite_config.model_config.hf_config = sub_aphrodite_config.model_config.hf_config.text_config
         self.language_model = DeepseekV2Model(
             aphrodite_config=sub_aphrodite_config,
             prefix=maybe_prefix(prefix, "language_model"),
@@ -345,18 +321,12 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
             )
         else:
             self.lm_head = PPMissingLayer()
-        self.make_empty_intermediate_tensors = (
-            self.language_model.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
         logit_scale = getattr(config, "logit_scale", 1.0)
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size, logit_scale
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size, logit_scale)
         self.media_placeholder: int = self.config.media_placeholder_token_id
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> KimiVLImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> KimiVLImageInputs | None:
         # image input type must be pixel values now
         pixel_values = kwargs.pop("pixel_values", None)
         image_grid_hws = kwargs.pop("image_grid_hws", None)
@@ -554,12 +524,8 @@ class KimiVLForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsPP):
                 weight_loader(param, loaded_weight, **kwargs)
 
 
-def get_spec_layer_idx_from_weight_name(
-    config: DeepseekV2Config, weight_name: str
-) -> int | None:
-    if hasattr(config, "num_nextn_predict_layers") and (
-        config.num_nextn_predict_layers > 0
-    ):
+def get_spec_layer_idx_from_weight_name(config: DeepseekV2Config, weight_name: str) -> int | None:
+    if hasattr(config, "num_nextn_predict_layers") and (config.num_nextn_predict_layers > 0):
         layer_idx = config.num_hidden_layers
         for i in range(config.num_nextn_predict_layers):
             if weight_name.startswith(f"model.layers.{layer_idx + i}."):

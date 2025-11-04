@@ -7,16 +7,14 @@ from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils import replace_parameter
 from aphrodite.quantization.utils.w8a8_utils import convert_to_channelwise
 
-from .ScaledMMLinearKernel import (ScaledMMLinearKernel,
-                                   ScaledMMLinearLayerConfig)
+from .ScaledMMLinearKernel import ScaledMMLinearKernel, ScaledMMLinearLayerConfig
 
 
 class XLAScaledMMLinearKernel(ScaledMMLinearKernel):
     @classmethod
     def get_min_capability(cls) -> int:
         raise NotImplementedError(
-            "TPU platform does have a concept of compute capability, "
-            "this method should not be called."
+            "TPU platform does have a concept of compute capability, this method should not be called."
         )
 
     @classmethod
@@ -39,9 +37,7 @@ class XLAScaledMMLinearKernel(ScaledMMLinearKernel):
         # WEIGHT
         # [out, in] (different than cutlass_scaled_mm)
         weight = getattr(layer, self.w_q_name)
-        replace_parameter(
-            layer, self.w_q_name, torch.nn.Parameter(weight.data, requires_grad=False)
-        )
+        replace_parameter(layer, self.w_q_name, torch.nn.Parameter(weight.data, requires_grad=False))
 
         # WEIGHT SCALE
         # XLA kernels support only per-tensor and per-channel.

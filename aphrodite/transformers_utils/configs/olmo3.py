@@ -71,6 +71,5 @@ class Olmo3Config(PretrainedConfig):
         self.layer_types = layer_types
         if self.layer_types is None:
             self.layer_types = [
-                "sliding_attention" if (i + 1) % 4 != 0 else "full_attention"
-                for i in range(self.num_hidden_layers)
+                "sliding_attention" if (i + 1) % 4 != 0 else "full_attention" for i in range(self.num_hidden_layers)
             ]

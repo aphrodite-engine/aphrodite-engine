@@ -8,9 +8,7 @@ from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.models.internlm2 import (InternLM2Attention,
-                                                 InternLM2ForCausalLM,
-                                                 InternLM2MLP, InternLM2Model)
+from aphrodite.modeling.models.internlm2 import InternLM2Attention, InternLM2ForCausalLM, InternLM2MLP, InternLM2Model
 from aphrodite.quantization import QuantizationConfig
 
 
@@ -92,9 +90,7 @@ class InternLM2VEDecoderLayer(nn.Module):
 
 class InternLM2VEModel(InternLM2Model):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
-        super().__init__(
-            aphrodite_config=aphrodite_config, prefix=prefix, layer_type=InternLM2VEDecoderLayer
-        )
+        super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, layer_type=InternLM2VEDecoderLayer)
 
     def forward(
         self,
@@ -122,15 +118,11 @@ class InternLM2VEModel(InternLM2Model):
                 visual_token_mask=visual_token_mask,
             )
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
 
 class InternLM2VEForCausalLM(InternLM2ForCausalLM):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
-        super().__init__(
-            aphrodite_config=aphrodite_config, prefix=prefix, model_type=InternLM2VEModel
-        )
+        super().__init__(aphrodite_config=aphrodite_config, prefix=prefix, model_type=InternLM2VEModel)

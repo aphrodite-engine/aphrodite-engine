@@ -26,9 +26,7 @@ PROVIDER_CFGS = {
     "fbgemm-nvfp4-noquant": dict(fbgemm=True, no_a_quant=True, enabled=True),
 }
 
-_needs_fbgemm = any(
-    v.get("fbgemm", False) for v in PROVIDER_CFGS.values() if v.get("enabled", False)
-)
+_needs_fbgemm = any(v.get("fbgemm", False) for v in PROVIDER_CFGS.values() if v.get("enabled", False))
 if _needs_fbgemm:
     try:
         from fbgemm_gpu.experimental.gemm.triton_gemm.fp4_quantize import (
@@ -104,18 +102,14 @@ def build_nvfp4_runner(cfg, a, b, dtype, device):
         a_fp4, scale_a_fp4 = ops.scaled_fp4_quant(a, a_global_scale)
 
         def run():
-            return ops.cutlass_scaled_fp4_mm(
-                a_fp4, b_fp4, scale_a_fp4, scale_b_fp4, alpha, dtype
-            )
+            return ops.cutlass_scaled_fp4_mm(a_fp4, b_fp4, scale_a_fp4, scale_b_fp4, alpha, dtype)
 
         return run
 
     # Quantize activation on-the-fly
     def run():
         a_fp4, scale_a_fp4 = ops.scaled_fp4_quant(a, a_global_scale)
-        return ops.cutlass_scaled_fp4_mm(
-            a_fp4, b_fp4, scale_a_fp4, scale_b_fp4, alpha, dtype
-        )
+        return ops.cutlass_scaled_fp4_mm(a_fp4, b_fp4, scale_a_fp4, scale_b_fp4, alpha, dtype)
 
     return run
 
@@ -150,9 +144,7 @@ def benchmark(batch_size, provider, N, K):
     else:
         cfg = PROVIDER_CFGS[provider]
         run_quant = build_nvfp4_runner(cfg, a, b, dtype, device)
-        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-            lambda: run_quant(), quantiles=quantiles
-        )
+        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(lambda: run_quant(), quantiles=quantiles)
 
     to_tflops = lambda t_ms: (2 * M * N * K) * 1e-12 / (t_ms * 1e-3)
     return to_tflops(ms), to_tflops(max_ms), to_tflops(min_ms)

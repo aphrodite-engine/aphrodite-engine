@@ -1,6 +1,4 @@
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionMetadata,
-                                                   AttentionType)
+from aphrodite.attention.backends.abstract import AttentionBackend, AttentionMetadata, AttentionType
 from aphrodite.attention.layer import Attention
 from aphrodite.attention.selector import get_attn_backend
 

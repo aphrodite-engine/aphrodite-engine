@@ -1,7 +1,6 @@
 #include "c3x/scaled_mm_helper.hpp"
 #include "c3x/scaled_mm_kernels.hpp"
 
-
 /*
    This file defines quantized GEMM operations using the CUTLASS 3.x API, for
    NVIDIA GPUs with sm120 (Blackwell).

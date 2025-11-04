@@ -17,10 +17,13 @@ from aphrodite.utils.math_utils import cdiv
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
 from aphrodite.v1.attention.backends.utils import CommonAttentionMetadata
 from aphrodite.v1.kv_cache_interface import FullAttentionSpec
-from tests.v1.attention.utils import (BatchSpec, create_aphrodite_config,
-                                      create_common_attn_metadata,
-                                      create_standard_kv_cache_spec,
-                                      try_get_attention_backend)
+from tests.v1.attention.utils import (
+    BatchSpec,
+    create_aphrodite_config,
+    create_common_attn_metadata,
+    create_standard_kv_cache_spec,
+    try_get_attention_backend,
+)
 
 BACKENDS_TO_TEST = [
     _Backend.CUTLASS_MLA,
@@ -64,22 +67,14 @@ BATCH_SPECS = {
         seq_lens=[128, 256, 512, 1024, 128, 256, 512, 1024],
         query_lens=[1, 1, 1, 1, 1, 1, 1, 1],
     ),
-    "medium_prefill": BatchSpec(
-        seq_lens=[256, 512, 1024, 2048], query_lens=[16, 16, 16, 16]
-    ),
-    "mixed_medium": BatchSpec(
-        seq_lens=[512, 1024, 2048, 512, 1024, 2048], query_lens=[1, 1, 1, 7, 7, 7]
-    ),
+    "medium_prefill": BatchSpec(seq_lens=[256, 512, 1024, 2048], query_lens=[16, 16, 16, 16]),
+    "mixed_medium": BatchSpec(seq_lens=[512, 1024, 2048, 512, 1024, 2048], query_lens=[1, 1, 1, 7, 7, 7]),
     "large_decode": BatchSpec(seq_lens=[2048] * 32, query_lens=[1] * 32),
     "large_prefill": BatchSpec(seq_lens=[4096] * 8, query_lens=[32] * 8),
     "single_decode": BatchSpec(seq_lens=[1024], query_lens=[1]),
     "single_prefill": BatchSpec(seq_lens=[1024], query_lens=[64]),
-    "spec_decode_small": BatchSpec(
-        seq_lens=[128, 256, 512, 1024], query_lens=[4, 4, 4, 4]
-    ),
-    "spec_decode_medium": BatchSpec(
-        seq_lens=[512, 1024, 2048, 512, 1024, 2048], query_lens=[8, 8, 8, 8, 8, 8]
-    ),
+    "spec_decode_small": BatchSpec(seq_lens=[128, 256, 512, 1024], query_lens=[4, 4, 4, 4]),
+    "spec_decode_medium": BatchSpec(seq_lens=[512, 1024, 2048, 512, 1024, 2048], query_lens=[8, 8, 8, 8, 8, 8]),
 }
 
 
@@ -121,10 +116,7 @@ def create_and_prepopulate_kv_cache(
     """
     batch_size = len(kv_c_contexts)
     seq_lens = common_attn_metadata.seq_lens_cpu
-    query_lens = (
-        common_attn_metadata.query_start_loc_cpu[1:]
-        - common_attn_metadata.query_start_loc_cpu[:-1]
-    )
+    query_lens = common_attn_metadata.query_start_loc_cpu[1:] - common_attn_metadata.query_start_loc_cpu[:-1]
     context_lens = common_attn_metadata.num_computed_tokens_cpu
     block_table = common_attn_metadata.block_table_tensor
     slot_mapping = common_attn_metadata.slot_mapping
@@ -133,26 +125,18 @@ def create_and_prepopulate_kv_cache(
 
     if use_fp8_ds_mla:
         if not kv_c_contexts:
-            raise ValueError(
-                "kv_c_contexts cannot be empty when using fp8_ds_mla cache dtype"
-            )
+            raise ValueError("kv_c_contexts cannot be empty when using fp8_ds_mla cache dtype")
         kv_lora_rank = kv_c_contexts[0].shape[-1]
         rope_dim = k_pe_contexts[0].shape[-1]
         entry_size = kv_lora_rank + 4 * 4 + 2 * rope_dim
-        kv_cache = torch.zeros(
-            num_blocks, block_size, entry_size, dtype=torch.uint8, device=device
-        )
+        kv_cache = torch.zeros(num_blocks, block_size, entry_size, dtype=torch.uint8, device=device)
         scale_tensor = (
-            scale
-            if isinstance(scale, torch.Tensor)
-            else torch.tensor(scale, dtype=torch.float32, device=device)
+            scale if isinstance(scale, torch.Tensor) else torch.tensor(scale, dtype=torch.float32, device=device)
         )
         scale_tensor = scale_tensor.to(device=device, dtype=torch.float32)
     else:
         # Create MLA KV cache: (num_blocks, block_size, head_size)
-        kv_cache = torch.zeros(
-            num_blocks, block_size, head_size, dtype=dtype, device=device
-        )
+        kv_cache = torch.zeros(num_blocks, block_size, head_size, dtype=dtype, device=device)
         kv_cache_flat = kv_cache.view(-1, head_size)
 
     # Populate the cache with the context tokens
@@ -189,9 +173,7 @@ def create_and_prepopulate_kv_cache(
 
     # Permute the context blocks (excluding block 0 which is null)
     if randomize_blocks:
-        perm = (
-            torch.randperm(blocks_end - 1) + 1
-        )  # Random permutation starting from block 1
+        perm = torch.randperm(blocks_end - 1) + 1  # Random permutation starting from block 1
     else:
         perm = torch.arange(1, blocks_end)  # Sequential order starting from block 1
 
@@ -217,9 +199,7 @@ def create_and_prepopulate_kv_cache(
         token_inter_block_offsets = token_offsets % block_size
         start = common_attn_metadata.query_start_loc_cpu[i]
         end = common_attn_metadata.query_start_loc_cpu[i + 1]
-        slot_mapping[start:end] = block_table[
-            i, block_indices
-        ] * block_size + token_inter_block_offsets.to(device)
+        slot_mapping[start:end] = block_table[i, block_indices] * block_size + token_inter_block_offsets.to(device)
 
     return kv_cache
 
@@ -265,12 +245,8 @@ def run_attention_backend(
         )
 
         # Instantiate MLA implementation
-        num_heads = aphrodite_config.model_config.get_num_attention_heads(
-            aphrodite_config.parallel_config
-        )
-        num_kv_heads = aphrodite_config.model_config.get_num_kv_heads(
-            aphrodite_config.parallel_config
-        )
+        num_heads = aphrodite_config.model_config.get_num_attention_heads(aphrodite_config.parallel_config)
+        num_kv_heads = aphrodite_config.model_config.get_num_kv_heads(aphrodite_config.parallel_config)
         head_size = aphrodite_config.model_config.get_head_size()
         scale = 1.0 / (head_size**0.5)
         impl = impl_cls(
@@ -300,16 +276,12 @@ def run_attention_backend(
         # Create mock layer and output buffer
         mock_layer = MockAttentionLayer(device)
         num_tokens = query.shape[0]
-        output = torch.empty(
-            num_tokens, num_heads * v_head_dim, dtype=query.dtype, device=query.device
-        )
+        output = torch.empty(num_tokens, num_heads * v_head_dim, dtype=query.dtype, device=query.device)
 
         # Run forward pass
         # NOTE: The query, key, and value are already shaped correctly
         # in the calling test function.
-        output = impl.forward(
-            mock_layer, query, kv_c, k_pe, kv_cache, attn_metadata, output=output
-        )
+        output = impl.forward(mock_layer, query, kv_c, k_pe, kv_cache, attn_metadata, output=output)
 
         return output
 
@@ -355,9 +327,7 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
     spec_decode_backends = {_Backend.FLASH_ATTN_MLA, _Backend.FLASHMLA}
 
     block_size = 16
-    required_blocks = sum(
-        (seq_len + block_size - 1) // block_size for seq_len in batch_spec.seq_lens
-    )
+    required_blocks = sum((seq_len + block_size - 1) // block_size for seq_len in batch_spec.seq_lens)
     # Add 1 for null block at index 0, and some buffer
     num_gpu_blocks = required_blocks + 1 + 100
 
@@ -377,9 +347,7 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
         # Set num_speculative_tokens to query_len - 1
         # (since threshold is 1 + num_spec_tokens)
         # Use ngram method which doesn't require a draft model
-        aphrodite_config.speculative_config = SpeculativeConfig(
-            method="ngram", num_speculative_tokens=query_len - 1
-        )
+        aphrodite_config.speculative_config = SpeculativeConfig(method="ngram", num_speculative_tokens=query_len - 1)
 
     device = torch.device("cuda:0")
 
@@ -389,9 +357,7 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
     batch_size = batch_spec.batch_size
     seq_lens = batch_spec.seq_lens
     query_lens = batch_spec.query_lens
-    num_q_heads = aphrodite_config.model_config.get_num_attention_heads(
-        aphrodite_config.parallel_config
-    )
+    num_q_heads = aphrodite_config.model_config.get_num_attention_heads(aphrodite_config.parallel_config)
     head_size = aphrodite_config.model_config.get_head_size()
     dtype = _convert_dtype_to_torch(aphrodite_config.model_config.dtype)
     block_size = aphrodite_config.cache_config.block_size
@@ -400,9 +366,7 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
     qk_nope_head_dim = 128
     v_head_dim = 128
     total_head_size = kv_lora_rank + qk_rope_head_dim
-    assert kv_lora_rank + qk_rope_head_dim == head_size, (
-        f"MLA dimensions don't match: {total_head_size} != {head_size}"
-    )
+    assert kv_lora_rank + qk_rope_head_dim == head_size, f"MLA dimensions don't match: {total_head_size} != {head_size}"
     scale = 1.0 / (total_head_size**0.5)
 
     # 2. Generate data and compute SDPA reference output for MLA
@@ -411,12 +375,8 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
     kv_c_contexts, k_pe_contexts = [], []
 
     # Create shared MLA weight matrices for consistency across all sequences
-    W_UK = torch.randn(
-        kv_lora_rank, num_q_heads, qk_nope_head_dim, dtype=dtype, device=device
-    )
-    W_UV = torch.randn(
-        kv_lora_rank, num_q_heads, v_head_dim, dtype=dtype, device=device
-    )
+    W_UK = torch.randn(kv_lora_rank, num_q_heads, qk_nope_head_dim, dtype=dtype, device=device)
+    W_UV = torch.randn(kv_lora_rank, num_q_heads, v_head_dim, dtype=dtype, device=device)
     kv_b_proj_weight = torch.cat([W_UK, W_UV], dim=-1)
 
     for i, backend in enumerate(BACKENDS_TO_TEST):
@@ -456,22 +416,14 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
         for backend_idx, backend in enumerate(BACKENDS_TO_TEST):
             builder_cls, _ = try_get_attention_backend(backend)
             if is_spec_decode_test:
-                query_len_support = getattr(
-                    builder_cls, "query_len_support", QueryLenSupport.SINGLE_ONLY
-                )
+                query_len_support = getattr(builder_cls, "query_len_support", QueryLenSupport.SINGLE_ONLY)
                 supports_spec = query_len_support != QueryLenSupport.SINGLE_ONLY
                 is_decode.append(supports_spec)
             else:
                 threshold = getattr(builder_cls, "reorder_batch_threshold", None)
-                query_len_support = getattr(
-                    builder_cls, "query_len_support", QueryLenSupport.SINGLE_ONLY
-                )
+                query_len_support = getattr(builder_cls, "query_len_support", QueryLenSupport.SINGLE_ONLY)
                 within_threshold = q_len <= threshold if threshold else False
-                if (
-                    within_threshold
-                    and query_len_support == QueryLenSupport.UNIFORM
-                    and i > 0
-                ):
+                if within_threshold and query_len_support == QueryLenSupport.UNIFORM and i > 0:
                     first_q_len = query_lens[0]
                     within_threshold = q_len == first_q_len
                 is_decode.append(within_threshold)
@@ -484,9 +436,7 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
         # Transform q_nope to latent space: q_nope @ W_UK
         # q_nope: [1, num_heads, qk_nope_head_dim]
         # W_UK: [kv_lora_rank, num_heads, qk_nope_head_dim]
-        ql_nope = torch.einsum(
-            "qnh,lnh->qnl", q_nope, W_UK
-        )  # [1, num_heads, kv_lora_rank]
+        ql_nope = torch.einsum("qnh,lnh->qnl", q_nope, W_UK)  # [1, num_heads, kv_lora_rank]
 
         # Build MQA attention inputs
         # Q: [1, num_heads, kv_lora_rank + qk_rope_head_dim]
@@ -514,9 +464,7 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
         sdpa_out_i_decode = torch.nn.functional.scaled_dot_product_attention(
             q_sdpa_in, k_sdpa_in, v_sdpa_in, attn_mask=attn_mask, scale=scale
         )
-        sdpa_out_i_decode = sdpa_out_i_decode.transpose(1, 2).squeeze(
-            0
-        )  # [1, num_heads, kv_lora_rank]
+        sdpa_out_i_decode = sdpa_out_i_decode.transpose(1, 2).squeeze(0)  # [1, num_heads, kv_lora_rank]
 
         # Project back to output space: sdpa_out @ W_UV
         sdpa_out_i_decode = torch.einsum("qnl,lnv->qnv", sdpa_out_i_decode, W_UV)
@@ -588,15 +536,11 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
     # Set the mock weights to match our reference implementation
     # Reshape W_UK and W_UV to match the expected kv_b_proj format
     # [kv_lora_rank, num_heads, qk_nope_head_dim + v_head_dim]
-    kv_b_proj_weight = kv_b_proj_weight.view(
-        kv_lora_rank, num_q_heads * (qk_nope_head_dim + v_head_dim)
-    )
+    kv_b_proj_weight = kv_b_proj_weight.view(kv_lora_rank, num_q_heads * (qk_nope_head_dim + v_head_dim))
     mock_kv_b_proj.weight = torch.nn.Parameter(kv_b_proj_weight.T, requires_grad=False)
 
     # Create metadata using original batch spec
-    common_attn_metadata = create_common_attn_metadata(
-        batch_spec, aphrodite_config.cache_config.block_size, device
-    )
+    common_attn_metadata = create_common_attn_metadata(batch_spec, aphrodite_config.cache_config.block_size, device)
 
     # 3. Simulate Paged KV Cache and a realistic slot_mapping
     kv_cache = create_and_prepopulate_kv_cache(
@@ -640,29 +584,21 @@ def test_backend_correctness(dist_init, batch_spec_name: str, model: str):
 
         # Check shape and dtype consistency
         assert backend_output.shape == expected_output.shape, (
-            f"[{backend_name}] shape {backend_output.shape} != "
-            f"SDPA shape {expected_output.shape}"
+            f"[{backend_name}] shape {backend_output.shape} != SDPA shape {expected_output.shape}"
         )
         assert backend_output.dtype == expected_output.dtype, (
-            f"[{backend_name}] dtype {backend_output.dtype} != "
-            f"SDPA dtype {expected_output.dtype}"
+            f"[{backend_name}] dtype {backend_output.dtype} != SDPA dtype {expected_output.dtype}"
         )
 
-        assert torch.isfinite(backend_output).all(), (
-            f"[{backend_name}] produced non-finite values"
-        )
+        assert torch.isfinite(backend_output).all(), f"[{backend_name}] produced non-finite values"
 
         # Check numerical similarity
         rtol = 1e-2
         atol = 5e-1
 
         max_diff = torch.max(torch.abs(backend_output - expected_output)).item()
-        max_rel_diff = torch.max(
-            torch.abs(backend_output - expected_output) / torch.abs(expected_output)
-        ).item()
-        all_close = torch.allclose(
-            backend_output, expected_output, rtol=rtol, atol=atol
-        )
+        max_rel_diff = torch.max(torch.abs(backend_output - expected_output) / torch.abs(expected_output)).item()
+        all_close = torch.allclose(backend_output, expected_output, rtol=rtol, atol=atol)
 
         assert all_close, (
             f"[{backend_name}] output differs from SDPA baseline. "

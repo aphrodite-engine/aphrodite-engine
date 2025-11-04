@@ -3,8 +3,7 @@ import requests
 import torch
 import torch.nn.functional as F
 
-from aphrodite.endpoints.openai.protocol import (ClassificationResponse,
-                                                 PoolingResponse)
+from aphrodite.endpoints.openai.protocol import ClassificationResponse, PoolingResponse
 from tests.utils import RemoteOpenAIServer
 
 MODEL_NAME = "jason9693/Qwen2.5-1.5B-apeach"
@@ -90,9 +89,7 @@ def test_truncate_prompt_tokens(server: RemoteOpenAIServer, model_name: str):
 
 
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
-def test_invalid_truncate_prompt_tokens_error(
-    server: RemoteOpenAIServer, model_name: str
-):
+def test_invalid_truncate_prompt_tokens_error(server: RemoteOpenAIServer, model_name: str):
     classification_response = requests.post(
         server.url_for("classify"),
         json={"model": model_name, "input": "test", "truncate_prompt_tokens": 513},
@@ -136,27 +133,19 @@ async def test_invocations(server: RemoteOpenAIServer):
         "input": "This product was excellent and exceeded my expectations",
     }
 
-    classification_response = requests.post(
-        server.url_for("classify"), json=request_args
-    )
+    classification_response = requests.post(server.url_for("classify"), json=request_args)
     classification_response.raise_for_status()
 
-    invocation_response = requests.post(
-        server.url_for("invocations"), json=request_args
-    )
+    invocation_response = requests.post(server.url_for("invocations"), json=request_args)
     invocation_response.raise_for_status()
 
     classification_output = classification_response.json()
     invocation_output = invocation_response.json()
 
     assert classification_output.keys() == invocation_output.keys()
-    for classification_data, invocation_data in zip(
-        classification_output["data"], invocation_output["data"]
-    ):
+    for classification_data, invocation_data in zip(classification_output["data"], invocation_output["data"]):
         assert classification_data.keys() == invocation_data.keys()
-        assert classification_data["probs"] == pytest.approx(
-            invocation_data["probs"], rel=0.01
-        )
+        assert classification_data["probs"] == pytest.approx(invocation_data["probs"], rel=0.01)
 
 
 @pytest.mark.asyncio
@@ -180,12 +169,8 @@ async def test_use_activation(server: RemoteOpenAIServer, model_name: str):
     w_activation = await get_outputs(use_activation=True)
     wo_activation = await get_outputs(use_activation=False)
 
-    assert torch.allclose(default, w_activation, atol=1e-2), (
-        "Default should use activation."
-    )
-    assert not torch.allclose(w_activation, wo_activation, atol=1e-2), (
-        "wo_activation should not use activation."
-    )
+    assert torch.allclose(default, w_activation, atol=1e-2), "Default should use activation."
+    assert not torch.allclose(w_activation, wo_activation, atol=1e-2), "wo_activation should not use activation."
     assert torch.allclose(F.softmax(wo_activation, dim=-1), w_activation, atol=1e-2), (
         "w_activation should be close to activation(wo_activation)."
     )
@@ -254,17 +239,13 @@ async def test_pooling_token_classify(server: RemoteOpenAIServer, model_name: st
         },
     )
     assert response.json()["error"]["type"] == "BadRequestError"
-    assert response.json()["error"]["message"].startswith(
-        f"Task {task} is not supported"
-    )
+    assert response.json()["error"]["message"].startswith(f"Task {task} is not supported")
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", [MODEL_NAME])
 @pytest.mark.parametrize("task", ["embed", "token_embed", "plugin"])
-async def test_pooling_not_supported(
-    server: RemoteOpenAIServer, model_name: str, task: str
-):
+async def test_pooling_not_supported(server: RemoteOpenAIServer, model_name: str, task: str):
     response = requests.post(
         server.url_for("pooling"),
         json={
@@ -275,6 +256,4 @@ async def test_pooling_not_supported(
         },
     )
     assert response.json()["error"]["type"] == "BadRequestError"
-    assert response.json()["error"]["message"].startswith(
-        f"Task {task} is not supported"
-    )
+    assert response.json()["error"]["message"].startswith(f"Task {task} is not supported")

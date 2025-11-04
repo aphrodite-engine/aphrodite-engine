@@ -4,14 +4,11 @@ import pytest
 import torch
 
 from aphrodite.config import AphroditeConfig, set_current_aphrodite_config
-from aphrodite.modeling.layers.fused_moe.fused_batched_moe import (
-    invoke_moe_batched_triton_kernel)
+from aphrodite.modeling.layers.fused_moe.fused_batched_moe import invoke_moe_batched_triton_kernel
 from aphrodite.modeling.layers.fused_moe.fused_moe import fused_topk
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl
-from tests.kernels.moe.utils import (batched_moe,
-                                     make_quantized_test_activations,
-                                     make_test_weights, naive_batched_moe)
+from tests.kernels.moe.utils import batched_moe, make_quantized_test_activations, make_test_weights, naive_batched_moe
 from tests.kernels.quant_utils import native_batched_masked_quant_matmul
 from tests.kernels.utils import torch_experts
 
@@ -109,12 +106,8 @@ def test_batched_mm(
 
     use_fp8_w8a8 = dtype == torch.float8_e4m3fn
 
-    if (dtype == torch.float8_e4m3fn) and not current_platform.has_device_capability(
-        89
-    ):
-        pytest.skip(
-            "Triton limitation: fp8e4nv data type is not supported on CUDA arch < 89"
-        )
+    if (dtype == torch.float8_e4m3fn) and not current_platform.has_device_capability(89):
+        pytest.skip("Triton limitation: fp8e4nv data type is not supported on CUDA arch < 89")
 
     if (per_act_token_quant or block_shape is not None) and not use_fp8_w8a8:
         pytest.skip("Don't test blocking for non-quantized types.")
@@ -245,12 +238,8 @@ def test_fused_moe_batched_experts(
 
     use_fp8_w8a8 = dtype == torch.float8_e4m3fn
 
-    if (dtype == torch.float8_e4m3fn) and not current_platform.has_device_capability(
-        89
-    ):
-        pytest.skip(
-            "Triton limitation: fp8e4nv data type is not supported on CUDA arch < 89"
-        )
+    if (dtype == torch.float8_e4m3fn) and not current_platform.has_device_capability(89):
+        pytest.skip("Triton limitation: fp8e4nv data type is not supported on CUDA arch < 89")
 
     if topk > e:
         pytest.skip("topk > e")

@@ -8,31 +8,29 @@ from transformers import BatchFeature, GotOcr2ImageProcessor
 from transformers.activations import ACT2FN
 from transformers.image_processing_utils import get_size_dict
 from transformers.models.aya_vision import AyaVisionConfig
-from transformers.models.aya_vision.processing_aya_vision import (
-    AyaVisionProcessor)
-from transformers.models.got_ocr2.image_processing_got_ocr2 import (
-    get_optimal_tiled_canvas)
+from transformers.models.aya_vision.processing_aya_vision import AyaVisionProcessor
+from transformers.models.got_ocr2.image_processing_got_ocr2 import get_optimal_tiled_canvas
 
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageProcessorItems, ImageSize,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             BaseProcessingInfo,
-                                             MultiModalFieldConfig,
-                                             PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageProcessorItems, ImageSize, MultiModalDataItems
+from aphrodite.multimodal.processing import (
+    BaseMultiModalProcessor,
+    BaseProcessingInfo,
+    MultiModalFieldConfig,
+    PromptReplacement,
+    PromptUpdate,
+    PromptUpdateDetails,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsPP
 from .siglip import SiglipVisionModel
-from .utils import (AutoWeightsLoader, WeightsMapper,
-                    init_aphrodite_registered_model, maybe_prefix)
+from .utils import AutoWeightsLoader, WeightsMapper, init_aphrodite_registered_model, maybe_prefix
 
 
 class AyaVisionImagePixelInputs(TensorSchema):
@@ -101,9 +99,7 @@ class AyaVisionMultiModalProjector(nn.Module):
     def pixel_shuffle(self, image_features: torch.Tensor) -> torch.Tensor:  # B, S, D
         batch_size, seq_length, _ = image_features.shape
         height = width = int(seq_length**0.5)
-        image_features = image_features.reshape(
-            image_features.shape[0], width, height, -1
-        )
+        image_features = image_features.reshape(image_features.shape[0], width, height, -1)
         channels = image_features.shape[-1]
         image_features = image_features.reshape(
             batch_size,
@@ -217,13 +213,9 @@ class AyaVisionMultiModalProcessor(BaseMultiModalProcessor[AyaVisionProcessingIn
         # HF processor pops the `num_patches` kwarg, which is needed by Aphrodite
         if (images := mm_data.get("images")) is not None:
             parsed_images = (
-                self._get_data_parser()
-                .parse_mm_data({"image": images})
-                .get_items("image", ImageProcessorItems)
+                self._get_data_parser().parse_mm_data({"image": images}).get_items("image", ImageProcessorItems)
             )
-            image_sizes = [
-                parsed_images.get_image_size(i) for i in range(len(parsed_images))
-            ]
+            image_sizes = [parsed_images.get_image_size(i) for i in range(len(parsed_images))]
 
             num_patches = [
                 self.info.get_num_patches(
@@ -294,9 +286,7 @@ def _get_num_hidden_layers(hf_config: AyaVisionConfig) -> int:
     # If we have multiple feature layers, initialize up to the deepest m
     elif isinstance(feature_layers, (list, tuple)):
         return max(_get_layer_index(idx, num_hidden_layers) for idx in feature_layers)
-    raise TypeError(
-        f"vision_layer_feature type: {type(feature_layers)} is not supported"
-    )
+    raise TypeError(f"vision_layer_feature type: {type(feature_layers)} is not supported")
 
 
 def _get_layer_index(feature_layer_index: int, num_hidden_layers: int) -> int:
@@ -374,21 +364,15 @@ class AyaVisionForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsP
             feature_select_strategy=self.config.vision_feature_select_strategy,
         )
 
-    def _process_image_input(
-        self, image_input: AyaVisionImagePixelInputs, **kwargs
-    ) -> list[torch.Tensor]:
+    def _process_image_input(self, image_input: AyaVisionImagePixelInputs, **kwargs) -> list[torch.Tensor]:
         assert self.vision_tower is not None
         pixel_values = image_input["pixel_values"]
         num_patches = image_input["num_patches"]
-        image_features = self._image_pixels_to_features(
-            self.vision_tower, pixel_values=pixel_values
-        )
+        image_features = self._image_pixels_to_features(self.vision_tower, pixel_values=pixel_values)
         image_embeds = self.multi_modal_projector(image_features)
         return [e.flatten(0, 2) for e in image_embeds.split(num_patches.tolist())]
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> AyaVisionImagePixelInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> AyaVisionImagePixelInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         num_patches = kwargs.pop("num_patches", None)
         image_embeds = kwargs.pop("image_embeds", None)

@@ -22,30 +22,36 @@ from aphrodite.forward_context import ForwardContext, get_forward_context
 from aphrodite.modeling._custom_op import CustomOp
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.abstract import MambaBase
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
-from aphrodite.modeling.layers.mamba.ops.causal_conv1d import (
-    causal_conv1d_fn, causal_conv1d_update)
-from aphrodite.modeling.layers.mamba.ops.mamba_ssm import (
-    selective_state_update)
-from aphrodite.modeling.layers.mamba.ops.ssd_combined import (
-    mamba_chunk_scan_combined_varlen)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
+from aphrodite.modeling.layers.mamba.ops.causal_conv1d import causal_conv1d_fn, causal_conv1d_update
+from aphrodite.modeling.layers.mamba.ops.mamba_ssm import selective_state_update
+from aphrodite.modeling.layers.mamba.ops.ssd_combined import mamba_chunk_scan_combined_varlen
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import (
-    composed_weight_loader, default_weight_loader, sharded_weight_loader)
-from aphrodite.modeling.models.interfaces import (HasInnerState, IsHybrid,
-                                                  SupportsPP)
+    composed_weight_loader,
+    default_weight_loader,
+    sharded_weight_loader,
+)
+from aphrodite.modeling.models.interfaces import HasInnerState, IsHybrid, SupportsPP
 from aphrodite.modeling.models.utils import (
-    is_pp_missing_parameter, make_empty_intermediate_tensors_factory,
-    make_layers, maybe_prefix)
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.torch_utils import direct_register_custom_op
@@ -97,9 +103,7 @@ class Plamo2MambaMixer(MambaBase, CustomOp):
         self.hidden_size = self.config.hidden_size
         self.ssm_state_size = self.config.mamba_d_state
         self.conv_kernel_size = self.config.mamba_d_conv
-        self.intermediate_size = (
-            self.config.mamba_num_heads * self.config.hidden_size_per_head
-        )
+        self.intermediate_size = self.config.mamba_num_heads * self.config.hidden_size_per_head
         self.tp_size = get_tensor_model_parallel_world_size()
         self.head_dim = self.config.hidden_size_per_head
         self.num_heads = self.config.mamba_num_heads
@@ -156,9 +160,7 @@ class Plamo2MambaMixer(MambaBase, CustomOp):
         self.dt_bias = nn.Parameter(torch.ones(divide(self.num_heads, self.tp_size)))
 
         set_weight_attrs(self.D, {"weight_loader": sharded_weight_loader(0)})
-        a_weight_loader = composed_weight_loader(
-            sharded_weight_loader(0), lambda x: -torch.exp(x.float())
-        )
+        a_weight_loader = composed_weight_loader(sharded_weight_loader(0), lambda x: -torch.exp(x.float()))
         set_weight_attrs(self.A, {"weight_loader": a_weight_loader})
         set_weight_attrs(self.dt_bias, {"weight_loader": sharded_weight_loader(0)})
 
@@ -260,15 +262,11 @@ class Plamo2MambaMixer(MambaBase, CustomOp):
         gate, hidden_states = projected_states.chunk(2, dim=-1)
 
         # 2. Convolution sequence transformation
-        conv_weights = self.conv1d.weight.view(
-            self.conv1d.weight.size(0), self.conv1d.weight.size(2)
-        )
+        conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0), self.conv1d.weight.size(2))
 
         if attn_metadata is None:
             # profile run
-            hidden_states = (
-                hidden_states.transpose(0, 1).clone().transpose(0, 1)
-            ).contiguous()
+            hidden_states = (hidden_states.transpose(0, 1).clone().transpose(0, 1)).contiguous()
             output[:] = self.out_proj(hidden_states)
             return
 
@@ -287,9 +285,7 @@ class Plamo2MambaMixer(MambaBase, CustomOp):
             [num_decodes, num_prefill_tokens],
             dim=0,
         )
-        gate_d, gate_p = torch.split(
-            gate[:num_actual_tokens], [num_decodes, num_prefill_tokens], dim=0
-        )
+        gate_d, gate_p = torch.split(gate[:num_actual_tokens], [num_decodes, num_prefill_tokens], dim=0)
         # Split along batch dimension
         state_indices_tensor_d, state_indices_tensor_p = torch.split(
             state_indices_tensor,
@@ -350,18 +346,14 @@ class Plamo2MambaMixer(MambaBase, CustomOp):
                 )
 
             varlen_state = mamba_chunk_scan_combined_varlen(
-                hidden_states_p.view(
-                    num_prefill_tokens, self.num_heads // self.tp_size, self.head_dim
-                ),
+                hidden_states_p.view(num_prefill_tokens, self.num_heads // self.tp_size, self.head_dim),
                 dt,
                 self.A,
                 B.view(num_prefill_tokens, 1, -1),
                 C.view(num_prefill_tokens, 1, -1),
                 chunk_size=chunk_size,
                 D=self.D,
-                z=gate_p.view(
-                    num_prefill_tokens, self.num_heads // self.tp_size, self.head_dim
-                ),
+                z=gate_p.view(num_prefill_tokens, self.num_heads // self.tp_size, self.head_dim),
                 dt_bias=self.dt_bias,
                 seq_idx=seq_idx_p,
                 cu_seqlens=query_start_loc_p,
@@ -393,17 +385,13 @@ class Plamo2MambaMixer(MambaBase, CustomOp):
             B, C, dt = self._project_ssm_parameters(hidden_states_d)
 
             # 3. State Space Model sequence transformation
-            A = self.A[:, None, ...][:, :, None].expand(
-                -1, self.head_dim, self.config.mamba_d_state
-            )
+            A = self.A[:, None, ...][:, :, None].expand(-1, self.head_dim, self.config.mamba_d_state)
             dt = dt[:, :, None].expand(-1, -1, self.head_dim)
             dt_bias = self.dt_bias[:, None, ...].expand(-1, self.head_dim)
             D = self.D[:, None, ...].expand(-1, self.head_dim)
             B = B.unsqueeze(1)
             C = C.unsqueeze(1)
-            hidden_states_d = hidden_states_d.view(
-                -1, self.num_heads // self.tp_size, self.head_dim
-            )
+            hidden_states_d = hidden_states_d.view(-1, self.num_heads // self.tp_size, self.head_dim)
 
             # - the hidden is reshaped into (bs, num_heads, head_dim)
             # - ssm_state's slots will be selected
@@ -453,8 +441,7 @@ class Plamo2MambaMixer(MambaBase, CustomOp):
         return "mamba2"
 
     def get_attn_backend(self) -> type["AttentionBackend"]:
-        from aphrodite.v1.attention.backends.mamba2_attn import (
-            Mamba2AttentionBackend)
+        from aphrodite.v1.attention.backends.mamba2_attn import Mamba2AttentionBackend
 
         return Mamba2AttentionBackend
 
@@ -561,9 +548,7 @@ class Plamo2AttentionMixer(nn.Module):
         )
 
         self.rope_theta = config.rope_theta if hasattr(config, "rope_theta") else 10000
-        self.rope_scaling = (
-            config.rope_scaling if hasattr(config, "rope_scaling") else None
-        )
+        self.rope_scaling = config.rope_scaling if hasattr(config, "rope_scaling") else None
         max_position = config.max_position_embeddings
         if hasattr(aphrodite_config.model_config, "max_model_len") and isinstance(
             aphrodite_config.model_config.max_model_len, int
@@ -578,23 +563,15 @@ class Plamo2AttentionMixer(nn.Module):
             rope_scaling=self.rope_scaling,
         )
         self.q_norm = RMSNorm(config.hidden_size_per_head, eps=config.rms_norm_eps)
-        self.q_norm.weight = torch.nn.Parameter(
-            torch.ones((self.num_heads, config.hidden_size_per_head))
-        )
-        set_weight_attrs(
-            self.q_norm.weight, {"weight_loader": sharded_weight_loader(0)}
-        )
+        self.q_norm.weight = torch.nn.Parameter(torch.ones((self.num_heads, config.hidden_size_per_head)))
+        set_weight_attrs(self.q_norm.weight, {"weight_loader": sharded_weight_loader(0)})
         self.k_norm = RMSNorm(config.hidden_size_per_head, eps=config.rms_norm_eps)
-        self.k_norm.weight = torch.nn.Parameter(
-            torch.ones((self.num_kv_heads, config.hidden_size_per_head))
-        )
+        self.k_norm.weight = torch.nn.Parameter(torch.ones((self.num_kv_heads, config.hidden_size_per_head)))
         # Tensor-parallelism shards the K norm weights to the tp ranks
         # in a head-wise manner. This approach does not work if there is only
         # a single KV head, as is the case for PLaMo 2-1B.
         if self.total_num_kv_heads != 1:
-            set_weight_attrs(
-                self.k_norm.weight, {"weight_loader": sharded_weight_loader(0)}
-            )
+            set_weight_attrs(self.k_norm.weight, {"weight_loader": sharded_weight_loader(0)})
 
         self.attn = Attention(
             self.num_heads,
@@ -628,26 +605,18 @@ class Plamo2AttentionMixer(nn.Module):
 
 
 class Plamo2DecoderLayer(nn.Module):
-    def __init__(
-        self, aphrodite_config: AphroditeConfig, layer_idx: int, prefix: str = "", **kwargs
-    ) -> None:
+    def __init__(self, aphrodite_config: AphroditeConfig, layer_idx: int, prefix: str = "", **kwargs) -> None:
         super().__init__()
         config = aphrodite_config.model_config.hf_config
         quant_config = aphrodite_config.quant_config
 
         self.is_mamba = is_mamba(config, layer_idx)
         if self.is_mamba:
-            self.mixer = Plamo2MambaMixer(
-                aphrodite_config=aphrodite_config, prefix=f"{prefix}.mixer"
-            )
+            self.mixer = Plamo2MambaMixer(aphrodite_config=aphrodite_config, prefix=f"{prefix}.mixer")
         else:
-            self.mixer = Plamo2AttentionMixer(
-                aphrodite_config=aphrodite_config, prefix=f"{prefix}.mixer"
-            )
+            self.mixer = Plamo2AttentionMixer(aphrodite_config=aphrodite_config, prefix=f"{prefix}.mixer")
 
-        self.mlp = DenseMLP(
-            config=config, quant_config=quant_config, prefix=f"{prefix}.mlp"
-        )
+        self.mlp = DenseMLP(config=config, quant_config=quant_config, prefix=f"{prefix}.mlp")
         self.pre_mixer_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_mixer_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.pre_mlp_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -775,9 +744,7 @@ class Plamo2Model(torch.nn.Module):
             residual=residual,
         )
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -806,9 +773,7 @@ class Plamo2ForCausalLM(torch.nn.Module, HasInnerState, SupportsPP, IsHybrid):
         # the case for PLaMo2, as indicated by the FIXME comment.
         self.config.head_dim = self.config.hidden_size_per_head
 
-        self.model = Plamo2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Plamo2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.vocab_size = self.config.vocab_size
         self.unpadded_vocab_size = self.config.vocab_size
         num_embeddings = ((self.vocab_size + 15) // 16) * 16
@@ -822,12 +787,8 @@ class Plamo2ForCausalLM(torch.nn.Module, HasInnerState, SupportsPP, IsHybrid):
         if self.config.tie_word_embeddings:
             self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
 
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, self.config.vocab_size
-        )
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, self.config.vocab_size)
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -840,9 +801,7 @@ class Plamo2ForCausalLM(torch.nn.Module, HasInnerState, SupportsPP, IsHybrid):
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     @classmethod
@@ -938,14 +897,10 @@ class Plamo2ForCausalLM(torch.nn.Module, HasInnerState, SupportsPP, IsHybrid):
                 # loaded_weight.shape[0] == self.config.hidden_size // param.pack_factor  # noqa
                 # for scales and qzeros:
                 # loaded_weight.shape[0] == self.config.hidden_size // self.aphrodite_config.quant_config.group_size  # noqa
-                loaded_weight = loaded_weight.reshape(
-                    loaded_weight.shape[0], self.config.mamba_num_heads, -1
-                )
+                loaded_weight = loaded_weight.reshape(loaded_weight.shape[0], self.config.mamba_num_heads, -1)
                 gate_weight, hidden_states_weight = loaded_weight.chunk(2, dim=-1)
                 gate_weight = gate_weight.reshape(loaded_weight.shape[0], -1)
-                hidden_states_weight = hidden_states_weight.reshape(
-                    loaded_weight.shape[0], -1
-                )
+                hidden_states_weight = hidden_states_weight.reshape(loaded_weight.shape[0], -1)
                 loaded_weight = torch.cat([gate_weight, hidden_states_weight], dim=-1)
                 if "mixer.in_proj.weight" in name:
                     loaded_weight = loaded_weight.transpose(0, 1)

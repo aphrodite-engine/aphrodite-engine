@@ -3,8 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from openai_harmony import Author, Message, Role, StreamState, TextContent
 
-from aphrodite.endpoints.context import (HarmonyContext,
-                                         StreamingHarmonyContext, TurnMetrics)
+from aphrodite.endpoints.context import HarmonyContext, StreamingHarmonyContext, TurnMetrics
 from aphrodite.outputs import CompletionOutput, RequestOutput
 
 
@@ -40,9 +39,7 @@ def create_mock_request_output(
     )
 
 
-async def generate_mock_outputs(
-    num_turns, prompt_token_counts, output_token_counts, cached_token_counts=None
-):
+async def generate_mock_outputs(num_turns, prompt_token_counts, output_token_counts, cached_token_counts=None):
     """Generate a sequence of mock RequestOutput objects to simulate multiple
     turns."""
     if cached_token_counts is None:
@@ -64,9 +61,7 @@ async def generate_mock_outputs(
 @pytest.fixture
 def mock_parser():
     """Set up a mock parser for tests."""
-    with patch(
-        "aphrodite.endpoints.context.get_streamable_parser_for_assistant"
-    ) as mock_parser_factory:
+    with patch("aphrodite.endpoints.context.get_streamable_parser_for_assistant") as mock_parser_factory:
         # Create a mock parser object
         parser = MagicMock()
         parser.messages = []
@@ -120,9 +115,7 @@ async def test_multi_turn_token_counting():
     prompt_token_counts = [5, 15, 20]
     output_token_counts = [3, 4, 5]
     cached_token_counts = [0, 5, 15]
-    mock_generator = generate_mock_outputs(
-        3, prompt_token_counts, output_token_counts, cached_token_counts
-    )
+    mock_generator = generate_mock_outputs(3, prompt_token_counts, output_token_counts, cached_token_counts)
 
     # First turn - initial prompt and response
     mock_output1 = await anext(mock_generator)
@@ -453,16 +446,12 @@ async def test_streaming_multi_turn_token_counting(mock_parser):
     assert context.num_prompt_tokens == sum(num_prompt_tokens)  # All prompts
     assert context.num_output_tokens == sum(num_output_tokens)  # All outputs
     assert context.num_reasoning_tokens == 3  # Unchanged from second turn
-    assert context.num_cached_tokens == sum(
-        num_cached_tokens
-    )  # Accumulated cached tokens
+    assert context.num_cached_tokens == sum(num_cached_tokens)  # Accumulated cached tokens
 
     # Additional tool tokens from third turn
     # Formula: this turn prompt - last turn prompt - last turn output
     additional_tool_tokens = 13 - 8 - 3  # = 2
-    assert (
-        context.num_tool_output_tokens == expected_tool_tokens + additional_tool_tokens
-    )
+    assert context.num_tool_output_tokens == expected_tool_tokens + additional_tool_tokens
 
     # Validate all turn metrics
     assert len(context.all_turn_metrics) == 3
@@ -509,9 +498,7 @@ async def test_streaming_message_synchronization(mock_parser):
 
     # This should trigger the message synchronization logic
     context.append_output(
-        create_mock_request_output(
-            prompt_token_ids=[1, 2, 3], output_token_ids=[101], finished=False
-        )
+        create_mock_request_output(prompt_token_ids=[1, 2, 3], output_token_ids=[101], finished=False)
     )
 
     # Verify that messages were synchronized
@@ -538,9 +525,7 @@ async def test_streaming_message_synchronization(mock_parser):
     )
 
     # Create another output to trigger synchronization again
-    mock_output2 = create_mock_request_output(
-        prompt_token_ids=[1, 2, 3], output_token_ids=[102], finished=True
-    )
+    mock_output2 = create_mock_request_output(prompt_token_ids=[1, 2, 3], output_token_ids=[102], finished=True)
 
     context.append_output(mock_output2)
 

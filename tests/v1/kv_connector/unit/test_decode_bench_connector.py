@@ -11,18 +11,19 @@ import torch
 from aphrodite import SamplingParams
 from aphrodite.config import KVTransferConfig
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import KVConnectorRole
+
 # ruff: noqa: E501
 from aphrodite.distributed.kv_transfer.kv_connector.v1.decode_bench_connector import (
-    DecodeBenchConnector, DecodeBenchConnectorMetadata)
+    DecodeBenchConnector,
+    DecodeBenchConnectorMetadata,
+)
 from aphrodite.forward_context import ForwardContext
 from aphrodite.utils.hashing import sha256
-from aphrodite.v1.core.kv_cache_utils import (get_request_block_hasher,
-                                              init_none_hash)
+from aphrodite.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash
 from aphrodite.v1.core.sched.scheduler import Scheduler
 from aphrodite.v1.request import Request
 
-from .utils import (EOS_TOKEN_ID, create_aphrodite_config,
-                    create_model_runner_output, create_scheduler)
+from .utils import EOS_TOKEN_ID, create_aphrodite_config, create_model_runner_output, create_scheduler
 
 
 class DecodeBenchTestRunner:
@@ -35,23 +36,17 @@ class DecodeBenchTestRunner:
         self.req_id = -1
 
         # Create aphrodite config with DecodeBenchConnector
-        aphrodite_config = create_aphrodite_config(
-            block_size=block_size, max_num_batched_tokens=1000
-        )
+        aphrodite_config = create_aphrodite_config(block_size=block_size, max_num_batched_tokens=1000)
         aphrodite_config.kv_transfer_config = KVTransferConfig(
             kv_connector="DecodeBenchConnector",
             kv_role="kv_both",
         )
 
         self.aphrodite_config = aphrodite_config
-        self.scheduler: Scheduler = create_scheduler(
-            aphrodite_config, num_blocks=num_gpu_blocks
-        )
+        self.scheduler: Scheduler = create_scheduler(aphrodite_config, num_blocks=num_gpu_blocks)
 
         # Create worker-side connector
-        self.worker_connector = DecodeBenchConnector(
-            aphrodite_config, KVConnectorRole.WORKER
-        )
+        self.worker_connector = DecodeBenchConnector(aphrodite_config, KVConnectorRole.WORKER)
 
         # Create dummy KV caches for testing
         # Shape: [num_blocks, 2, num_heads, block_size, head_dim]
@@ -59,9 +54,7 @@ class DecodeBenchTestRunner:
         num_heads = 4
         head_dim = 64
         self.kv_caches = {
-            f"layer_{i}": torch.zeros(
-                num_gpu_blocks, 2, num_heads, block_size, head_dim
-            )
+            f"layer_{i}": torch.zeros(num_gpu_blocks, 2, num_heads, block_size, head_dim)
             for i in range(2)  # 2 layers for testing
         }
 
@@ -77,9 +70,7 @@ class DecodeBenchTestRunner:
         init_none_hash(sha256)
         self._block_hasher = get_request_block_hasher(block_size, sha256)
 
-        self._dummy_ctx: ForwardContext = ForwardContext(
-            no_compile_layers={}, attn_metadata={}, virtual_engine=0
-        )
+        self._dummy_ctx: ForwardContext = ForwardContext(no_compile_layers={}, attn_metadata={}, virtual_engine=0)
 
     def new_request(self, token_ids: list[int]) -> Request:
         """Create a new request with given token IDs."""

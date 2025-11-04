@@ -9,8 +9,12 @@ from aphrodite.attention.ops.rocm_aiter_mla import aiter_mla_decode_fwd
 from aphrodite.config import AphroditeConfig
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.v1.attention.backends.mla.common import (
-    MLACommonBackend, MLACommonDecodeMetadata, MLACommonImpl,
-    MLACommonMetadata, MLACommonMetadataBuilder)
+    MLACommonBackend,
+    MLACommonDecodeMetadata,
+    MLACommonImpl,
+    MLACommonMetadata,
+    MLACommonMetadataBuilder,
+)
 from aphrodite.v1.attention.backends.utils import AttentionCGSupport
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
@@ -57,9 +61,7 @@ class AiterMLAMetadata(MLACommonMetadata[AiterMLADecodeMetadata]):
 class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
     # TODO(luka, lucas): audit this as part of:
     #  https://github.com/vllm-project/vllm/issues/22945
-    cudagraph_support: ClassVar[AttentionCGSupport] = (
-        AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
-    )
+    cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
 
     def __init__(
         self,
@@ -68,17 +70,11 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         aphrodite_config: AphroditeConfig,
         device: torch.device,
     ):
-        super().__init__(
-            kv_cache_spec, layer_names, aphrodite_config, device, AiterMLAMetadata
-        )
-        assert self.kv_cache_spec.block_size == 1, (
-            "AITER MLAonly supports block size 1."
-        )
+        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device, AiterMLAMetadata)
+        assert self.kv_cache_spec.block_size == 1, "AITER MLAonly supports block size 1."
 
         self.compilation_config = aphrodite_config.compilation_config
-        max_num_pages_per_req = cdiv(
-            aphrodite_config.model_config.max_model_len, self.kv_cache_spec.block_size
-        )
+        max_num_pages_per_req = cdiv(aphrodite_config.model_config.max_model_len, self.kv_cache_spec.block_size)
         max_num_reqs = aphrodite_config.scheduler_config.max_num_seqs
         max_num_pages = max_num_reqs * max_num_pages_per_req
 
@@ -87,19 +83,11 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         # so we can only use the persistent buffer if a cudagraph is actually
         # being used.
         if self.compilation_config.cudagraph_mode.has_full_cudagraphs():
-            self.paged_kv_indptr = torch.zeros(
-                max_num_reqs + 1, dtype=torch.int32, device=device
-            )
-            self.paged_kv_indices = torch.zeros(
-                max_num_pages, dtype=torch.int32, device=device
-            )
-            self.paged_kv_last_page_len = torch.zeros(
-                max_num_reqs, dtype=torch.int32, device=device
-            )
+            self.paged_kv_indptr = torch.zeros(max_num_reqs + 1, dtype=torch.int32, device=device)
+            self.paged_kv_indices = torch.zeros(max_num_pages, dtype=torch.int32, device=device)
+            self.paged_kv_last_page_len = torch.zeros(max_num_reqs, dtype=torch.int32, device=device)
 
-            self.qo_indptr = torch.arange(
-                0, max_num_reqs + 1, dtype=torch.int32, device=device
-            )
+            self.qo_indptr = torch.arange(0, max_num_reqs + 1, dtype=torch.int32, device=device)
 
     def _build_decode(
         self,
@@ -116,15 +104,13 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         device = self.device
         num_reqs = seq_lens_device.size(0)
 
-        mask = torch.arange(
-            block_table_tensor.size(1), dtype=block_table_tensor.dtype, device=device
-        ).unsqueeze(0) < block_table_bounds.unsqueeze(1)
+        mask = torch.arange(block_table_tensor.size(1), dtype=block_table_tensor.dtype, device=device).unsqueeze(
+            0
+        ) < block_table_bounds.unsqueeze(1)
         paged_kv_indices = block_table_tensor[mask]
 
         paged_kv_last_page_len = seq_lens_device % page_size
-        paged_kv_last_page_len = torch.where(
-            paged_kv_last_page_len == 0, page_size, paged_kv_last_page_len
-        )
+        paged_kv_last_page_len = torch.where(paged_kv_last_page_len == 0, page_size, paged_kv_last_page_len)
 
         paged_kv_indptr = torch.cat(
             [
@@ -136,30 +122,22 @@ class AiterMLAMetadataBuilder(MLACommonMetadataBuilder[AiterMLAMetadata]):
         if self.compilation_config.cudagraph_mode.has_full_cudagraphs():
             num_actual_pages = paged_kv_indices.size(0)
 
-            self.paged_kv_indices[:num_actual_pages].copy_(
-                paged_kv_indices, non_blocking=True
-            )
+            self.paged_kv_indices[:num_actual_pages].copy_(paged_kv_indices, non_blocking=True)
             self.paged_kv_indices[num_actual_pages:].fill_(-1)
             paged_kv_indices = self.paged_kv_indices[:num_actual_pages]
 
-            self.paged_kv_indptr[: 1 + num_reqs].copy_(
-                paged_kv_indptr, non_blocking=True
-            )
+            self.paged_kv_indptr[: 1 + num_reqs].copy_(paged_kv_indptr, non_blocking=True)
             self.paged_kv_indptr[1 + num_reqs :].fill_(paged_kv_indptr[-1])
             paged_kv_indptr = self.paged_kv_indptr[: 1 + num_reqs]
 
-            self.paged_kv_last_page_len[:num_reqs].copy_(
-                paged_kv_last_page_len, non_blocking=True
-            )
+            self.paged_kv_last_page_len[:num_reqs].copy_(paged_kv_last_page_len, non_blocking=True)
             self.paged_kv_last_page_len[num_reqs:].fill_(1)
             paged_kv_last_page_len = self.paged_kv_last_page_len[:num_reqs]
 
             qo_indptr = self.qo_indptr[: 1 + num_reqs]
 
         else:
-            qo_indptr = torch.arange(
-                0, num_reqs + 1, step=1, dtype=torch.int32, device=device
-            )
+            qo_indptr = torch.arange(0, num_reqs + 1, step=1, dtype=torch.int32, device=device)
 
         attn_metadata = AiterMLADecodeMetadata(
             block_table=block_table_tensor,
@@ -211,17 +189,14 @@ class AiterMLAImpl(MLACommonImpl[AiterMLAMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "Aiter MLA does not support one of the following: "
-                "alibi_slopes, sliding_window, logits_soft_cap"
+                "Aiter MLA does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         from aiter import flash_attn_varlen_func
 
         self.flash_attn_varlen_func = flash_attn_varlen_func
 
-    def _flash_attn_varlen_diff_headdims(
-        self, q, k, v, return_softmax_lse=False, softmax_scale=None, **kwargs
-    ):
+    def _flash_attn_varlen_diff_headdims(self, q, k, v, return_softmax_lse=False, softmax_scale=None, **kwargs):
         output = self.flash_attn_varlen_func(
             q=q,
             k=k,
@@ -248,9 +223,7 @@ class AiterMLAImpl(MLACommonImpl[AiterMLAMetadata]):
 
         assert isinstance(q, torch.Tensor)
         B = q.shape[0]
-        o = torch.zeros(
-            B, self.num_heads, self.kv_lora_rank, dtype=q.dtype, device=q.device
-        )
+        o = torch.zeros(B, self.num_heads, self.kv_lora_rank, dtype=q.dtype, device=q.device)
 
         kv_buffer = kv_c_and_k_pe_cache.unsqueeze(2)
 

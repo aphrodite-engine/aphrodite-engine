@@ -29,24 +29,27 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from aphrodite.modeling.model_loader.weight_utils import (
-    default_weight_loader, maybe_remap_kv_scale_name)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
+from aphrodite.modeling.model_loader.weight_utils import default_weight_loader, maybe_remap_kv_scale_name
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsPP
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 
 class Starcoder2Attention(nn.Module):
@@ -176,13 +179,9 @@ class Starcoder2DecoderLayer(nn.Module):
             quant_config=quant_config,
             prefix=f"{prefix}.self_attn",
         )
-        self.mlp = Starcoder2MLP(
-            config, quant_config=quant_config, prefix=f"{prefix}.mlp"
-        )
+        self.mlp = Starcoder2MLP(config, quant_config=quant_config, prefix=f"{prefix}.mlp")
         self.input_layernorm = nn.LayerNorm(config.hidden_size, eps=config.norm_epsilon)
-        self.post_attention_layernorm = nn.LayerNorm(
-            config.hidden_size, eps=config.norm_epsilon
-        )
+        self.post_attention_layernorm = nn.LayerNorm(config.hidden_size, eps=config.norm_epsilon)
 
     def forward(
         self,
@@ -227,9 +226,7 @@ class Starcoder2Model(nn.Module):
         )
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: Starcoder2DecoderLayer(
-                config, cache_config, quant_config=quant_config, prefix=prefix
-            ),
+            lambda prefix: Starcoder2DecoderLayer(config, cache_config, quant_config=quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
         self.norm = nn.LayerNorm(config.hidden_size, eps=config.norm_epsilon)
@@ -302,9 +299,7 @@ class Starcoder2ForCausalLM(nn.Module, SupportsPP):
         config = aphrodite_config.model_config.hf_config
         quant_config = aphrodite_config.quant_config
         self.config = config
-        self.model = Starcoder2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Starcoder2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.vocab_size = config.vocab_size
         self.unpadded_vocab_size = config.vocab_size
         if config.tie_word_embeddings:
@@ -319,12 +314,8 @@ class Starcoder2ForCausalLM(nn.Module, SupportsPP):
                 quant_config=quant_config,
                 prefix=f"{prefix}.lm_head",
             )
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -336,9 +327,7 @@ class Starcoder2ForCausalLM(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(
@@ -353,8 +342,6 @@ class Starcoder2ForCausalLM(nn.Module, SupportsPP):
             self,
             # Models trained using ColossalAI may include these tensors in
             # the checkpoint. Skip them.
-            skip_prefixes=(
-                ["lm_head.weight"] if self.config.tie_word_embeddings else None
-            ),
+            skip_prefixes=(["lm_head.weight"] if self.config.tie_word_embeddings else None),
         )
         return loader.load_weights(weights)

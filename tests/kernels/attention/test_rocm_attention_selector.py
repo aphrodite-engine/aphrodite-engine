@@ -1,8 +1,7 @@
 import pytest
 import torch
 
-from aphrodite.attention.selector import (_cached_get_attn_backend,
-                                          get_attn_backend)
+from aphrodite.attention.selector import _cached_get_attn_backend, get_attn_backend
 from aphrodite.platforms.rocm import RocmPlatform
 from aphrodite.utils import STR_BACKEND_ENV_VAR
 

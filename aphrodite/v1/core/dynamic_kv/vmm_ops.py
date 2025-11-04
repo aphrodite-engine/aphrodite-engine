@@ -1,7 +1,5 @@
 """Python wrapper for VMM (Virtual Memory Management) operations."""
 
-from typing import List
-
 import torch
 
 import aphrodite._custom_ops as ops
@@ -17,7 +15,7 @@ def shutdown_kvcached() -> None:
     ops.shutdown_kvcached()
 
 
-def create_kv_tensors(size: int, dtype_size: int, dev_str: str, num_layers: int) -> List[torch.Tensor]:
+def create_kv_tensors(size: int, dtype_size: int, dev_str: str, num_layers: int) -> list[torch.Tensor]:
     """Create KV cache tensors with virtual memory backing."""
     return ops.create_kv_tensors(size, dtype_size, dev_str, num_layers)
 
@@ -27,12 +25,11 @@ def kv_tensors_created() -> bool:
     return ops.kv_tensors_created()
 
 
-def map_to_kv_tensors(offsets: List[int]) -> None:
+def map_to_kv_tensors(offsets: list[int]) -> None:
     """Map physical memory pages to KV tensors at given offsets."""
     ops.map_to_kv_tensors(offsets)
 
 
-def unmap_from_kv_tensors(offsets: List[int]) -> None:
+def unmap_from_kv_tensors(offsets: list[int]) -> None:
     """Unmap physical memory pages from KV tensors at given offsets."""
     ops.unmap_from_kv_tensors(offsets)
-

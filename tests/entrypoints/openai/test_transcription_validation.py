@@ -36,9 +36,7 @@ async def client(server):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "model_name", ["openai/whisper-large-v3-turbo", "mistralai/Voxtral-Mini-3B-2507"]
-)
+@pytest.mark.parametrize("model_name", ["openai/whisper-large-v3-turbo", "mistralai/Voxtral-Mini-3B-2507"])
 async def test_basic_audio(mary_had_lamb, model_name):
     server_args = ["--enforce-eager"]
 
@@ -100,9 +98,7 @@ async def test_non_asr_model(winning_call):
 async def test_bad_requests(mary_had_lamb, client):
     # invalid language
     with pytest.raises(openai.BadRequestError):
-        await client.audio.transcriptions.create(
-            model=MODEL_NAME, file=mary_had_lamb, language="hh", temperature=0.0
-        )
+        await client.audio.transcriptions.create(model=MODEL_NAME, file=mary_had_lamb, language="hh", temperature=0.0)
 
 
 @pytest.mark.asyncio

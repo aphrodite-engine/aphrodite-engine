@@ -7,18 +7,17 @@ import torch
 from torch.nn.parameter import Parameter
 
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (LinearBase, LinearMethodBase,
-                                              UnquantizedLinearMethod)
-from aphrodite.modeling.parameter import (ModelWeightParameter,
-                                          PerTensorScaleParameter)
+from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase, UnquantizedLinearMethod
+from aphrodite.modeling.parameter import ModelWeightParameter, PerTensorScaleParameter
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationMethods
-from aphrodite.quantization.base_config import (QuantizationConfig,
-                                                QuantizeMethodBase)
+from aphrodite.quantization.base_config import QuantizationConfig, QuantizeMethodBase
 from aphrodite.quantization.kv_cache import BaseKVCacheMethod
 from aphrodite.quantization.utils.petit_utils import (
-    apply_petit_nvfp4_linear, prepare_nvfp4_layer_for_petit,
-    verify_petit_nvfp4_supported)
+    apply_petit_nvfp4_linear,
+    prepare_nvfp4_layer_for_petit,
+    verify_petit_nvfp4_supported,
+)
 from aphrodite.quantization.utils.quant_utils import is_layer_skipped
 
 # Initialize logger for the module
@@ -41,8 +40,7 @@ class PetitNvFp4Config(QuantizationConfig):
         self.is_checkpoint_nvfp4_serialized = is_checkpoint_nvfp4_serialized
         if is_checkpoint_nvfp4_serialized:
             logger.warning(
-                "Detected nvfp4 checkpoint. Please note that the "
-                "format is experimental and subject to change."
+                "Detected nvfp4 checkpoint. Please note that the format is experimental and subject to change."
             )
         self.group_size = group_size
         self.kv_cache_quant_algo = kv_cache_quant_algo
@@ -91,9 +89,7 @@ class PetitNvFp4Config(QuantizationConfig):
 
         group_size_raw = qc.get("group_size")
         if not isinstance(group_size_raw, int):
-            raise ValueError(
-                "Missing or invalid 'group_size' (int) in hf_quant_config.json."
-            )
+            raise ValueError("Missing or invalid 'group_size' (int) in hf_quant_config.json.")
         group_size = group_size_raw
 
         verify_petit_nvfp4_supported(quant_method, group_size)
@@ -106,9 +102,7 @@ class PetitNvFp4Config(QuantizationConfig):
         exclude_raw = qc.get("exclude_modules", [])
         if exclude_raw is None:
             exclude_modules: list[str] = []
-        elif isinstance(exclude_raw, list) and all(
-            isinstance(x, str) for x in exclude_raw
-        ):
+        elif isinstance(exclude_raw, list) and all(isinstance(x, str) for x in exclude_raw):
             exclude_modules = exclude_raw
         else:
             raise ValueError("'exclude_modules' must be a list[str] (or omitted).")
@@ -123,9 +117,7 @@ class PetitNvFp4Config(QuantizationConfig):
         )
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant
-    ) -> QuantizationMethods | None:
+    def override_quantization_method(cls, hf_quant_cfg, user_quant) -> QuantizationMethods | None:
         if not current_platform.is_rocm():
             return None
 
@@ -148,18 +140,13 @@ class PetitNvFp4Config(QuantizationConfig):
                 return True
         return False
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["QuantizeMethodBase"]:
-        from aphrodite.attention.layer import (
-            Attention)  # Avoid circular import
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["QuantizeMethodBase"]:
+        from aphrodite.attention.layer import Attention  # Avoid circular import
 
         exclude = self.require_exclude_modules()
 
         if isinstance(layer, LinearBase):
-            if is_layer_skipped(prefix, exclude) or self.is_layer_excluded(
-                prefix, exclude
-            ):
+            if is_layer_skipped(prefix, exclude) or self.is_layer_excluded(prefix, exclude):
                 return UnquantizedLinearMethod()
             return PetitNvFp4LinearMethod(self)
         elif isinstance(layer, Attention):
@@ -221,10 +208,7 @@ class PetitNvFp4LinearMethod(LinearMethodBase):
     ):
         del input_size, output_size
         if not self.quant_config.is_checkpoint_nvfp4_serialized:
-            raise ValueError(
-                "NVFP4 quantization was selected, "
-                " dynamic quantization is not supported."
-            )
+            raise ValueError("NVFP4 quantization was selected,  dynamic quantization is not supported.")
 
         output_size_per_partition = sum(output_partition_sizes)
         weight_loader = extra_weight_attrs.get("weight_loader")
@@ -234,15 +218,9 @@ class PetitNvFp4LinearMethod(LinearMethodBase):
         layer.input_size_per_partition = input_size_per_partition
         layer.output_size_per_partition = output_size_per_partition
         if input_size_per_partition % 16 != 0:
-            raise ValueError(
-                "Unsupported model when in features size is not multiple of 16"
-            )
+            raise ValueError("Unsupported model when in features size is not multiple of 16")
 
-        weight_dtype = (
-            torch.float8_e4m3fn
-            if self.quant_config.is_checkpoint_nvfp4_serialized
-            else params_dtype
-        )
+        weight_dtype = torch.float8_e4m3fn if self.quant_config.is_checkpoint_nvfp4_serialized else params_dtype
 
         weight = ModelWeightParameter(
             data=torch.empty(
@@ -289,9 +267,7 @@ class PetitNvFp4LinearMethod(LinearMethodBase):
         weight_scale_2 = layer.weight_scale_2.max().to(torch.float32)
         layer.input_scale = Parameter(input_scale_2, requires_grad=False)
         layer.weight_scale_2 = Parameter(weight_scale_2, requires_grad=False)
-        layer.alpha = Parameter(
-            layer.input_scale * layer.weight_scale_2, requires_grad=False
-        )
+        layer.alpha = Parameter(layer.input_scale * layer.weight_scale_2, requires_grad=False)
 
         prepare_nvfp4_layer_for_petit(layer)
         del layer.input_scale

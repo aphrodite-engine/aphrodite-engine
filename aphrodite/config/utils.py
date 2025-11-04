@@ -57,9 +57,7 @@ def get_field(cls: ConfigType, name: str) -> Field:
                 default = default.default
         return field(default=default)
 
-    raise ValueError(
-        f"{cls.__name__}.{name} must have a default value or default factory."
-    )
+    raise ValueError(f"{cls.__name__}.{name} must have a default value or default factory.")
 
 
 def getattr_iter(object: object, names: Iterable[str], default: Any) -> Any:
@@ -159,9 +157,7 @@ class SupportsMetricsInfo(Protocol):
 def update_config(config: ConfigT, overrides: dict[str, Any]) -> ConfigT:
     processed_overrides = {}
     for field_name, value in overrides.items():
-        assert hasattr(config, field_name), (
-            f"{type(config)} has no field `{field_name}`"
-        )
+        assert hasattr(config, field_name), f"{type(config)} has no field `{field_name}`"
         current_value = getattr(config, field_name)
         if is_dataclass(current_value) and not is_dataclass(value):
             assert isinstance(value, dict), (

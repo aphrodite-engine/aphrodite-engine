@@ -102,11 +102,7 @@ def is_lossless_cast(src_dtype: torch.dtype, tgt_dtype: torch.dtype):
     # Compare floating-point types
     src_info = torch.finfo(src_dtype)
     tgt_info = torch.finfo(tgt_dtype)
-    return (
-        src_info.min >= tgt_info.min
-        and src_info.max <= tgt_info.max
-        and src_info.resolution >= tgt_info.resolution
-    )
+    return src_info.min >= tgt_info.min and src_info.max <= tgt_info.max and src_info.resolution >= tgt_info.resolution
 
 
 def common_broadcastable_dtype(dtypes: Collection[torch.dtype]):
@@ -164,9 +160,7 @@ def get_kv_cache_torch_dtype(
     return torch_dtype
 
 
-def kv_cache_dtype_str_to_dtype(
-    kv_cache_dtype: str, model_config: ModelConfig
-) -> torch.dtype:
+def kv_cache_dtype_str_to_dtype(kv_cache_dtype: str, model_config: ModelConfig) -> torch.dtype:
     if kv_cache_dtype == "auto":
         # Model config may not be specified for unit tests, default to float16
         return model_config.dtype if model_config else torch.half
@@ -201,9 +195,7 @@ def create_kv_caches_with_random_flash(
     value_caches: list[torch.Tensor] = []
 
     for _ in range(num_layers):
-        key_value_cache = torch.empty(
-            size=kv_cache_allocation_shape, dtype=dtype, device=device
-        ).permute(*stride_order)
+        key_value_cache = torch.empty(size=kv_cache_allocation_shape, dtype=dtype, device=device).permute(*stride_order)
         if cache_dtype in ["auto", "half", "bfloat16", "float"]:
             key_value_cache.uniform_(-scale, scale)
         elif cache_dtype == "fp8":
@@ -227,9 +219,7 @@ def create_kv_caches_with_random(
     device: str | None = "cuda",
 ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
     if cache_dtype == "fp8" and head_size % 16:
-        raise ValueError(
-            f"Does not support key cache of type fp8 with head_size {head_size}"
-        )
+        raise ValueError(f"Does not support key cache of type fp8 with head_size {head_size}")
     from aphrodite.platforms import current_platform
 
     current_platform.seed_everything(seed)
@@ -373,8 +363,7 @@ def current_stream() -> torch.cuda.Stream:
                 _current_stream_tls.value = current_stream()
             else:
                 raise ValueError(
-                    "Fail to set current stream, current platform "
-                    "may not support current_stream with torch API"
+                    "Fail to set current stream, current platform may not support current_stream with torch API"
                 )
     return _current_stream_tls.value
 
@@ -398,11 +387,7 @@ def _cuda_device_count_stateless(cuda_visible_devices: str | None = None) -> int
     if current_platform.is_rocm():
         # ROCm uses amdsmi instead of nvml for stateless device count
         # This requires a sufficiently modern version of Torch 2.4.0
-        raw_count = (
-            torch.cuda._device_count_amdsmi()
-            if (hasattr(torch.cuda, "_device_count_amdsmi"))
-            else -1
-        )
+        raw_count = torch.cuda._device_count_amdsmi() if (hasattr(torch.cuda, "_device_count_amdsmi")) else -1
     else:
         raw_count = torch.cuda._device_count_nvml()
     r = torch._C._cuda_getDeviceCount() if raw_count < 0 else raw_count
@@ -435,10 +420,7 @@ def weak_ref_tensor(tensor: Any) -> Any:
 
 
 def weak_ref_tensors(
-    tensors: torch.Tensor
-    | list[torch.Tensor]
-    | tuple[torch.Tensor]
-    | IntermediateTensors,
+    tensors: torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor] | IntermediateTensors,
 ) -> torch.Tensor | list[Any] | tuple[Any] | Any:
     """
     Convenience function to create weak references to tensors,
@@ -455,9 +437,7 @@ def weak_ref_tensors(
     from aphrodite.common.sequence import IntermediateTensors
 
     if isinstance(tensors, IntermediateTensors):
-        ret = IntermediateTensors(
-            {key: weak_ref_tensor(val) for key, val in tensors.tensors.items()}
-        )
+        ret = IntermediateTensors({key: weak_ref_tensor(val) for key, val in tensors.tensors.items()})
         return ret
     raise ValueError("Invalid type for tensors")
 
@@ -498,10 +478,7 @@ def _is_torch_equal(target: str) -> bool:
     torch_version = version.parse(torch_version)
     # torch version is like "2.6.0.dev20240101" or "2.6.0.dev20240101+cpu"
     # or "2.6.0+cu128" but never "2.6.0.1"
-    return (
-        torch_version >= version.parse(target)
-        and version.parse(target + ".1") > torch_version
-    )
+    return torch_version >= version.parse(target) and version.parse(target + ".1") > torch_version
 
 
 def is_torch_equal(target: str) -> bool:
@@ -528,9 +505,7 @@ def supports_dynamo() -> bool:
 
 # Supports xccl with PyTorch versions >= 2.8.0.dev for XPU platform
 def supports_xccl() -> bool:
-    return (
-        is_torch_equal_or_newer("2.8.0.dev") and torch.distributed.is_xccl_available()
-    )
+    return is_torch_equal_or_newer("2.8.0.dev") and torch.distributed.is_xccl_available()
 
 
 # Some backends use pytorch version < 2.4.0 which doesn't

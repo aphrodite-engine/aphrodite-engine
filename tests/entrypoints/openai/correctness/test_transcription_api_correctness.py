@@ -43,9 +43,7 @@ async def transcribe_audio(client, tokenizer, y, sr):
         end_time = time.perf_counter()
         # NOTE there's no streaming in transcriptions, can't measure ttft
     latency = end_time - start_time
-    num_output_tokens = len(
-        tokenizer(transcription.text, add_special_tokens=False).input_ids
-    )
+    num_output_tokens = len(tokenizer(transcription.text, add_special_tokens=False).input_ids)
     return latency, num_output_tokens, transcription.text
 
 
@@ -72,9 +70,7 @@ async def process_dataset(model, client, data, concurrent_request):
     tasks: list[asyncio.Task] = []
     for sample in data:
         audio, sr = sample["audio"]["array"], sample["audio"]["sampling_rate"]
-        task = asyncio.create_task(
-            bound_transcribe(sem, client, tokenizer, (audio, sr), sample["text"])
-        )
+        task = asyncio.create_task(bound_transcribe(sem, client, tokenizer, (audio, sr), sample["text"]))
         tasks.append(task)
     return await asyncio.gather(*tasks)
 
@@ -144,15 +140,11 @@ def run_evaluation(
 # alternatives "openai/whisper-large-v2", "openai/whisper-large-v3-turbo"..
 @pytest.mark.parametrize("model_name", ["openai/whisper-large-v3"])
 # Original dataset is 20GB+ in size, hence we use a pre-filtered slice.
-@pytest.mark.parametrize(
-    "dataset_repo", ["D4nt3/esb-datasets-earnings22-validation-tiny-filtered"]
-)
+@pytest.mark.parametrize("dataset_repo", ["D4nt3/esb-datasets-earnings22-validation-tiny-filtered"])
 # NOTE: Expected WER measured with equivalent hf.transformers args:
 # whisper-large-v3 + esb-datasets-earnings22-validation-tiny-filtered.
 @pytest.mark.parametrize("expected_wer", [12.744980])
-def test_wer_correctness(
-    model_name, dataset_repo, expected_wer, n_examples=-1, max_concurrent_request=None
-):
+def test_wer_correctness(model_name, dataset_repo, expected_wer, n_examples=-1, max_concurrent_request=None):
     # TODO refactor to use `ASRDataset`
     with RemoteOpenAIServer(model_name, ["--enforce-eager"]) as remote_server:
         dataset = load_hf_dataset(dataset_repo)
@@ -162,8 +154,6 @@ def test_wer_correctness(
             max_concurrent_request = n_examples if n_examples > 0 else len(dataset)
 
         client = remote_server.get_async_client()
-        wer = run_evaluation(
-            model_name, client, dataset, max_concurrent_request, n_examples
-        )
+        wer = run_evaluation(model_name, client, dataset, max_concurrent_request, n_examples)
         if expected_wer:
             torch.testing.assert_close(wer, expected_wer, atol=1e-1, rtol=1e-2)

@@ -206,19 +206,18 @@ void rms_norm_static_fp8_quant(torch::Tensor& out,     // [..., hidden_size]
       });
 }
 
-#define LAUNCH_FUSED_ADD_RMS_NORM(width)                                     \
-  APHRODITE_DISPATCH_FLOATING_TYPES(                                              \
-      input.scalar_type(), "fused_add_rms_norm_kernel_scalar_type", [&] {    \
-        APHRODITE_DISPATCH_FP8_TYPES(                                             \
-            out.scalar_type(), "fused_add_rms_norm_kernel_fp8_type", [&] {   \
-              aphrodite::fused_add_rms_norm_static_fp8_quant_kernel<scalar_t,     \
-                                                               width, fp8_t> \
-                  <<<grid, block, 0, stream>>>(                              \
-                      out.data_ptr<fp8_t>(), input.data_ptr<scalar_t>(),     \
-                      input_stride, residual.data_ptr<scalar_t>(),           \
-                      weight.data_ptr<scalar_t>(), scale.data_ptr<float>(),  \
-                      epsilon, num_tokens, hidden_size);                     \
-            });                                                              \
+#define LAUNCH_FUSED_ADD_RMS_NORM(width)                                   \
+  APHRODITE_DISPATCH_FLOATING_TYPES(                                       \
+      input.scalar_type(), "fused_add_rms_norm_kernel_scalar_type", [&] {  \
+        APHRODITE_DISPATCH_FP8_TYPES(                                      \
+            out.scalar_type(), "fused_add_rms_norm_kernel_fp8_type", [&] { \
+              aphrodite::fused_add_rms_norm_static_fp8_quant_kernel<       \
+                  scalar_t, width, fp8_t><<<grid, block, 0, stream>>>(     \
+                  out.data_ptr<fp8_t>(), input.data_ptr<scalar_t>(),       \
+                  input_stride, residual.data_ptr<scalar_t>(),             \
+                  weight.data_ptr<scalar_t>(), scale.data_ptr<float>(),    \
+                  epsilon, num_tokens, hidden_size);                       \
+            });                                                            \
       });
 void fused_add_rms_norm_static_fp8_quant(
     torch::Tensor& out,       // [..., hidden_size],

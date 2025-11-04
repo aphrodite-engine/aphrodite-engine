@@ -467,12 +467,12 @@ void paged_attention_v1(
     const int64_t blocksparse_head_sliding_step) {
   TORCH_CHECK(blocksparse_vert_stride <= 1,
               "CPU backend does not support blocksparse attention yet.");
-  APHRODITE_DISPATCH_FLOATING_TYPES(query.scalar_type(), "paged_attention_v1_impl",
-                               [&] {
-                                 CPU_KERNEL_GUARD_IN(paged_attention_v1_impl)
-                                 CALL_V1_KERNEL_LAUNCHER_BLOCK_SIZE(scalar_t);
-                                 CPU_KERNEL_GUARD_OUT(paged_attention_v1_impl)
-                               });
+  APHRODITE_DISPATCH_FLOATING_TYPES(
+      query.scalar_type(), "paged_attention_v1_impl", [&] {
+        CPU_KERNEL_GUARD_IN(paged_attention_v1_impl)
+        CALL_V1_KERNEL_LAUNCHER_BLOCK_SIZE(scalar_t);
+        CPU_KERNEL_GUARD_OUT(paged_attention_v1_impl)
+      });
 }
 
 // Paged attention v2
@@ -789,10 +789,10 @@ void paged_attention_v2(
     const int64_t blocksparse_head_sliding_step) {
   TORCH_CHECK(blocksparse_vert_stride <= 1,
               "CPU backend does not support blocksparse attention yet.");
-  APHRODITE_DISPATCH_FLOATING_TYPES(query.scalar_type(), "paged_attention_v2_impl",
-                               [&] {
-                                 CPU_KERNEL_GUARD_IN(paged_attention_v2_impl)
-                                 CALL_V2_KERNEL_LAUNCHER_BLOCK_SIZE(scalar_t);
-                                 CPU_KERNEL_GUARD_OUT(paged_attention_v2_impl)
-                               });
+  APHRODITE_DISPATCH_FLOATING_TYPES(
+      query.scalar_type(), "paged_attention_v2_impl", [&] {
+        CPU_KERNEL_GUARD_IN(paged_attention_v2_impl)
+        CALL_V2_KERNEL_LAUNCHER_BLOCK_SIZE(scalar_t);
+        CPU_KERNEL_GUARD_OUT(paged_attention_v2_impl)
+      });
 }

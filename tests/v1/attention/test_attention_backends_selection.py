@@ -7,13 +7,11 @@ import pytest
 from aphrodite.modeling.layers.mamba.mamba_mixer import MambaMixer
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
 from aphrodite.modeling.layers.mamba.short_conv import ShortConv
-from aphrodite.modeling.models.minimax_text_01 import (
-    MiniMaxText01LinearAttention)
+from aphrodite.modeling.models.minimax_text_01 import MiniMaxText01LinearAttention
 from aphrodite.v1.attention.backends.linear_attn import LinearAttentionBackend
 from aphrodite.v1.attention.backends.mamba1_attn import Mamba1AttentionBackend
 from aphrodite.v1.attention.backends.mamba2_attn import Mamba2AttentionBackend
-from aphrodite.v1.attention.backends.short_conv_attn import (
-    ShortConvAttentionBackend)
+from aphrodite.v1.attention.backends.short_conv_attn import ShortConvAttentionBackend
 
 
 @pytest.mark.parametrize(
@@ -78,9 +76,7 @@ from aphrodite.v1.attention.backends.short_conv_attn import (
         ),
     ],
 )
-def test_mamba_layers_get_attn_backend(
-    dist_init, layer_class, init_kwargs, expected_backend, expected_mamba_type
-):
+def test_mamba_layers_get_attn_backend(dist_init, layer_class, init_kwargs, expected_backend, expected_mamba_type):
     """Test that Mamba-like layers return the correct attention backend."""
     layer = layer_class(**init_kwargs)
 
@@ -98,14 +94,8 @@ def test_mamba_layers_get_attn_backend(
         (ShortConv, ShortConvAttentionBackend, "short_conv"),
     ],
 )
-def test_mamba_layers_have_unified_interface(
-    layer_class, expected_backend, expected_mamba_type
-):
+def test_mamba_layers_have_unified_interface(layer_class, expected_backend, expected_mamba_type):
     """Test that all Mamba layers have the unified get_attn_backend
     interface."""
-    assert hasattr(layer_class, "get_attn_backend"), (
-        f"{layer_class.__name__} should have get_attn_backend method"
-    )
-    assert hasattr(layer_class, "mamba_type"), (
-        f"{layer_class.__name__} should have mamba_type property"
-    )
+    assert hasattr(layer_class, "get_attn_backend"), f"{layer_class.__name__} should have get_attn_backend method"
+    assert hasattr(layer_class, "mamba_type"), f"{layer_class.__name__} should have mamba_type property"

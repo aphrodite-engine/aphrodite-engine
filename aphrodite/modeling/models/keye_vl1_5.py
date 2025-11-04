@@ -13,24 +13,16 @@ from transformers.feature_extraction_utils import BatchFeature
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, RowParallelLinear
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (ImageItem, ModalityData,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems, VideoItem)
-from aphrodite.multimodal.parse import (DictEmbeddingItems, ModalityDataItems,
-                                        MultiModalDataItems,
-                                        MultiModalDataParser)
-from aphrodite.multimodal.processing import (PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import ImageItem, ModalityData, MultiModalFieldConfig, MultiModalKwargsItems, VideoItem
+from aphrodite.multimodal.parse import DictEmbeddingItems, ModalityDataItems, MultiModalDataItems, MultiModalDataParser
+from aphrodite.multimodal.processing import PromptReplacement, PromptUpdate, PromptUpdateDetails
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
-from .interfaces import (SupportsLoRA, SupportsMRoPE, SupportsMultiModal,
-                         SupportsPP)
-from .keye import (BaseKeyeModule, BaseMultiModalProcessor,
-                   KeyeBaseDummyInputsBuilder, KeyeProcessingInfo)
+from .interfaces import SupportsLoRA, SupportsMRoPE, SupportsMultiModal, SupportsPP
+from .keye import BaseKeyeModule, BaseMultiModalProcessor, KeyeBaseDummyInputsBuilder, KeyeProcessingInfo
 
 logger = init_logger(__name__)
 
@@ -58,9 +50,7 @@ def split_thw(grid_thw: torch.Tensor) -> torch.Tensor:
     return torch.cat([ones, h_w], dim=1).repeat_interleave(t, dim=0)
 
 
-def get_num_patches(
-    grid_thw: torch.Tensor, num_frames: list[int] | torch.Tensor
-) -> list[int]:
+def get_num_patches(grid_thw: torch.Tensor, num_frames: list[int] | torch.Tensor) -> list[int]:
     """
     Return num_patches per video.
 
@@ -95,14 +85,9 @@ def get_num_patches(
     num_grids_per_frame = grid_thw.prod(dim=1)
     start_idx_per_video = [0, *itertools.accumulate(num_frames)]
     num_patches = [
-        num_grids_per_frame[start_idx_per_video[i] : start_idx_per_video[i + 1]].sum()
-        for i in range(len(num_frames))
+        num_grids_per_frame[start_idx_per_video[i] : start_idx_per_video[i + 1]].sum() for i in range(len(num_frames))
     ]
-    return (
-        torch.stack(num_patches)
-        if num_patches
-        else torch.zeros(0, dtype=grid_thw.dtype, device=grid_thw.device)
-    )
+    return torch.stack(num_patches) if num_patches else torch.zeros(0, dtype=grid_thw.dtype, device=grid_thw.device)
 
 
 class KeyeVL1_5ImagePixelInputs(TensorSchema):
@@ -117,9 +102,7 @@ class KeyeVL1_5ImagePixelInputs(TensorSchema):
 
     type: Literal["pixel_values"]
 
-    pixel_values: Annotated[
-        torch.Tensor, TensorShape("bnp", 3, "ps", "ps", dynamic_dims={"bnp"})
-    ]
+    pixel_values: Annotated[torch.Tensor, TensorShape("bnp", 3, "ps", "ps", dynamic_dims={"bnp"})]
 
     image_grid_thw: Annotated[torch.Tensor, TensorShape("ni", 3)]
 
@@ -139,9 +122,7 @@ class KeyeVL1_5ImageEmbeddingInputs(TensorSchema):
     image_grid_thw: Annotated[torch.Tensor, TensorShape("ni", 3)]
 
 
-KeyeVL1_5ImageInputs: TypeAlias = (
-    KeyeVL1_5ImagePixelInputs | KeyeVL1_5ImageEmbeddingInputs
-)
+KeyeVL1_5ImageInputs: TypeAlias = KeyeVL1_5ImagePixelInputs | KeyeVL1_5ImageEmbeddingInputs
 
 
 class KeyeVL1_5VideoPixelInputs(TensorSchema):
@@ -155,9 +136,7 @@ class KeyeVL1_5VideoPixelInputs(TensorSchema):
     """
 
     type: Literal["pixel_values_videos"]
-    pixel_values_videos: Annotated[
-        torch.Tensor, TensorShape("bnp", 3, "ps", "ps", dynamic_dims={"bnp"})
-    ]
+    pixel_values_videos: Annotated[torch.Tensor, TensorShape("bnp", 3, "ps", "ps", dynamic_dims={"bnp"})]
     video_grid_thw: Annotated[torch.Tensor, TensorShape("nv", 3)]
 
     num_frames: torch.Tensor
@@ -179,9 +158,7 @@ class KeyeVL1_5VideoEmbeddingInputs(TensorSchema):
     num_frames: torch.Tensor
 
 
-KeyeVL1_5VideoInputs: TypeAlias = (
-    KeyeVL1_5VideoPixelInputs | KeyeVL1_5VideoEmbeddingInputs
-)
+KeyeVL1_5VideoInputs: TypeAlias = KeyeVL1_5VideoPixelInputs | KeyeVL1_5VideoEmbeddingInputs
 
 
 class KeyeVL1_5Projector(nn.Module):
@@ -197,11 +174,7 @@ class KeyeVL1_5Projector(nn.Module):
         self.vision_config = vision_config
         self.merge_kernel_size = (2, 2)
 
-        self.hidden_size = (
-            self.vision_config.hidden_size
-            * self.merge_kernel_size[0]
-            * self.merge_kernel_size[1]
-        )
+        self.hidden_size = self.vision_config.hidden_size * self.merge_kernel_size[0] * self.merge_kernel_size[1]
 
         self.pre_norm = torch.nn.LayerNorm(self.hidden_size, eps=1e-05)
         self.act = GELUActivation()
@@ -272,14 +245,10 @@ class KeyeVL1_5ProcessingInfo(KeyeProcessingInfo):
 def _keye_field_config(
     hf_inputs: Mapping[str, torch.Tensor],
 ):
-    image_grid_thw = hf_inputs.get(
-        "image_grid_thw", torch.empty((0, 3), dtype=torch.int64)
-    )
+    image_grid_thw = hf_inputs.get("image_grid_thw", torch.empty((0, 3), dtype=torch.int64))
     image_grid_sizes = image_grid_thw.prod(-1)
 
-    video_grid_thw = hf_inputs.get(
-        "video_grid_thw", torch.empty((0, 3), dtype=torch.int64)
-    )
+    video_grid_thw = hf_inputs.get("video_grid_thw", torch.empty((0, 3), dtype=torch.int64))
     video_grid_thw = split_thw(video_grid_thw)
     num_frames = hf_inputs.get("num_frames", video_grid_thw[:, 0]).clone().tolist()
 
@@ -305,9 +274,7 @@ def _keye_field_config(
         pixel_values=MultiModalFieldConfig.flat_from_sizes("image", image_grid_sizes),
         image_embeds=MultiModalFieldConfig.flat_from_sizes("image", image_grid_sizes),
         image_grid_thw=MultiModalFieldConfig.batched("image"),
-        pixel_values_videos=MultiModalFieldConfig.flat_from_sizes(
-            "video", video_num_patches
-        ),
+        pixel_values_videos=MultiModalFieldConfig.flat_from_sizes("video", video_num_patches),
         video_embeds=MultiModalFieldConfig.flat_from_sizes("video", video_num_patches),
         video_grid_thw=MultiModalFieldConfig.flat_from_sizes("video", video_num_grids),
         num_frames=MultiModalFieldConfig.batched("video"),
@@ -370,41 +337,31 @@ class KeyeVL1_5MultiModalProcessor(BaseMultiModalProcessor[KeyeVL1_5ProcessingIn
         merge_length = image_processor.merge_size**2
 
         out_mm_kwargs_data = out_mm_kwargs.get_data()
-        frame_types: list[torch.Tensor] = hf_processor_mm_kwargs.get(
-            "frame_types", None
-        )
+        frame_types: list[torch.Tensor] = hf_processor_mm_kwargs.get("frame_types", None)
         timestamps: list[torch.Tensor] = hf_processor_mm_kwargs.get("timestamps", None)
         num_videos = mm_items.get_count("video", strict=False)
 
         if frame_types is None:
             frame_types = [None] * num_videos
         assert len(frame_types) == num_videos, (
-            f"Number of frame_types={len(frame_types)} "
-            f"doesn't equal to number of videos={num_videos}"
+            f"Number of frame_types={len(frame_types)} doesn't equal to number of videos={num_videos}"
         )
         if timestamps is None:
             timestamps = [None] * num_videos
         assert len(timestamps) == num_videos, (
-            f"Number of timestamps={len(timestamps)} "
-            f"doesn't equal to number of videos={num_videos}"
+            f"Number of timestamps={len(timestamps)} doesn't equal to number of videos={num_videos}"
         )
 
-        video_grid_thw = out_mm_kwargs_data.get(
-            "video_grid_thw", torch.empty((0, 3), dtype=torch.int64)
-        )
-        num_frames = out_mm_kwargs_data.get(
-            "num_frames", torch.tensor([], dtype=torch.int64)
-        )
+        video_grid_thw = out_mm_kwargs_data.get("video_grid_thw", torch.empty((0, 3), dtype=torch.int64))
+        num_frames = out_mm_kwargs_data.get("num_frames", torch.tensor([], dtype=torch.int64))
 
         assert len(num_frames) == num_videos, (
-            f"Size of num_frames={len(num_frames)} "
-            f"doesn't equal to number of videos={num_videos}"
+            f"Size of num_frames={len(num_frames)} doesn't equal to number of videos={num_videos}"
         )
 
         video_grid_hws = split_thw(video_grid_thw)
         assert int(num_frames.sum().tolist()) == video_grid_hws.shape[0], (
-            f"The first dimension of `video_grid_hws`={video_grid_hws.shape[0]}"
-            f"doesn't equal to num of frames."
+            f"The first dimension of `video_grid_hws`={video_grid_hws.shape[0]}doesn't equal to num of frames."
         )
 
         cu_seqlens = torch.cumsum(torch.tensor([0] + num_frames.tolist()), dim=-1)
@@ -426,9 +383,7 @@ class KeyeVL1_5MultiModalProcessor(BaseMultiModalProcessor[KeyeVL1_5ProcessingIn
                 placeholders = []
                 video_timestamps = timestamps[item_idx]
                 video_frame_types = frame_types[item_idx]
-                grid_thw = video_grid_hws[
-                    cu_seqlens[item_idx] : cu_seqlens[item_idx + 1]
-                ]
+                grid_thw = video_grid_hws[cu_seqlens[item_idx] : cu_seqlens[item_idx + 1]]
 
                 nframes = grid_thw.shape[0]
 
@@ -449,9 +404,7 @@ class KeyeVL1_5MultiModalProcessor(BaseMultiModalProcessor[KeyeVL1_5ProcessingIn
                     if video_frame_types[i] == 1:
                         placeholders.append(vocab[hf_processor.fast_end])
 
-                return PromptUpdateDetails.select_token_id(
-                    placeholders, embed_token_id=video_token_id
-                )
+                return PromptUpdateDetails.select_token_id(placeholders, embed_token_id=video_token_id)
             else:
                 raise ValueError(f"Unsupported modality {modality}")
 
@@ -472,9 +425,7 @@ class KeyeVL1_5MultiModalProcessor(BaseMultiModalProcessor[KeyeVL1_5ProcessingIn
         return _keye_field_config(hf_inputs)
 
 
-class KeyeVL1_5DummyInputsBuilder(
-    KeyeBaseDummyInputsBuilder[KeyeVL1_5ProcessingInfo]
-): ...
+class KeyeVL1_5DummyInputsBuilder(KeyeBaseDummyInputsBuilder[KeyeVL1_5ProcessingInfo]): ...
 
 
 @MULTIMODAL_REGISTRY.register_processor(
@@ -482,9 +433,7 @@ class KeyeVL1_5DummyInputsBuilder(
     info=KeyeVL1_5ProcessingInfo,
     dummy_inputs=KeyeVL1_5DummyInputsBuilder,
 )
-class KeyeVL1_5ForConditionalGeneration(
-    BaseKeyeModule, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE
-):
+class KeyeVL1_5ForConditionalGeneration(BaseKeyeModule, SupportsMultiModal, SupportsLoRA, SupportsPP, SupportsMRoPE):
     def _build_projector(
         self,
         text_config: PretrainedConfig,
@@ -499,9 +448,7 @@ class KeyeVL1_5ForConditionalGeneration(
         self.merge_size = config.vision_config.spatial_merge_size
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> KeyeVL1_5ImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> KeyeVL1_5ImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
         image_grid_thw = kwargs.pop("image_grid_thw", None)
@@ -523,9 +470,7 @@ class KeyeVL1_5ForConditionalGeneration(
                 image_grid_thw=image_grid_thw,
             )
 
-    def _parse_and_validate_video_input(
-        self, **kwargs: object
-    ) -> KeyeVL1_5VideoInputs | None:
+    def _parse_and_validate_video_input(self, **kwargs: object) -> KeyeVL1_5VideoInputs | None:
         pixel_values_videos = kwargs.pop("pixel_values_videos", None)
         video_embeds = kwargs.pop("video_embeds", None)
         video_grid_thw = kwargs.pop("video_grid_thw", None)
@@ -550,28 +495,20 @@ class KeyeVL1_5ForConditionalGeneration(
                 num_frames=num_frames,
             )
 
-    def _process_video_input(
-        self, video_input: KeyeVL1_5VideoInputs
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_video_input(self, video_input: KeyeVL1_5VideoInputs) -> tuple[torch.Tensor, ...]:
         video_type = video_input["type"]
         video_grid_thw = split_thw(video_input["video_grid_thw"])
         pixel_values_videos = video_input.get("pixel_values_videos", None)
 
-        video_embeds = self._process_video_embeds(
-            video_type, video_grid_thw, pixel_values_videos
-        )
+        video_embeds = self._process_video_embeds(video_type, video_grid_thw, pixel_values_videos)
         video_embeds = torch.concat(video_embeds, dim=0)
 
         num_frames = video_input["num_frames"].clone().tolist()
 
         num_patches = get_num_patches(video_grid_thw, num_frames).tolist()
 
-        patch_cu_seqlens = torch.cumsum(
-            torch.tensor([0] + num_patches).detach().clone(), dim=-1
-        )
-        patch_cu_seqlens = torch.div(
-            patch_cu_seqlens, self.merge_size**2, rounding_mode="floor"
-        )
+        patch_cu_seqlens = torch.cumsum(torch.tensor([0] + num_patches).detach().clone(), dim=-1)
+        patch_cu_seqlens = torch.div(patch_cu_seqlens, self.merge_size**2, rounding_mode="floor")
 
         new_video_embeds = []
         for idx in range(patch_cu_seqlens.shape[0] - 1):
@@ -675,43 +612,19 @@ class KeyeVL1_5ForConditionalGeneration(
             text_len = ed - st
 
             st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
-            llm_pos_ids_list.append(
-                torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx
-            )
+            llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
-            t_index = (
-                (
-                    torch.arange(llm_grid_t)
-                    .view(-1, 1)
-                    .expand(-1, llm_grid_h * llm_grid_w)
-                )
-                .long()
-                .flatten()
-            )
+            t_index = (torch.arange(llm_grid_t).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w)).long().flatten()
 
-            h_index = (
-                torch.arange(llm_grid_h)
-                .view(1, -1, 1)
-                .expand(llm_grid_t, -1, llm_grid_w)
-                .flatten()
-            )
-            w_index = (
-                torch.arange(llm_grid_w)
-                .view(1, 1, -1)
-                .expand(llm_grid_t, llm_grid_h, -1)
-                .flatten()
-            )
-            llm_pos_ids_list.append(
-                torch.stack([t_index, h_index, w_index]) + text_len + st_idx
-            )
+            h_index = torch.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+            w_index = torch.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+            llm_pos_ids_list.append(torch.stack([t_index, h_index, w_index]) + text_len + st_idx)
             st = ed + llm_grid_t * llm_grid_h * llm_grid_w
 
         if st < len(input_tokens):
             st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
             text_len = len(input_tokens) - st
-            llm_pos_ids_list.append(
-                torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx
-            )
+            llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
         llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
         mrope_position_delta = (llm_positions.max() + 1 - len(input_tokens)).item()

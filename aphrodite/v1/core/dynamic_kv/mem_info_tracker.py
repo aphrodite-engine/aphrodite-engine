@@ -1,12 +1,11 @@
 import atexit
+import contextlib
 import os
 import signal
-from typing import Optional
 
 import posix_ipc
 
-from .cli_utils import (MemInfoStruct, RwLockedShm, get_ipc_name, get_ipc_path,
-                        init_kv_cache_limit)
+from .cli_utils import MemInfoStruct, RwLockedShm, get_ipc_name, get_ipc_path, init_kv_cache_limit
 from .utils import DEFAULT_IPC_NAME
 
 
@@ -22,11 +21,9 @@ class MemInfoTracker:
         init_kv_cache_limit(self.ipc_name, total_mem_size)
         self._register_cleanup()
 
-    def check_and_get_resize_target(self, current_mem_size: int,
-                                    num_layers: int) -> Optional[int]:
+    def check_and_get_resize_target(self, current_mem_size: int, num_layers: int) -> int | None:
         """Check if memory size has changed and return new target size if needed."""
-        with RwLockedShm(self.ipc_name, MemInfoStruct.SHM_SIZE,
-                         RwLockedShm.RLOCK) as mm:
+        with RwLockedShm(self.ipc_name, MemInfoStruct.SHM_SIZE, RwLockedShm.RLOCK) as mm:
             mem_info = MemInfoStruct.from_buffer(mm)
             new_mem_size = mem_info.total_size // num_layers // 2
             if new_mem_size != current_mem_size:
@@ -35,8 +32,7 @@ class MemInfoTracker:
 
     def update_memory_usage(self, used_size: int, prealloc_size: int):
         """Update the memory usage information in shared memory."""
-        with RwLockedShm(self.ipc_name, MemInfoStruct.SHM_SIZE,
-                         RwLockedShm.WLOCK) as mm:
+        with RwLockedShm(self.ipc_name, MemInfoStruct.SHM_SIZE, RwLockedShm.WLOCK) as mm:
             mem_info = MemInfoStruct.from_buffer(mm)
             mem_info.used_size = used_size
             mem_info.prealloc_size = prealloc_size
@@ -44,15 +40,11 @@ class MemInfoTracker:
 
     def cleanup(self, *args):
         """Remove the POSIX shared-memory segment and its backing file."""
-        try:
+        with contextlib.suppress(Exception):
             posix_ipc.unlink_shared_memory(self.ipc_name)
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(get_ipc_path(self.ipc_name))
-        except FileNotFoundError:
-            pass
 
         if args and isinstance(args[0], int):
             signum = args[0]
@@ -63,10 +55,6 @@ class MemInfoTracker:
         """Register atexit and signal handlers for shared-memory cleanup."""
         atexit.register(self.cleanup)
 
-        for _sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP,
-                     signal.SIGQUIT):
-            try:
+        for _sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
+            with contextlib.suppress(Exception):
                 signal.signal(_sig, self.cleanup)
-            except Exception:
-                pass
-

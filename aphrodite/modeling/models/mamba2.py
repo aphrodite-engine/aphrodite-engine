@@ -13,19 +13,23 @@ from aphrodite.distributed.parallel_state import get_pp_group
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import (HasInnerState,
-                                                  IsAttentionFree,
-                                                  SupportsMambaPrefixCaching)
+from aphrodite.modeling.models.interfaces import HasInnerState, IsAttentionFree, SupportsMambaPrefixCaching
 from aphrodite.quantization import QuantizationConfig
 
-from .utils import (AutoWeightsLoader, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    AutoWeightsLoader,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 KVCache = tuple[torch.Tensor, torch.Tensor]
 
@@ -45,9 +49,7 @@ class Mamba2DecoderLayer(nn.Module):
             hidden_size=config.hidden_size,
             ssm_state_size=config.state_size,
             conv_kernel_size=config.conv_kernel,
-            intermediate_size=getattr(
-                config, "intermediate_size", config.expand * config.hidden_size
-            ),
+            intermediate_size=getattr(config, "intermediate_size", config.expand * config.hidden_size),
             use_conv_bias=config.use_conv_bias,
             use_bias=config.use_bias,
             n_groups=config.n_groups,
@@ -94,11 +96,7 @@ class Mamba2Model(nn.Module):
         assert not is_lora_enabled
 
         self.config = config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -147,14 +145,10 @@ class Mamba2Model(nn.Module):
             residual = intermediate_tensors["residual"]
 
         for i, layer in enumerate(self.layers):
-            hidden_states, residual = layer(
-                positions=positions, hidden_states=hidden_states, residual=residual
-            )
+            hidden_states, residual = layer(positions=positions, hidden_states=hidden_states, residual=residual)
 
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 
         hidden_states, _ = self.norm_f(hidden_states, residual)
 
@@ -180,9 +174,7 @@ class Mamba2Model(nn.Module):
         return loaded_params
 
 
-class Mamba2ForCausalLM(
-    nn.Module, HasInnerState, IsAttentionFree, SupportsMambaPrefixCaching
-):
+class Mamba2ForCausalLM(nn.Module, HasInnerState, IsAttentionFree, SupportsMambaPrefixCaching):
     @classmethod
     def get_mamba_state_dtype_from_config(
         cls,
@@ -233,9 +225,7 @@ class Mamba2ForCausalLM(
         self.aphrodite_config = aphrodite_config
         self.scheduler_config = scheduler_config
         self.model_config = aphrodite_config.model_config
-        self.backbone = Mamba2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "backbone")
-        )
+        self.backbone = Mamba2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "backbone"))
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -254,13 +244,9 @@ class Mamba2ForCausalLM(
         if config.tie_word_embeddings:
             self.lm_head = self.lm_head.tie_weights(self.backbone.embeddings)
 
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
 
-        self.make_empty_intermediate_tensors = (
-            self.backbone.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.backbone.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.backbone.get_input_embeddings(input_ids)
@@ -273,9 +259,7 @@ class Mamba2ForCausalLM(
         inputs_embeds: torch.Tensor | None = None,
         **kwargs,
     ):
-        hidden_states = self.backbone(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.backbone(input_ids, positions, intermediate_tensors, inputs_embeds)
 
         return hidden_states
 

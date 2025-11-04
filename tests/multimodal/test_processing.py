@@ -6,16 +6,18 @@ import pytest
 
 from aphrodite.config import ModelConfig
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.processing import (InputProcessingContext,
-                                             PlaceholderFeaturesInfo,
-                                             PromptIndexTargets,
-                                             PromptInsertion,
-                                             PromptReplacement,
-                                             apply_text_matches,
-                                             apply_token_matches,
-                                             find_mm_placeholders,
-                                             iter_token_matches,
-                                             replace_token_matches)
+from aphrodite.multimodal.processing import (
+    InputProcessingContext,
+    PlaceholderFeaturesInfo,
+    PromptIndexTargets,
+    PromptInsertion,
+    PromptReplacement,
+    apply_text_matches,
+    apply_token_matches,
+    find_mm_placeholders,
+    iter_token_matches,
+    replace_token_matches,
+)
 from aphrodite.multimodal.profiling import MultiModalProfiler
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
@@ -75,9 +77,7 @@ def test_iter_token_matches(token_ids, match_ids, expected, start_idx):
     result = list(iter_token_matches(token_ids, match_ids, start_idx=start_idx))
 
     # Manually constructed results
-    assert [item._asdict() for item in result] == [
-        item for item in expected if item["start_idx"] >= start_idx
-    ]
+    assert [item._asdict() for item in result] == [item for item in expected if item["start_idx"] >= start_idx]
 
     # Invariants
     match_lens = [end - start for start, end in result]
@@ -234,24 +234,15 @@ def test_find_token_matches(
     # Should not be used since there is nothing to convert to token IDs
     mock_tokenizer = cast(AnyTokenizer, object())
 
-    prompt_updates = {
-        key: update_type(key, target, []).resolve(0)
-        for key, target in target_by_key.items()
-    }
-    result = {
-        key: list(update.iter_token_matches(prompt, mock_tokenizer))
-        for key, update in prompt_updates.items()
-    }
+    prompt_updates = {key: update_type(key, target, []).resolve(0) for key, target in target_by_key.items()}
+    result = {key: list(update.iter_token_matches(prompt, mock_tokenizer)) for key, update in prompt_updates.items()}
 
     # Only displayed on error
     print("result:", result)
 
     # Manually constructed results
     assert {
-        key: [
-            dict(start_idx=item.start_idx, end_idx=item.end_idx)
-            for item in result.get(key, [])
-        ]
+        key: [dict(start_idx=item.start_idx, end_idx=item.end_idx) for item in result.get(key, [])]
         for key in expected_by_key
     } == expected_by_key
 
@@ -381,24 +372,15 @@ def test_find_text_matches(
     # Should not be used since there is nothing to convert to text
     mock_tokenizer = cast(AnyTokenizer, object())
 
-    prompt_updates = {
-        key: update_type(key, target, []).resolve(0)
-        for key, target in target_by_key.items()
-    }
-    result = {
-        key: list(update.iter_text_matches(prompt, mock_tokenizer))
-        for key, update in prompt_updates.items()
-    }
+    prompt_updates = {key: update_type(key, target, []).resolve(0) for key, target in target_by_key.items()}
+    result = {key: list(update.iter_text_matches(prompt, mock_tokenizer)) for key, update in prompt_updates.items()}
 
     # Only displayed on error
     print("result:", result)
 
     # Manually constructed results
     assert {
-        key: [
-            dict(start_idx=item.start_idx, end_idx=item.end_idx)
-            for item in result.get(key, [])
-        ]
+        key: [dict(start_idx=item.start_idx, end_idx=item.end_idx) for item in result.get(key, [])]
         for key in expected_by_key
     } == expected_by_key
 
@@ -547,10 +529,7 @@ def test_find_update_text(
     ) in expected_by_update_type_mm_count.items():
         for mm_count, expected in expected_by_mm_count.items():
             mm_prompt_updates = {
-                key: [
-                    [update_type(key, target, repl_by_key[key]).resolve(i)]
-                    for i in range(mm_count)
-                ]
+                key: [[update_type(key, target, repl_by_key[key]).resolve(i)] for i in range(mm_count)]
                 for key, target in target_by_key.items()
             }
 
@@ -752,10 +731,7 @@ def test_find_update_tokens(
     ) in expected_by_update_type_mm_count.items():
         for mm_count, expected in expected_by_mm_count.items():
             mm_prompt_updates = {
-                key: [
-                    [update_type(key, target, repl_by_key[key]).resolve(i)]
-                    for i in range(mm_count)
-                ]
+                key: [[update_type(key, target, repl_by_key[key]).resolve(i)] for i in range(mm_count)]
                 for key, target in target_by_key.items()
             }
 
@@ -897,8 +873,7 @@ def test_find_mm_placeholders(
     mock_tokenizer = cast(AnyTokenizer, object())
 
     mm_prompt_updates = {
-        key: [[update_type(key, [], repl).resolve(i)] for i in range(3)]
-        for key, repl in repl_by_key.items()
+        key: [[update_type(key, [], repl).resolve(i)] for i in range(3)] for key, repl in repl_by_key.items()
     }
 
     result = find_mm_placeholders(prompt, mm_prompt_updates, mock_tokenizer)

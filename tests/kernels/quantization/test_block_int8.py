@@ -58,7 +58,7 @@ def test_w8a8_block_int8_matmul(M, N, K, block_size, out_dtype, seed):
     ref_out = native_w8a8_block_matmul(A_fp8, B_fp8, As, Bs, block_size, out_dtype)
     out = w8a8_block_int8_matmul(A_fp8, B_fp8, As, Bs, block_size, out_dtype)
 
-    rel_diff = torch.mean(
-        torch.abs(out.to(torch.float32) - ref_out.to(torch.float32))
-    ) / torch.mean(torch.abs(ref_out.to(torch.float32)))
+    rel_diff = torch.mean(torch.abs(out.to(torch.float32) - ref_out.to(torch.float32))) / torch.mean(
+        torch.abs(ref_out.to(torch.float32))
+    )
     assert rel_diff < 0.001

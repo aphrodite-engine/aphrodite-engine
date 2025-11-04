@@ -1,8 +1,7 @@
 import pytest
 
 from aphrodite.endpoints.openai.protocol import ExtractedToolCallInformation
-from aphrodite.endpoints.openai.tool_parsers.llama_tool_parser import (
-    Llama3JsonToolParser)
+from aphrodite.endpoints.openai.tool_parsers.llama_tool_parser import Llama3JsonToolParser
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 
@@ -13,10 +12,7 @@ def parser(default_tokenizer: AnyTokenizer):
 
 def test_extract_tool_calls_simple(parser):
     # Test with a simple tool call
-    model_output = (
-        'Here is the result: {"name": "getOpenIncidentsTool", '
-        '"parameters": {}} Would you like to know more?'
-    )
+    model_output = 'Here is the result: {"name": "getOpenIncidentsTool", "parameters": {}} Would you like to know more?'
     result = parser.extract_tool_calls(model_output, None)
 
     assert isinstance(result, ExtractedToolCallInformation)
@@ -30,9 +26,7 @@ def test_extract_tool_calls_simple(parser):
 
 def test_extract_tool_calls_with_arguments(parser):
     # Test with a tool call that has arguments
-    model_output = (
-        '{"name": "searchTool", "parameters": {"query": "test query", "limit": 10}}'
-    )
+    model_output = '{"name": "searchTool", "parameters": {"query": "test query", "limit": 10}}'
     result = parser.extract_tool_calls(model_output, None)
 
     assert result.tools_called is True

@@ -21,18 +21,22 @@ from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig
 from aphrodite.distributed import get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import GeluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.mamba.mamba_mixer2 import MambaMixer2
-from aphrodite.modeling.layers.mamba.mamba_utils import (
-    MambaStateDtypeCalculator, MambaStateShapeCalculator)
+from aphrodite.modeling.layers.mamba.mamba_utils import MambaStateDtypeCalculator, MambaStateShapeCalculator
 from aphrodite.modeling.layers.rotary_embedding import get_rope
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
@@ -65,9 +69,7 @@ class Zamba2LoRA(nn.Module):
         """
         super().__init__()
 
-        self.A = ColumnParallelLinear(
-            input_dim, rank, bias=False, quant_config=quant_config, gather_output=True
-        )
+        self.A = ColumnParallelLinear(input_dim, rank, bias=False, quant_config=quant_config, gather_output=True)
 
         if isinstance(output_dim, list):
             B_class = MergedColumnParallelLinear
@@ -125,9 +127,7 @@ class Zamba2Attention(nn.Module):
         self.qkv_size = self.attention_hidden_size // tp_size
         self.scale = (self.attention_head_dim / 2) ** -0.5
 
-        if (
-            self.attention_head_dim * self.total_num_attention_heads
-        ) != self.attention_hidden_size:
+        if (self.attention_head_dim * self.total_num_attention_heads) != self.attention_hidden_size:
             raise ValueError(
                 f"attention_hidden_size must be divisible by"
                 f" num_attention_heads"
@@ -156,11 +156,7 @@ class Zamba2Attention(nn.Module):
 
         # Initialize attention blocks with proper indexing
         self.dpa_list = nn.ModuleList([])
-        j = (
-            bare_block_idx
-            * (self.num_hybrid_layers + config.num_mem_blocks - 1)
-            // config.num_mem_blocks
-        )
+        j = bare_block_idx * (self.num_hybrid_layers + config.num_mem_blocks - 1) // config.num_mem_blocks
         for block_idx in range(self.num_hybrid_layers):
             if block_idx % config.num_mem_blocks == bare_block_idx:
                 dpa = Attention(
@@ -257,9 +253,7 @@ class Zamba2Attention(nn.Module):
             value_states = value_states + v_lora_output
 
         if self.config.use_mem_rope:
-            query_states, key_states = self.rotary_emb(
-                position_ids, query_states, key_states
-            )
+            query_states, key_states = self.rotary_emb(position_ids, query_states, key_states)
 
         y = self.dpa_list[block_idx](query_states, key_states, value_states)
         y, _ = self.o_proj(y)
@@ -314,10 +308,7 @@ class Zamba2MLP(nn.Module):
 
         # Only allow GELU activations
         if config.hidden_act != "gelu":
-            raise ValueError(
-                f"Only GELU activation is supported "
-                f"(got `hidden_act`: {config.hidden_act})"
-            )
+            raise ValueError(f"Only GELU activation is supported (got `hidden_act`: {config.hidden_act})")
         self.act_fn = GeluAndMul()
 
         # Initialize adapter layers
@@ -441,9 +432,7 @@ class Zamba2AttentionDecoderLayer(nn.Module):
         # (which is the output of the previous (mamba) layer).
         # The concatenated tensor is then used as input of the pre-attention
         # RMSNorm (see fig. 2 in https://arxiv.org/pdf/2405.16712).
-        hidden_states = torch.concatenate(
-            [hidden_states, original_hidden_states], dim=-1
-        )
+        hidden_states = torch.concatenate([hidden_states, original_hidden_states], dim=-1)
 
         # Layer norm before attention
         hidden_states = self.input_layernorm(hidden_states)
@@ -669,11 +658,7 @@ class Zamba2Model(nn.Module):
         assert not is_lora_enabled
 
         self.config = config
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -685,10 +670,7 @@ class Zamba2Model(nn.Module):
         )
 
         # Map hybrid layer indices to block indices
-        layer2block_map = {
-            layer_idx: block_idx
-            for block_idx, layer_idx in enumerate(config.hybrid_layer_ids)
-        }
+        layer2block_map = {layer_idx: block_idx for block_idx, layer_idx in enumerate(config.hybrid_layer_ids)}
 
         # Create cyclic iterator of transformer blocks
         blocks = cycle(
@@ -901,9 +883,7 @@ class Zamba2ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsMambaPrefixC
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
 
         # Initialize core model
-        self.model = Zamba2Model(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = Zamba2Model(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
 
         # Initialize language modeling head
         self.lm_head = ParallelLMHead(
@@ -921,9 +901,7 @@ class Zamba2ForCausalLM(nn.Module, HasInnerState, IsHybrid, SupportsMambaPrefixC
         self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
 
         # Initialize logits processing and sampling
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Convert input token IDs to embeddings.

@@ -1,19 +1,12 @@
 import pytest
 import torch
-
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              set_current_aphrodite_config)
 from aphrodite.modeling.custom_op import CustomOp
-from aphrodite.modeling.layers.activation import (GeluAndMul,
-                                                  ReLUSquaredActivation,
-                                                  SiluAndMul)
-from aphrodite.modeling.layers.fused_moe.fused_moe import (
-    aphrodite_topk_softmax, dispatch_topk_func)
-from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import (
-    is_rocm_aiter_moe_enabled)
-from aphrodite.modeling.layers.layernorm import (RMSNorm,
-                                                 dispatch_rocm_rmsnorm_func,
-                                                 fused_add_rms_norm, rms_norm)
+
+from aphrodite.config import AphroditeConfig, CompilationConfig, set_current_aphrodite_config
+from aphrodite.modeling.layers.activation import GeluAndMul, ReLUSquaredActivation, SiluAndMul
+from aphrodite.modeling.layers.fused_moe.fused_moe import aphrodite_topk_softmax, dispatch_topk_func
+from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import is_rocm_aiter_moe_enabled
+from aphrodite.modeling.layers.layernorm import RMSNorm, dispatch_rocm_rmsnorm_func, fused_add_rms_norm, rms_norm
 from aphrodite.platforms import current_platform
 
 RMS_NORM_SUPPORTED_DTYPES = [torch.float16, torch.bfloat16]
@@ -74,9 +67,7 @@ def test_enabled_ops(
 ):
     custom_ops = env.split(",") if env else []
     aphrodite_config = AphroditeConfig(
-        compilation_config=CompilationConfig(
-            backend=backend, mode=compilation_mode, custom_ops=custom_ops
-        )
+        compilation_config=CompilationConfig(backend=backend, mode=compilation_mode, custom_ops=custom_ops)
     )
     with set_current_aphrodite_config(aphrodite_config):
         assert CustomOp.default_on() == default_on
@@ -104,14 +95,10 @@ def test_enabled_ops(
         assert SiluAndMul2().enabled() == SiluAndMul().enabled()
 
 
-@pytest.mark.parametrize(
-    "env", ["all,none", "all,+rms_norm,all", "+rms_norm,-rms_norm"]
-)
+@pytest.mark.parametrize("env", ["all,none", "all,+rms_norm,all", "+rms_norm,-rms_norm"])
 def test_enabled_ops_invalid(env: str):
     with pytest.raises(Exception):  # noqa
-        aphrodite_config = AphroditeConfig(
-            compilation_config=CompilationConfig(custom_ops=env.split(","))
-        )
+        aphrodite_config = AphroditeConfig(compilation_config=CompilationConfig(custom_ops=env.split(",")))
         with set_current_aphrodite_config(aphrodite_config):
             RMSNorm(1024).enabled()
 
@@ -122,8 +109,7 @@ def test_topk_dispatch(use_rocm_aiter: str, monkeypatch):
     topk_func = dispatch_topk_func()
     is_rocm_aiter_moe_enabled.cache_clear()
     if current_platform.is_rocm() and int(use_rocm_aiter):
-        from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import (
-            rocm_aiter_topk_softmax)
+        from aphrodite.modeling.layers.fused_moe.rocm_aiter_fused_moe import rocm_aiter_topk_softmax
 
         assert topk_func == rocm_aiter_topk_softmax
     else:
@@ -134,9 +120,7 @@ def test_topk_dispatch(use_rocm_aiter: str, monkeypatch):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("use_rocm_aiter", ["0", "1"])
 @pytest.mark.parametrize("use_rocm_aiter_norm", ["0", "1"])
-@pytest.mark.skipif(
-    not current_platform.is_rocm(), reason="AITER is a feature exclusive for ROCm"
-)
+@pytest.mark.skipif(not current_platform.is_rocm(), reason="AITER is a feature exclusive for ROCm")
 def test_rms_norm_dispatch(
     add_residual: bool,
     dtype: torch.dtype,

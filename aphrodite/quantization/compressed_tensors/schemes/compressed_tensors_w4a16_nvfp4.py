@@ -3,13 +3,9 @@ from collections.abc import Callable
 import torch
 from torch.nn.parameter import Parameter
 
-from aphrodite.modeling.parameter import (GroupQuantScaleParameter,
-                                          ModelWeightParameter,
-                                          PerTensorScaleParameter)
-from aphrodite.quantization.compressed_tensors.schemes import (
-    CompressedTensorsScheme)
-from aphrodite.quantization.utils.marlin_utils_fp4 import (
-    apply_fp4_marlin_linear, prepare_fp4_layer_for_marlin)
+from aphrodite.modeling.parameter import GroupQuantScaleParameter, ModelWeightParameter, PerTensorScaleParameter
+from aphrodite.quantization.compressed_tensors.schemes import CompressedTensorsScheme
+from aphrodite.quantization.utils.marlin_utils_fp4 import apply_fp4_marlin_linear, prepare_fp4_layer_for_marlin
 
 __all__ = ["CompressedTensorsW4A16Fp4"]
 
@@ -87,15 +83,11 @@ class CompressedTensorsW4A16Fp4(CompressedTensorsScheme):
         del layer.weight_packed
         # Rename weight_global_scale to weight_scale_2 that marlin expects
         # Note: ct stores the inverse of what is expected by the marlin kernel
-        layer.weight_scale_2 = Parameter(
-            1 / layer.weight_global_scale.max().to(torch.float32), requires_grad=False
-        )
+        layer.weight_scale_2 = Parameter(1 / layer.weight_global_scale.max().to(torch.float32), requires_grad=False)
         del layer.weight_global_scale
 
         if self.has_input_global_scale:
-            layer.input_global_scale = torch.nn.Parameter(
-                layer.input_global_scale.data, requires_grad=False
-            )
+            layer.input_global_scale = torch.nn.Parameter(layer.input_global_scale.data, requires_grad=False)
 
         prepare_fp4_layer_for_marlin(layer)
 

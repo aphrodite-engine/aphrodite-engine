@@ -17,9 +17,7 @@ def bgmv_shrink(
     lora_indices_tensor: torch.Tensor,
     scaling: float = 1.0,
 ) -> None:
-    ipex.llm.functional.bgmv_shrink(
-        inputs, lora_a_weights, output_tensor, lora_indices_tensor, scaling
-    )
+    ipex.llm.functional.bgmv_shrink(inputs, lora_a_weights, output_tensor, lora_indices_tensor, scaling)
 
 
 def bgmv_expand(
@@ -29,9 +27,7 @@ def bgmv_expand(
     lora_indices_tensor: torch.Tensor,
     add_inputs: bool = True,
 ) -> None:
-    ipex.llm.functional.bgmv_expand(
-        inputs, lora_b_weights, output_tensor, lora_indices_tensor, add_inputs
-    )
+    ipex.llm.functional.bgmv_expand(inputs, lora_b_weights, output_tensor, lora_indices_tensor, add_inputs)
 
 
 def bgmv_expand_slice(

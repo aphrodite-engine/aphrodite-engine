@@ -182,9 +182,9 @@ void rms_norm(torch::Tensor& out,     // [..., hidden_size]
 }
 
 #define LAUNCH_FUSED_ADD_RMS_NORM(width)                                    \
-  APHRODITE_DISPATCH_FLOATING_TYPES(                                             \
+  APHRODITE_DISPATCH_FLOATING_TYPES(                                        \
       input.scalar_type(), "fused_add_rms_norm_kernel", [&] {               \
-        aphrodite::fused_add_rms_norm_kernel<scalar_t, width>                    \
+        aphrodite::fused_add_rms_norm_kernel<scalar_t, width>               \
             <<<grid, block, 0, stream>>>(                                   \
                 input.data_ptr<scalar_t>(), input_stride,                   \
                 residual.data_ptr<scalar_t>(), weight.data_ptr<scalar_t>(), \

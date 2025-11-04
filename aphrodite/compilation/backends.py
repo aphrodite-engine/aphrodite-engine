@@ -14,8 +14,7 @@ from torch._dispatch.python import enable_python_dispatcher
 
 import aphrodite.envs as envs
 from aphrodite.compilation.inductor_pass import pass_context
-from aphrodite.compilation.partition_rules import (
-    inductor_partition_rule_context, resolve_defined_ops)
+from aphrodite.compilation.partition_rules import inductor_partition_rule_context, resolve_defined_ops
 from aphrodite.config import AphroditeConfig, CompilationConfig, CUDAGraphMode
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
@@ -23,8 +22,7 @@ from aphrodite.utils.import_utils import resolve_obj_by_qualname
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 
 from .caching import AphroditeSerializableFunction
-from .compiler_interface import (CompilerInterface, EagerAdaptor,
-                                 InductorAdaptor, InductorStandaloneAdaptor)
+from .compiler_interface import CompilerInterface, EagerAdaptor, InductorAdaptor, InductorStandaloneAdaptor
 from .counter import compilation_counter
 from .inductor_pass import InductorPass
 from .pass_manager import PostGradPassManager
@@ -86,17 +84,13 @@ class CompilerManager:
         compilation (e.g. partition rules, pass context)."""
         with pass_context(runtime_shape):
             if self.compilation_config.use_inductor_graph_partition:
-                inductor_partition_ops = resolve_defined_ops(
-                    self.compilation_config.splitting_ops
-                )
+                inductor_partition_ops = resolve_defined_ops(self.compilation_config.splitting_ops)
                 with inductor_partition_rule_context(inductor_partition_ops):
                     yield
             else:
                 yield
 
-    def initialize_cache(
-        self, cache_dir: str, disable_cache: bool = False, prefix: str = ""
-    ):
+    def initialize_cache(self, cache_dir: str, disable_cache: bool = False, prefix: str = ""):
         """
         Initialize the cache directory for the compiler.
 
@@ -124,9 +118,7 @@ class CompilerManager:
                 # do not use eval(), it is unsafe.
                 self.cache = ast.literal_eval(f.read())
 
-        self.compiler.initialize_cache(
-            cache_dir=cache_dir, disable_cache=disable_cache, prefix=prefix
-        )
+        self.compiler.initialize_cache(cache_dir=cache_dir, disable_cache=disable_cache, prefix=prefix)
 
     def save_to_file(self):
         if self.disable_cache or not self.is_cache_updated:
@@ -146,9 +138,7 @@ class CompilerManager:
         if (runtime_shape, graph_index, self.compiler.name) not in self.cache:
             return None
         handle = self.cache[(runtime_shape, graph_index, self.compiler.name)]
-        compiled_graph = self.compiler.load(
-            handle, graph, example_inputs, graph_index, runtime_shape
-        )
+        compiled_graph = self.compiler.load(handle, graph, example_inputs, graph_index, runtime_shape)
         if runtime_shape is None:
             logger.debug(
                 "Directly load the %s-th graph for dynamic shape from %s via handle %s",
@@ -196,15 +186,13 @@ class CompilerManager:
                 compilation_config.compilation_time += elapsed
                 if runtime_shape is None:
                     logger.debug_once(
-                        "Directly load the compiled graph(s) for dynamic shape "
-                        "from the cache, took %.3f s",
+                        "Directly load the compiled graph(s) for dynamic shape from the cache, took %.3f s",
                         elapsed,
-                        scope="global"
+                        scope="global",
                     )
                 else:
                     logger.debug_once(
-                        "Directly load the compiled graph(s) for shape %s "
-                        "from the cache, took %.3f s",
+                        "Directly load the compiled graph(s) for shape %s from the cache, took %.3f s",
                         str(runtime_shape),
                         elapsed,
                     )
@@ -237,9 +225,7 @@ class CompilerManager:
             if graph_index == 0:
                 # adds some info logging for the first graph
                 if runtime_shape is None:
-                    logger.debug_once(
-                        "Cache the graph for dynamic shape for later use", scope="local"
-                    )
+                    logger.debug_once("Cache the graph for dynamic shape for later use", scope="local")
                 else:
                     logger.debug_once(
                         "Cache the graph of shape %s for later use",
@@ -305,8 +291,7 @@ def split_graph(
         # Match node.target against resolved_ops
         # node.target can be OpOverloadPacket, need to check .default
         if node.op == "call_function" and (
-            node.target in resolved_ops
-            or (hasattr(node.target, "default") and node.target.default in resolved_ops)
+            node.target in resolved_ops or (hasattr(node.target, "default") and node.target.default in resolved_ops)
         ):
             subgraph_id += 1
             node_to_subgraph_id[node] = subgraph_id
@@ -383,10 +368,7 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
         self.progress_task = None
 
     def run(self, *args):
-        fake_args = [
-            self.fake_mode.from_tensor(t) if isinstance(t, torch.Tensor) else t
-            for t in args
-        ]
+        fake_args = [self.fake_mode.from_tensor(t) if isinstance(t, torch.Tensor) else t for t in args]
         with self.fake_mode, enable_python_dispatcher():
             return super().run(*fake_args)
 
@@ -402,9 +384,7 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
         if target in self.compile_submod_names:
             index = self.compile_submod_names.index(target)
             submod = self.fetch_attr(target)
-            sym_shape_indices = [
-                i for i, x in enumerate(args) if isinstance(x, torch.SymInt)
-            ]
+            sym_shape_indices = [i for i, x in enumerate(args) if isinstance(x, torch.SymInt)]
 
             from aphrodite.distributed.parallel_state import is_global_first_rank
 
@@ -416,6 +396,7 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
                     TextColumn,
                     TimeRemainingColumn,
                 )
+
                 from aphrodite.utils import get_progress_log_prefix
 
                 log_prefix = get_progress_log_prefix()
@@ -429,29 +410,24 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
                     TimeRemainingColumn(),
                 )
                 self.progress.start()
-                self.progress_task = self.progress.add_task(
-                    "Compiling piecewise graphs", total=self.total_to_compile
-                )
+                self.progress_task = self.progress.add_task("Compiling piecewise graphs", total=self.total_to_compile)
 
             if self.progress_task is not None:
                 self.progress.update(
                     self.progress_task,
-                    description=f"torch.compile ({self.compiled_count + 1}/"
-                    f"{self.total_to_compile})",
+                    description=f"torch.compile ({self.compiled_count + 1}/{self.total_to_compile})",
                 )
 
             global compilation_start_time
 
-            compiled_graph_for_dynamic_shape = (
-                self.aphrodite_backend.compiler_manager.compile(
-                    submod,
-                    args,
-                    self.compilation_config.inductor_compile_config,
-                    self.compilation_config,
-                    graph_index=index,
-                    num_graphs=len(self.compile_submod_names),
-                    runtime_shape=None,
-                )
+            compiled_graph_for_dynamic_shape = self.aphrodite_backend.compiler_manager.compile(
+                submod,
+                args,
+                self.compilation_config.inductor_compile_config,
+                self.compilation_config,
+                graph_index=index,
+                num_graphs=len(self.compile_submod_names),
+                runtime_shape=None,
             )
             # Lazy import here to avoid circular import
             from .piecewise_backend import PiecewiseBackend
@@ -476,9 +452,7 @@ class PiecewiseCompileInterpreter(torch.fx.Interpreter):
 
                 # resolve the static graph wrapper class (e.g. CUDAGraphWrapper
                 # class) as platform dependent.
-                static_graph_wrapper_class = resolve_obj_by_qualname(
-                    current_platform.get_static_graph_wrapper_cls()
-                )
+                static_graph_wrapper_class = resolve_obj_by_qualname(current_platform.get_static_graph_wrapper_cls())
 
                 # Always assign PIECEWISE runtime mode to the
                 # CUDAGraphWrapper for piecewise_backend, to distinguish
@@ -522,9 +496,7 @@ model_tag: str = "backbone"
 def set_model_tag(tag: str):
     """Context manager to set the model tag."""
     global model_tag
-    assert tag != model_tag, (
-        f"Model tag {tag} is the same as the current tag {model_tag}."
-    )
+    assert tag != model_tag, f"Model tag {tag} is the same as the current tag {model_tag}."
     old_tag = model_tag
     model_tag = tag
     try:
@@ -582,9 +554,7 @@ class AphroditeBackend:
         self.aphrodite_config = aphrodite_config
         self.compilation_config = aphrodite_config.compilation_config
 
-        self.compiler_manager: CompilerManager = CompilerManager(
-            self.compilation_config
-        )
+        self.compiler_manager: CompilerManager = CompilerManager(self.compilation_config)
 
         # `torch.compile` is JIT compiled, so we don't need to
         # do anything here
@@ -600,21 +570,15 @@ class AphroditeBackend:
         if PASS_KEY in inductor_config:
             if isinstance(inductor_config[PASS_KEY], PostGradPassManager):
                 # PassManager already added to config, make sure it's correct
-                assert (
-                    inductor_config[PASS_KEY].uuid()
-                    == self.post_grad_pass_manager.uuid()
-                )
+                assert inductor_config[PASS_KEY].uuid() == self.post_grad_pass_manager.uuid()
             else:
                 # Config should automatically wrap all inductor passes
                 assert isinstance(inductor_config[PASS_KEY], InductorPass)
                 self.post_grad_pass_manager.add(inductor_config[PASS_KEY])
         inductor_config[PASS_KEY] = self.post_grad_pass_manager
 
-    def __call__(
-        self, graph: fx.GraphModule, example_inputs
-    ) -> AphroditeSerializableFunction:
-        from .caching import (_compute_code_hash,
-                              compilation_config_hash_factors)
+    def __call__(self, graph: fx.GraphModule, example_inputs) -> AphroditeSerializableFunction:
+        from .caching import _compute_code_hash, compilation_config_hash_factors
 
         aphrodite_config = self.aphrodite_config
         if not self.compilation_config.cache_dir:
@@ -635,9 +599,7 @@ class AphroditeBackend:
             factors.append(compiler_hash)
 
             # combine all factors to generate the cache dir
-            hash_key = hashlib.md5(
-                str(factors).encode(), usedforsecurity=False
-            ).hexdigest()[:10]
+            hash_key = hashlib.md5(str(factors).encode(), usedforsecurity=False).hexdigest()[:10]
 
             cache_dir = os.path.join(
                 envs.APHRODITE_CACHE_ROOT,
@@ -660,7 +622,7 @@ class AphroditeBackend:
         # when dynamo calls the backend, it means the bytecode
         # transform and analysis are done
         compilation_counter.num_graphs_seen += 1
-        from .monitor import torch_compile_start_time, dynamo_progress_task
+        from .monitor import dynamo_progress_task, torch_compile_start_time
 
         dynamo_time = time.time() - torch_compile_start_time
 
@@ -669,12 +631,11 @@ class AphroditeBackend:
             progress, _ = dynamo_progress_task
             progress.stop()
             from . import monitor
+
             monitor.dynamo_progress_task = None
 
         # Log in order: Dynamo time first, then cache directory
-        logger.debug_once(
-            "Dynamo bytecode transform time: %.2fs", dynamo_time, scope="local"
-        )
+        logger.debug_once("Dynamo bytecode transform time: %.2fs", dynamo_time, scope="local")
         self.compilation_config.compilation_time += dynamo_time
 
         if disable_cache:
@@ -686,9 +647,7 @@ class AphroditeBackend:
                 scope="local",
             )
 
-        self.compiler_manager.initialize_cache(
-            local_cache_dir, disable_cache, self.prefix
-        )
+        self.compiler_manager.initialize_cache(local_cache_dir, disable_cache, self.prefix)
 
         # we control the compilation process, each instance can only be
         # called once
@@ -714,34 +673,27 @@ class AphroditeBackend:
         lazy_format_graph_code("after split", self.split_gm)
 
         compilation_counter.num_piecewise_graphs_seen += len(self.piecewise_graphs)
-        submod_names_to_compile = [
-            item.submod_name
-            for item in self.piecewise_graphs
-            if not item.is_splitting_graph
-        ]
+        submod_names_to_compile = [item.submod_name for item in self.piecewise_graphs if not item.is_splitting_graph]
 
         # propagate the split graph to the piecewise backend,
         # compile submodules with symbolic shapes
-        PiecewiseCompileInterpreter(
-            self.split_gm, submod_names_to_compile, self.aphrodite_config, self
-        ).run(*example_inputs)
+        PiecewiseCompileInterpreter(self.split_gm, submod_names_to_compile, self.aphrodite_config, self).run(
+            *example_inputs
+        )
 
         graph_path = os.path.join(local_cache_dir, "computation_graph.py")
         if not os.path.exists(graph_path):
             # code adapted from
             # https://github.com/thuml/depyf/blob/dab831108a752d1facc00acdd6d4243891845c37/depyf/explain/patched_lazy_format_graph_code.py#L30
             # use `print_readable` because it can include submodules
-            src = (
-                "from __future__ import annotations\nimport torch\n"
-                + self.split_gm.print_readable(print_output=False)
+            src = "from __future__ import annotations\nimport torch\n" + self.split_gm.print_readable(
+                print_output=False
             )
             src = src.replace("<lambda>", "GraphModule")
             with open(graph_path, "w") as f:
                 f.write(src)
 
-            logger.debug_once(
-                "Computation graph saved to %s", graph_path, scope="local"
-            )
+            logger.debug_once("Computation graph saved to %s", graph_path, scope="local")
 
         self._called = True
 
@@ -749,18 +701,13 @@ class AphroditeBackend:
             self.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
             or not self.compilation_config.cudagraph_copy_inputs
         ):
-            return AphroditeSerializableFunction(
-                graph, example_inputs, self.prefix, self.split_gm
-            )
+            return AphroditeSerializableFunction(graph, example_inputs, self.prefix, self.split_gm)
 
         # if we need to copy input buffers for cudagraph
         from torch._guards import detect_fake_mode
 
         fake_mode = detect_fake_mode()
-        fake_args = [
-            fake_mode.from_tensor(t) if isinstance(t, torch.Tensor) else t
-            for t in example_inputs
-        ]
+        fake_args = [fake_mode.from_tensor(t) if isinstance(t, torch.Tensor) else t for t in example_inputs]
 
         # index of tensors that have symbolic shapes (batch size)
         # for weights and static buffers, they will have concrete shapes.
@@ -770,16 +717,13 @@ class AphroditeBackend:
         self.sym_tensor_indices = [
             i
             for i, x in enumerate(fake_args)
-            if isinstance(x, torch._subclasses.fake_tensor.FakeTensor)
-            and any(is_symbolic(d) for d in x.size())
+            if isinstance(x, torch._subclasses.fake_tensor.FakeTensor) and any(is_symbolic(d) for d in x.size())
         ]
 
         # compiler managed cudagraph input buffers
         # we assume the first run with symbolic shapes
         # has the maximum size among all the tensors
-        self.input_buffers = [
-            example_inputs[x].clone() for x in self.sym_tensor_indices
-        ]
+        self.input_buffers = [example_inputs[x].clone() for x in self.sym_tensor_indices]
 
         # this is the callable we return to Dynamo to run
         def copy_and_call(*args):
@@ -796,6 +740,4 @@ class AphroditeBackend:
                 list_args[index] = static_tensor
             return self.split_gm(*list_args)
 
-        return AphroditeSerializableFunction(
-            graph, example_inputs, self.prefix, copy_and_call
-        )
+        return AphroditeSerializableFunction(graph, example_inputs, self.prefix, copy_and_call)

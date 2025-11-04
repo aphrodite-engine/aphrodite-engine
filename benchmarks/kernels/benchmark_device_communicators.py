@@ -94,15 +94,11 @@ class CommunicatorBenchmark:
             else:
                 logger.info("Rank %s: CustomAllreduce disabled", self.rank)
         except Exception as e:
-            logger.warning(
-                "Rank %s: Failed to initialize CustomAllreduce: %s", self.rank, e
-            )
+            logger.warning("Rank %s: Failed to initialize CustomAllreduce: %s", self.rank, e)
             self.custom_allreduce = None
 
         try:
-            self.pynccl_comm = PyNcclCommunicator(
-                group=self.cpu_group, device=self.device
-            )
+            self.pynccl_comm = PyNcclCommunicator(group=self.cpu_group, device=self.device)
             if not self.pynccl_comm.disabled:
                 logger.info("Rank %s: PyNcclCommunicator initialized", self.rank)
                 register_nccl_symmetric_ops(self.pynccl_comm)
@@ -110,9 +106,7 @@ class CommunicatorBenchmark:
                 logger.info("Rank %s: PyNcclCommunicator disabled", self.rank)
                 self.pynccl_comm = None
         except Exception as e:
-            logger.warning(
-                "Rank %s: Failed to initialize PyNcclCommunicator: %s", self.rank, e
-            )
+            logger.warning("Rank %s: Failed to initialize PyNcclCommunicator: %s", self.rank, e)
             self.pynccl_comm = None
 
         # Initialize variants for SymmMemCommunicator
@@ -124,9 +118,7 @@ class CommunicatorBenchmark:
                 max_size_override=self.max_size_override,
             )
             if not self.symm_mem_comm_multimem.disabled:
-                logger.info(
-                    "Rank %s: SymmMemCommunicator (multimem) initialized", self.rank
-                )
+                logger.info("Rank %s: SymmMemCommunicator (multimem) initialized", self.rank)
             else:
                 self.symm_mem_comm_multimem = None
         except Exception as e:
@@ -145,9 +137,7 @@ class CommunicatorBenchmark:
                 max_size_override=self.max_size_override,
             )
             if not self.symm_mem_comm_two_shot.disabled:
-                logger.info(
-                    "Rank %s: SymmMemCommunicator (two_shot) initialized", self.rank
-                )
+                logger.info("Rank %s: SymmMemCommunicator (two_shot) initialized", self.rank)
             else:
                 self.symm_mem_comm_two_shot = None
         except Exception as e:
@@ -158,9 +148,7 @@ class CommunicatorBenchmark:
             )
             self.symm_mem_comm_two_shot = None
 
-    def benchmark_allreduce(
-        self, sequence_length: int, num_warmup: int, num_trials: int
-    ) -> dict[str, float]:
+    def benchmark_allreduce(self, sequence_length: int, num_warmup: int, num_trials: int) -> dict[str, float]:
         """Benchmark allreduce operations for all available communicators."""
 
         results = {}
@@ -270,9 +258,7 @@ class CommunicatorBenchmark:
         """Benchmark method with CUDA graph optimization."""
         try:
             # Create test tensor (2D: sequence_length x hidden_size)
-            tensor = torch.randn(
-                sequence_length, HIDDEN_SIZE, dtype=BENCHMARK_DTYPE, device=self.device
-            )
+            tensor = torch.randn(sequence_length, HIDDEN_SIZE, dtype=BENCHMARK_DTYPE, device=self.device)
             if not should_use_fn(tensor):
                 return None
 
@@ -309,15 +295,11 @@ class CommunicatorBenchmark:
             end_time = time.perf_counter()
 
             # Convert to ms and divide by CUDA_GRAPH_CAPTURE_CYCLES
-            return (
-                (end_time - start_time) / num_trials / CUDA_GRAPH_CAPTURE_CYCLES * 1000
-            )
+            return (end_time - start_time) / num_trials / CUDA_GRAPH_CAPTURE_CYCLES * 1000
 
         except Exception as e:
             logger.error("CUDA graph benchmark failed: %s", e)
-            raise RuntimeError(
-                f"CUDA graph benchmark failed for communicator: {e}"
-            ) from e
+            raise RuntimeError(f"CUDA graph benchmark failed for communicator: {e}") from e
 
 
 def _calculate_speedup_info(comm_results: dict[str, float]) -> str:
@@ -338,17 +320,12 @@ def _calculate_speedup_info(comm_results: dict[str, float]) -> str:
         return f"{fastest_comm} (N/A)"
 
 
-def print_results(
-    results: dict[str, dict[str, float]], sequence_lengths: list[int], world_size: int
-):
+def print_results(results: dict[str, dict[str, float]], sequence_lengths: list[int], world_size: int):
     """Print benchmark results in a formatted table."""
 
     print(f"\n{'=' * 130}")
     print("Device Communicator Benchmark Results")
-    print(
-        f"World Size: {world_size}, Data Type: {BENCHMARK_DTYPE}, "
-        f"Hidden Size: {HIDDEN_SIZE}"
-    )
+    print(f"World Size: {world_size}, Data Type: {BENCHMARK_DTYPE}, Hidden Size: {HIDDEN_SIZE}")
     print(f"{'=' * 130}")
 
     # Get all communicator names
@@ -409,13 +386,9 @@ def main():
         help="Sequence lengths to benchmark (tensor shape: seq_len x hidden_size)",
     )
 
-    parser.add_argument(
-        "--num-warmup", type=int, default=5, help="Number of warmup iterations"
-    )
+    parser.add_argument("--num-warmup", type=int, default=5, help="Number of warmup iterations")
 
-    parser.add_argument(
-        "--num-trials", type=int, default=50, help="Number of benchmark trials"
-    )
+    parser.add_argument("--num-trials", type=int, default=50, help="Number of benchmark trials")
 
     parser.add_argument("--output-json", type=str, help="Output results to JSON file")
 
@@ -439,9 +412,7 @@ def main():
     os.environ["APHRODITE_ALLREDUCE_USE_SYMM_MEM"] = "0"
 
     # Initialize benchmark
-    benchmark = CommunicatorBenchmark(
-        rank, world_size, device, cpu_group, args.sequence_lengths
-    )
+    benchmark = CommunicatorBenchmark(rank, world_size, device, cpu_group, args.sequence_lengths)
 
     # Run benchmarks
     all_results = {}

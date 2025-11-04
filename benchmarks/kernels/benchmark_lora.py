@@ -119,9 +119,7 @@ def make_prompt_lora_mapping(
     while len(prompt_lora_mapping) < num_prompts:
         prompt_lora_mapping.extend([lora_id] * part_size)
         lora_id = lora_id + 1 if lora_id + 1 < num_active_loras else lora_id
-    return torch.tensor(
-        prompt_lora_mapping[:num_prompts], dtype=torch.long, device=device
-    )
+    return torch.tensor(prompt_lora_mapping[:num_prompts], dtype=torch.long, device=device)
 
 
 def make_token_lora_mapping(
@@ -206,9 +204,7 @@ class OpType(Enum):
     def num_slices(self) -> list[int]:
         return [1, 2, 3]
 
-    def mkn(
-        self, batch_size: int, seq_length: int, hidden_size: int, lora_rank: int
-    ) -> tuple[int, int, int]:
+    def mkn(self, batch_size: int, seq_length: int, hidden_size: int, lora_rank: int) -> tuple[int, int, int]:
         num_tokens = batch_size * seq_length
         if self.is_shrink_fn():
             m = num_tokens
@@ -221,9 +217,7 @@ class OpType(Enum):
             n = hidden_size
         return m, k, n
 
-    def matmul_dtypes(
-        self, op_dtype: torch.dtype
-    ) -> tuple[torch.dtype, torch.dtype, torch.dtype]:
+    def matmul_dtypes(self, op_dtype: torch.dtype) -> tuple[torch.dtype, torch.dtype, torch.dtype]:
         """
         return a type, b type and c type for A x B = C
         """
@@ -331,9 +325,7 @@ class BenchmarkContext:
         return f"lora-{self.dtype}"
 
     def bench_sublabel(self, op_type: OpType) -> str:
-        m, k, n = op_type.mkn(
-            self.batch_size, self.seq_length, self.hidden_size, self.lora_rank
-        )
+        m, k, n = op_type.mkn(self.batch_size, self.seq_length, self.hidden_size, self.lora_rank)
         desc = {
             "bs": self.batch_size,
             "sl": self.seq_length,
@@ -371,9 +363,7 @@ class BenchmarkTensors:
         )
 
     @staticmethod
-    def make(
-        ctx: BenchmarkContext, op_type: OpType, device: str = "cuda"
-    ) -> "BenchmarkTensors":
+    def make(ctx: BenchmarkContext, op_type: OpType, device: str = "cuda") -> "BenchmarkTensors":
         # Make input / output matmul tensors.
         a_shape, b_shape, c_shape = op_type.matmul_shapes(
             ctx.batch_size,
@@ -396,9 +386,7 @@ class BenchmarkTensors:
 
         # Make metadata tensors involved in correctness testing.
         # Prepare seq lens tensor
-        seq_len_tensor = torch.randint(
-            ctx.seq_length, ctx.seq_length + 1, (ctx.batch_size,)
-        )
+        seq_len_tensor = torch.randint(ctx.seq_length, ctx.seq_length + 1, (ctx.batch_size,))
         assert total_tokens == seq_len_tensor.sum()
         # Prepare prompt lora indices tensor
         prompt_lora_indices_tensor = make_prompt_lora_mapping(
@@ -507,9 +495,7 @@ class BenchmarkTensors:
             "lora_a_weights": self.lora_weights_lst,
             "output_tensor": self.output,
             "token_lora_mapping": self.lora_kernel_meta.token_lora_mapping,
-            "token_indices_sorted_by_lora_ids": (
-                self.lora_kernel_meta.token_indices_sorted_by_lora_ids
-            ),
+            "token_indices_sorted_by_lora_ids": (self.lora_kernel_meta.token_indices_sorted_by_lora_ids),
             "num_tokens_per_lora": self.lora_kernel_meta.num_tokens_per_lora,
             "lora_token_start_loc": self.lora_kernel_meta.lora_token_start_loc,
             "lora_ids": self.lora_kernel_meta.active_lora_ids,
@@ -547,9 +533,7 @@ class BenchmarkTensors:
             "lora_b_weights": self.lora_weights_lst,
             "output_tensor": self.output,
             "token_lora_mapping": self.lora_kernel_meta.token_lora_mapping,
-            "token_indices_sorted_by_lora_ids": (
-                self.lora_kernel_meta.token_indices_sorted_by_lora_ids
-            ),
+            "token_indices_sorted_by_lora_ids": (self.lora_kernel_meta.token_indices_sorted_by_lora_ids),
             "num_tokens_per_lora": self.lora_kernel_meta.num_tokens_per_lora,
             "lora_token_start_loc": self.lora_kernel_meta.lora_token_start_loc,
             "lora_ids": self.lora_kernel_meta.active_lora_ids,
@@ -558,9 +542,7 @@ class BenchmarkTensors:
             "no_lora_flag_cpu": self.lora_kernel_meta.no_lora_flag_cpu,
         }
 
-    def bench_fn_kwargs(
-        self, op_type: OpType, add_inputs: bool | None = None
-    ) -> dict[str, Any]:
+    def bench_fn_kwargs(self, op_type: OpType, add_inputs: bool | None = None) -> dict[str, Any]:
         if op_type.is_shrink_fn():
             assert add_inputs is None
         else:
@@ -572,9 +554,7 @@ class BenchmarkTensors:
             return self.as_lora_expand_kwargs(add_inputs)
         raise ValueError(f"Unrecognized optype {self}")
 
-    def test_correctness(
-        self, op_type: OpType, expand_fn_add_inputs: bool | None
-    ) -> bool:
+    def test_correctness(self, op_type: OpType, expand_fn_add_inputs: bool | None) -> bool:
         """
         Test correctness of op_type implementation against a grouped gemm
         reference implementation.
@@ -620,23 +600,16 @@ def bench_optype(
         assert expand_fn_add_inputs is not None
 
     # BenchmarkContext -> BenchmarkTensors
-    bench_tensors: list[BenchmarkTensors] = [
-        BenchmarkTensors.make(ctx, op_type) for _ in range(arg_pool_size)
-    ]
+    bench_tensors: list[BenchmarkTensors] = [BenchmarkTensors.make(ctx, op_type) for _ in range(arg_pool_size)]
     for bt in bench_tensors:
         bt.sanity_check()
 
     # Test correctness of our implementation.
     if test_correctness:
-        assert all(
-            [bt.test_correctness(op_type, expand_fn_add_inputs) for bt in bench_tensors]
-        )
+        assert all([bt.test_correctness(op_type, expand_fn_add_inputs) for bt in bench_tensors])
 
     # BenchmarkTensors -> dict (kwargs)
-    kwargs_list = [
-        bt.bench_fn_kwargs(op_type, add_inputs=expand_fn_add_inputs)
-        for bt in bench_tensors
-    ]
+    kwargs_list = [bt.bench_fn_kwargs(op_type, add_inputs=expand_fn_add_inputs) for bt in bench_tensors]
 
     # Clear LoRA optimization hash-maps.
     _LORA_A_PTR_DICT.clear()
@@ -652,9 +625,7 @@ def bench_optype(
         for k, v in _kwargs.items():
             kwargs[k].values.append(v)
 
-    describe_args = (
-        f"add_inputs={expand_fn_add_inputs}" if expand_fn_add_inputs is not None else ""
-    )
+    describe_args = f"add_inputs={expand_fn_add_inputs}" if expand_fn_add_inputs is not None else ""
     description = f"{op_type.name}({describe_args}) ({bench_tensors[0].io_types()})"
 
     cuda_graph_params = None
@@ -711,9 +682,7 @@ def bench_torch_mm(
     mm_kwargs = {"input": ArgPool(As), "mat2": ArgPool(Bs), "out": ArgPool(Cs)}
 
     description = (
-        f"single-lora roofline using torch.mm ({dtype_to_str(dtype)}"
-        f"x{dtype_to_str(dtype)}"
-        f"=>{dtype_to_str(dtype)})"
+        f"single-lora roofline using torch.mm ({dtype_to_str(dtype)}x{dtype_to_str(dtype)}=>{dtype_to_str(dtype)})"
     )
     cuda_graph_params = None
     if cuda_graph_nops:
@@ -778,20 +747,12 @@ def run(args: argparse.Namespace, bench_ctxs: list[BenchmarkContext]):
             seq_len_timers = []
             for bench_op in bench_ops:
                 for num_slices in bench_op.num_slices():
-                    _ctx = bench_ctx.with_seq_length(seq_len).with_num_slices(
-                        num_slices
-                    )
+                    _ctx = bench_ctx.with_seq_length(seq_len).with_num_slices(num_slices)
                     # Benchmark torch.mm as a roofline
-                    seq_len_timers.append(
-                        bench_torch_mm(
-                            _ctx, args.arg_pool_size, bench_op, args.cuda_graph_nops
-                        )
-                    )
+                    seq_len_timers.append(bench_torch_mm(_ctx, args.arg_pool_size, bench_op, args.cuda_graph_nops))
 
                     # Benchmark bench_op
-                    expand_fn_add_inputs = (
-                        [None] if bench_op.is_shrink_fn() else args.expand_fn_add_inputs
-                    )
+                    expand_fn_add_inputs = [None] if bench_op.is_shrink_fn() else args.expand_fn_add_inputs
                     for add_input_arg in expand_fn_add_inputs:
                         seq_len_timers.append(
                             bench_optype(
@@ -841,9 +802,7 @@ def as_benchmark_contexts(
                 hidden_size=hidden_size,
                 lora_rank=lora_rank,
                 num_loras=num_loras,
-                num_active_loras=args.num_active_loras
-                if args.num_active_loras
-                else num_loras,
+                num_active_loras=args.num_active_loras if args.num_active_loras else num_loras,
                 # To be filled based on the OpType to benchmark
                 seq_length=None,
                 sort_by_lora_id=sort_by_lora_id,
@@ -859,11 +818,7 @@ def as_benchmark_contexts(
 def run_list_bench(args: argparse.Namespace):
     print(args)
 
-    print(
-        "List bench :\n"
-        f"  Hidden Sizes {args.hidden_sizes}"
-        f"  LoRA Ranks {args.lora_ranks}"
-    )
+    print(f"List bench :\n  Hidden Sizes {args.hidden_sizes}  LoRA Ranks {args.lora_ranks}")
 
     # Get all benchmarking contexts
     bench_contexts: list[BenchmarkContext] = as_benchmark_contexts(
@@ -883,9 +838,7 @@ def run_range_bench(args: argparse.Namespace):
             args.hidden_sizes_increment,
         )
     )
-    lora_ranks = list(
-        range(args.lora_ranks_start, args.lora_ranks_end + 1, args.lora_ranks_increment)
-    )
+    lora_ranks = list(range(args.lora_ranks_start, args.lora_ranks_end + 1, args.lora_ranks_increment))
 
     print(f"Range bench :\n Hidden Sizes {hidden_sizes} LoRA Ranks {lora_ranks}")
 
@@ -975,15 +928,9 @@ if __name__ == "__main__":
             type=get_bool,
             default=DEFAULT_SORT_BY_LORA_IDS,
         )
-        p.add_argument(
-            "--op-types", nargs="+", type=OpType.from_str, default=list(OpType)
-        )
-        p.add_argument(
-            "--seq-lengths", nargs="+", type=int, default=DEFAULT_SEQ_LENGTHS
-        )
-        p.add_argument(
-            "--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES
-        )
+        p.add_argument("--op-types", nargs="+", type=OpType.from_str, default=list(OpType))
+        p.add_argument("--seq-lengths", nargs="+", type=int, default=DEFAULT_SEQ_LENGTHS)
+        p.add_argument("--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES)
         p.add_argument(
             "--expand-fn-add-inputs",
             nargs="+",
@@ -994,19 +941,13 @@ if __name__ == "__main__":
             "-o",
             "--output-directory",
             type=str,
-            help=(
-                "Output directory to store a the list of benchmarking"
-                "TMeasurement objects as a pickle file"
-            ),
+            help=("Output directory to store a the list of benchmarkingTMeasurement objects as a pickle file"),
         )
 
         p.add_argument(
             "--test-correctness",
             action="store_true",
-            help=(
-                "When enabled, the benchmarking functions are tested"
-                "for correctness before the actual benchmarking"
-            ),
+            help=("When enabled, the benchmarking functions are testedfor correctness before the actual benchmarking"),
         )
 
     parser = FlexibleArgumentParser(
@@ -1029,12 +970,8 @@ Benchmark LoRA kernels:
     subparsers = parser.add_subparsers(dest="cmd", required=True)
 
     list_parser = subparsers.add_parser("list_bench")
-    list_parser.add_argument(
-        "--hidden-sizes", nargs="+", type=int, default=DEFAULT_HIDDEN_SIZES
-    )
-    list_parser.add_argument(
-        "--lora-ranks", nargs="+", type=int, default=DEFAULT_LORA_RANKS
-    )
+    list_parser.add_argument("--hidden-sizes", nargs="+", type=int, default=DEFAULT_HIDDEN_SIZES)
+    list_parser.add_argument("--lora-ranks", nargs="+", type=int, default=DEFAULT_LORA_RANKS)
     add_common_command_args(list_parser)
     list_parser.set_defaults(func=run_list_bench)
 
@@ -1056,12 +993,8 @@ Benchmark LoRA kernels:
         default=DEFAULT_MODELS,
         choices=WEIGHT_SHAPES.keys(),
     )
-    model_parser.add_argument(
-        "--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES
-    )
-    model_parser.add_argument(
-        "--lora-ranks", nargs="+", type=int, default=DEFAULT_LORA_RANKS
-    )
+    model_parser.add_argument("--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES)
+    model_parser.add_argument("--lora-ranks", nargs="+", type=int, default=DEFAULT_LORA_RANKS)
     add_common_command_args(model_parser)
     model_parser.set_defaults(func=run_model_bench)
 

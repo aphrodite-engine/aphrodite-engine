@@ -114,15 +114,9 @@ def calculate_diff(batch_size, seq_len, hidden_size, use_residual=True):
     weight = torch.ones(hidden_size, dtype=dtype, device="cuda")
     residual = torch.randn_like(x) if use_residual else None
 
-    output_naive = rmsnorm_naive(
-        x.clone(), weight, residual.clone() if residual is not None else None
-    )
-    output_flashinfer = rmsnorm_flashinfer(
-        x.clone(), weight, residual.clone() if residual is not None else None
-    )
-    output_aphrodite = rmsnorm_aphrodite(
-        x.clone(), weight, residual.clone() if residual is not None else None
-    )
+    output_naive = rmsnorm_naive(x.clone(), weight, residual.clone() if residual is not None else None)
+    output_flashinfer = rmsnorm_flashinfer(x.clone(), weight, residual.clone() if residual is not None else None)
+    output_aphrodite = rmsnorm_aphrodite(x.clone(), weight, residual.clone() if residual is not None else None)
 
     if use_residual:
         output_naive = output_naive[0]
@@ -133,9 +127,9 @@ def calculate_diff(batch_size, seq_len, hidden_size, use_residual=True):
     print(f"FlashInfer output={output_flashinfer}")
     print(f"Aphrodite output={output_aphrodite}")
 
-    if torch.allclose(
-        output_naive, output_flashinfer, atol=1e-2, rtol=1e-2
-    ) and torch.allclose(output_naive, output_aphrodite, atol=1e-2, rtol=1e-2):
+    if torch.allclose(output_naive, output_flashinfer, atol=1e-2, rtol=1e-2) and torch.allclose(
+        output_naive, output_aphrodite, atol=1e-2, rtol=1e-2
+    ):
         print("✅ All implementations match")
     else:
         print("❌ Implementations differ")
@@ -226,9 +220,7 @@ if __name__ == "__main__":
         default=4096,
         help="Hidden size (2nd dimension) of the sequence",
     )
-    parser.add_argument(
-        "--use-residual", action="store_true", help="Whether to use residual connection"
-    )
+    parser.add_argument("--use-residual", action="store_true", help="Whether to use residual connection")
     parser.add_argument(
         "--save-path",
         type=str,

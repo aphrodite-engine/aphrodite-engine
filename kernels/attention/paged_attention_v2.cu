@@ -24,9 +24,9 @@
 #define DIVIDE_ROUND_UP(a, b) (((a) + (b) - 1) / (b))
 
 #define LAUNCH_PAGED_ATTENTION_V2(HEAD_SIZE)                                   \
-  aphrodite::paged_attention_v2_kernel<T, CACHE_T, HEAD_SIZE, BLOCK_SIZE,           \
-                                  NUM_THREADS, KV_DTYPE, IS_BLOCK_SPARSE,      \
-                                  PARTITION_SIZE>                              \
+  aphrodite::paged_attention_v2_kernel<T, CACHE_T, HEAD_SIZE, BLOCK_SIZE,      \
+                                       NUM_THREADS, KV_DTYPE, IS_BLOCK_SPARSE, \
+                                       PARTITION_SIZE>                         \
       <<<grid, block, shared_mem_size, stream>>>(                              \
           exp_sums_ptr, max_logits_ptr, tmp_out_ptr, query_ptr, key_cache_ptr, \
           value_cache_ptr, num_kv_heads, scale, block_tables_ptr,              \
@@ -34,8 +34,8 @@
           kv_block_stride, kv_head_stride, k_scale_ptr, v_scale_ptr, tp_rank,  \
           blocksparse_local_blocks, blocksparse_vert_stride,                   \
           blocksparse_block_size, blocksparse_head_sliding_step);              \
-  aphrodite::paged_attention_v2_reduce_kernel<T, HEAD_SIZE, NUM_THREADS,            \
-                                         PARTITION_SIZE>                       \
+  aphrodite::paged_attention_v2_reduce_kernel<T, HEAD_SIZE, NUM_THREADS,       \
+                                              PARTITION_SIZE>                  \
       <<<reduce_grid, block, reduce_shared_mem_size, stream>>>(                \
           out_ptr, exp_sums_ptr, max_logits_ptr, tmp_out_ptr, seq_lens_ptr,    \
           max_num_partitions);

@@ -4,20 +4,20 @@ from typing import ClassVar
 import torch
 
 from aphrodite import envs
-from aphrodite.aphrodite_flash_attn import (flash_attn_varlen_func,
-                                            get_scheduler_metadata)
-from aphrodite.attention.backends.abstract import (AttentionLayer,
-                                                   AttentionType,
-                                                   is_quantized_kv_cache)
-from aphrodite.attention.utils.fa_utils import (flash_attn_supports_mla,
-                                                get_flash_attn_version)
+from aphrodite.aphrodite_flash_attn import flash_attn_varlen_func, get_scheduler_metadata
+from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, is_quantized_kv_cache
+from aphrodite.attention.utils.fa_utils import flash_attn_supports_mla, get_flash_attn_version
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import (
-    aphrodite_is_batch_invariant)
+from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.v1.attention.backends.mla.common import (
-    MLACommonBackend, MLACommonDecodeMetadata, MLACommonImpl,
-    MLACommonMetadata, MLACommonMetadataBuilder, QueryLenSupport)
+    MLACommonBackend,
+    MLACommonDecodeMetadata,
+    MLACommonImpl,
+    MLACommonMetadata,
+    MLACommonMetadataBuilder,
+    QueryLenSupport,
+)
 from aphrodite.v1.attention.backends.utils import AttentionCGSupport
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
@@ -68,24 +68,18 @@ class FlashAttnMLAMetadataBuilder(MLACommonMetadataBuilder[FlashAttnMLAMetadata]
         aphrodite_config: AphroditeConfig,
         device: torch.device,
     ):
-        super().__init__(
-            kv_cache_spec, layer_names, aphrodite_config, device, FlashAttnMLAMetadata
-        )
+        super().__init__(kv_cache_spec, layer_names, aphrodite_config, device, FlashAttnMLAMetadata)
         self.max_num_splits = 0  # No upper bound on the number of splits.
         self.fa_aot_schedule = get_flash_attn_version() == 3
 
-        self.use_full_cuda_graph = (
-            self.compilation_config.cudagraph_mode.has_full_cudagraphs()
-        )
+        self.use_full_cuda_graph = self.compilation_config.cudagraph_mode.has_full_cudagraphs()
         self.max_cudagraph_size = self.compilation_config.max_cudagraph_capture_size
 
         if self.use_full_cuda_graph and self.fa_aot_schedule:
             if self.max_cudagraph_size > 992:
                 # This condition derives from FA3's internal heuristic.
                 # TODO(woosuk): Support larger cudagraph sizes.
-                raise ValueError(
-                    "Capture size larger than 992 is not supported for full cuda graph."
-                )
+                raise ValueError("Capture size larger than 992 is not supported for full cuda graph.")
 
             self.scheduler_metadata = torch.zeros(
                 aphrodite_config.scheduler_config.max_num_seqs + 1,
@@ -165,8 +159,7 @@ class FlashAttnMLAMetadataBuilder(MLACommonMetadataBuilder[FlashAttnMLAMetadata]
             n = scheduler_metadata.shape[0]
             # Ensure the persistent buffer is large enough
             assert n <= self.scheduler_metadata.shape[0], (
-                f"Scheduler metadata size {n} exceeds buffer size "
-                + f"{self.scheduler_metadata.shape[0]}"
+                f"Scheduler metadata size {n} exceeds buffer size " + f"{self.scheduler_metadata.shape[0]}"
             )
             self.scheduler_metadata[:n] = scheduler_metadata
             # NOTE(woosuk): We should zero out the rest of the scheduler
@@ -229,22 +222,16 @@ class FlashAttnMLAImpl(MLACommonImpl[FlashAttnMLAMetadata]):
         unsupported_features = [alibi_slopes, sliding_window, logits_soft_cap]
         if any(unsupported_features):
             raise NotImplementedError(
-                "FlashAttnMLAImpl does not support one of the following: "
-                "alibi_slopes, sliding_window, logits_soft_cap"
+                "FlashAttnMLAImpl does not support one of the following: alibi_slopes, sliding_window, logits_soft_cap"
             )
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and "
-                "encoder/decoder cross-attention "
-                "are not implemented for "
-                "FlashAttnMLAImpl"
+                "Encoder self-attention and encoder/decoder cross-attention are not implemented for FlashAttnMLAImpl"
             )
 
         if is_quantized_kv_cache(self.kv_cache_dtype):
-            raise NotImplementedError(
-                "FlashAttnMLA V1 with FP8 KV cache not yet supported"
-            )
+            raise NotImplementedError("FlashAttnMLA V1 with FP8 KV cache not yet supported")
 
     def _forward_decode(
         self,
@@ -259,9 +246,7 @@ class FlashAttnMLAImpl(MLACommonImpl[FlashAttnMLAMetadata]):
         if type(q) is tuple:
             q_nope, q_pe = q
         else:
-            q_nope, q_pe = torch.split(
-                q, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1
-            )
+            q_nope, q_pe = torch.split(q, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1)
 
         if self.kv_cache_dtype.startswith("fp8"):
             raise NotImplementedError("FP8 FlashAttention MLA not yet supported")

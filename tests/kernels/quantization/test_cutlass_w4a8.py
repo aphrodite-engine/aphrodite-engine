@@ -10,8 +10,7 @@ import torch
 
 from aphrodite import _custom_ops as ops
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import (pack_rows,
-                                                      quantize_weights)
+from aphrodite.quantization.utils.quant_utils import pack_rows, quantize_weights
 from aphrodite.scalar_type import ScalarType, scalar_types
 
 # TODO: in future PR refactor this and `is_quant_method_supported` in the kernel
@@ -74,9 +73,7 @@ class Tensors:
 
 # (Act Type, Weight Type, Output Type, Scale Type, ZeroPoints,
 #  Ch Scales Type, Tok Scales Type)
-TestTypeTuple = tuple[
-    list[torch.dtype], ScalarType, torch.dtype | None, torch.dtype | None, bool
-]
+TestTypeTuple = tuple[list[torch.dtype], ScalarType, torch.dtype | None, torch.dtype | None, bool]
 TEST_TYPES = [
     *(
         TypeConfig(
@@ -117,15 +114,10 @@ def cutlass_quantize_and_pack(
 ):
     assert wtype.is_integer(), "TODO: support floating point weights"
 
-    w_ref, w_q, w_s, w_zp = quantize_weights(
-        w, wtype, group_size=group_size, zero_points=zero_points
-    )
+    w_ref, w_q, w_s, w_zp = quantize_weights(w, wtype, group_size=group_size, zero_points=zero_points)
 
     # since scales are cast to fp8, we need to compute w_ref this way
-    w_ref = (
-        (w_q).to(torch.float32)
-        * w_s.to(atype).to(torch.float32).repeat_interleave(group_size, dim=0)
-    ).to(atype)
+    w_ref = ((w_q).to(torch.float32) * w_s.to(atype).to(torch.float32).repeat_interleave(group_size, dim=0)).to(atype)
 
     # bit mask prevents sign extending int4 when packing
     w_q = pack_rows(w_q & 0x0F, wtype.size_bits, *w_q.shape)
@@ -137,14 +129,10 @@ def cutlass_quantize_and_pack(
     return w_ref, w_q_packed, w_s_packed, w_zp
 
 
-def create_test_tensors(
-    shape: tuple[int, int, int], types: TypeConfig, group_size: int | None
-) -> Tensors:
+def create_test_tensors(shape: tuple[int, int, int], types: TypeConfig, group_size: int | None) -> Tensors:
     m, n, k = shape
 
-    print(
-        "create_test_tensors, shape:", shape, "types:", types, "group_size:", group_size
-    )
+    print("create_test_tensors, shape:", shape, "types:", types, "group_size:", group_size)
 
     a = to_fp8(torch.randn((m, k), device="cuda"))
     w = to_fp8(torch.randn((k, n), device="cuda"))
@@ -206,14 +194,10 @@ def mm_test_helper(
     print(output)
     print(output_ref)
 
-    torch.testing.assert_close(
-        output, output_ref.to(output.dtype), rtol=1e-3, atol=1e-3
-    )
+    torch.testing.assert_close(output, output_ref.to(output.dtype), rtol=1e-3, atol=1e-3)
 
 
-@pytest.mark.skipif(
-    not IS_SUPPORTED_BY_GPU, reason="CUTLASS W4A8 is not supported on this GPU type."
-)
+@pytest.mark.skipif(not IS_SUPPORTED_BY_GPU, reason="CUTLASS W4A8 is not supported on this GPU type.")
 @pytest.mark.parametrize("shape", MNK_SHAPES, ids=lambda x: "x".join(str(v) for v in x))
 @pytest.mark.parametrize("types", TEST_TYPES)
 @pytest.mark.parametrize("schedule", SCHEDULES)
@@ -234,9 +218,7 @@ class W4A8Layer(torch.nn.Module):
         return ops.cutlass_w4a8_mm(a=a, **self.kwargs)
 
 
-@pytest.mark.skipif(
-    not IS_SUPPORTED_BY_GPU, reason="CUTLASS W4A8 is not supported on this GPU type."
-)
+@pytest.mark.skipif(not IS_SUPPORTED_BY_GPU, reason="CUTLASS W4A8 is not supported on this GPU type.")
 def test_w4a8_cuda_graph():
     m, n, k = 512, 4096, 4096
 

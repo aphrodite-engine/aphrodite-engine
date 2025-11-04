@@ -5,7 +5,7 @@ distributively on a multi-nodes cluster.
 Learn more about Ray Data in https://docs.ray.io/en/latest/data/data.html
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import ray
@@ -14,8 +14,7 @@ from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
 from aphrodite import LLM, SamplingParams
 
-assert Version(ray.__version__) >= Version(
-    "2.22.0"), "Ray version must be at least 2.22.0"
+assert Version(ray.__version__) >= Version("2.22.0"), "Ray version must be at least 2.22.0"
 
 # Create a sampling params object.
 sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
@@ -29,22 +28,20 @@ num_instances = 1
 
 # Create a class to do batch inference.
 class LLMPredictor:
-
     def __init__(self):
         # Create an LLM.
-        self.llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct",
-                       tensor_parallel_size=tensor_parallel_size)
+        self.llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct", tensor_parallel_size=tensor_parallel_size)
 
-    def __call__(self, batch: Dict[str, np.ndarray]) -> Dict[str, list]:
+    def __call__(self, batch: dict[str, np.ndarray]) -> dict[str, list]:
         # Generate texts from the prompts.
         # The output is a list of RequestOutput objects that contain the prompt,
         # generated text, and other information.
         outputs = self.llm.generate(batch["text"], sampling_params)
-        prompt: List[str] = []
-        generated_text: List[str] = []
+        prompt: list[str] = []
+        generated_text: list[str] = []
         for output in outputs:
             prompt.append(output.prompt)
-            generated_text.append(' '.join([o.text for o in output.outputs]))
+            generated_text.append(" ".join([o.text for o in output.outputs]))
         return {
             "prompt": prompt,
             "generated_text": generated_text,
@@ -61,17 +58,13 @@ ds = ray.data.read_text("s3://anonymous@air-example-data/prompts.txt")
 def scheduling_strategy_fn():
     # One bundle per tensor parallel worker
     pg = ray.util.placement_group(
-        [{
-            "GPU": 1,
-            "CPU": 1
-        }] * tensor_parallel_size,
+        [{"GPU": 1, "CPU": 1}] * tensor_parallel_size,
         strategy="STRICT_PACK",
     )
-    return dict(scheduling_strategy=PlacementGroupSchedulingStrategy(
-        pg, placement_group_capture_child_tasks=True))
+    return dict(scheduling_strategy=PlacementGroupSchedulingStrategy(pg, placement_group_capture_child_tasks=True))
 
 
-resources_kwarg: Dict[str, Any] = {}
+resources_kwarg: dict[str, Any] = {}
 if tensor_parallel_size == 1:
     # For tensor_parallel_size == 1, we simply set num_gpus=1.
     resources_kwarg["num_gpus"] = 1

@@ -27,9 +27,7 @@ class FixFunctionalizationPass(AphroditeInductorPass):
         # XPU does not support auto-functionalization yet.
         # Will enable this when switch to aphrodite-xpu-kernels.
         if current_platform.is_xpu():
-            logger.debug(
-                "XPU platform does not support fix functionalizationpass currently."
-            )
+            logger.debug("XPU platform does not support fix functionalizationpass currently.")
             return
 
         self.nodes_to_remove: list[torch.fx.Node] = []
@@ -65,9 +63,7 @@ class FixFunctionalizationPass(AphroditeInductorPass):
                     mm_node = query.args[0].args[0]
                     for user in getitem_nodes.values():
                         for user_of_getitem in user.users:
-                            if is_func(
-                                user_of_getitem, torch.ops.aten.slice_scatter.default
-                            ):
+                            if is_func(user_of_getitem, torch.ops.aten.slice_scatter.default):
                                 user_of_getitem.replace_all_uses_with(mm_node)
                                 self._remove(user_of_getitem)
                         self._remove(user)
@@ -105,14 +101,10 @@ class FixFunctionalizationPass(AphroditeInductorPass):
             # pathway gets the wrong answer.
             elif at_target == torch.ops._C.silu_and_mul.default:
                 mutated_args = {1: "result"}
-                self.defunctionalize(
-                    graph, node, mutated_args, args=("result", "input")
-                )
+                self.defunctionalize(graph, node, mutated_args, args=("result", "input"))
             elif at_target == torch.ops._C.silu_and_mul_quant.default:
                 mutated_args = {1: "result"}
-                self.defunctionalize(
-                    graph, node, mutated_args, args=("result", "input", "scale")
-                )
+                self.defunctionalize(graph, node, mutated_args, args=("result", "input", "scale"))
             elif (
                 hasattr(torch.ops._C, "silu_and_mul_nvfp4_quant")
                 and at_target == torch.ops._C.silu_and_mul_nvfp4_quant.default
@@ -141,9 +133,7 @@ class FixFunctionalizationPass(AphroditeInductorPass):
         for node in self.nodes_to_remove:
             graph.erase_node(node)
 
-        logger.debug(
-            "De-functionalized %s nodes, removed %s nodes", count, count_removed
-        )
+        logger.debug("De-functionalized %s nodes, removed %s nodes", count, count_removed)
         self.nodes_to_remove.clear()
 
     def _remove(self, node_or_nodes: torch.fx.Node | Iterable[torch.fx.Node]):
@@ -171,9 +161,7 @@ class FixFunctionalizationPass(AphroditeInductorPass):
         self.insert_defunctionalized(graph, node, args=args)
         self._remove(node)
 
-    def replace_users_with_mutated_args(
-        self, node: torch.fx.Node, mutated_args: dict[int, torch.fx.Node | str]
-    ):
+    def replace_users_with_mutated_args(self, node: torch.fx.Node, mutated_args: dict[int, torch.fx.Node | str]):
         """
         Replace all getitem users of the auto-functionalized node with the
         mutated arguments.
@@ -216,9 +204,7 @@ class FixFunctionalizationPass(AphroditeInductorPass):
         :param args: If we cannot use kwargs, specify args directly.
         If an arg is a string, `node.kwargs[arg]` is used.
         """  # noqa: E501
-        assert is_func(node, auto_functionalized), (
-            f"node must be auto-functionalized, is {node} instead"
-        )
+        assert is_func(node, auto_functionalized), f"node must be auto-functionalized, is {node} instead"
 
         # Create a new call to the original function
         with graph.inserting_before(node):
@@ -227,7 +213,5 @@ class FixFunctionalizationPass(AphroditeInductorPass):
                 graph.call_function(function, kwargs=node.kwargs)
             else:
                 # Args passed as strings refer to items in node.kwargs
-                args = tuple(
-                    node.kwargs[arg] if isinstance(arg, str) else arg for arg in args
-                )
+                args = tuple(node.kwargs[arg] if isinstance(arg, str) else arg for arg in args)
                 graph.call_function(function, args=args)

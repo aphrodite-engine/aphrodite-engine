@@ -47,16 +47,12 @@ def test_rotary_embedding_opcheck(
     batch_size = 1
     base = 10000
     num_heads = 7
-    rot = RotaryEmbedding(
-        head_size, rotary_dim, max_position, base, is_neox_style, torch.float32
-    )
+    rot = RotaryEmbedding(head_size, rotary_dim, max_position, base, is_neox_style, torch.float32)
 
     positions = torch.randint(0, max_position, (batch_size, seq_len), device=device)
     head_stride = head_size + (64 if head_stride_is_contiguous else 0)
 
-    query = torch.randn(
-        batch_size, seq_len, num_heads, head_stride, dtype=torch.float32, device=device
-    )
+    query = torch.randn(batch_size, seq_len, num_heads, head_stride, dtype=torch.float32, device=device)
     key = torch.randn_like(query) if use_key else None
     query = query[..., :head_size]
     key = key[..., :head_size] if use_key else None

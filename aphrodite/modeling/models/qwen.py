@@ -17,24 +17,18 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
 from .interfaces import SupportsLoRA, SupportsPP
-from .utils import (is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import is_pp_missing_parameter, make_empty_intermediate_tensors_factory, make_layers, maybe_prefix
 
 
 class QWenMLP(nn.Module):
@@ -52,13 +46,9 @@ class QWenMLP(nn.Module):
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size, [intermediate_size] * 2, bias=False, quant_config=quant_config
         )
-        self.c_proj = RowParallelLinear(
-            intermediate_size, hidden_size, bias=False, quant_config=quant_config
-        )
+        self.c_proj = RowParallelLinear(intermediate_size, hidden_size, bias=False, quant_config=quant_config)
         if hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {hidden_act}. Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -157,9 +147,7 @@ class QWenBlock(nn.Module):
 
         self.ln_2 = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
-        self.mlp = QWenMLP(
-            config.hidden_size, config.intermediate_size // 2, quant_config=quant_config
-        )
+        self.mlp = QWenMLP(config.hidden_size, config.intermediate_size // 2, quant_config=quant_config)
 
     def forward(
         self,
@@ -238,9 +226,7 @@ class QWenModel(nn.Module):
                 residual,
             )
         if not get_pp_group().is_last_rank:
-            return IntermediateTensors(
-                {"hidden_states": hidden_states, "residual": residual}
-            )
+            return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
         hidden_states, _ = self.ln_f(hidden_states, residual)
         return hidden_states
 
@@ -272,9 +258,7 @@ class QWenBaseModel(nn.Module):
         if self.config.tie_word_embeddings:
             self.lm_head.weight = self.transformer.wte.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
-        self.make_empty_intermediate_tensors = (
-            self.transformer.make_empty_intermediate_tensors
-        )
+        self.make_empty_intermediate_tensors = self.transformer.make_empty_intermediate_tensors
 
     def compute_logits(
         self,
@@ -351,7 +335,5 @@ class QWenLMHeadModel(QWenBaseModel, SupportsPP, SupportsLoRA):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.transformer(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.transformer(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states

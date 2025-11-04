@@ -1,6 +1,6 @@
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Literal
 
 import torch
 import torch.nn as nn
@@ -10,63 +10,51 @@ from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.bart import BartParallelLMHead, MBartDecoder
-from aphrodite.modeling.models.interfaces import (MultiModalEmbeddings,
-                                                  SupportsMultiModal,
-                                                  SupportsV0Only)
+from aphrodite.modeling.models.interfaces import MultiModalEmbeddings, SupportsMultiModal, SupportsV0Only
 from aphrodite.modeling.models.swin import SwinModel
-from aphrodite.modeling.models.utils import (AutoWeightsLoader,
-                                             _flatten_embeddings, flatten_bn)
+from aphrodite.modeling.models.utils import AutoWeightsLoader, _flatten_embeddings, flatten_bn
 from aphrodite.modeling.sampling_metadata import SamplingMetadata
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalFieldConfig,
-                                         MultiModalKwargsItems)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalFieldConfig, MultiModalKwargsItems
 from aphrodite.multimodal.parse import MultiModalDataItems
-from aphrodite.multimodal.processing import (BaseProcessingInfo,
-                                             EncDecMultiModalProcessor,
-                                             PromptIndexTargets,
-                                             PromptInsertion, PromptUpdate)
+from aphrodite.multimodal.processing import (
+    BaseProcessingInfo,
+    EncDecMultiModalProcessor,
+    PromptIndexTargets,
+    PromptInsertion,
+    PromptUpdate,
+)
 from aphrodite.multimodal.profiling import BaseDummyInputsBuilder
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 
 class MBartDecoderWrapper(nn.Module):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
         cache_config = aphrodite_config.cache_config
         quant_config = aphrodite_config.quant_config
 
-        self.decoder = MBartDecoder(config,
-                                    cache_config,
-                                    quant_config=quant_config,
-                                    prefix=f"{prefix}.decoder")
+        self.decoder = MBartDecoder(config, cache_config, quant_config=quant_config, prefix=f"{prefix}.decoder")
 
     def forward(self, *args, **kwargs):
         return self.decoder(*args, **kwargs)
 
 
 class DonutLanguageForConditionalGeneration(nn.Module, SupportsV0Only):
-
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
 
         config = aphrodite_config.model_config.hf_config
 
         self.config = config
-        self.model = MBartDecoderWrapper(aphrodite_config=aphrodite_config,
-                                         prefix=f"{prefix}.model")
-        embed_scale = math.sqrt(
-            config.d_model) if config.scale_embedding else 1.0
+        self.model = MBartDecoderWrapper(aphrodite_config=aphrodite_config, prefix=f"{prefix}.model")
+        embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
 
         self.vocab_size = config.vocab_size
-        self.lm_head = BartParallelLMHead(self.vocab_size,
-                                          config.d_model,
-                                          embed_scale=embed_scale)
+        self.lm_head = BartParallelLMHead(self.vocab_size, config.d_model, embed_scale=embed_scale)
 
-        self.logits_processor = LogitsProcessor(self.vocab_size,
-                                                config.vocab_size)
+        self.logits_processor = LogitsProcessor(self.vocab_size, config.vocab_size)
 
     def forward(
         self,
@@ -85,21 +73,17 @@ class DonutLanguageForConditionalGeneration(nn.Module, SupportsV0Only):
             Output torch.Tensor
         """
 
-        return self.model(decoder_input_ids=input_ids,
-                          decoder_positions=positions,
-                          encoder_hidden_states=inputs_embeds)
+        return self.model(decoder_input_ids=input_ids, decoder_positions=positions, encoder_hidden_states=inputs_embeds)
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
-        logits = self.logits_processor(self.lm_head, hidden_states,
-                                       sampling_metadata)
+    ) -> torch.Tensor | None:
+        logits = self.logits_processor(self.lm_head, hidden_states, sampling_metadata)
         return logits
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
@@ -110,7 +94,7 @@ class DonutLanguageForConditionalGeneration(nn.Module, SupportsV0Only):
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
-            for (param_name, weight_name, shard_id) in stacked_params_mapping:
+            for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in name:
                     continue
                 name = name.replace(weight_name, param_name)
@@ -124,8 +108,7 @@ class DonutLanguageForConditionalGeneration(nn.Module, SupportsV0Only):
                 # if self.config.tie_word_embeddings and "embed_tokens" in name:
                 #     continue
                 param = params_dict[name]
-                weight_loader = getattr(param, "weight_loader",
-                                        default_weight_loader)
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params
@@ -139,19 +122,19 @@ class DonutImagePixelInputs(TensorSchema):
         - h: Height
         - w: Width
     """
+
     type: Literal["pixel_values"]
     data: Annotated[torch.Tensor, TensorShape("b", 3, "h", "w")]
 
 
 class DonutProcessingInfo(BaseProcessingInfo):
-
     def get_hf_config(self):
         return self.ctx.get_hf_config()
 
     def get_hf_processor(self):
         return self.ctx.get_hf_processor()
 
-    def get_supported_mm_limits(self) -> Mapping[str, Optional[int]]:
+    def get_supported_mm_limits(self) -> Mapping[str, int | None]:
         return {"image": 1}
 
     def get_num_image_tokens(self) -> int:
@@ -159,7 +142,6 @@ class DonutProcessingInfo(BaseProcessingInfo):
 
 
 class DonutDummyInputsBuilder(BaseDummyInputsBuilder[DonutProcessingInfo]):
-
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
         return ""
 
@@ -170,19 +152,12 @@ class DonutDummyInputsBuilder(BaseDummyInputsBuilder[DonutProcessingInfo]):
     ) -> MultiModalDataDict:
         num_images = mm_counts.get("image", 0)
 
-        target_width, target_height = self.info.get_hf_config(
-        ).encoder.image_size
+        target_width, target_height = self.info.get_hf_config().encoder.image_size
 
-        return {
-            "image":
-            self._get_dummy_images(width=target_width,
-                                   height=target_height,
-                                   num_images=num_images)
-        }
+        return {"image": self._get_dummy_images(width=target_width, height=target_height, num_images=num_images)}
 
 
 class DonutMultiModalProcessor(EncDecMultiModalProcessor[DonutProcessingInfo]):
-
     def _hf_processor_applies_updates(
         self,
         prompt_text: str,
@@ -194,16 +169,16 @@ class DonutMultiModalProcessor(EncDecMultiModalProcessor[DonutProcessingInfo]):
 
     def create_encoder_prompt(
         self,
-        prompt: Union[str, list[int]],
+        prompt: str | list[int],
         mm_data: MultiModalDataDict,
-    ) -> Union[str, list[int]]:
+    ) -> str | list[int]:
         return prompt
 
     def create_decoder_prompt(
         self,
-        prompt: Union[str, list[int]],
+        prompt: str | list[int],
         mm_data: MultiModalDataDict,
-    ) -> Union[str, list[int]]:
+    ) -> str | list[int]:
         return prompt
 
     @property
@@ -219,15 +194,12 @@ class DonutMultiModalProcessor(EncDecMultiModalProcessor[DonutProcessingInfo]):
     ) -> BatchFeature:
         hf_processor = self.info.get_hf_processor()
         if mm_data:
-            processed_outputs = super()._call_hf_processor(
-                prompt, mm_data, mm_kwargs, tok_kwargs)
+            processed_outputs = super()._call_hf_processor(prompt, mm_data, mm_kwargs, tok_kwargs)
             if isinstance(hf_processor, NougatProcessor):
                 processed_outputs["input_ids"] = processed_outputs["labels"]
         else:
             tokenizer = hf_processor.tokenizer
-            processed_outputs = tokenizer(prompt,
-                                          add_special_tokens=False,
-                                          return_tensors="pt")
+            processed_outputs = tokenizer(prompt, add_special_tokens=False, return_tensors="pt")
         return processed_outputs
 
     def _get_mm_fields_config(
@@ -258,12 +230,10 @@ class DonutMultiModalProcessor(EncDecMultiModalProcessor[DonutProcessingInfo]):
         ]
 
 
-@MULTIMODAL_REGISTRY.register_processor(DonutMultiModalProcessor,
-                                        info=DonutProcessingInfo,
-                                        dummy_inputs=DonutDummyInputsBuilder)
-class DonutForConditionalGeneration(nn.Module, SupportsMultiModal,
-                                    SupportsV0Only):
-
+@MULTIMODAL_REGISTRY.register_processor(
+    DonutMultiModalProcessor, info=DonutProcessingInfo, dummy_inputs=DonutDummyInputsBuilder
+)
+class DonutForConditionalGeneration(nn.Module, SupportsMultiModal, SupportsV0Only):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__()
         config = aphrodite_config.model_config.hf_config
@@ -281,39 +251,36 @@ class DonutForConditionalGeneration(nn.Module, SupportsMultiModal,
         self.pad_token_id = config.pad_token_id
 
     def _parse_and_validate_image_input(self, **kwargs: object):
-        pixel_values: Optional[Union[list[list[torch.Tensor]],
-                                     list[torch.Tensor],
-                                     torch.Tensor]] = kwargs.pop(
-                                         "pixel_values", None)
-        image_embeds: Optional[Union[list[list[torch.Tensor]],
-                                     list[torch.Tensor],
-                                     torch.Tensor]] = kwargs.pop(
-                                         "image_embeds", None)
+        pixel_values: list[list[torch.Tensor]] | list[torch.Tensor] | torch.Tensor | None = kwargs.pop(
+            "pixel_values", None
+        )
+        image_embeds: list[list[torch.Tensor]] | list[torch.Tensor] | torch.Tensor | None = kwargs.pop(
+            "image_embeds", None
+        )
 
         if pixel_values is None and image_embeds is None:
             return None
 
         if pixel_values is not None and image_embeds is not None:
-            raise ValueError(
-                "Both pixel values and image embeds are provided.")
+            raise ValueError("Both pixel values and image embeds are provided.")
 
         if pixel_values is not None:
             h, w = self.config.encoder.image_size
-            return DonutImagePixelInputs(type="pixel_values",
-                                         data=flatten_bn(pixel_values,
-                                                         concat=True),
-                                         resolve_bindings={
-                                             "h": h,
-                                             "w": w,
-                                         })
+            return DonutImagePixelInputs(
+                type="pixel_values",
+                data=flatten_bn(pixel_values, concat=True),
+                resolve_bindings={
+                    "h": h,
+                    "w": w,
+                },
+            )
 
         if image_embeds is not None:
             raise NotImplementedError
 
         raise AssertionError("This line should be unreachable.")
 
-    def _process_image_input(
-            self, image_input: DonutImagePixelInputs) -> torch.Tensor:
+    def _process_image_input(self, image_input: DonutImagePixelInputs) -> torch.Tensor:
         assert image_input["type"] == "pixel_values"
         pixel_values = image_input["data"]
         dtype = next(self.encoder.parameters()).dtype
@@ -323,8 +290,7 @@ class DonutForConditionalGeneration(nn.Module, SupportsMultiModal,
     def get_language_model(self) -> torch.nn.Module:
         return self.decoder
 
-    def get_multimodal_embeddings(
-            self, **kwargs: object) -> Optional[MultiModalEmbeddings]:
+    def get_multimodal_embeddings(self, **kwargs: object) -> MultiModalEmbeddings | None:
         image_input = self._parse_and_validate_image_input(**kwargs)
         if image_input is None:
             return None
@@ -364,22 +330,18 @@ class DonutForConditionalGeneration(nn.Module, SupportsMultiModal,
         inputs_embeds = None
         if encoder_input_ids.numel() > 0:
             vision_embeddings = self.get_multimodal_embeddings(**kwargs)
-            inputs_embeds = self.get_input_embeddings(encoder_input_ids,
-                                                      vision_embeddings)
+            inputs_embeds = self.get_input_embeddings(encoder_input_ids, vision_embeddings)
 
-        hidden_states = self.decoder(input_ids,
-                                     positions,
-                                     inputs_embeds=inputs_embeds)
+        hidden_states = self.decoder(input_ids, positions, inputs_embeds=inputs_embeds)
         return hidden_states
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor | None:
         return self.decoder.compute_logits(hidden_states, sampling_metadata)
 
-    def load_weights(self, weights: Iterable[tuple[str,
-                                                   torch.Tensor]]) -> set[str]:
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)
         return loader.load_weights(weights)

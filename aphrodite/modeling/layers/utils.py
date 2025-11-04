@@ -41,9 +41,7 @@ def get_token_bin_counts_and_mask(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     # Compute the bin counts for the tokens.
     # vocab_size + 1 for padding.
-    bin_counts = torch.zeros(
-        (num_seqs, vocab_size + 1), dtype=torch.long, device=tokens.device
-    )
+    bin_counts = torch.zeros((num_seqs, vocab_size + 1), dtype=torch.long, device=tokens.device)
     bin_counts.scatter_add_(1, tokens, torch.ones_like(tokens))
     bin_counts = bin_counts[:, :vocab_size]
     mask = bin_counts > 0
@@ -73,12 +71,8 @@ def apply_penalties(
     repetition_penalties: The repetition penalties of shape (num_seqs, )
     """
     num_seqs, vocab_size = logits.shape
-    _, prompt_mask = get_token_bin_counts_and_mask(
-        prompt_tokens_tensor, vocab_size, num_seqs
-    )
-    output_bin_counts, output_mask = get_token_bin_counts_and_mask(
-        output_tokens_tensor, vocab_size, num_seqs
-    )
+    _, prompt_mask = get_token_bin_counts_and_mask(prompt_tokens_tensor, vocab_size, num_seqs)
+    output_bin_counts, output_mask = get_token_bin_counts_and_mask(output_tokens_tensor, vocab_size, num_seqs)
 
     # Apply repetition penalties as a custom op
     from aphrodite._custom_ops import apply_repetition_penalties
@@ -101,17 +95,12 @@ def default_unquantized_gemm(
     return torch.nn.functional.linear(x, weight, bias)
 
 
-def rocm_unquantized_gemm_impl(
-    x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None
-) -> torch.Tensor:
+def rocm_unquantized_gemm_impl(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
     from aphrodite.platforms.rocm import on_gfx9
 
     k = weight.shape[1]
     use_skinny = (
-        envs.APHRODITE_ROCM_USE_SKINNY_GEMM
-        and on_gfx9()
-        and x.dtype in [torch.float16, torch.bfloat16]
-        and k % 8 == 0
+        envs.APHRODITE_ROCM_USE_SKINNY_GEMM and on_gfx9() and x.dtype in [torch.float16, torch.bfloat16] and k % 8 == 0
     )
 
     if use_skinny is not True:
@@ -180,10 +169,7 @@ def dispatch_cpu_unquantized_gemm(
         if remove_weight:
             layer.weight = torch.nn.Parameter(torch.empty(0), requires_grad=False)
         return
-    elif (
-        ops._supports_onednn
-        and current_platform.get_cpu_architecture() != CpuArchEnum.POWERPC
-    ):
+    elif ops._supports_onednn and current_platform.get_cpu_architecture() != CpuArchEnum.POWERPC:
         try:
             origin_weight = layer.weight
             handler = ops.create_onednn_mm(origin_weight.t(), 32)
@@ -192,15 +178,10 @@ def dispatch_cpu_unquantized_gemm(
                 layer.weight = torch.nn.Parameter(torch.empty(0), requires_grad=False)
             return
         except RuntimeError as e:
-            logger.warning_once(
-                "Failed to create oneDNN linear, fallback to torch linear."
-                f" Exception: {e}"
-            )
+            logger.warning_once(f"Failed to create oneDNN linear, fallback to torch linear. Exception: {e}")
 
     # fallback case
-    layer.cpu_linear = lambda x, weight, bias: torch.nn.functional.linear(
-        x, weight, bias
-    )
+    layer.cpu_linear = lambda x, weight, bias: torch.nn.functional.linear(x, weight, bias)
 
 
 def cpu_unquantized_gemm(

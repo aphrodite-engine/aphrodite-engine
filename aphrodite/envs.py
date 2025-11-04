@@ -176,9 +176,7 @@ if TYPE_CHECKING:
     APHRODITE_KV_CACHE_LAYOUT: Literal["NHD", "HND"] | None = None
     APHRODITE_COMPUTE_NANS_IN_LOGITS: bool = False
     APHRODITE_USE_NVFP4_CT_EMULATIONS: bool = False
-    APHRODITE_ROCM_QUICK_REDUCE_QUANTIZATION: Literal[
-        "FP", "INT8", "INT6", "INT4", "NONE"
-    ] = "NONE"
+    APHRODITE_ROCM_QUICK_REDUCE_QUANTIZATION: Literal["FP", "INT8", "INT6", "INT4", "NONE"] = "NONE"
     APHRODITE_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16: bool = True
     APHRODITE_ROCM_QUICK_REDUCE_MAX_SIZE_BYTES_MB: int | None = None
     APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT: int = 480
@@ -259,11 +257,7 @@ def disable_compile_cache() -> bool:
 def use_aot_compile() -> bool:
     from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 
-    default_value = (
-        "1"
-        if is_torch_equal_or_newer("2.10.0.dev") and not disable_compile_cache()
-        else "0"
-    )
+    default_value = "1" if is_torch_equal_or_newer("2.10.0.dev") and not disable_compile_cache() else "0"
 
     return os.environ.get("APHRODITE_USE_AOT_COMPILE", default_value) == "1"
 
@@ -303,10 +297,7 @@ def env_with_choices(
             check_choices = actual_choices
 
         if check_value not in check_choices:
-            raise ValueError(
-                f"Invalid value '{value}' for {env_name}. "
-                f"Valid options: {actual_choices}."
-            )
+            raise ValueError(f"Invalid value '{value}' for {env_name}. Valid options: {actual_choices}.")
 
         return value
 
@@ -358,10 +349,7 @@ def env_list_with_choices(
                 check_choices = actual_choices
 
             if check_value not in check_choices:
-                raise ValueError(
-                    f"Invalid value '{val}' in {env_name}. "
-                    f"Valid options: {actual_choices}."
-                )
+                raise ValueError(f"Invalid value '{val}' in {env_name}. Valid options: {actual_choices}.")
 
         return values
 
@@ -427,8 +415,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_TARGET_DEVICE": lambda: os.getenv("APHRODITE_TARGET_DEVICE", "cuda").lower(),
     # Main CUDA version of Aphrodite, supporting [12.6, 12.8, 12.9],
     # 12.8 is the default. This follows PyTorch but can be overridden.
-    "APHRODITE_MAIN_CUDA_VERSION": lambda: os.getenv("APHRODITE_MAIN_CUDA_VERSION", "").lower()
-    or "12.8",
+    "APHRODITE_MAIN_CUDA_VERSION": lambda: os.getenv("APHRODITE_MAIN_CUDA_VERSION", "").lower() or "12.8",
     # Maximum number of compilation jobs to run in parallel.
     # By default this is the number of CPUs
     "MAX_JOBS": lambda: os.getenv("MAX_JOBS", None),
@@ -437,16 +424,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If set, `MAX_JOBS` will be reduced to avoid oversubscribing the CPU.
     "NVCC_THREADS": lambda: os.getenv("NVCC_THREADS", None),
     # If set, aphrodite will use precompiled binaries (*.so)
-    "APHRODITE_USE_PRECOMPILED": lambda: os.environ.get("APHRODITE_USE_PRECOMPILED", "")
-    .strip()
-    .lower()
+    "APHRODITE_USE_PRECOMPILED": lambda: os.environ.get("APHRODITE_USE_PRECOMPILED", "").strip().lower()
     in ("1", "true")
     or bool(os.environ.get("APHRODITE_PRECOMPILED_WHEEL_LOCATION")),
     # Used to mark that setup.py is running in a Docker build context,
     # in order to force the use of precompiled binaries.
-    "APHRODITE_DOCKER_BUILD_CONTEXT": lambda: os.environ.get("APHRODITE_DOCKER_BUILD_CONTEXT", "")
-    .strip()
-    .lower()
+    "APHRODITE_DOCKER_BUILD_CONTEXT": lambda: os.environ.get("APHRODITE_DOCKER_BUILD_CONTEXT", "").strip().lower()
     in ("1", "true"),
     # Whether to force using nightly wheel in python build.
     # This is used for testing the nightly wheel in python build.
@@ -456,9 +439,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # CMake build type
     # If not set, defaults to "Debug" or "RelWithDebInfo"
     # Available options: "Debug", "Release", "RelWithDebInfo"
-    "CMAKE_BUILD_TYPE": env_with_choices(
-        "CMAKE_BUILD_TYPE", None, ["Debug", "Release", "RelWithDebInfo"]
-    ),
+    "CMAKE_BUILD_TYPE": env_with_choices("CMAKE_BUILD_TYPE", None, ["Debug", "Release", "RelWithDebInfo"]),
     # If set, aphrodite will print verbose logs during installation
     "VERBOSE": lambda: bool(int(os.getenv("VERBOSE", "0"))),
     # Root directory for Aphrodite configuration files
@@ -493,19 +474,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_PORT": get_aphrodite_port,
     # path used for ipc when the frontend api server is running in
     # multi-processing mode to communicate with the backend engine process.
-    "APHRODITE_RPC_BASE_PATH": lambda: os.getenv(
-        "APHRODITE_RPC_BASE_PATH", tempfile.gettempdir()
-    ),
+    "APHRODITE_RPC_BASE_PATH": lambda: os.getenv("APHRODITE_RPC_BASE_PATH", tempfile.gettempdir()),
     # If true, will load models from ModelScope instead of Hugging Face Hub.
     # note that the value is true or false, not numbers
-    "APHRODITE_USE_MODELSCOPE": lambda: os.environ.get(
-        "APHRODITE_USE_MODELSCOPE", "False"
-    ).lower()
-    == "true",
+    "APHRODITE_USE_MODELSCOPE": lambda: os.environ.get("APHRODITE_USE_MODELSCOPE", "False").lower() == "true",
     # Interval in seconds to log a warning message when the ring buffer is full
-    "APHRODITE_RINGBUFFER_WARNING_INTERVAL": lambda: int(
-        os.environ.get("APHRODITE_RINGBUFFER_WARNING_INTERVAL", "60")
-    ),
+    "APHRODITE_RINGBUFFER_WARNING_INTERVAL": lambda: int(os.environ.get("APHRODITE_RINGBUFFER_WARNING_INTERVAL", "60")),
     # path to cudatoolkit home directory, under which should be bin, include,
     # and lib directories.
     "CUDA_HOME": lambda: os.environ.get("CUDA_HOME", None),
@@ -522,26 +496,18 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Use separate prefill and decode kernels for V1 attention instead of
     # the unified triton kernel.
     "APHRODITE_V1_USE_PREFILL_DECODE_ATTENTION": lambda: (
-        os.getenv("APHRODITE_V1_USE_PREFILL_DECODE_ATTENTION", "False").lower()
-        in ("true", "1")
+        os.getenv("APHRODITE_V1_USE_PREFILL_DECODE_ATTENTION", "False").lower() in ("true", "1")
     ),
     # Force aphrodite to use a specific flash-attention version (2 or 3), only valid
     # when using the flash-attention backend.
-    "APHRODITE_FLASH_ATTN_VERSION": lambda: maybe_convert_int(
-        os.environ.get("APHRODITE_FLASH_ATTN_VERSION", None)
-    ),
+    "APHRODITE_FLASH_ATTN_VERSION": lambda: maybe_convert_int(os.environ.get("APHRODITE_FLASH_ATTN_VERSION", None)),
     # Feature flag to enable/disable Inductor standalone compile.
     # In torch <= 2.7 we ignore this flag; in torch >= 2.9 this is
     # enabled by default.
-    "APHRODITE_USE_STANDALONE_COMPILE": lambda: os.environ.get(
-        "APHRODITE_USE_STANDALONE_COMPILE", "1"
-    )
-    == "1",
+    "APHRODITE_USE_STANDALONE_COMPILE": lambda: os.environ.get("APHRODITE_USE_STANDALONE_COMPILE", "1") == "1",
     # Debug pattern matching inside custom passes.
     # Should be set to the fx.Node name (e.g. 'getitem_34' or 'scaled_mm_3').
-    "APHRODITE_PATTERN_MATCH_DEBUG": lambda: os.environ.get(
-        "APHRODITE_PATTERN_MATCH_DEBUG", None
-    ),
+    "APHRODITE_PATTERN_MATCH_DEBUG": lambda: os.environ.get("APHRODITE_PATTERN_MATCH_DEBUG", None),
     # Dump fx graphs to the given directory.
     # It will override CompilationConfig.debug_dump_path if set.
     "APHRODITE_DEBUG_DUMP_PATH": lambda: os.environ.get("APHRODITE_DEBUG_DUMP_PATH", None),
@@ -559,9 +525,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # used to control the visible devices in the distributed setting
     "CUDA_VISIBLE_DEVICES": lambda: os.environ.get("CUDA_VISIBLE_DEVICES", None),
     # timeout for each iteration in the engine
-    "APHRODITE_ENGINE_ITERATION_TIMEOUT_S": lambda: int(
-        os.environ.get("APHRODITE_ENGINE_ITERATION_TIMEOUT_S", "60")
-    ),
+    "APHRODITE_ENGINE_ITERATION_TIMEOUT_S": lambda: int(os.environ.get("APHRODITE_ENGINE_ITERATION_TIMEOUT_S", "60")),
     # API key for Aphrodite API server
     "APHRODITE_API_KEY": lambda: os.environ.get("APHRODITE_API_KEY", None),
     # Whether to log responses from API Server for debugging
@@ -578,14 +542,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
         "APHRODITE_USAGE_STATS_SERVER", "https://stats.aphrodite.ai"
     ),
     "APHRODITE_NO_USAGE_STATS": lambda: os.environ.get("APHRODITE_NO_USAGE_STATS", "0") == "1",
-    "APHRODITE_DISABLE_FLASHINFER_PREFILL": lambda: os.environ.get(
-        "APHRODITE_DISABLE_FLASHINFER_PREFILL", "0"
-    )
-    == "1",
+    "APHRODITE_DISABLE_FLASHINFER_PREFILL": lambda: os.environ.get("APHRODITE_DISABLE_FLASHINFER_PREFILL", "0") == "1",
     "APHRODITE_DO_NOT_TRACK": lambda: (
-        os.environ.get("APHRODITE_DO_NOT_TRACK", None)
-        or os.environ.get("DO_NOT_TRACK", None)
-        or "0"
+        os.environ.get("APHRODITE_DO_NOT_TRACK", None) or os.environ.get("DO_NOT_TRACK", None) or "0"
     )
     == "1",
     "APHRODITE_USAGE_SOURCE": lambda: os.environ.get("APHRODITE_USAGE_SOURCE", "production"),
@@ -605,9 +564,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_LOGGING_VERBOSE": lambda: os.environ.get("APHRODITE_LOGGING_VERBOSE", "0").lower() in ("1", "true"),
     # if set, aphrodite will suppress stdout/stderr from C libraries (like Gloo)
     # that bypass Python's logging system
-    "APHRODITE_SUPPRESS_C_LIB_OUTPUT": lambda: os.environ.get(
-        "APHRODITE_SUPPRESS_C_LIB_OUTPUT", "1"
-    ).lower()
+    "APHRODITE_SUPPRESS_C_LIB_OUTPUT": lambda: os.environ.get("APHRODITE_SUPPRESS_C_LIB_OUTPUT", "1").lower()
     in ("1", "true"),
     # If set, aphrodite will log stats at this interval in seconds
     # If not set, aphrodite will log stats every 10 seconds.
@@ -633,15 +590,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
         "APHRODITE_ATTENTION_BACKEND",
         None,
         lambda: list(
-            __import__(
-                "aphrodite.attention.backends.registry", fromlist=["_Backend"]
-            )._Backend.__members__.keys()
+            __import__("aphrodite.attention.backends.registry", fromlist=["_Backend"])._Backend.__members__.keys()
         ),
     ),
     # If set, aphrodite will use flashinfer sampler
-    "APHRODITE_USE_FLASHINFER_SAMPLER": lambda: bool(
-        int(os.environ["APHRODITE_USE_FLASHINFER_SAMPLER"])
-    )
+    "APHRODITE_USE_FLASHINFER_SAMPLER": lambda: bool(int(os.environ["APHRODITE_USE_FLASHINFER_SAMPLER"]))
     if "APHRODITE_USE_FLASHINFER_SAMPLER" in os.environ
     else None,
     # Pipeline stage partition strategy
@@ -656,9 +609,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_CPU_OMP_THREADS_BIND": lambda: os.getenv("APHRODITE_CPU_OMP_THREADS_BIND", "auto"),
     # (CPU backend only) CPU cores not used by OMP threads .
     # Those CPU cores will not be used by OMP threads of a rank.
-    "APHRODITE_CPU_NUM_OF_RESERVED_CPU": lambda: int(
-        os.getenv("APHRODITE_CPU_NUM_OF_RESERVED_CPU", "0")
-    )
+    "APHRODITE_CPU_NUM_OF_RESERVED_CPU": lambda: int(os.getenv("APHRODITE_CPU_NUM_OF_RESERVED_CPU", "0"))
     if "APHRODITE_CPU_NUM_OF_RESERVED_CPU" in os.environ
     else None,
     # (CPU backend only) whether to use prepack for MoE layer. This will be
@@ -685,9 +636,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # If the env var is set, it uses a Ray Communicator wrapping
     # Aphrodite's pipeline parallelism communicator to interact with Ray's
     # Compiled Graph. Otherwise, it uses Ray's NCCL communicator.
-    "APHRODITE_USE_RAY_WRAPPED_PP_COMM": lambda: bool(
-        int(os.getenv("APHRODITE_USE_RAY_WRAPPED_PP_COMM", "1"))
-    ),
+    "APHRODITE_USE_RAY_WRAPPED_PP_COMM": lambda: bool(int(os.getenv("APHRODITE_USE_RAY_WRAPPED_PP_COMM", "1"))),
     # Use dedicated multiprocess context for workers.
     # Both spawn and fork work
     "APHRODITE_WORKER_MULTIPROC_METHOD": env_with_choices(
@@ -702,39 +651,27 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # If the env var is set, we will clean model file in
     # this path $APHRODITE_ASSETS_CACHE/model_streamer/$model_name
-    "APHRODITE_ASSETS_CACHE_MODEL_CLEAN": lambda: bool(
-        int(os.getenv("APHRODITE_ASSETS_CACHE_MODEL_CLEAN", "0"))
-    ),
+    "APHRODITE_ASSETS_CACHE_MODEL_CLEAN": lambda: bool(int(os.getenv("APHRODITE_ASSETS_CACHE_MODEL_CLEAN", "0"))),
     # Timeout for fetching images when serving multimodal models
     # Default is 5 seconds
     "APHRODITE_IMAGE_FETCH_TIMEOUT": lambda: int(os.getenv("APHRODITE_IMAGE_FETCH_TIMEOUT", "5")),
     # Timeout for fetching videos when serving multimodal models
     # Default is 30 seconds
-    "APHRODITE_VIDEO_FETCH_TIMEOUT": lambda: int(
-        os.getenv("APHRODITE_VIDEO_FETCH_TIMEOUT", "30")
-    ),
+    "APHRODITE_VIDEO_FETCH_TIMEOUT": lambda: int(os.getenv("APHRODITE_VIDEO_FETCH_TIMEOUT", "30")),
     # Timeout for fetching audio when serving multimodal models
     # Default is 10 seconds
-    "APHRODITE_AUDIO_FETCH_TIMEOUT": lambda: int(
-        os.getenv("APHRODITE_AUDIO_FETCH_TIMEOUT", "10")
-    ),
+    "APHRODITE_AUDIO_FETCH_TIMEOUT": lambda: int(os.getenv("APHRODITE_AUDIO_FETCH_TIMEOUT", "10")),
     # Whether to allow HTTP redirects when fetching from media URLs.
     # Default to True
-    "APHRODITE_MEDIA_URL_ALLOW_REDIRECTS": lambda: bool(
-        int(os.getenv("APHRODITE_MEDIA_URL_ALLOW_REDIRECTS", "1"))
-    ),
+    "APHRODITE_MEDIA_URL_ALLOW_REDIRECTS": lambda: bool(int(os.getenv("APHRODITE_MEDIA_URL_ALLOW_REDIRECTS", "1"))),
     # Max number of workers for the thread pool handling
     # media bytes loading. Set to 1 to disable parallel processing.
     # Default is 8
-    "APHRODITE_MEDIA_LOADING_THREAD_COUNT": lambda: int(
-        os.getenv("APHRODITE_MEDIA_LOADING_THREAD_COUNT", "8")
-    ),
+    "APHRODITE_MEDIA_LOADING_THREAD_COUNT": lambda: int(os.getenv("APHRODITE_MEDIA_LOADING_THREAD_COUNT", "8")),
     # Maximum filesize in MB for a single audio file when processing
     # speech-to-text requests. Files larger than this will be rejected.
     # Default is 25 MB
-    "APHRODITE_MAX_AUDIO_CLIP_FILESIZE_MB": lambda: int(
-        os.getenv("APHRODITE_MAX_AUDIO_CLIP_FILESIZE_MB", "25")
-    ),
+    "APHRODITE_MAX_AUDIO_CLIP_FILESIZE_MB": lambda: int(os.getenv("APHRODITE_MAX_AUDIO_CLIP_FILESIZE_MB", "25")),
     # Backend for Video IO
     # - "opencv": Default backend that uses OpenCV stream buffered backend.
     #
@@ -742,9 +679,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # via `@VIDEO_LOADER_REGISTRY.register("my_custom_video_loader")` and
     # imported at runtime.
     # If a non-existing backend is used, an AssertionError will be thrown.
-    "APHRODITE_VIDEO_LOADER_BACKEND": lambda: os.getenv(
-        "APHRODITE_VIDEO_LOADER_BACKEND", "opencv"
-    ),
+    "APHRODITE_VIDEO_LOADER_BACKEND": lambda: os.getenv("APHRODITE_VIDEO_LOADER_BACKEND", "opencv"),
     # [DEPRECATED] Cache size (in GiB per process) for multimodal input cache
     # Default is 4 GiB per API process + 4 GiB per engine core process
     "APHRODITE_MM_INPUT_CACHE_GIB": lambda: int(os.getenv("APHRODITE_MM_INPUT_CACHE_GIB", "4")),
@@ -757,14 +692,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
         )
     ),
     # If set, assert on XLA recompilation after each execution step.
-    "APHRODITE_XLA_CHECK_RECOMPILATION": lambda: bool(
-        int(os.getenv("APHRODITE_XLA_CHECK_RECOMPILATION", "0"))
-    ),
+    "APHRODITE_XLA_CHECK_RECOMPILATION": lambda: bool(int(os.getenv("APHRODITE_XLA_CHECK_RECOMPILATION", "0"))),
     # Enable SPMD mode for TPU backend.
     "APHRODITE_XLA_USE_SPMD": lambda: bool(int(os.getenv("APHRODITE_XLA_USE_SPMD", "0"))),
-    "APHRODITE_FUSED_MOE_CHUNK_SIZE": lambda: int(
-        os.getenv("APHRODITE_FUSED_MOE_CHUNK_SIZE", "32768")
-    ),
+    "APHRODITE_FUSED_MOE_CHUNK_SIZE": lambda: int(os.getenv("APHRODITE_FUSED_MOE_CHUNK_SIZE", "32768")),
     # Control whether to use fused MoE activation chunking. Current chunking
     # logic is incompatible with torch.compile and causes IMA. See issue
     # https://github.com/aphrodite-project/aphrodite/issues/19631.
@@ -773,33 +704,25 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # If set, the OpenAI API server will stay alive even after the underlying
     # AsyncLLMEngine errors and stops serving requests
-    "APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH": lambda: bool(
-        os.getenv("APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH", 0)
-    ),
+    "APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH": lambda: bool(os.getenv("APHRODITE_KEEP_ALIVE_ON_ENGINE_DEATH", 0)),
     # If the env var APHRODITE_ALLOW_LONG_MAX_MODEL_LEN is set, it allows
     # the user to specify a max sequence length greater than
     # the max length derived from the model's config.json.
     # To enable this, set APHRODITE_ALLOW_LONG_MAX_MODEL_LEN=1.
     "APHRODITE_ALLOW_LONG_MAX_MODEL_LEN": lambda: (
-        os.environ.get("APHRODITE_ALLOW_LONG_MAX_MODEL_LEN", "0").strip().lower()
-        in ("1", "true")
+        os.environ.get("APHRODITE_ALLOW_LONG_MAX_MODEL_LEN", "0").strip().lower() in ("1", "true")
     ),
     # If set, forces FP8 Marlin to be used for FP8 quantization regardless
     # of the hardware support for FP8 compute.
     "APHRODITE_TEST_FORCE_FP8_MARLIN": lambda: (
-        os.environ.get("APHRODITE_TEST_FORCE_FP8_MARLIN", "0").strip().lower()
-        in ("1", "true")
+        os.environ.get("APHRODITE_TEST_FORCE_FP8_MARLIN", "0").strip().lower() in ("1", "true")
     ),
-    "APHRODITE_TEST_FORCE_LOAD_FORMAT": lambda: os.getenv(
-        "APHRODITE_TEST_FORCE_LOAD_FORMAT", "dummy"
-    ),
+    "APHRODITE_TEST_FORCE_LOAD_FORMAT": lambda: os.getenv("APHRODITE_TEST_FORCE_LOAD_FORMAT", "dummy"),
     # Time in ms for the zmq client to wait for a response from the backend
     # server for simple data operations
     "APHRODITE_RPC_TIMEOUT": lambda: int(os.getenv("APHRODITE_RPC_TIMEOUT", "10000")),
     # Timeout in seconds for keeping HTTP connections alive in API server
-    "APHRODITE_HTTP_TIMEOUT_KEEP_ALIVE": lambda: int(
-        os.environ.get("APHRODITE_HTTP_TIMEOUT_KEEP_ALIVE", "5")
-    ),
+    "APHRODITE_HTTP_TIMEOUT_KEEP_ALIVE": lambda: int(os.environ.get("APHRODITE_HTTP_TIMEOUT_KEEP_ALIVE", "5")),
     # a list of plugin names to load, separated by commas.
     # if this is not set, it means all plugins will be loaded
     # if this is set to an empty string, no plugins will be loaded
@@ -809,9 +732,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # a local directory to look in for unrecognized LoRA adapters.
     # only works if plugins are enabled and
     # APHRODITE_ALLOW_RUNTIME_LORA_UPDATING is enabled.
-    "APHRODITE_LORA_RESOLVER_CACHE_DIR": lambda: os.getenv(
-        "APHRODITE_LORA_RESOLVER_CACHE_DIR", None
-    ),
+    "APHRODITE_LORA_RESOLVER_CACHE_DIR": lambda: os.getenv("APHRODITE_LORA_RESOLVER_CACHE_DIR", None),
     # Enables torch profiler if set.
     # Both AsyncLLM's CPU traces as well as workers'
     # traces (CPU & GPU) will be saved under this directory.
@@ -819,9 +740,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_TORCH_PROFILER_DIR": lambda: (
         None
         if os.getenv("APHRODITE_TORCH_PROFILER_DIR", None) is None
-        else os.path.abspath(
-            os.path.expanduser(os.getenv("APHRODITE_TORCH_PROFILER_DIR", "."))
-        )
+        else os.path.abspath(os.path.expanduser(os.getenv("APHRODITE_TORCH_PROFILER_DIR", ".")))
     ),
     # Enable torch profiler to record shapes if set
     # APHRODITE_TORCH_PROFILER_RECORD_SHAPES=1. If not set, torch profiler will
@@ -838,21 +757,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Enable torch profiler to profile stack if set
     # APHRODITE_TORCH_PROFILER_WITH_STACK=1. If not set, torch profiler WILL
     # profile stack by default.
-    "APHRODITE_TORCH_PROFILER_WITH_STACK": lambda: bool(
-        os.getenv("APHRODITE_TORCH_PROFILER_WITH_STACK", "1") != "0"
-    ),
+    "APHRODITE_TORCH_PROFILER_WITH_STACK": lambda: bool(os.getenv("APHRODITE_TORCH_PROFILER_WITH_STACK", "1") != "0"),
     # Enable torch profiler to profile flops if set
     # APHRODITE_TORCH_PROFILER_WITH_FLOPS=1. If not set, torch profiler will
     # not profile flops.
-    "APHRODITE_TORCH_PROFILER_WITH_FLOPS": lambda: bool(
-        os.getenv("APHRODITE_TORCH_PROFILER_WITH_FLOPS", "0") != "0"
-    ),
+    "APHRODITE_TORCH_PROFILER_WITH_FLOPS": lambda: bool(os.getenv("APHRODITE_TORCH_PROFILER_WITH_FLOPS", "0") != "0"),
     # If set, Aphrodite will use Triton implementations of AWQ.
     "APHRODITE_USE_TRITON_AWQ": lambda: bool(int(os.getenv("APHRODITE_USE_TRITON_AWQ", "0"))),
     # If set, allow loading or unloading lora adapters in runtime,
     "APHRODITE_ALLOW_RUNTIME_LORA_UPDATING": lambda: (
-        os.environ.get("APHRODITE_ALLOW_RUNTIME_LORA_UPDATING", "0").strip().lower()
-        in ("1", "true")
+        os.environ.get("APHRODITE_ALLOW_RUNTIME_LORA_UPDATING", "0").strip().lower() in ("1", "true")
     ),
     # We assume drivers can report p2p status correctly.
     # If the program hangs when using custom allreduce,
@@ -869,16 +783,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     if "APHRODITE_DISABLED_KERNELS" not in os.environ
     else os.environ["APHRODITE_DISABLED_KERNELS"].split(","),
     # Disable pynccl (using torch.distributed instead)
-    "APHRODITE_DISABLE_PYNCCL": lambda: (
-        os.getenv("APHRODITE_DISABLE_PYNCCL", "False").lower() in ("true", "1")
-    ),
+    "APHRODITE_DISABLE_PYNCCL": lambda: (os.getenv("APHRODITE_DISABLE_PYNCCL", "False").lower() in ("true", "1")),
     # If set, use the V1 code path.
     "APHRODITE_USE_V1": lambda: bool(int(os.getenv("APHRODITE_USE_V1", "1"))),
     # Disable aiter ops unless specifically enabled.
     # Acts as a parent switch to enable the rest of the other operations.
-    "APHRODITE_ROCM_USE_AITER": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER", "False").lower() in ("true", "1")
-    ),
+    "APHRODITE_ROCM_USE_AITER": lambda: (os.getenv("APHRODITE_ROCM_USE_AITER", "False").lower() in ("true", "1")),
     # Whether to use aiter paged attention.
     # By default is disabled.
     "APHRODITE_ROCM_USE_AITER_PAGED_ATTN": lambda: (
@@ -926,14 +836,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     ),
     # Use AITER triton unified attention for V1 attention
     "APHRODITE_ROCM_USE_AITER_UNIFIED_ATTENTION": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER_UNIFIED_ATTENTION", "False").lower()
-        in ("true", "1")
+        os.getenv("APHRODITE_ROCM_USE_AITER_UNIFIED_ATTENTION", "False").lower() in ("true", "1")
     ),
     # Whether to use aiter fusion shared experts ops.
     # By default is enabled.
     "APHRODITE_ROCM_USE_AITER_FUSION_SHARED_EXPERTS": lambda: (
-        os.getenv("APHRODITE_ROCM_USE_AITER_FUSION_SHARED_EXPERTS", "True").lower()
-        in ("true", "1")
+        os.getenv("APHRODITE_ROCM_USE_AITER_FUSION_SHARED_EXPERTS", "True").lower() in ("true", "1")
     ),
     # use rocm skinny gemms
     "APHRODITE_ROCM_USE_SKINNY_GEMM": lambda: (
@@ -960,8 +868,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # kernels are slower than fp16,
     # If environment variable is set to 1, the input is converted to fp16
     "APHRODITE_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16": lambda: (
-        os.getenv("APHRODITE_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16", "True").lower()
-        in ("true", "1")
+        os.getenv("APHRODITE_ROCM_QUICK_REDUCE_CAST_BF16_TO_FP16", "True").lower() in ("true", "1")
     ),
     # Custom quick allreduce kernel for MI3* cards.
     # Controls the maximum allowed number of data bytes(MB) for custom quick
@@ -979,12 +886,8 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Divisor for dynamic value scale factor calculation for FP8 KV Cache
     "V_SCALE_CONSTANT": lambda: int(os.getenv("V_SCALE_CONSTANT", "100")),
     # If set, enable multiprocessing in LLM for the V1 code path.
-    "APHRODITE_ENABLE_V1_MULTIPROCESSING": lambda: bool(
-        int(os.getenv("APHRODITE_ENABLE_V1_MULTIPROCESSING", "1"))
-    ),
-    "APHRODITE_LOG_BATCHSIZE_INTERVAL": lambda: float(
-        os.getenv("APHRODITE_LOG_BATCHSIZE_INTERVAL", "-1")
-    ),
+    "APHRODITE_ENABLE_V1_MULTIPROCESSING": lambda: bool(int(os.getenv("APHRODITE_ENABLE_V1_MULTIPROCESSING", "1"))),
+    "APHRODITE_LOG_BATCHSIZE_INTERVAL": lambda: float(os.getenv("APHRODITE_LOG_BATCHSIZE_INTERVAL", "-1")),
     "APHRODITE_DISABLE_COMPILE_CACHE": disable_compile_cache,
     # If set, aphrodite will run in development mode, which will enable
     # some additional endpoints for developing and debugging,
@@ -1000,9 +903,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Setting this too high can result in a higher variance of
     # inter-message latencies. Setting it too low can negatively impact
     # TTFT and overall throughput.
-    "APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE": lambda: int(
-        os.getenv("APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE", "128")
-    ),
+    "APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE": lambda: int(os.getenv("APHRODITE_V1_OUTPUT_PROC_CHUNK_SIZE", "128")),
     # If set, Aphrodite will disable the MLA attention optimizations.
     "APHRODITE_MLA_DISABLE": lambda: bool(int(os.getenv("APHRODITE_MLA_DISABLE", "0"))),
     # If set, Aphrodite will pick up the provided Flash Attention MLA
@@ -1013,9 +914,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Number of GPUs per worker in Ray, if it is set to be a fraction,
     # it allows ray to schedule multiple actors on a single GPU,
     # so that users can colocate other actors on the same GPUs as Aphrodite.
-    "APHRODITE_RAY_PER_WORKER_GPUS": lambda: float(
-        os.getenv("APHRODITE_RAY_PER_WORKER_GPUS", "1.0")
-    ),
+    "APHRODITE_RAY_PER_WORKER_GPUS": lambda: float(os.getenv("APHRODITE_RAY_PER_WORKER_GPUS", "1.0")),
     # Bundle indices for Ray, if it is set, it can control precisely
     # which indices are used for the Ray bundle, for every worker.
     # Format: comma-separated list of integers, e.g. "0,1,2,3"
@@ -1043,10 +942,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # units.
     "APHRODITE_MOE_DP_CHUNK_SIZE": lambda: int(os.getenv("APHRODITE_MOE_DP_CHUNK_SIZE", "256")),
     # Randomize inputs during dummy runs when using Data Parallel
-    "APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS": lambda: os.environ.get(
-        "APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS", "0"
-    )
-    == "1",
+    "APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS": lambda: os.environ.get("APHRODITE_RANDOMIZE_DP_DUMMY_INPUTS", "0") == "1",
     # Strategy to pack the data parallel ranks for Ray.
     # Available options:
     # - "fill":
@@ -1058,9 +954,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     #   Should be used only when a single DP rank requires multiple nodes.
     #   allocate one DP rank over as many nodes as required for set world_size;
     # This environment variable is ignored if data-parallel-backend is not Ray.
-    "APHRODITE_RAY_DP_PACK_STRATEGY": lambda: os.getenv(
-        "APHRODITE_RAY_DP_PACK_STRATEGY", "strict"
-    ),
+    "APHRODITE_RAY_DP_PACK_STRATEGY": lambda: os.getenv("APHRODITE_RAY_DP_PACK_STRATEGY", "strict"),
     # Whether to use S3 path for model loading in CI via RunAI Streamer
     "APHRODITE_CI_USE_S3": lambda: os.environ.get("APHRODITE_CI_USE_S3", "0") == "1",
     # Use model_redirect to redirect the model name to a local folder.
@@ -1069,45 +963,27 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # {"meta-llama/Llama-3.2-1B": "/tmp/Llama-3.2-1B"}
     # or a space separated values table file:
     # meta-llama/Llama-3.2-1B   /tmp/Llama-3.2-1B
-    "APHRODITE_MODEL_REDIRECT_PATH": lambda: os.environ.get(
-        "APHRODITE_MODEL_REDIRECT_PATH", None
-    ),
+    "APHRODITE_MODEL_REDIRECT_PATH": lambda: os.environ.get("APHRODITE_MODEL_REDIRECT_PATH", None),
     # Whether to use atomicAdd reduce in gptq/awq marlin kernel.
-    "APHRODITE_MARLIN_USE_ATOMIC_ADD": lambda: os.environ.get(
-        "APHRODITE_MARLIN_USE_ATOMIC_ADD", "0"
-    )
-    == "1",
+    "APHRODITE_MARLIN_USE_ATOMIC_ADD": lambda: os.environ.get("APHRODITE_MARLIN_USE_ATOMIC_ADD", "0") == "1",
     # Whether to use marlin kernel in mxfp4 quantization method
-    "APHRODITE_MXFP4_USE_MARLIN": lambda: maybe_convert_bool(
-        os.environ.get("APHRODITE_MXFP4_USE_MARLIN", None)
-    ),
+    "APHRODITE_MXFP4_USE_MARLIN": lambda: maybe_convert_bool(os.environ.get("APHRODITE_MXFP4_USE_MARLIN", None)),
     # Whether to turn on the outlines cache for V1
     # This cache is unbounded and on disk, so it's not safe to use in
     # an environment with potentially malicious users.
-    "APHRODITE_V1_USE_OUTLINES_CACHE": lambda: os.environ.get(
-        "APHRODITE_V1_USE_OUTLINES_CACHE", "0"
-    )
-    == "1",
+    "APHRODITE_V1_USE_OUTLINES_CACHE": lambda: os.environ.get("APHRODITE_V1_USE_OUTLINES_CACHE", "0") == "1",
     # Gap between padding buckets for the forward pass. So we have
     # 8, we will run forward pass with [16, 24, 32, ...].
-    "APHRODITE_TPU_BUCKET_PADDING_GAP": lambda: int(
-        os.environ["APHRODITE_TPU_BUCKET_PADDING_GAP"]
-    )
+    "APHRODITE_TPU_BUCKET_PADDING_GAP": lambda: int(os.environ["APHRODITE_TPU_BUCKET_PADDING_GAP"])
     if "APHRODITE_TPU_BUCKET_PADDING_GAP" in os.environ
     else 0,
-    "APHRODITE_TPU_MOST_MODEL_LEN": lambda: maybe_convert_int(
-        os.environ.get("APHRODITE_TPU_MOST_MODEL_LEN", None)
-    ),
+    "APHRODITE_TPU_MOST_MODEL_LEN": lambda: maybe_convert_int(os.environ.get("APHRODITE_TPU_MOST_MODEL_LEN", None)),
     # Whether using Pathways
-    "APHRODITE_TPU_USING_PATHWAYS": lambda: bool(
-        "proxy" in os.getenv("JAX_PLATFORMS", "").lower()
-    ),
+    "APHRODITE_TPU_USING_PATHWAYS": lambda: bool("proxy" in os.getenv("JAX_PLATFORMS", "").lower()),
     # Allow use of DeepGemm kernels for fused moe ops.
     "APHRODITE_USE_DEEP_GEMM": lambda: bool(int(os.getenv("APHRODITE_USE_DEEP_GEMM", "1"))),
     # Whether to use E8M0 scaling when DeepGEMM is used on Blackwell GPUs.
-    "APHRODITE_USE_DEEP_GEMM_E8M0": lambda: bool(
-        int(os.getenv("APHRODITE_USE_DEEP_GEMM_E8M0", "1"))
-    ),
+    "APHRODITE_USE_DEEP_GEMM_E8M0": lambda: bool(int(os.getenv("APHRODITE_USE_DEEP_GEMM_E8M0", "1"))),
     # DeepGemm JITs the kernels on-demand. The warmup attempts to make DeepGemm
     # JIT all the required kernels before model execution so there is no
     # JIT'ing in the hot-path. However, this warmup increases the engine
@@ -1129,21 +1005,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
         ],
     ),
     # Whether to use fused grouped_topk used for MoE expert selection.
-    "APHRODITE_USE_FUSED_MOE_GROUPED_TOPK": lambda: bool(
-        int(os.getenv("APHRODITE_USE_FUSED_MOE_GROUPED_TOPK", "1"))
-    ),
+    "APHRODITE_USE_FUSED_MOE_GROUPED_TOPK": lambda: bool(int(os.getenv("APHRODITE_USE_FUSED_MOE_GROUPED_TOPK", "1"))),
     # Allow use of FlashInfer MoE kernels for fused moe ops.
-    "APHRODITE_USE_FLASHINFER_MOE_FP16": lambda: bool(
-        int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_FP16", "0"))
-    ),
+    "APHRODITE_USE_FLASHINFER_MOE_FP16": lambda: bool(int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_FP16", "0"))),
     # Allow use of FlashInfer MoE kernels for fused moe ops.
-    "APHRODITE_USE_FLASHINFER_MOE_FP8": lambda: bool(
-        int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_FP8", "0"))
-    ),
+    "APHRODITE_USE_FLASHINFER_MOE_FP8": lambda: bool(int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_FP8", "0"))),
     # Allow use of FlashInfer CUTLASS kernels for fused moe ops.
-    "APHRODITE_USE_FLASHINFER_MOE_FP4": lambda: bool(
-        int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_FP4", "0"))
-    ),
+    "APHRODITE_USE_FLASHINFER_MOE_FP4": lambda: bool(int(os.getenv("APHRODITE_USE_FLASHINFER_MOE_FP4", "0"))),
     # If set to 1, use the FlashInfer
     # MXFP8 (activation) x MXFP4 (weight) MoE backend.
     "APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8": lambda: bool(
@@ -1172,9 +1040,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # While the sending side still actually copies the tensor
     # in all cases, on the receiving side, tensors above this
     # limit will actually be zero-copy decoded.
-    "APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD": lambda: int(
-        os.getenv("APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD", "256")
-    ),
+    "APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD": lambda: int(os.getenv("APHRODITE_MSGPACK_ZERO_COPY_THRESHOLD", "256")),
     # If set, allow insecure serialization using pickle.
     # This is useful for environments where it is deemed safe to use the
     # insecure method and it is needed for some reason.
@@ -1182,13 +1048,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
         int(os.getenv("APHRODITE_ALLOW_INSECURE_SERIALIZATION", "0"))
     ),
     # IP address used for NIXL handshake between remote agents.
-    "APHRODITE_NIXL_SIDE_CHANNEL_HOST": lambda: os.getenv(
-        "APHRODITE_NIXL_SIDE_CHANNEL_HOST", "localhost"
-    ),
+    "APHRODITE_NIXL_SIDE_CHANNEL_HOST": lambda: os.getenv("APHRODITE_NIXL_SIDE_CHANNEL_HOST", "localhost"),
     # Port used for NIXL handshake between remote agents.
-    "APHRODITE_NIXL_SIDE_CHANNEL_PORT": lambda: int(
-        os.getenv("APHRODITE_NIXL_SIDE_CHANNEL_PORT", "5600")
-    ),
+    "APHRODITE_NIXL_SIDE_CHANNEL_PORT": lambda: int(os.getenv("APHRODITE_NIXL_SIDE_CHANNEL_PORT", "5600")),
     # all2all backend for aphrodite's expert parallel communication
     # Available options:
     # - "naive": naive all2all implementation using broadcasts
@@ -1255,14 +1117,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Control the max chunk bytes (in MB) for the rpc message queue.
     # Object larger than this threshold will be broadcast to worker
     # processes via zmq.
-    "APHRODITE_MQ_MAX_CHUNK_BYTES_MB": lambda: int(
-        os.getenv("APHRODITE_MQ_MAX_CHUNK_BYTES_MB", "16")
-    ),
+    "APHRODITE_MQ_MAX_CHUNK_BYTES_MB": lambda: int(os.getenv("APHRODITE_MQ_MAX_CHUNK_BYTES_MB", "16")),
     # Timeout in seconds for execute_model RPC calls in multiprocessing
     # executor (only applies when TP > 1).
-    "APHRODITE_EXECUTE_MODEL_TIMEOUT_SECONDS": lambda: int(
-        os.getenv("APHRODITE_EXECUTE_MODEL_TIMEOUT_SECONDS", "300")
-    ),
+    "APHRODITE_EXECUTE_MODEL_TIMEOUT_SECONDS": lambda: int(os.getenv("APHRODITE_EXECUTE_MODEL_TIMEOUT_SECONDS", "300")),
     # KV Cache layout used throughout aphrodite.
     # Some common values are:
     # - NHD
@@ -1270,32 +1128,22 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Where N=num_blocks, H=num_heads and D=head_size. The default value will
     # leave the layout choice to the backend. Mind that backends may only
     # implement and support a subset of all possible layouts.
-    "APHRODITE_KV_CACHE_LAYOUT": env_with_choices(
-        "APHRODITE_KV_CACHE_LAYOUT", None, ["NHD", "HND"]
-    ),
+    "APHRODITE_KV_CACHE_LAYOUT": env_with_choices("APHRODITE_KV_CACHE_LAYOUT", None, ["NHD", "HND"]),
     # Enable checking whether the generated logits contain NaNs,
     # indicating corrupted output. Useful for debugging low level bugs
     # or bad hardware but it may add compute overhead.
-    "APHRODITE_COMPUTE_NANS_IN_LOGITS": lambda: bool(
-        int(os.getenv("APHRODITE_COMPUTE_NANS_IN_LOGITS", "0"))
-    ),
+    "APHRODITE_COMPUTE_NANS_IN_LOGITS": lambda: bool(int(os.getenv("APHRODITE_COMPUTE_NANS_IN_LOGITS", "0"))),
     # Controls whether or not emulations are used for NVFP4
     # generations on machines < 100 for compressed-tensors
     # models
-    "APHRODITE_USE_NVFP4_CT_EMULATIONS": lambda: bool(
-        int(os.getenv("APHRODITE_USE_NVFP4_CT_EMULATIONS", "0"))
-    ),
+    "APHRODITE_USE_NVFP4_CT_EMULATIONS": lambda: bool(int(os.getenv("APHRODITE_USE_NVFP4_CT_EMULATIONS", "0"))),
     # Time (in seconds) after which the KV cache on the producer side is
     # automatically cleared if no READ notification is received from the
     # consumer. This is only applicable when using NixlConnector in a
     # disaggregated decode-prefill setup.
-    "APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT": lambda: int(
-        os.getenv("APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT", "480")
-    ),
+    "APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT": lambda: int(os.getenv("APHRODITE_NIXL_ABORT_REQUEST_TIMEOUT", "480")),
     # Controls whether or not to use cudnn prefill
-    "APHRODITE_USE_CUDNN_PREFILL": lambda: bool(
-        int(os.getenv("APHRODITE_USE_CUDNN_PREFILL", "0"))
-    ),
+    "APHRODITE_USE_CUDNN_PREFILL": lambda: bool(int(os.getenv("APHRODITE_USE_CUDNN_PREFILL", "0"))),
     # Controls whether to use TRT-LLM ragged DeepSeek prefill
     "APHRODITE_USE_TRTLLM_RAGGED_DEEPSEEK_PREFILL": lambda: bool(
         int(os.getenv("APHRODITE_USE_TRTLLM_RAGGED_DEEPSEEK_PREFILL", "0"))
@@ -1328,9 +1176,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Controls garbage collection during CUDA graph capture.
     # If set to 0 (default), enables GC freezing to speed up capture time.
     # If set to 1, allows GC to run during capture.
-    "APHRODITE_ENABLE_CUDAGRAPH_GC": lambda: bool(
-        int(os.getenv("APHRODITE_ENABLE_CUDAGRAPH_GC", "0"))
-    ),
+    "APHRODITE_ENABLE_CUDAGRAPH_GC": lambda: bool(int(os.getenv("APHRODITE_ENABLE_CUDAGRAPH_GC", "0"))),
     # Used to force set up loopback IP
     "APHRODITE_LOOPBACK_IP": lambda: os.getenv("APHRODITE_LOOPBACK_IP", ""),
     # Used to set the process name prefix for Aphrodite processes.
@@ -1356,17 +1202,11 @@ environment_variables: dict[str, Callable[[], Any]] = {
     #    lost when the Aphrodite server shuts down.
     # 2. Enabling this option will cause a memory leak, as stored messages are
     #    never removed from memory until the server terminates.
-    "APHRODITE_ENABLE_RESPONSES_API_STORE": lambda: bool(
-        int(os.getenv("APHRODITE_ENABLE_RESPONSES_API_STORE", "0"))
-    ),
+    "APHRODITE_ENABLE_RESPONSES_API_STORE": lambda: bool(int(os.getenv("APHRODITE_ENABLE_RESPONSES_API_STORE", "0"))),
     # If set, use the fp8 mfma in rocm paged attention.
-    "APHRODITE_ROCM_FP8_MFMA_PAGE_ATTN": lambda: bool(
-        int(os.getenv("APHRODITE_ROCM_FP8_MFMA_PAGE_ATTN", "0"))
-    ),
+    "APHRODITE_ROCM_FP8_MFMA_PAGE_ATTN": lambda: bool(int(os.getenv("APHRODITE_ROCM_FP8_MFMA_PAGE_ATTN", "0"))),
     # Whether to use pytorch symmetric memory for allreduce
-    "APHRODITE_ALLREDUCE_USE_SYMM_MEM": lambda: bool(
-        int(os.getenv("APHRODITE_ALLREDUCE_USE_SYMM_MEM", "0"))
-    ),
+    "APHRODITE_ALLREDUCE_USE_SYMM_MEM": lambda: bool(int(os.getenv("APHRODITE_ALLREDUCE_USE_SYMM_MEM", "0"))),
     # Allows aphrodite to find tuned config under customized folder
     "APHRODITE_TUNED_CONFIG_FOLDER": lambda: os.getenv("APHRODITE_TUNED_CONFIG_FOLDER", None),
     # Valid values are container,code_interpreter,web_search_preview
@@ -1389,13 +1229,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
         int(os.getenv("APHRODITE_TOOL_JSON_ERROR_AUTOMATIC_RETRY", "0"))
     ),
     # Add optional custom scopes for profiling, disable to avoid overheads
-    "APHRODITE_CUSTOM_SCOPES_FOR_PROFILING": lambda: bool(
-        int(os.getenv("APHRODITE_CUSTOM_SCOPES_FOR_PROFILING", "0"))
-    ),
+    "APHRODITE_CUSTOM_SCOPES_FOR_PROFILING": lambda: bool(int(os.getenv("APHRODITE_CUSTOM_SCOPES_FOR_PROFILING", "0"))),
     # Add optional nvtx scopes for profiling, disable to avoid overheads
-    "APHRODITE_NVTX_SCOPES_FOR_PROFILING": lambda: bool(
-        int(os.getenv("APHRODITE_NVTX_SCOPES_FOR_PROFILING", "0"))
-    ),
+    "APHRODITE_NVTX_SCOPES_FOR_PROFILING": lambda: bool(int(os.getenv("APHRODITE_NVTX_SCOPES_FOR_PROFILING", "0"))),
     # Represent block hashes in KV cache events as 64-bit integers instead of
     # raw bytes. Defaults to True for backward compatibility.
     "APHRODITE_KV_EVENTS_USE_INT_BLOCK_HASHES": lambda: bool(
@@ -1407,9 +1243,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
         "APHRODITE_OBJECT_STORAGE_SHM_BUFFER_NAME", "APHRODITE_OBJECT_STORAGE_SHM_BUFFER"
     ),
     # The size in MB of the buffers (NVL and RDMA) used by DeepEP
-    "APHRODITE_DEEPEP_BUFFER_SIZE_MB": lambda: int(
-        os.getenv("APHRODITE_DEEPEP_BUFFER_SIZE_MB", "1024")
-    ),
+    "APHRODITE_DEEPEP_BUFFER_SIZE_MB": lambda: int(os.getenv("APHRODITE_DEEPEP_BUFFER_SIZE_MB", "1024")),
     # Force DeepEP to use intranode kernel for inter-node communication in
     # high throughput mode. This is useful archive higher prefill throuhgput
     # on system supports multi-node nvlink (e.g GB200).
@@ -1441,9 +1275,7 @@ environment_variables: dict[str, Callable[[], Any]] = {
         int(os.getenv("APHRODITE_ENABLE_INDUCTOR_COORDINATE_DESCENT_TUNING", "1"))
     ),
     # Flag to enable NCCL symmetric memory allocation and registration
-    "APHRODITE_USE_NCCL_SYMM_MEM": lambda: bool(
-        int(os.getenv("APHRODITE_USE_NCCL_SYMM_MEM", "0"))
-    ),
+    "APHRODITE_USE_NCCL_SYMM_MEM": lambda: bool(int(os.getenv("APHRODITE_USE_NCCL_SYMM_MEM", "0"))),
     # NCCL header path
     "APHRODITE_NCCL_INCLUDE_PATH": lambda: os.environ.get("APHRODITE_NCCL_INCLUDE_PATH", None),
     # Flag to enable FBGemm kernels on model execution
@@ -1455,31 +1287,18 @@ environment_variables: dict[str, Callable[[], Any]] = {
     #                                      top 5 collected objects
     "APHRODITE_GC_DEBUG": lambda: os.getenv("APHRODITE_GC_DEBUG", ""),
     # Disables parallel execution of shared_experts via separate cuda stream
-    "APHRODITE_DISABLE_SHARED_EXPERTS_STREAM": lambda: os.getenv(
-        "APHRODITE_DISABLE_SHARED_EXPERTS_STREAM", False
-    ),
+    "APHRODITE_DISABLE_SHARED_EXPERTS_STREAM": lambda: os.getenv("APHRODITE_DISABLE_SHARED_EXPERTS_STREAM", False),
     # Whether to enable KoboldAPI support
-    "APHRODITE_KOBOLD_API": lambda: bool(
-        int(os.getenv("APHRODITE_KOBOLD_API", "0"))
-    ),
+    "APHRODITE_KOBOLD_API": lambda: bool(int(os.getenv("APHRODITE_KOBOLD_API", "0"))),
     # Whether to enable request-level metrics instead of interval-based metrics
-    "APHRODITE_REQUEST_LEVEL_METRICS": lambda: bool(
-        int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "1"))
-    ),
+    "APHRODITE_REQUEST_LEVEL_METRICS": lambda: bool(int(os.getenv("APHRODITE_REQUEST_LEVEL_METRICS", "1"))),
     # Whether to enable sampling kernels
-    "APHRODITE_ENABLE_SAMPLING_KERNELS": lambda: bool(
-        int(os.getenv("APHRODITE_ENABLE_SAMPLING_KERNELS", "0"))
-    ),
+    "APHRODITE_ENABLE_SAMPLING_KERNELS": lambda: bool(int(os.getenv("APHRODITE_ENABLE_SAMPLING_KERNELS", "0"))),
     # Whether to disable flash attention compilation
-    "APHRODITE_DISABLE_FLASH_ATTN_COMPILE": lambda: bool(
-        int(os.getenv("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "0"))
-    ),
-
+    "APHRODITE_DISABLE_FLASH_ATTN_COMPILE": lambda: bool(int(os.getenv("APHRODITE_DISABLE_FLASH_ATTN_COMPILE", "0"))),
     # When enabled without prefix caching, allow aphrodite to dynamically
     # allocate KV cache memory instead of pre-allocation.
-    "APHRODITE_ENABLE_DYNAMIC_KV_CACHE": lambda: bool(
-        int(os.getenv("APHRODITE_ENABLE_DYNAMIC_KV_CACHE", "0"))
-    ),
+    "APHRODITE_ENABLE_DYNAMIC_KV_CACHE": lambda: bool(int(os.getenv("APHRODITE_ENABLE_DYNAMIC_KV_CACHE", "0"))),
 }
 
 # --8<-- [end:env-vars-definition]
@@ -1610,9 +1429,7 @@ def compute_hash() -> str:
     for key in environment_variables_to_hash:
         # if this goes out of sync with environment_variables,
         # it's not a user error, it's a bug
-        assert key in environment_variables, (
-            "Please update environment_variables_to_hash in envs.py"
-        )
+        assert key in environment_variables, "Please update environment_variables_to_hash in envs.py"
 
     factors = [environment_variables[key]() for key in environment_variables_to_hash]
 

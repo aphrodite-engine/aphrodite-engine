@@ -7,19 +7,14 @@ from typing import Any
 import torch
 
 from aphrodite import SamplingParams
-from aphrodite.config import (AphroditeConfig, CacheConfig, DeviceConfig,
-                              KVTransferConfig, ModelConfig, SchedulerConfig)
-from aphrodite.distributed.kv_transfer.kv_connector.factory import (
-    KVConnectorFactory)
-from aphrodite.distributed.kv_transfer.kv_connector.v1.shared_storage_connector import (  # noqa
-    SharedStorageConnector)
+from aphrodite.config import AphroditeConfig, CacheConfig, DeviceConfig, KVTransferConfig, ModelConfig, SchedulerConfig
+from aphrodite.distributed.kv_transfer.kv_connector.factory import KVConnectorFactory
+from aphrodite.distributed.kv_transfer.kv_connector.v1.shared_storage_connector import SharedStorageConnector  # noqa
 from aphrodite.utils.hashing import sha256
 from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
-from aphrodite.v1.core.kv_cache_utils import (get_request_block_hasher,
-                                              init_none_hash)
+from aphrodite.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash
 from aphrodite.v1.core.sched.scheduler import Scheduler
-from aphrodite.v1.kv_cache_interface import (FullAttentionSpec, KVCacheConfig,
-                                             KVCacheGroupSpec)
+from aphrodite.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheGroupSpec
 from aphrodite.v1.outputs import KVConnectorOutput, ModelRunnerOutput
 from aphrodite.v1.request import Request
 from aphrodite.v1.structured_output import StructuredOutputManager
@@ -41,23 +36,9 @@ def assert_scheduler_empty(scheduler: Scheduler):
     assert len(scheduler.encoder_cache_manager.cached) == 0
 
     # KVCache Manager.
-    assert (
-        len(
-            scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks
-        )
-        == 0
-    )
-    assert (
-        len(
-            scheduler.kv_cache_manager.coordinator.single_type_managers[
-                0
-            ].num_cached_block
-        )
-        == 0
-    )
-    num_free_blocks = (
-        scheduler.kv_cache_manager.block_pool.free_block_queue.num_free_blocks
-    )
+    assert len(scheduler.kv_cache_manager.coordinator.single_type_managers[0].req_to_blocks) == 0
+    assert len(scheduler.kv_cache_manager.coordinator.single_type_managers[0].num_cached_block) == 0
+    num_free_blocks = scheduler.kv_cache_manager.block_pool.free_block_queue.num_free_blocks
     assert num_free_blocks == (scheduler.kv_cache_manager.block_pool.num_gpu_blocks - 1)
 
     # NOTE(rob): just the ref count on blocks will be 0. The hash
@@ -122,11 +103,7 @@ def create_scheduler(
     kv_cache_config = KVCacheConfig(
         num_blocks=num_blocks,  # A large number of blocks to hold all requests
         kv_cache_tensors=[],
-        kv_cache_groups=[
-            KVCacheGroupSpec(
-                ["layer"], FullAttentionSpec(block_size, 1, 1, torch.float32, False)
-            )
-        ],
+        kv_cache_groups=[KVCacheGroupSpec(["layer"], FullAttentionSpec(block_size, 1, 1, torch.float32, False))],
     )
     aphrodite_config.cache_config.num_gpu_blocks = num_blocks
     return Scheduler(
@@ -219,11 +196,7 @@ def create_model_runner_output(
 
     kv_connector_output = (
         None
-        if (
-            finished_sending is None
-            and finished_recving is None
-            and invalid_block_ids is None
-        )
+        if (finished_sending is None and finished_recving is None and invalid_block_ids is None)
         else KVConnectorOutput(
             finished_sending=finished_sending,
             finished_recving=finished_recving,
@@ -249,10 +222,7 @@ class TestSharedStorageConnector(SharedStorageConnector):
         self._connector = SharedStorageConnector(config, role)
         self.call_record: dict[str, int] = defaultdict(int)
         # Use a unique temp file per connector
-        self._event_file = (
-            tempfile.gettempdir()
-            + f"/connector_{self.name}-{self.role.name}_events.log"
-        )
+        self._event_file = tempfile.gettempdir() + f"/connector_{self.name}-{self.role.name}_events.log"
         # Start with an empty file
         with open(self._event_file, "w") as _:
             pass
@@ -300,6 +270,4 @@ class TestSharedStorageConnector(SharedStorageConnector):
         return attr
 
 
-KVConnectorFactory.register_connector(
-    "TestSharedStorageConnector", __name__, TestSharedStorageConnector.__name__
-)
+KVConnectorFactory.register_connector("TestSharedStorageConnector", __name__, TestSharedStorageConnector.__name__)

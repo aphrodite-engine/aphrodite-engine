@@ -20,22 +20,16 @@ CUDA_DEVICES = [f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 e
 USE_KEY = [True, False]
 
 
-def _get_flat_tensor_shape(
-    batch_size: int, seq_len: int, num_heads: int, head_size: int
-) -> tuple[int, ...]:
+def _get_flat_tensor_shape(batch_size: int, seq_len: int, num_heads: int, head_size: int) -> tuple[int, ...]:
     return (batch_size, seq_len, num_heads * head_size)
 
 
 # For testing sliced tensors
-def _get_padded_tensor_shape(
-    batch_size: int, seq_len: int, num_heads: int, head_size: int
-) -> tuple[int, ...]:
+def _get_padded_tensor_shape(batch_size: int, seq_len: int, num_heads: int, head_size: int) -> tuple[int, ...]:
     return (batch_size, seq_len, num_heads, head_size + 64)
 
 
-def _get_batch_tensor_shape(
-    batch_size: int, seq_len: int, num_heads: int, head_size: int
-) -> tuple[int, ...]:
+def _get_batch_tensor_shape(batch_size: int, seq_len: int, num_heads: int, head_size: int) -> tuple[int, ...]:
     return (batch_size, seq_len, num_heads, head_size)
 
 

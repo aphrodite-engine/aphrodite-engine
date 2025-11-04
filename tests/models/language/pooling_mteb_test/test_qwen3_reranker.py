@@ -33,9 +33,7 @@ RERANK_MODELS = [
 
 
 class Qwen3RerankerHfRunner(HfRunner):
-    def __init__(
-        self, model_name: str, dtype: str = "auto", *args: Any, **kwargs: Any
-    ) -> None:
+    def __init__(self, model_name: str, dtype: str = "auto", *args: Any, **kwargs: Any) -> None:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         super().__init__(model_name, dtype, auto_cls=AutoModelForCausalLM)
@@ -91,6 +89,4 @@ def test_rerank_models_mteb_tp(aphrodite_runner, model_info: RerankModelInfo) ->
         "tensor_parallel_size": 2,
     }
 
-    mteb_test_rerank_models(
-        Qwen3RerankerHfRunner, aphrodite_runner, model_info, aphrodite_extra_kwargs
-    )
+    mteb_test_rerank_models(Qwen3RerankerHfRunner, aphrodite_runner, model_info, aphrodite_extra_kwargs)

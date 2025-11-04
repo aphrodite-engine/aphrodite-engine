@@ -32,8 +32,8 @@ from typing import Any
 
 import numpy as np
 import torch
-
 from aphrodite.model_executor.layers.rotary_embedding import get_rope
+
 from aphrodite.platforms import current_platform
 from aphrodite.transformers_utils.config import get_config
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
@@ -52,9 +52,7 @@ def generate_test_data(
 ):
     """Generate test data for given configuration."""
     # Create 2D positions (3, num_tokens) for multimodal case
-    positions = torch.randint(
-        0, max_position_embeddings // 4, (3, num_tokens), device=device
-    )
+    positions = torch.randint(0, max_position_embeddings // 4, (3, num_tokens), device=device)
 
     # Create query and key tensors
     query = torch.randn(num_tokens, num_q_heads * head_size, dtype=dtype, device=device)
@@ -106,12 +104,7 @@ def benchmark_mrope(
     ).to(device=device)
 
     print(80 * "=")
-    print(
-        f"Evaluating model: {model_name} "
-        f"with tp_size: {tp_size} "
-        f"and num_tokens: {num_tokens}, "
-        f"dtype: {dtype}"
-    )
+    print(f"Evaluating model: {model_name} with tp_size: {tp_size} and num_tokens: {num_tokens}, dtype: {dtype}")
 
     # create q k v input tensors
     # create rotary pos emb input tensors
@@ -186,9 +179,7 @@ def benchmark_mrope(
         f"p99={triton_stats['p99']:.8f}s"
     )
 
-    print(
-        f"Triton Speedup over Torch: {torch_stats['mean'] / triton_stats['mean']:.8f}x"
-    )
+    print(f"Triton Speedup over Torch: {torch_stats['mean'] / triton_stats['mean']:.8f}x")
 
     # Write to CSV
     if csv_writer:
@@ -222,9 +213,7 @@ def benchmark_mrope(
 
 
 if __name__ == "__main__":
-    parser = FlexibleArgumentParser(
-        description="Benchmark the rotary embedding kernels."
-    )
+    parser = FlexibleArgumentParser(description="Benchmark the rotary embedding kernels.")
     parser.add_argument("--model-name", type=str, default="")
     parser.add_argument("--tp-size", type=int, default=1)
     parser.add_argument("--warmup-iter", type=int, default=10)

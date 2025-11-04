@@ -8,14 +8,13 @@ import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite import _custom_ops as ops
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.moe_permute_unpermute import (
-    moe_permute, moe_unpermute)
-from aphrodite.modeling.layers.fused_moe.prepare_finalize import (
-    MoEPrepareAndFinalizeNoEP)
+from aphrodite.modeling.layers.fused_moe.moe_permute_unpermute import moe_permute, moe_unpermute
+from aphrodite.modeling.layers.fused_moe.prepare_finalize import MoEPrepareAndFinalizeNoEP
 from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceDelegate, TopKWeightAndReduceNoOP)
-from aphrodite.modeling.layers.fused_moe.utils import (_fp8_quantize,
-                                                       _resize_cache)
+    TopKWeightAndReduceDelegate,
+    TopKWeightAndReduceNoOP,
+)
+from aphrodite.modeling.layers.fused_moe.utils import _fp8_quantize, _resize_cache
 from aphrodite.scalar_type import scalar_types
 
 logger = init_logger(__name__)
@@ -55,28 +54,18 @@ def run_cutlass_moe_fp8(
     assert w2.dtype == torch.float8_e4m3fn
     assert a1q.size(-1) == w1.size(2), "Hidden size mismatch w1"
     assert w1.size(1) == w2.size(2) * 2, "Hidden size mismatch w2"
-    assert (
-        w1_scale.dim() == 1 or w1_scale.size(1) == 1 or w1_scale.shape[1] == w1.size(1)
-    ), "W1 scale shape mismatch"
-    assert (
-        w2_scale.dim() == 1 or w2_scale.size(1) == 1 or w2_scale.shape[1] == w2.size(1)
-    ), "W2 scale shape mismatch"
+    assert w1_scale.dim() == 1 or w1_scale.size(1) == 1 or w1_scale.shape[1] == w1.size(1), "W1 scale shape mismatch"
+    assert w2_scale.dim() == 1 or w2_scale.size(1) == 1 or w2_scale.shape[1] == w2.size(1), "W2 scale shape mismatch"
     assert w1.size(0) == w2.size(0), "Expert number mismatch"
-    assert (
-        a1q_scale is None
-        or a1q_scale.dim() == 0
-        or a1q_scale.size(0) == 1
-        or a1q_scale.size(0) == a1q.shape[0]
-    ), "Input scale shape mismatch"
+    assert a1q_scale is None or a1q_scale.dim() == 0 or a1q_scale.size(0) == 1 or a1q_scale.size(0) == a1q.shape[0], (
+        "Input scale shape mismatch"
+    )
     assert w1.size(0) == w2.size(0), "Weights expert number mismatch"
     assert w1.size(0) == w1_scale.size(0), "w1 scales expert number mismatch"
     assert w1.size(0) == w2_scale.size(0), "w2 scales expert number mismatch"
-    assert (
-        a2_scale is None
-        or a2_scale.dim() == 0
-        or a2_scale.size(0) == 1
-        or a2_scale.size(0) == a1q.shape[0]
-    ), "Intermediate scale shape mismatch"
+    assert a2_scale is None or a2_scale.dim() == 0 or a2_scale.size(0) == 1 or a2_scale.size(0) == a1q.shape[0], (
+        "Intermediate scale shape mismatch"
+    )
     assert out_dtype in [torch.half, torch.bfloat16], "Invalid output dtype"
     if expert_map is not None:
         assert expert_num_tokens is None
@@ -104,9 +93,7 @@ def run_cutlass_moe_fp8(
 
     if expert_map is not None:
         "Translate info from expert_map to topk_ids"
-        local_topk_ids = torch.where(
-            expert_map[topk_ids] != -1, expert_map[topk_ids], -1
-        )
+        local_topk_ids = torch.where(expert_map[topk_ids] != -1, expert_map[topk_ids], -1)
     else:
         local_topk_ids = topk_ids
 
@@ -116,20 +103,14 @@ def run_cutlass_moe_fp8(
     if use_batched_format:
         mm1_out = _resize_cache(workspace13, (local_E * padded_M, N * 2))
         act_out = _resize_cache(workspace2, (local_E * padded_M, N))
-        quant_out = _resize_cache(
-            workspace13.view(dtype=torch.float8_e4m3fn), (local_E * padded_M, N)
-        )
+        quant_out = _resize_cache(workspace13.view(dtype=torch.float8_e4m3fn), (local_E * padded_M, N))
         mm2_out = _resize_cache(workspace2, (local_E * padded_M, K))
     else:
-        a1q_perm = _resize_cache(
-            workspace2.view(dtype=torch.float8_e4m3fn), (M * topk, K)
-        )
+        a1q_perm = _resize_cache(workspace2.view(dtype=torch.float8_e4m3fn), (M * topk, K))
         mm1_out = _resize_cache(workspace13, (M * topk, N * 2))
         act_out = _resize_cache(workspace2, (M * topk, N))
         # original workspace are based on input hidden_states dtype (bf16)
-        quant_out = _resize_cache(
-            workspace13.view(dtype=torch.float8_e4m3fn), (M * topk, N)
-        )
+        quant_out = _resize_cache(workspace13.view(dtype=torch.float8_e4m3fn), (M * topk, N))
         mm2_out = _resize_cache(workspace2, (M * topk, K))
 
     if use_batched_format:
@@ -158,12 +139,8 @@ def run_cutlass_moe_fp8(
         # during offset calculations
         expert_offsets = expert_offsets.to(torch.int64)
     else:
-        problem_sizes1 = torch.empty(
-            (global_num_experts, 3), dtype=torch.int32, device=device
-        )
-        problem_sizes2 = torch.empty(
-            (global_num_experts, 3), dtype=torch.int32, device=device
-        )
+        problem_sizes1 = torch.empty((global_num_experts, 3), dtype=torch.int32, device=device)
+        problem_sizes2 = torch.empty((global_num_experts, 3), dtype=torch.int32, device=device)
 
         num_expert = global_num_experts if expert_map is None else expert_map.size(0)
         # permuted a1q reuses workspace2
@@ -178,9 +155,7 @@ def run_cutlass_moe_fp8(
         )
         expert_offsets = expert_offsets[:-1]
 
-        ops.get_cutlass_moe_mm_problem_sizes(
-            local_topk_ids, problem_sizes1, problem_sizes2, global_num_experts, N, K
-        )
+        ops.get_cutlass_moe_mm_problem_sizes(local_topk_ids, problem_sizes1, problem_sizes2, global_num_experts, N, K)
 
     if not per_act_token and (expert_map is not None or use_batched_format):
         # this is necessary to avoid imprecise scale calculation caused by
@@ -205,9 +180,7 @@ def run_cutlass_moe_fp8(
 
     activation_callable(act_out, mm1_out)
 
-    a2q, a2q_scale = ops.scaled_fp8_quant(
-        act_out, a2_scale, use_per_token_if_dynamic=per_act_token, output=quant_out
-    )
+    a2q, a2q_scale = ops.scaled_fp8_quant(act_out, a2_scale, use_per_token_if_dynamic=per_act_token, output=quant_out)
 
     if expert_map is not None:
         mm2_out.fill_(0)
@@ -289,9 +262,7 @@ class CutlassExpertsFp8Base(mk.FusedMoEPermuteExpertsUnpermute):
 
         activation_callable = lambda o, i: self.activation(activation, o, i)
 
-        use_batched_format = (
-            self.activation_formats[0] == mk.FusedMoEActivationFormat.BatchedExperts
-        )
+        use_batched_format = self.activation_formats[0] == mk.FusedMoEActivationFormat.BatchedExperts
 
         in_dtype = hidden_states.dtype
         run_cutlass_moe_fp8(
@@ -511,13 +482,9 @@ def cutlass_moe_fp8(
 
     if quant_config.w1_scale is not None:
         if quant_config.per_out_ch_quant:
-            assert quant_config.w1_scale.dim() > 1 and quant_config.w1_scale.size(
-                1
-            ) == w1_q.size(1)
+            assert quant_config.w1_scale.dim() > 1 and quant_config.w1_scale.size(1) == w1_q.size(1)
         else:
-            assert (
-                quant_config.w1_scale.dim() == 1 or quant_config.w1_scale.size(1) == 1
-            )
+            assert quant_config.w1_scale.dim() == 1 or quant_config.w1_scale.size(1) == 1
 
     num_experts = global_num_experts if global_num_experts != -1 else w1_q.size(0)
 
@@ -602,12 +569,9 @@ def run_cutlass_moe_fp4(
     assert topk_weights.shape == topk_ids.shape, "topk shape mismatch"
     assert w1_fp4.dtype == torch.uint8, "weight 1 must be uint8"
     assert w2_fp4.dtype == torch.uint8, "weight 2 must be uint8"
-    assert (
-        w1_fp4.ndim == 3
-        and w2_fp4.ndim == 3
-        and w1_blockscale.ndim == 3
-        and w2_blockscale.ndim == 3
-    ), "All Weights must be of rank 3 for cutlass_moe_fp4"
+    assert w1_fp4.ndim == 3 and w2_fp4.ndim == 3 and w1_blockscale.ndim == 3 and w2_blockscale.ndim == 3, (
+        "All Weights must be of rank 3 for cutlass_moe_fp4"
+    )
     m_a, k_a = a.shape
     e_w1, nx2_w1, half_k_w1 = w1_fp4.shape
     e_w2, k_w2, half_n_w2 = w2_fp4.shape
@@ -616,16 +580,12 @@ def run_cutlass_moe_fp4(
         "Number of experts must match",
         f" between weights. {e_w1}, {e_w2}, {e}",
     )
-    assert k_a == half_k_w1 * 2 and k == k_w2, (
-        "Hidden size mismatch between a, w1 and w2"
-    )
+    assert k_a == half_k_w1 * 2 and k == k_w2, "Hidden size mismatch between a, w1 and w2"
     assert nx2_w1 == n * 2 and half_n_w2 * 2 == n, "mismatch in expected `n`"
     assert m == m_a, "input shape mismatch"
     assert 2 * half_k_w1 == k_w2, "Hidden size mismatch w2 and w1"
     assert a.dtype in [torch.half, torch.bfloat16], "Invalid input dtype"
-    assert topk_weights.size(0) == m and topk_ids.size(0) == m, (
-        "topk must be provided for each row of a"
-    )
+    assert topk_weights.size(0) == m and topk_ids.size(0) == m, "topk must be provided for each row of a"
     topk = topk_ids.size(1)
     out_dtype = a.dtype
     num_topk = topk_ids.size(1)
@@ -642,9 +602,7 @@ def run_cutlass_moe_fp4(
 
     if apply_router_weight_on_input:
         # TODO: this only works for topK=1, will need to update for topK>1
-        assert num_topk == 1, (
-            "apply_router_weight_on_input is only implemented for topk=1"
-        )
+        assert num_topk == 1, "apply_router_weight_on_input is only implemented for topk=1"
         a.mul_(topk_weights.to(out_dtype))
 
     # problem shapes should have [m, n, k]
@@ -686,9 +644,7 @@ def run_cutlass_moe_fp4(
     )
     del rep_a_fp4, rep_a_blockscale
     torch.ops._C.silu_and_mul(c2, c1)
-    int_fp4, int_blockscale = ops.scaled_fp4_experts_quant(
-        c2, a2_gscale, expert_offsets, blockscale_offsets, num_topk
-    )
+    int_fp4, int_blockscale = ops.scaled_fp4_experts_quant(c2, a2_gscale, expert_offsets, blockscale_offsets, num_topk)
 
     ops.cutlass_fp4_moe_mm(
         c3,
@@ -708,10 +664,7 @@ def run_cutlass_moe_fp4(
     assert output.dtype == out_dtype
     if not apply_router_weight_on_input:
         output.copy_(
-            (
-                c3.view(m, num_topk, k)
-                * topk_weights.view(m, num_topk, 1).to(out_dtype)
-            ).sum(dim=1),
+            (c3.view(m, num_topk, k) * topk_weights.view(m, num_topk, 1).to(out_dtype)).sum(dim=1),
             non_blocking=True,
         )
     else:
@@ -843,9 +796,7 @@ def cutlass_moe_fp4(
     apply_router_weight_on_input: bool = False,
 ) -> torch.Tensor:
     assert expert_map is None, (
-        "Expert Parallelism / expert_map "
-        "is currently not supported for "
-        "ModelOptNvFp4FusedMoE's cutlass_moe_fp4."
+        "Expert Parallelism / expert_map is currently not supported for ModelOptNvFp4FusedMoE's cutlass_moe_fp4."
     )
 
     # TODO(bnell): this feels a bit hacky
@@ -904,8 +855,7 @@ def _valid_cutlass_block_scaled_grouped_gemm(
     _, K, N = w2.size()
     if not _valid_cutlass_block_scaled_grouped_gemm_shape(N, K):
         logger.debug_once(
-            "CutlassBlockScaledGroupedGemm disabled: unaligned problem size. "
-            "N: %s, K: %s",
+            "CutlassBlockScaledGroupedGemm disabled: unaligned problem size. N: %s, K: %s",
             N,
             K,
         )
@@ -913,36 +863,26 @@ def _valid_cutlass_block_scaled_grouped_gemm(
 
     if w1.dtype != torch.float8_e4m3fn or w2.dtype != torch.float8_e4m3fn:
         logger.debug_once(
-            "CutlassBlockScaledGroupedGemm disabled: invalid weight dtype(s). "
-            "w1.dtype: %s, w2.dtype: %s",
+            "CutlassBlockScaledGroupedGemm disabled: invalid weight dtype(s). w1.dtype: %s, w2.dtype: %s",
             w1.dtype,
             w2.dtype,
         )
         return False
 
     if expert_map is not None:
-        logger.debug_once(
-            "CutlassBlockScaledGroupedGemm disabled: expert_parallel is not supported."
-        )
+        logger.debug_once("CutlassBlockScaledGroupedGemm disabled: expert_parallel is not supported.")
         return False
 
     if activation != "silu":
-        logger.debug_once(
-            "CutlassBlockScaledGroupedGemm disabled: only activation silu is supported."
-        )
+        logger.debug_once("CutlassBlockScaledGroupedGemm disabled: only activation silu is supported.")
         return False
 
     if apply_router_weight_on_input:
-        logger.debug_once(
-            "CutlassBlockScaledGroupedGemm disabled:"
-            " apply_router_weight_on_input is not supported."
-        )
+        logger.debug_once("CutlassBlockScaledGroupedGemm disabled: apply_router_weight_on_input is not supported.")
         return False
 
     if inplace:
-        logger.debug_once(
-            "CutlassBlockScaledGroupedGemm disabled: inplace is not supported."
-        )
+        logger.debug_once("CutlassBlockScaledGroupedGemm disabled: inplace is not supported.")
         return False
 
     return True
@@ -964,9 +904,7 @@ def run_cutlass_block_scaled_fused_experts(
     w2_scale = w2_scale.transpose(1, 2)
 
     assert topk_weights.shape == topk_ids.shape, "topk shape mismatch"
-    assert a.shape[0] == topk_ids.shape[0], (
-        "a and topk_ids must have the same batch size"
-    )
+    assert a.shape[0] == topk_ids.shape[0], "a and topk_ids must have the same batch size"
     assert w1_q.dtype == torch.float8_e4m3fn, "w1_q must be float8_e4m3fn"
     assert w2_q.dtype == torch.float8_e4m3fn, "w2_q must be float8_e4m3fn"
     assert a.shape[1] == w1_q.shape[1], "Hidden size mismatch w1"
@@ -984,9 +922,7 @@ def run_cutlass_block_scaled_fused_experts(
 
     topk = topk_ids.size(1)
 
-    a_q, a1_scale = _fp8_quantize(
-        a, A_scale=None, per_act_token=False, block_shape=[128, 128]
-    )
+    a_q, a1_scale = _fp8_quantize(a, A_scale=None, per_act_token=False, block_shape=[128, 128])
     device = a_q.device
 
     expert_offsets = torch.empty((num_experts + 1,), dtype=torch.int32, device=device)
@@ -1027,9 +963,7 @@ def run_cutlass_block_scaled_fused_experts(
     intermediate = torch.empty((m * topk, n), dtype=out_dtype, device=device)
     torch.ops._C.silu_and_mul(intermediate, c1)
 
-    intermediate_q, a2_scale = _fp8_quantize(
-        intermediate, A_scale=None, per_act_token=False, block_shape=[128, 128]
-    )
+    intermediate_q, a2_scale = _fp8_quantize(intermediate, A_scale=None, per_act_token=False, block_shape=[128, 128])
 
     ops.cutlass_blockwise_scaled_grouped_mm(
         c2,
@@ -1041,6 +975,4 @@ def run_cutlass_block_scaled_fused_experts(
         expert_offsets[:-1],
     )
 
-    return (
-        c2[c_map].view(m, topk, k) * topk_weights.view(m, topk, 1).to(out_dtype)
-    ).sum(dim=1)
+    return (c2[c_map].view(m, topk, k) * topk_weights.view(m, topk, 1).to(out_dtype)).sum(dim=1)

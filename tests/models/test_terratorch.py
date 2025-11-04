@@ -19,9 +19,7 @@ def test_inference(
     location_coords = torch.full((1, 2), 1.0, dtype=torch.float16)
     prompt = dict(
         prompt_token_ids=[1],
-        multi_modal_data=dict(
-            pixel_values=pixel_values, location_coords=location_coords
-        ),
+        multi_modal_data=dict(pixel_values=pixel_values, location_coords=location_coords),
     )
     with aphrodite_runner(
         model,
@@ -36,6 +34,4 @@ def test_inference(
         default_torch_num_threads=1,
     ) as aphrodite_model:
         aphrodite_output = aphrodite_model.llm.encode(prompt)
-        assert torch.equal(
-            torch.isnan(aphrodite_output[0].outputs.data).any(), torch.tensor(False)
-        )
+        assert torch.equal(torch.isnan(aphrodite_output[0].outputs.data).any(), torch.tensor(False))

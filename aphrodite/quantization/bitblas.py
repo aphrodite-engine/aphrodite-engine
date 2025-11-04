@@ -6,15 +6,20 @@ from packaging import version
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.linear import LinearBase, LinearMethodBase
 from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead
-from aphrodite.modeling.parameter import (BaseAphroditeParameter,
-                                          ChannelQuantScaleParameter,
-                                          GroupQuantScaleParameter,
-                                          PackedAphroditeParameter)
+from aphrodite.modeling.parameter import (
+    BaseAphroditeParameter,
+    ChannelQuantScaleParameter,
+    GroupQuantScaleParameter,
+    PackedAphroditeParameter,
+)
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.quantization import QuantizationConfig, QuantizationMethods
 from aphrodite.quantization.utils.bitblas_utils import (
-    BITBLAS_OPTIMIZE_FEATURES, BITBLAS_SUPPORTED_NUM_BITS,
-    BITBLAS_SUPPORTED_SYM, MINIMUM_BITBLAS_VERSION)
+    BITBLAS_OPTIMIZE_FEATURES,
+    BITBLAS_SUPPORTED_NUM_BITS,
+    BITBLAS_SUPPORTED_SYM,
+    MINIMUM_BITBLAS_VERSION,
+)
 
 logger = init_logger(__name__)
 
@@ -44,13 +49,8 @@ class BitBLASConfig(QuantizationConfig):
         try:
             import bitblas
 
-            if version.parse(bitblas.__version__) < version.parse(
-                MINIMUM_BITBLAS_VERSION
-            ):
-                raise ImportError(
-                    "bitblas version is wrong. Please "
-                    f"install bitblas>={MINIMUM_BITBLAS_VERSION}"
-                )
+            if version.parse(bitblas.__version__) < version.parse(MINIMUM_BITBLAS_VERSION):
+                raise ImportError(f"bitblas version is wrong. Please install bitblas>={MINIMUM_BITBLAS_VERSION}")
         except ImportError as e:
             bitblas_import_exception = e
             raise ValueError(
@@ -83,8 +83,7 @@ class BitBLASConfig(QuantizationConfig):
 
         if self.is_sym not in BITBLAS_SUPPORTED_SYM:
             raise ValueError(
-                f"BitBLAS does not support is_sym = {self.is_sym}. "
-                f"Only sym = {BITBLAS_SUPPORTED_SYM} are supported."
+                f"BitBLAS does not support is_sym = {self.is_sym}. Only sym = {BITBLAS_SUPPORTED_SYM} are supported."
             )
 
         storage_dtype = self.STORAGE_DTYPE
@@ -126,9 +125,7 @@ class BitBLASConfig(QuantizationConfig):
         return ["quantize_config.json"]
 
     @staticmethod
-    def get_from_keys(
-        config: dict[str, Any], keys: list[str], default: Any = None
-    ) -> Any:
+    def get_from_keys(config: dict[str, Any], keys: list[str], default: Any = None) -> Any:
         """Get a value from the model's quantization config."""
         for key in keys:
             if key in config:
@@ -143,39 +140,27 @@ class BitBLASConfig(QuantizationConfig):
         is_sym = cls.get_from_keys(config, ["sym"], False)
         quant_method = cls.get_from_keys(config, ["quant_method"])
         lm_head_quantized = cls.get_from_keys_or(config, ["lm_head"], default=False)
-        return cls(
-            weight_bits, group_size, desc_act, is_sym, quant_method, lm_head_quantized
-        )
+        return cls(weight_bits, group_size, desc_act, is_sym, quant_method, lm_head_quantized)
 
     @classmethod
-    def override_quantization_method(
-        cls, hf_quant_cfg, user_quant
-    ) -> QuantizationMethods | None:
+    def override_quantization_method(cls, hf_quant_cfg, user_quant) -> QuantizationMethods | None:
         # compat: autogptq >=0.8.0 use checkpoint_format: str
         # compat: autogptq <=0.7.1 is_bitblas_format: bool
-        is_bitblas_format = hf_quant_cfg.get(
-            "checkpoint_format"
-        ) == "bitblas" or hf_quant_cfg.get("is_bitblas_format", False)
-
-        is_valid_user_quant = (
-            user_quant is None or user_quant == "gptq" or user_quant == "bitblas"
+        is_bitblas_format = hf_quant_cfg.get("checkpoint_format") == "bitblas" or hf_quant_cfg.get(
+            "is_bitblas_format", False
         )
 
+        is_valid_user_quant = user_quant is None or user_quant == "gptq" or user_quant == "bitblas"
+
         if is_bitblas_format and is_valid_user_quant:
-            msg = "The model is serialized in {} format. Using {} kernel.".format(
-                cls.get_name(), cls.get_name()
-            )
+            msg = "The model is serialized in {} format. Using {} kernel.".format(cls.get_name(), cls.get_name())
             logger.info(msg)
             return cls.get_name()
 
         return None
 
-    def get_quant_method(
-        self, layer: torch.nn.Module, prefix: str
-    ) -> Optional["BitBLASLinearMethod"]:
-        if isinstance(layer, LinearBase) or (
-            isinstance(layer, ParallelLMHead) and self.lm_head_quantized
-        ):
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["BitBLASLinearMethod"]:
+        if isinstance(layer, LinearBase) or (isinstance(layer, ParallelLMHead) and self.lm_head_quantized):
             return BitBLASLinearMethod(self)
         return None
 
@@ -241,9 +226,7 @@ class BitBLASLinearMethod(LinearMethodBase):
         weight_loader = extra_weight_attrs["weight_loader"]
 
         if params_dtype not in self.quant_config.get_supported_act_dtypes():
-            raise ValueError(
-                f"Parameter data type must be torch.float16, but got {params_dtype}"
-            )
+            raise ValueError(f"Parameter data type must be torch.float16, but got {params_dtype}")
         group_size = self.quant_config.group_size
         if group_size is None:
             group_size = -1
@@ -251,8 +234,7 @@ class BitBLASLinearMethod(LinearMethodBase):
         output_size_per_partition = sum(output_partition_sizes)
         if group_size != -1 and input_size_per_partition % group_size != 0:
             raise ValueError(
-                f"Input size per partition ({input_size_per_partition}) must "
-                f"be divisible by group size ({group_size})."
+                f"Input size per partition ({input_size_per_partition}) must be divisible by group size ({group_size})."
             )
 
         # Initialize or retrieve the BitBLAS matrix multiplication operator.
@@ -280,9 +262,7 @@ class BitBLASLinearMethod(LinearMethodBase):
             packed_dim=1,
             packed_factor=self.quant_config.pack_factor,
             bitblas_tile_size=(
-                self.bitblas_matmul.retrieve_weight_shape()[-2]
-                if self.bitblas_matmul.propagate_b
-                else None
+                self.bitblas_matmul.retrieve_weight_shape()[-2] if self.bitblas_matmul.propagate_b else None
             ),
             weight_loader=weight_loader,
         )
@@ -303,9 +283,7 @@ class BitBLASLinearMethod(LinearMethodBase):
         if input_groups == 1:
             scales = ChannelQuantScaleParameter(output_dim=0, **weight_scale_args)
         else:
-            scales = GroupQuantScaleParameter(
-                output_dim=0, input_dim=1, **weight_scale_args
-            )
+            scales = GroupQuantScaleParameter(output_dim=0, input_dim=1, **weight_scale_args)
 
         if self.quant_config.zeros_mode == "quantized":
             zeros = PackedAphroditeParameter(
@@ -367,9 +345,7 @@ class BitBLASLinearMethod(LinearMethodBase):
                 **extra_weight_attrs,
             )
         else:
-            raise ValueError(
-                f"Unsupported quant_method {self.quant_config.quant_method}"
-            )
+            raise ValueError(f"Unsupported quant_method {self.quant_config.quant_method}")
 
     def _configure_bitblas_matmul(
         self,
@@ -398,9 +374,7 @@ class BitBLASLinearMethod(LinearMethodBase):
                 with_zeros = False
                 W_dtype = f"int{bits}"
         else:
-            raise ValueError(
-                f"Unsupported quant_method {self.quant_config.quant_method}"
-            )
+            raise ValueError(f"Unsupported quant_method {self.quant_config.quant_method}")
 
         matmul_config = MatmulConfig(
             N=outfeatures,
@@ -417,9 +391,7 @@ class BitBLASLinearMethod(LinearMethodBase):
             layout=layout,
             zeros_mode=zeros_mode,
         )
-        self.bitblas_matmul = self._get_or_create_bitblas_operator(
-            matmul_config, enable_tuning
-        )
+        self.bitblas_matmul = self._get_or_create_bitblas_operator(matmul_config, enable_tuning)
 
     def _get_or_create_bitblas_operator(self, config, enable_tuning):
         from bitblas import Matmul, auto_detect_nvidia_target
@@ -428,9 +400,7 @@ class BitBLASLinearMethod(LinearMethodBase):
         BITBLAS_DATABASE_PATH = get_database_path()
         BITBLAS_TARGET = auto_detect_nvidia_target()
         if global_operator_cache.size() == 0:
-            global_operator_cache.load_from_database(
-                BITBLAS_DATABASE_PATH, BITBLAS_TARGET
-            )
+            global_operator_cache.load_from_database(BITBLAS_DATABASE_PATH, BITBLAS_TARGET)
 
         bitblas_matmul = global_operator_cache.get(config)
         if bitblas_matmul is None:
@@ -440,12 +410,8 @@ class BitBLASLinearMethod(LinearMethodBase):
                 logger.info(TUNING_MESSAGE)
                 bitblas_matmul.hardware_aware_finetune(topk=20)
                 global_operator_cache.add(config, bitblas_matmul)
-                global_operator_cache.save_into_database(
-                    BITBLAS_DATABASE_PATH, BITBLAS_TARGET
-                )
-                TUNED_MESSAGE = (
-                    f"BitBLAS Operator {config} tuned and saved to database."
-                )
+                global_operator_cache.save_into_database(BITBLAS_DATABASE_PATH, BITBLAS_TARGET)
+                TUNED_MESSAGE = f"BitBLAS Operator {config} tuned and saved to database."
                 logger.info(TUNED_MESSAGE)
             else:
                 _message = f"BitBLAS Operator {config} created."
@@ -487,6 +453,4 @@ class BitBLASLinearMethod(LinearMethodBase):
         if self.quant_config.quant_method == "gptq":
             return self.apply_gptq(*args, **kwargs)
         else:
-            raise ValueError(
-                f"Unsupported quant_method {self.quant_config.quant_method}"
-            )
+            raise ValueError(f"Unsupported quant_method {self.quant_config.quant_method}")

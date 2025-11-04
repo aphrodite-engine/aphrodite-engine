@@ -8,8 +8,7 @@ import uvicorn
 from fastapi import FastAPI, Request, Response
 
 from aphrodite import envs
-from aphrodite.endpoints.constants import (
-    H11_MAX_HEADER_COUNT_DEFAULT, H11_MAX_INCOMPLETE_EVENT_SIZE_DEFAULT)
+from aphrodite.endpoints.constants import H11_MAX_HEADER_COUNT_DEFAULT, H11_MAX_INCOMPLETE_EVENT_SIZE_DEFAULT
 from aphrodite.endpoints.ssl import SSLCertRefresher
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.logger import init_logger
@@ -40,9 +39,7 @@ async def serve_http(
         logger.debug("Route: %s, Methods: %s", path, ", ".join(methods))
 
     # Extract header limit options if present
-    h11_max_incomplete_event_size = uvicorn_kwargs.pop(
-        "h11_max_incomplete_event_size", None
-    )
+    h11_max_incomplete_event_size = uvicorn_kwargs.pop("h11_max_incomplete_event_size", None)
     h11_max_header_count = uvicorn_kwargs.pop("h11_max_header_count", None)
 
     # Set safe defaults if not provided
@@ -117,7 +114,7 @@ async def watchdog_loop(server: uvicorn.Server, app: FastAPI):
     while True:
         await asyncio.sleep(APHRODITE_WATCHDOG_TIME_S)
         # Check the current engine client from app.state, not a stale reference
-        engine = getattr(app.state, 'engine_client', None)
+        engine = getattr(app.state, "engine_client", None)
         if engine is not None:
             terminate_if_errored(server, engine)
 

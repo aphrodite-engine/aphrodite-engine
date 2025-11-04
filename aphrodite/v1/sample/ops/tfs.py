@@ -20,18 +20,14 @@ def tfs(
 
     tfs_mask = torch.cat(
         (
-            torch.zeros(
-                logits.shape[0], 1, dtype=torch.bool, device=logits.device),
+            torch.zeros(logits.shape[0], 1, dtype=torch.bool, device=logits.device),
             tfs_mask,
-            torch.ones(
-                logits.shape[0], 1, dtype=torch.bool, device=logits.device),
+            torch.ones(logits.shape[0], 1, dtype=torch.bool, device=logits.device),
         ),
         dim=-1,
     )
 
     logits_sort[tfs_mask] = -float("inf")
-    logits = torch.gather(logits_sort,
-                          dim=-1,
-                          index=torch.argsort(logits_idx, dim=-1))
+    logits = torch.gather(logits_sort, dim=-1, index=torch.argsort(logits_idx, dim=-1))
 
     return logits

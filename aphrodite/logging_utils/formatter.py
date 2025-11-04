@@ -5,38 +5,40 @@ from pathlib import Path
 
 from aphrodite import envs
 
+
 class Colors:
     """ANSI color codes for terminal output"""
-    RESET = '\033[0m'
-    BOLD = '\033[1m'
-    DIM = '\033[2m'
 
-    DEBUG = '\033[36m'                    # Cyan
-    INFO = '\033[1m\033[36m'              # Bold Cyan
-    WARNING = '\033[1m\033[33m'           # Bold Yellow
-    ERROR = '\033[1m\033[31m'             # Bold Red
-    CRITICAL = '\033[1m\033[41m\033[37m'  # Bold White on Red
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
 
-    TIME = '\033[2m'          # Dim
-    PATH = '\033[2m\033[34m'  # Dim Blue
+    DEBUG = "\033[36m"  # Cyan
+    INFO = "\033[1m\033[36m"  # Bold Cyan
+    WARNING = "\033[1m\033[33m"  # Bold Yellow
+    ERROR = "\033[1m\033[31m"  # Bold Red
+    CRITICAL = "\033[1m\033[41m\033[37m"  # Bold White on Red
+
+    TIME = "\033[2m"  # Dim
+    PATH = "\033[2m\033[34m"  # Dim Blue
 
 
 def _supports_color() -> bool:
     """Check if the terminal supports color output"""
-    if os.environ.get('NO_COLOR'):
+    if os.environ.get("NO_COLOR"):
         return False
 
-    if os.environ.get('FORCE_COLOR'):
+    if os.environ.get("FORCE_COLOR"):
         return True
 
-    if not hasattr(sys.stdout, 'isatty'):
+    if not hasattr(sys.stdout, "isatty"):
         return False
-    
+
     if not sys.stdout.isatty():
         return False
 
-    term = os.environ.get('TERM', '')
-    return term != 'dumb'
+    term = os.environ.get("TERM", "")
+    return term != "dumb"
 
 
 class NewLineFormatter(logging.Formatter):
@@ -49,16 +51,16 @@ class NewLineFormatter(logging.Formatter):
         if self.use_relpath:
             self.root_dir = Path(__file__).resolve().parent.parent.parent
 
-        self.use_color = _supports_color() and os.environ.get('APHRODITE_LOGGING_COLOR', '1') in ('1', 'true', 'True')
+        self.use_color = _supports_color() and os.environ.get("APHRODITE_LOGGING_COLOR", "1") in ("1", "true", "True")
 
         self.verbose_logging = envs.APHRODITE_LOGGING_VERBOSE
 
         self.level_colors = {
-            'DEBUG': Colors.DEBUG,
-            'INFO': Colors.INFO,
-            'WARNING': Colors.WARNING,
-            'ERROR': Colors.ERROR,
-            'CRITICAL': Colors.CRITICAL,
+            "DEBUG": Colors.DEBUG,
+            "INFO": Colors.INFO,
+            "WARNING": Colors.WARNING,
+            "ERROR": Colors.ERROR,
+            "CRITICAL": Colors.CRITICAL,
         }
 
     def format(self, record):
@@ -71,7 +73,7 @@ class NewLineFormatter(logging.Formatter):
         else:
             original_datefmt = self.datefmt
             self.datefmt = "%H:%M:%S"
-        
+
         def shrink_path(relpath: Path) -> str:
             """
             Shortens a file path for logging display:
@@ -125,31 +127,32 @@ class NewLineFormatter(logging.Formatter):
             record.fileinfo = record.filename
 
         # it's a given that the fileinfo ends with .py
-        if record.fileinfo.endswith('.py'):
+        if record.fileinfo.endswith(".py"):
             record.fileinfo = record.fileinfo[:-3]
 
         max_fileinfo_width = 15
         if len(record.fileinfo) > max_fileinfo_width:
-            record.fileinfo = "..." + record.fileinfo[-(max_fileinfo_width - 3):]
+            record.fileinfo = "..." + record.fileinfo[-(max_fileinfo_width - 3) :]
 
         if self.verbose_logging:
             msg = super().format(record)
         else:
             original_fmt = self._style._fmt
             from aphrodite.logger import _FORMAT_INFO
+
             self._style._fmt = _FORMAT_INFO
             msg = super().format(record)
             self._style._fmt = original_fmt
 
         # for brevity
-        if 'WARNING' in msg:
-            msg = msg.replace('WARNING', 'WARN', 1)
+        if "WARNING" in msg:
+            msg = msg.replace("WARNING", "WARN", 1)
 
         if self.use_color:
-            level_color = self.level_colors.get(record.levelname, '')
+            level_color = self.level_colors.get(record.levelname, "")
 
             # Format: PREFIX + LEVEL + TIME + [PATH:LINE] + MESSAGE
-            level_str = 'WARN' if record.levelname == 'WARNING' else record.levelname
+            level_str = "WARN" if record.levelname == "WARNING" else record.levelname
 
             if level_str in msg:
                 # Color the level

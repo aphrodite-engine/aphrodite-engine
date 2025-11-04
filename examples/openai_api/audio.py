@@ -2,6 +2,7 @@
 Launch the aphrodite server with the following command:
 aphrodite run fixie-ai/ultravox-v0_3
 """
+
 import base64
 import os
 
@@ -26,10 +27,12 @@ client = OpenAI(
 models = client.models.list()
 model = models.data[0].id
 
+
 def encode_audio_base64_from_file(file_path: str) -> str:
     """Encode an audio file to base64 format."""
     with open(file_path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
+
 
 # Use base64 encoded audio in the payload
 audio_base64 = encode_audio_base64_from_file(audio_path)
@@ -41,9 +44,7 @@ chat_completion = client.chat.completions.create(
                 {"type": "text", "text": "What's in this audio?"},
                 {
                     "type": "audio_url",
-                    "audio_url": {
-                        "url": f"data:audio/ogg;base64,{audio_base64}"
-                    },
+                    "audio_url": {"url": f"data:audio/ogg;base64,{audio_base64}"},
                 },
             ],
         }  # type: ignore

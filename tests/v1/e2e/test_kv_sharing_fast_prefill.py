@@ -72,9 +72,7 @@ def test_kv_sharing_fast_prefill(
         # This allows Aphrodite compilation backend to handle allocating and
         # managing buffers for cudagraph
         cudagraph_copy_inputs=True,
-        mode=CompilationMode.APHRODITE_COMPILE
-        if not enforce_eager
-        else CompilationMode.NONE,
+        mode=CompilationMode.APHRODITE_COMPILE if not enforce_eager else CompilationMode.NONE,
     )
 
     with monkeypatch.context() as m:

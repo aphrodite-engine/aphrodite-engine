@@ -1,5 +1,4 @@
 import math
-from typing import List, Optional, Tuple
 
 import torch
 
@@ -9,6 +8,7 @@ from .utils import CONTIGUOUS_LAYOUT, PAGE_SIZE
 
 try:
     from . import vmm_ops
+
     _vmm_ops_available = True
 except ImportError:
     _vmm_ops_available = False
@@ -28,7 +28,7 @@ def init_kvcached(
     tp_rank: int = 0,
     tp_size: int = 1,
     is_worker: bool = False,
-    device: Optional[str] = None,
+    device: str | None = None,
     async_sched: bool = False,
 ) -> None:
     global _kvcached_initialized, _kvcached_device, _tp_size, _async_sched
@@ -62,14 +62,14 @@ def shutdown_kvcached() -> None:
 
 
 def alloc_kv_cache(
-    kvcache_shape: Tuple[int, ...],  # (2, num_blocks, block_size, head_num, head_dim)
+    kvcache_shape: tuple[int, ...],  # (2, num_blocks, block_size, head_num, head_dim)
     block_size: int,
     dtype: torch.dtype,
     device: str,
     num_layers: int,
     attention_type: str = "MHA",  # GQA is also supported. TODO: support MLA
     kv_layout: str = "NHD",  # NHD: (num_tokens, head_num, head_dim)
-) -> List[torch.Tensor]:
+) -> list[torch.Tensor]:
     if not _kvcached_initialized:
         raise RuntimeError("kvcached is not initialized. Please call init_kvcached() first.")
 
@@ -95,7 +95,9 @@ def alloc_kv_cache(
     num_blocks_per_layer = gpu_mem_bytes_per_layer_k_or_v // block_mem_bytes
     if requested_num_blocks > num_blocks_per_layer:
         logger.warning(
-            f"Requested {requested_num_blocks} blocks, but only {num_blocks_per_layer} blocks are available."
+            "Requested %d blocks, but only %d blocks are available.",
+            requested_num_blocks,
+            num_blocks_per_layer,
         )
 
     if _vmm_ops_available:
@@ -105,13 +107,11 @@ def alloc_kv_cache(
     else:
         raise RuntimeError("VMM operations not available. Elastic KV cache requires building with VMM support.")
 
-    actual_kvcache_shape: List[int] = list(kvcache_shape)
+    actual_kvcache_shape: list[int] = list(kvcache_shape)
     actual_kvcache_shape[1] = num_blocks_per_layer
     if not _contiguous_layout:
         num_eles = math.prod(actual_kvcache_shape)
-        kv_tensors = [
-            t.view(dtype=dtype)[:num_eles].view(tuple(actual_kvcache_shape)) for t in raw_kv_tensors
-        ]
+        kv_tensors = [t.view(dtype=dtype)[:num_eles].view(tuple(actual_kvcache_shape)) for t in raw_kv_tensors]
     else:
         contiguous_shape = (num_blocks_per_layer, num_layers, num_k_or_v, *actual_kvcache_shape[2:])
         num_eles = math.prod(contiguous_shape)
@@ -123,9 +123,7 @@ def alloc_kv_cache(
     return kv_tensors
 
 
-def get_kv_cache_manager(
-    num_blocks: int, block_size: int, cell_size: int, num_layers: int
-) -> KVCacheManager:
+def get_kv_cache_manager(num_blocks: int, block_size: int, cell_size: int, num_layers: int) -> KVCacheManager:
     if not _kvcached_initialized:
         raise RuntimeError("kvcached is not initialized. Please call init_kvcached() first.")
 

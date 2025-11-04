@@ -9,19 +9,15 @@ from mistral_common.protocol.instruct.request import ChatCompletionRequest
 from PIL import Image
 
 from aphrodite.config import ModelConfig
-from aphrodite.config.multimodal import (AudioDummyOptions, BaseDummyOptions,
-                                         ImageDummyOptions, VideoDummyOptions)
+from aphrodite.config.multimodal import AudioDummyOptions, BaseDummyOptions, ImageDummyOptions, VideoDummyOptions
 from aphrodite.multimodal import MULTIMODAL_REGISTRY, MultiModalDataDict
 from aphrodite.multimodal.cache import MultiModalProcessorOnlyCache
 from aphrodite.multimodal.inputs import MultiModalInputs
-from aphrodite.multimodal.processing import (BaseMultiModalProcessor,
-                                             InputProcessingContext)
-from aphrodite.transformers_utils.tokenizer import (
-    MistralTokenizer, cached_tokenizer_from_config, encode_tokens)
+from aphrodite.multimodal.processing import BaseMultiModalProcessor, InputProcessingContext
+from aphrodite.transformers_utils.tokenizer import MistralTokenizer, cached_tokenizer_from_config, encode_tokens
 
 from ....multimodal.utils import random_audio, random_image, random_video
-from ...registry import (_MULTIMODAL_EXAMPLE_MODELS,
-                         _TRANSFORMERS_BACKEND_MODELS, HF_EXAMPLE_MODELS)
+from ...registry import _MULTIMODAL_EXAMPLE_MODELS, _TRANSFORMERS_BACKEND_MODELS, HF_EXAMPLE_MODELS
 
 
 def glm4_1v_patch_mm_data(mm_data: MultiModalDataDict) -> MultiModalDataDict:
@@ -121,17 +117,12 @@ def _get_model_ids_to_test(model_arch_list: AbstractSet[str]):
 
 def get_model_ids_to_test():
     transformers_arch_ids = {
-        model_id
-        for info in _TRANSFORMERS_BACKEND_MODELS.values()
-        for model_id in (info.default, *info.extras.values())
+        model_id for info in _TRANSFORMERS_BACKEND_MODELS.values() for model_id in (info.default, *info.extras.values())
     }
     aphrodite_only_archs = {
         arch
         for arch, info in _MULTIMODAL_EXAMPLE_MODELS.items()
-        if not any(
-            model_id in transformers_arch_ids
-            for model_id in (info.default, *info.extras.values())
-        )
+        if not any(model_id in transformers_arch_ids for model_id in (info.default, *info.extras.values()))
     }
 
     return _get_model_ids_to_test(aphrodite_only_archs)
@@ -232,8 +223,7 @@ def _test_processing_correctness(
     supported_mm_limits = processing_info.get_supported_mm_limits()
     # Keep integer limits for local data generation
     limit_mm_per_prompt_ints = {
-        modality: 3 if limit is None else limit
-        for modality, limit in supported_mm_limits.items()
+        modality: 3 if limit is None else limit for modality, limit in supported_mm_limits.items()
     }
 
     def _to_dummy_options(modality: str, count: int) -> BaseDummyOptions:
@@ -247,8 +237,7 @@ def _test_processing_correctness(
 
     # Assign normalized DummyOptions to the model config
     model_config.get_multimodal_config().limit_per_prompt = {
-        modality: _to_dummy_options(modality, count)
-        for modality, count in limit_mm_per_prompt_ints.items()
+        modality: _to_dummy_options(modality, count) for modality, count in limit_mm_per_prompt_ints.items()
     }
 
     baseline_processor = factories.build_processor(ctx, cache=None)
@@ -263,9 +252,7 @@ def _test_processing_correctness(
     }
     input_factory = {
         "image": partial(random_image, rng, min_wh=128, max_wh=256),
-        "video": partial(
-            random_video, rng, min_frames=2, max_frames=16, min_wh=128, max_wh=256
-        ),
+        "video": partial(random_video, rng, min_frames=2, max_frames=16, min_wh=128, max_wh=256),
         "audio": partial(random_audio, rng, min_len=512, max_len=1024, sr=16000),
     }
 

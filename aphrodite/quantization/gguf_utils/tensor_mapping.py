@@ -27,26 +27,22 @@ class TensorNameMap:
             "backbone.embeddings",  # mamba-hf
             "transformer.in_out_embed",  # Grok
         ),
-
         # Token type embeddings
         MODEL_TENSOR.TOKEN_TYPES: (
             "embeddings.token_type_embeddings",  # bert nomic-bert
         ),
-
         # Normalization of token embeddings
         MODEL_TENSOR.TOKEN_EMBD_NORM: (
             "word_embeddings_layernorm",  # bloom
             "embeddings.LayerNorm",  # bert
             "emb_ln",  # nomic-bert
         ),
-
         # Position embeddings
         MODEL_TENSOR.POS_EMBD: (
             "transformer.wpe",  # gpt2
             "embeddings.position_embeddings",  # bert
             "wpe",  # gpt2
         ),
-
         # Output
         MODEL_TENSOR.OUTPUT: (
             "embed_out",  # gptneox
@@ -55,7 +51,6 @@ class TensorNameMap:
             "word_embeddings_for_head",  # persimmon
             "lm_head.linear",  # phi2
         ),
-
         # Output norm
         MODEL_TENSOR.OUTPUT_NORM: (
             "gpt_neox.final_layer_norm",  # gptneox
@@ -71,7 +66,6 @@ class TensorNameMap:
             "backbone.norm_f",  # mamba
             "transformer.rms_norm",  # Grok
         ),
-
         # Rope frequencies
         MODEL_TENSOR.ROPE_FREQS: (
             "rope.freqs",  # llama-pth
@@ -100,12 +94,10 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.rms_norm",  # Grok
             "transformer.blocks.{bid}.norm_attn_norm.norm_1",  # dbrx
         ),
-
         # Attention norm 2
         MODEL_TENSOR.ATTN_NORM_2: (
             "transformer.h.{bid}.ln_attn",  # falcon40b
         ),
-
         # Attention query-key-value
         MODEL_TENSOR.ATTN_QKV: (
             "gpt_neox.layers.{bid}.attention.query_key_value",  # gptneox
@@ -120,7 +112,6 @@ class TensorNameMap:
             "transformer.h.{bid}.mixer.Wqkv",  # phi2
             "encoder.layers.{bid}.attn.Wqkv",  # nomic-bert
         ),
-
         # Attention query
         MODEL_TENSOR.ATTN_Q: (
             "model.layers.{bid}.self_attn.q_proj",  # llama-hf
@@ -129,9 +120,8 @@ class TensorNameMap:
             "transformer.h.{bid}.attn.q_proj",  # gpt-j
             "model.layers.layers.{bid}.self_attn.q_proj",  # plamo
             "model.layers.{bid}.attention.wq",  # internlm2
-            "transformer.decoder_layer.{bid}.multi_head_attention.query"  # Grok
+            "transformer.decoder_layer.{bid}.multi_head_attention.query",  # Grok
         ),
-
         # Attention key
         MODEL_TENSOR.ATTN_K: (
             "model.layers.{bid}.self_attn.k_proj",  # llama-hf
@@ -140,9 +130,8 @@ class TensorNameMap:
             "transformer.h.{bid}.attn.k_proj",  # gpt-j
             "model.layers.layers.{bid}.self_attn.k_proj",  # plamo
             "model.layers.{bid}.attention.wk",  # internlm2
-            "transformer.decoder_layer.{bid}.multi_head_attention.key"  # Grok
+            "transformer.decoder_layer.{bid}.multi_head_attention.key",  # Grok
         ),
-
         # Attention value
         MODEL_TENSOR.ATTN_V: (
             "model.layers.{bid}.self_attn.v_proj",  # llama-hf
@@ -151,9 +140,8 @@ class TensorNameMap:
             "transformer.h.{bid}.attn.v_proj",  # gpt-j
             "model.layers.layers.{bid}.self_attn.v_proj",  # plamo
             "model.layers.{bid}.attention.wv",  # internlm2
-            "transformer.decoder_layer.{bid}.multi_head_attention.value"  # Grok
+            "transformer.decoder_layer.{bid}.multi_head_attention.value",  # Grok
         ),
-
         # Attention output
         MODEL_TENSOR.ATTN_OUT: (
             "gpt_neox.layers.{bid}.attention.dense",  # gptneox
@@ -175,7 +163,6 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.multi_head_attention.linear",  # Grok
             "transformer.blocks.{bid}.norm_attn_norm.attn.out_proj",  # dbrx
         ),
-
         # Attention output norm
         MODEL_TENSOR.ATTN_OUT_NORM: (
             "encoder.layer.{bid}.attention.output.LayerNorm",  # bert
@@ -183,7 +170,6 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.rms_norm_1",  # Grok
             "transformer.blocks.{bid}.norm_attn_norm.norm_2",  # dbrx
         ),
-
         # Rotary embeddings
         MODEL_TENSOR.ATTN_ROT_EMBD: (
             "model.layers.{bid}.self_attn.rotary_emb.inv_freq",  # llama-hf
@@ -191,7 +177,6 @@ class TensorNameMap:
             "model.layers.layers.{bid}.self_attn.rotary_emb.inv_freq",  # plamo
             "transformer.h.{bid}.attn.rotary_emb.inv_freq",  # codeshell
         ),
-
         # Feed-forward norm
         MODEL_TENSOR.FFN_NORM: (
             "gpt_neox.layers.{bid}.post_attention_layernorm",  # gptneox
@@ -212,7 +197,6 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.router",  # Grok
             "transformer.blocks.{bid}.ffn.router.layer",  # dbrx
         ),
-
         # Feed-forward up
         MODEL_TENSOR.FFN_UP: (
             "gpt_neox.layers.{bid}.mlp.dense_h_to_4h",  # gptneox
@@ -240,12 +224,10 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.moe.linear_v",  # Grok (merged)
             "transformer.blocks.{bid}.ffn.experts.mlp.v1",  # dbrx
         ),
-
         # AWQ-activation gate
         MODEL_TENSOR.FFN_ACT: (
             "transformer.blocks.{bid}.ffn.act",  # mpt
         ),
-
         # Feed-forward gate
         MODEL_TENSOR.FFN_GATE: (
             "model.layers.{bid}.mlp.gate_proj",  # llama-hf refact
@@ -260,7 +242,6 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.moe.linear",  # Grok (merged)
             "transformer.blocks.{bid}.ffn.experts.mlp.w1",  # dbrx
         ),
-
         # Feed-forward down
         MODEL_TENSOR.FFN_DOWN: (
             "gpt_neox.layers.{bid}.mlp.dense_4h_to_h",  # gptneox
@@ -361,29 +342,24 @@ class TensorNameMap:
                         key = key.format(bid=bid, xid=xid)
                         self.mapping[key] = (tensor, tensor_name)
 
-    def get_type_and_name(
-        self, key: str, try_suffixes: Sequence[str] = ()
-    ) -> tuple[MODEL_TENSOR, str] | None:
+    def get_type_and_name(self, key: str, try_suffixes: Sequence[str] = ()) -> tuple[MODEL_TENSOR, str] | None:
         result = self.mapping.get(key)
         if result is not None:
             return result
         for suffix in try_suffixes:
             if key.endswith(suffix):
-                result = self.mapping.get(key[:-len(suffix)])
+                result = self.mapping.get(key[: -len(suffix)])
                 if result is not None:
                     return result[0], result[1] + suffix
         return None
 
-    def get_name(self, key: str,
-                 try_suffixes: Sequence[str] = ()) -> str | None:
+    def get_name(self, key: str, try_suffixes: Sequence[str] = ()) -> str | None:
         result = self.get_type_and_name(key, try_suffixes=try_suffixes)
         if result is None:
             return None
         return result[1]
 
-    def get_type(
-        self, key: str,
-        try_suffixes: Sequence[str] = ()) -> MODEL_TENSOR | None:
+    def get_type(self, key: str, try_suffixes: Sequence[str] = ()) -> MODEL_TENSOR | None:
         result = self.get_type_and_name(key, try_suffixes=try_suffixes)
         if result is None:
             return None

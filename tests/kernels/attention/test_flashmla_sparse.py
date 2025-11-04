@@ -73,9 +73,7 @@ def test_sparse_flashmla_decode_smoke():
         dtype=torch.uint8,
         device=device,
     )
-    indices = torch.zeros(
-        (batch_size, seqlen_q, topk), dtype=torch.int32, device=device
-    )
+    indices = torch.zeros((batch_size, seqlen_q, topk), dtype=torch.int32, device=device)
 
     block_table = torch.zeros((batch_size, 128), dtype=torch.int32, device=device)
     out, lse = fm.flash_mla_with_kvcache(

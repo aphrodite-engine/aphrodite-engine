@@ -4,8 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from aphrodite.v1.core.kv_cache_utils import BlockHash
-from aphrodite.v1.kv_offload.abstract import (LoadStoreSpec, OffloadingEvent,
-                                              PrepareStoreOutput)
+from aphrodite.v1.kv_offload.abstract import LoadStoreSpec, OffloadingEvent, PrepareStoreOutput
 from aphrodite.v1.kv_offload.backends.cpu import CPUBackend
 from aphrodite.v1.kv_offload.lru_manager import LRUOffloadingManager
 from aphrodite.v1.kv_offload.mediums import CPULoadStoreSpec
@@ -27,23 +26,15 @@ def verify_store_output(
     expected_prepare_store_output: ExpectedPrepareStoreOutput,
 ):
     assert prepare_store_output is not None
-    assert prepare_store_output.block_hashes_to_store == to_hashes(
-        expected_prepare_store_output.block_hashes_to_store
-    )
-    assert prepare_store_output.block_hashes_evicted == to_hashes(
-        expected_prepare_store_output.block_hashes_evicted
-    )
+    assert prepare_store_output.block_hashes_to_store == to_hashes(expected_prepare_store_output.block_hashes_to_store)
+    assert prepare_store_output.block_hashes_evicted == to_hashes(expected_prepare_store_output.block_hashes_evicted)
     store_spec = prepare_store_output.store_spec
     assert isinstance(store_spec, CPULoadStoreSpec)
-    expected_array = np.array(
-        expected_prepare_store_output.store_block_ids, dtype=np.int64
-    )
+    expected_array = np.array(expected_prepare_store_output.store_block_ids, dtype=np.int64)
     assert np.array_equal(expected_array, store_spec.block_ids)
 
 
-def verify_load_output(
-    prepare_load_output: LoadStoreSpec, expected_prepare_load_output: list[int]
-):
+def verify_load_output(prepare_load_output: LoadStoreSpec, expected_prepare_load_output: list[int]):
     assert isinstance(prepare_load_output, CPULoadStoreSpec)
     expected_array = np.array(expected_prepare_load_output, dtype=np.int64)
     assert np.array_equal(expected_array, prepare_load_output.block_ids)
@@ -100,9 +91,7 @@ def test_cpu_manager():
 
     # complete store [1, 2]
     cpu_manager.complete_store(to_hashes([1, 2]))
-    verify_events(
-        cpu_manager.take_events(), block_size=block_size, expected_stores=({1, 2},)
-    )
+    verify_events(cpu_manager.take_events(), block_size=block_size, expected_stores=({1, 2},))
 
     # lookup [1, 2]
     assert cpu_manager.lookup(to_hashes([1])) == 1
@@ -121,9 +110,7 @@ def test_cpu_manager():
     )
 
     # verify eviction event
-    verify_events(
-        cpu_manager.take_events(), block_size=block_size, expected_evictions=({1},)
-    )
+    verify_events(cpu_manager.take_events(), block_size=block_size, expected_evictions=({1},))
 
     # prepare store with no space
     assert cpu_manager.prepare_store(to_hashes([1, 6])) is None

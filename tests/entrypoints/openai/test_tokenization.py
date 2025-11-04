@@ -242,9 +242,7 @@ async def test_detokenize(
     prompt = "This is a test prompt. aphrodite1"
     tokens = tokenizer.encode(prompt, add_special_tokens=False)
 
-    response = requests.post(
-        server.url_for("detokenize"), json={"model": model_name, "tokens": tokens}
-    )
+    response = requests.post(server.url_for("detokenize"), json={"model": model_name, "tokens": tokens})
     response.raise_for_status()
 
     assert response.json() == {"prompt": prompt}
@@ -293,9 +291,7 @@ async def test_tokenizer_info_schema(server: RemoteOpenAIServer):
     }
     for field, expected_type in field_types.items():
         if field in result and result[field] is not None:
-            assert isinstance(result[field], expected_type), (
-                f"{field} should be {expected_type.__name__}"
-            )
+            assert isinstance(result[field], expected_type), f"{field} should be {expected_type.__name__}"
 
 
 @pytest.mark.asyncio
@@ -313,9 +309,7 @@ async def test_tokenizer_info_added_tokens_structure(
             assert isinstance(token_info, dict), "Token info should be a dict"
             assert "content" in token_info, "Token info should have content"
             assert "special" in token_info, "Token info should have special flag"
-            assert isinstance(token_info["special"], bool), (
-                "Special flag should be boolean"
-            )
+            assert isinstance(token_info["special"], bool), "Special flag should be boolean"
 
 
 @pytest.mark.asyncio
@@ -335,9 +329,7 @@ async def test_tokenizer_info_consistency_with_tokenize(
     info_max_len = info.get("model_max_length")
     tokenize_max_len = tokenize_result.get("max_model_len")
     if info_max_len and tokenize_max_len:
-        assert info_max_len >= tokenize_max_len, (
-            "Info max length should be >= tokenize max length"
-        )
+        assert info_max_len >= tokenize_max_len, "Info max length should be >= tokenize max length"
 
 
 @pytest.mark.asyncio

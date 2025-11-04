@@ -1,16 +1,18 @@
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
-from aphrodite.distributed.kv_events import (MEDIUM_GPU, AllBlocksCleared,
-                                             BlockRemoved, BlockStored,
-                                             KVCacheEvent)
+from aphrodite.distributed.kv_events import MEDIUM_GPU, AllBlocksCleared, BlockRemoved, BlockStored, KVCacheEvent
 from aphrodite.logger import init_logger
-from aphrodite.v1.core.kv_cache_utils import (BlockHash, BlockHashWithGroupId,
-                                              ExternalBlockHash,
-                                              FreeKVCacheBlockQueue,
-                                              KVCacheBlock, get_block_hash,
-                                              make_block_hash_with_group_id,
-                                              maybe_convert_block_hash)
+from aphrodite.v1.core.kv_cache_utils import (
+    BlockHash,
+    BlockHashWithGroupId,
+    ExternalBlockHash,
+    FreeKVCacheBlockQueue,
+    KVCacheBlock,
+    get_block_hash,
+    make_block_hash_with_group_id,
+    maybe_convert_block_hash,
+)
 from aphrodite.v1.request import Request
 
 logger = init_logger(__name__)
@@ -40,9 +42,7 @@ class BlockHashToBlockMap:
     """
 
     def __init__(self):
-        self._cache: dict[
-            BlockHashWithGroupId, KVCacheBlock | dict[int, KVCacheBlock]
-        ] = {}
+        self._cache: dict[BlockHashWithGroupId, KVCacheBlock | dict[int, KVCacheBlock]] = {}
 
     def get_one_block(self, key: BlockHashWithGroupId) -> KVCacheBlock | None:
         """
@@ -136,9 +136,7 @@ class BlockPool:
         self.num_gpu_blocks = num_gpu_blocks
         self.enable_caching = enable_caching
         # All kv-cache blocks.
-        self.blocks: list[KVCacheBlock] = [
-            KVCacheBlock(idx) for idx in range(num_gpu_blocks)
-        ]
+        self.blocks: list[KVCacheBlock] = [KVCacheBlock(idx) for idx in range(num_gpu_blocks)]
         # Free block queue that constructs and manipulates a doubly linked
         # list of free blocks (including eviction candidates when caching is
         # enabled).
@@ -156,9 +154,7 @@ class BlockPool:
         self.enable_kv_cache_events = enable_kv_cache_events
         self.kv_event_queue: list[KVCacheEvent] = []
 
-    def get_cached_block(
-        self, block_hash: BlockHash, kv_cache_group_ids: list[int]
-    ) -> list[KVCacheBlock] | None:
+    def get_cached_block(self, block_hash: BlockHash, kv_cache_group_ids: list[int]) -> list[KVCacheBlock] | None:
         """Get the cached block by the block hash for each group in
         `kv_cache_group_ids`, or None if cache miss for any group.
         If there are duplicated blocks, we return the first block in the cache.
@@ -172,12 +168,8 @@ class BlockPool:
         """
         cached_blocks = []
         for group_id in kv_cache_group_ids:
-            block_hash_with_group_id = make_block_hash_with_group_id(
-                block_hash, group_id
-            )
-            block = self.cached_block_hash_to_block.get_one_block(
-                block_hash_with_group_id
-            )
+            block_hash_with_group_id = make_block_hash_with_group_id(block_hash, group_id)
+            block = self.cached_block_hash_to_block.get_one_block(block_hash_with_group_id)
             if not block:
                 return None
             cached_blocks.append(block)
@@ -215,17 +207,13 @@ class BlockPool:
         assert len(request.block_hashes) >= num_full_blocks
         new_block_hashes = request.block_hashes[num_cached_blocks:]
 
-        new_hashes: list[ExternalBlockHash] | None = (
-            [] if self.enable_kv_cache_events else None
-        )
+        new_hashes: list[ExternalBlockHash] | None = [] if self.enable_kv_cache_events else None
         for i, blk in enumerate(new_full_blocks):
             assert blk.block_hash is None
             block_hash = new_block_hashes[i]
 
             # Update and added the full block to the cache.
-            block_hash_with_group_id = make_block_hash_with_group_id(
-                block_hash, kv_cache_group_id
-            )
+            block_hash_with_group_id = make_block_hash_with_group_id(block_hash, kv_cache_group_id)
             blk.block_hash = block_hash_with_group_id
             self.cached_block_hash_to_block.insert(block_hash_with_group_id, blk)
             if new_hashes is not None:
@@ -237,17 +225,13 @@ class BlockPool:
             else:
                 parent_block = blocks[num_cached_blocks - 1]
                 assert parent_block.block_hash is not None
-                parent_block_hash = maybe_convert_block_hash(
-                    get_block_hash(parent_block.block_hash)
-                )
+                parent_block_hash = maybe_convert_block_hash(get_block_hash(parent_block.block_hash))
 
             self.kv_event_queue.append(
                 BlockStored(
                     block_hashes=new_hashes,
                     parent_block_hash=parent_block_hash,
-                    token_ids=request.all_token_ids[
-                        num_cached_blocks * block_size : num_full_blocks * block_size
-                    ],
+                    token_ids=request.all_token_ids[num_cached_blocks * block_size : num_full_blocks * block_size],
                     block_size=block_size,
                     lora_id=request.lora_request.id if request.lora_request else None,
                     medium=MEDIUM_GPU,
@@ -346,9 +330,7 @@ class BlockPool:
         blocks_list = list(ordered_blocks)
         for block in blocks_list:
             block.ref_cnt -= 1
-        self.free_block_queue.append_n(
-            [block for block in blocks_list if block.ref_cnt == 0 and not block.is_null]
-        )
+        self.free_block_queue.append_n([block for block in blocks_list if block.ref_cnt == 0 and not block.is_null])
 
     def reset_prefix_cache(self) -> bool:
         """Reset prefix cache. This function may be used in RLHF
@@ -362,8 +344,7 @@ class BlockPool:
         num_used_blocks = self.num_gpu_blocks - self.get_num_free_blocks()
         if num_used_blocks != 1:  # The null block is always marked as used
             logger.warning(
-                "Failed to reset prefix cache because some "
-                "blocks (%d) are not freed yet",
+                "Failed to reset prefix cache because some blocks (%d) are not freed yet",
                 num_used_blocks - 1,
             )
             return False
@@ -422,37 +403,32 @@ class ElasticBlockPool(BlockPool):
     elastic KV cachememory management.
     """
 
-    def __init__(self,
-                 num_gpu_blocks: int,
-                 block_size: int,
-                 cell_size: int,
-                 num_layers: int,
-                 enable_caching: bool,
-                 enable_kv_cache_events: bool = False):
+    def __init__(
+        self,
+        num_gpu_blocks: int,
+        block_size: int,
+        cell_size: int,
+        num_layers: int,
+        enable_caching: bool,
+        enable_kv_cache_events: bool = False,
+    ):
         # NOTE: Do not call super().__init__() here because we just want to
         # keep the same interface as BlockPool but not its implementation.
         assert isinstance(num_gpu_blocks, int) and num_gpu_blocks > 0
-        assert not enable_caching, (
-            "Caching is not supported in ElasticBlockPool")
-        assert not enable_kv_cache_events, (
-            "KV cache events are not supported in ElasticBlockPool")
+        assert not enable_caching, "Caching is not supported in ElasticBlockPool"
+        assert not enable_kv_cache_events, "KV cache events are not supported in ElasticBlockPool"
 
         self.num_gpu_blocks = num_gpu_blocks
         self.enable_kv_cache_events = enable_kv_cache_events
         self.kv_event_queue: list[KVCacheEvent] = []
 
-        from aphrodite.v1.core.dynamic_kv.interfaces import (
-            get_kv_cache_manager)
+        from aphrodite.v1.core.dynamic_kv.interfaces import get_kv_cache_manager
 
-        self.kv_cache_manager = get_kv_cache_manager(num_gpu_blocks,
-                                                     block_size, cell_size,
-                                                     num_layers)
+        self.kv_cache_manager = get_kv_cache_manager(num_gpu_blocks, block_size, cell_size, num_layers)
 
         self.null_block = None  # type: ignore
 
-    def get_cached_block(
-            self, block_hash: BlockHash,
-            kv_cache_group_ids: list[int]) -> list[KVCacheBlock] | None:
+    def get_cached_block(self, block_hash: BlockHash, kv_cache_group_ids: list[int]) -> list[KVCacheBlock] | None:
         return None
 
     def cache_full_blocks(
@@ -466,8 +442,7 @@ class ElasticBlockPool(BlockPool):
         kv_cache_group_id: int,
         hash_fn: Callable,
     ) -> None:
-        raise NotImplementedError(
-            "Caching is not supported in ElasticBlockPool")
+        raise NotImplementedError("Caching is not supported in ElasticBlockPool")
 
     def get_new_blocks(self, num_blocks: int) -> list[KVCacheBlock]:
         """Get new blocks from the free block pool.
@@ -478,8 +453,7 @@ class ElasticBlockPool(BlockPool):
             A list of new block.
         """
         if num_blocks > self.get_num_free_blocks():
-            raise ValueError(
-                f"Cannot get {num_blocks} free blocks from the pool")
+            raise ValueError(f"Cannot get {num_blocks} free blocks from the pool")
 
         block_ids = self.kv_cache_manager.alloc(num_blocks)
         assert block_ids is not None and len(block_ids) == num_blocks

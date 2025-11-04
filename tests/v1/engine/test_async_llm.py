@@ -14,10 +14,12 @@ from aphrodite.outputs import RequestOutput
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import set_default_torch_num_threads
 from aphrodite.v1.engine.async_llm import AsyncLLM
-from aphrodite.v1.metrics.loggers import (AggregatedLoggingStatLogger,
-                                          LoggingStatLogger,
-                                          PerEngineStatLoggerAdapter,
-                                          PrometheusStatLogger)
+from aphrodite.v1.metrics.loggers import (
+    AggregatedLoggingStatLogger,
+    LoggingStatLogger,
+    PerEngineStatLoggerAdapter,
+    PrometheusStatLogger,
+)
 
 if not current_platform.is_cuda():
     pytest.skip(reason="V1 currently only supported on CUDA.", allow_module_level=True)
@@ -27,9 +29,7 @@ TEXT_ENGINE_ARGS = AsyncEngineArgs(
     enforce_eager=True,
 )
 
-VISION_ENGINE_ARGS = AsyncEngineArgs(
-    model="Qwen/Qwen2-VL-2B-Instruct", enforce_eager=True
-)
+VISION_ENGINE_ARGS = AsyncEngineArgs(model="Qwen/Qwen2-VL-2B-Instruct", enforce_eager=True)
 
 TEXT_PROMPT = "Hello my name is Robert and"
 
@@ -68,9 +68,7 @@ async def generate(
         n=n,
         prompt_logprobs=prompt_logprobs,
     )
-    async for out in engine.generate(
-        request_id=request_id, prompt=prompt, sampling_params=sampling_params
-    ):
+    async for out in engine.generate(request_id=request_id, prompt=prompt, sampling_params=sampling_params):
         num_tokens = sum(len(output.token_ids) for output in out.outputs)
         if output_kind == RequestOutputKind.DELTA:
             count += num_tokens
@@ -85,9 +83,7 @@ async def generate(
     return count, request_id
 
 
-@pytest.mark.parametrize(
-    "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY]
-)
+@pytest.mark.parametrize("output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.parametrize(
     "engine_args,prompt",
     [(TEXT_ENGINE_ARGS, TEXT_PROMPT), (VISION_ENGINE_ARGS, VISION_PROMPT)],
@@ -111,13 +107,7 @@ async def test_load(
         # Create concurrent requests.
         tasks = []
         for request_id in request_ids:
-            tasks.append(
-                asyncio.create_task(
-                    generate(
-                        engine, request_id, prompt, output_kind, NUM_EXPECTED_TOKENS
-                    )
-                )
-            )
+            tasks.append(asyncio.create_task(generate(engine, request_id, prompt, output_kind, NUM_EXPECTED_TOKENS)))
 
         # Confirm that we got all the EXPECTED tokens from the requests.
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
@@ -126,16 +116,13 @@ async def test_load(
         for task in done:
             num_generated_tokens, request_id = await task
             assert num_generated_tokens == NUM_EXPECTED_TOKENS, (
-                f"{request_id} generated {num_generated_tokens} but "
-                f"expected {NUM_EXPECTED_TOKENS}"
+                f"{request_id} generated {num_generated_tokens} but expected {NUM_EXPECTED_TOKENS}"
             )
 
         assert not engine.output_processor.has_unfinished_requests()
 
 
-@pytest.mark.parametrize(
-    "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY]
-)
+@pytest.mark.parametrize("output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.parametrize(
     "engine_args,prompt",
     [(TEXT_ENGINE_ARGS, TEXT_PROMPT), (VISION_ENGINE_ARGS, VISION_PROMPT)],
@@ -162,17 +149,9 @@ async def test_abort(
         # Create concurrent requests.
         tasks: list[asyncio.Task] = []
         for idx, request_id in enumerate(request_ids):
-            max_tokens = (
-                NUM_EXPECTED_TOKENS_LONG
-                if (idx in REQUEST_IDS_TO_ABORT)
-                else NUM_EXPECTED_TOKENS
-            )
+            max_tokens = NUM_EXPECTED_TOKENS_LONG if (idx in REQUEST_IDS_TO_ABORT) else NUM_EXPECTED_TOKENS
             n = 3 if idx in PARALLEL_SAMPLE_REQ_IDS else 1
-            tasks.append(
-                asyncio.create_task(
-                    generate(engine, request_id, prompt, output_kind, max_tokens, n)
-                )
-            )
+            tasks.append(asyncio.create_task(generate(engine, request_id, prompt, output_kind, max_tokens, n)))
 
         # API server cancels requests when they disconnect.
         for idx in REQUEST_IDS_TO_ABORT:
@@ -191,8 +170,7 @@ async def test_abort(
                 n = 3 if idx in PARALLEL_SAMPLE_REQ_IDS else 1
                 expected_tokens = NUM_EXPECTED_TOKENS * n
                 assert num_generated_tokens == expected_tokens, (
-                    f"{request_id} generated {num_generated_tokens} but "
-                    f"expected {expected_tokens}"
+                    f"{request_id} generated {num_generated_tokens} but expected {expected_tokens}"
                 )
 
         # Make sure all aborted requests were really aborted.
@@ -200,17 +178,13 @@ async def test_abort(
 
         # Confirm we can do another generation.
         request_id = f"request-{REQUEST_IDS_TO_ABORT[0]}"
-        task = asyncio.create_task(
-            generate(engine, request_id, prompt, output_kind, NUM_EXPECTED_TOKENS)
-        )
+        task = asyncio.create_task(generate(engine, request_id, prompt, output_kind, NUM_EXPECTED_TOKENS))
         num_generated_tokens, request_id = await task
         assert num_generated_tokens == NUM_EXPECTED_TOKENS
         assert not engine.output_processor.has_unfinished_requests()
 
 
-@pytest.mark.parametrize(
-    "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY]
-)
+@pytest.mark.parametrize("output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
 async def test_multi_abort(output_kind: RequestOutputKind):
     with ExitStack() as after:
@@ -229,19 +203,9 @@ async def test_multi_abort(output_kind: RequestOutputKind):
         # Create concurrent requests.
         tasks: list[asyncio.Task] = []
         for idx, request_id in enumerate(request_ids):
-            max_tokens = (
-                NUM_EXPECTED_TOKENS_LONG
-                if (idx in REQUEST_IDS_TO_ABORT)
-                else NUM_EXPECTED_TOKENS
-            )
+            max_tokens = NUM_EXPECTED_TOKENS_LONG if (idx in REQUEST_IDS_TO_ABORT) else NUM_EXPECTED_TOKENS
             n = 3 if idx in PARALLEL_SAMPLE_REQ_IDS else 1
-            tasks.append(
-                asyncio.create_task(
-                    generate(
-                        engine, request_id, TEXT_PROMPT, output_kind, max_tokens, n
-                    )
-                )
-            )
+            tasks.append(asyncio.create_task(generate(engine, request_id, TEXT_PROMPT, output_kind, max_tokens, n)))
 
         # Let requests start
         await asyncio.sleep(0.5)
@@ -257,25 +221,18 @@ async def test_multi_abort(output_kind: RequestOutputKind):
         for idx, result in enumerate(results):
             if idx in REQUEST_IDS_TO_ABORT:
                 # Aborted requests should return partial results
-                assert isinstance(result, tuple), (
-                    f"Request {idx} should have completed with partial results"
-                )
+                assert isinstance(result, tuple), f"Request {idx} should have completed with partial results"
                 num_generated_tokens, request_id = result
                 # Should have generated some tokens before abort
-                assert num_generated_tokens > 0, (
-                    f"Aborted request {request_id} should have generated some tokens"
-                )
+                assert num_generated_tokens > 0, f"Aborted request {request_id} should have generated some tokens"
             else:
                 # Non-aborted requests should complete normally
-                assert isinstance(result, tuple), (
-                    f"Request {idx} should have completed successfully"
-                )
+                assert isinstance(result, tuple), f"Request {idx} should have completed successfully"
                 num_generated_tokens, request_id = result
                 n = 3 if idx in PARALLEL_SAMPLE_REQ_IDS else 1
                 expected_tokens = NUM_EXPECTED_TOKENS * n
                 assert num_generated_tokens == expected_tokens, (
-                    f"{request_id} generated {num_generated_tokens} but "
-                    f"expected {expected_tokens}"
+                    f"{request_id} generated {num_generated_tokens} but expected {expected_tokens}"
                 )
 
         # Make sure all aborted requests were cleaned up
@@ -307,9 +264,7 @@ async def test_finished_flag(
         )
         outputs = [
             out
-            async for out in engine.generate(
-                request_id="request-33", prompt=prompt, sampling_params=sampling_params
-            )
+            async for out in engine.generate(request_id="request-33", prompt=prompt, sampling_params=sampling_params)
         ]
 
         # Assert only the last output has the finished flag set
@@ -322,9 +277,7 @@ async def test_finished_flag(
     [(TEXT_ENGINE_ARGS, TEXT_PROMPT), (VISION_ENGINE_ARGS, VISION_PROMPT)],
 )
 @pytest.mark.asyncio
-async def test_mid_stream_cancellation(
-    engine_args: AsyncEngineArgs, prompt: PromptType
-):
+async def test_mid_stream_cancellation(engine_args: AsyncEngineArgs, prompt: PromptType):
     """Test that requests can be cancelled mid-stream."""
     with ExitStack() as after:
         with set_default_torch_num_threads(1):
@@ -368,11 +321,7 @@ async def test_mid_stream_cancellation(
 
         # Confirm we can reuse the request id after the cancellations.
         request_id = request_ids[0]
-        task = asyncio.create_task(
-            generate(
-                engine, request_id, prompt, RequestOutputKind.DELTA, NUM_EXPECTED_TOKENS
-            )
-        )
+        task = asyncio.create_task(generate(engine, request_id, prompt, RequestOutputKind.DELTA, NUM_EXPECTED_TOKENS))
         num_generated_tokens, request_id = await task
         assert num_generated_tokens == NUM_EXPECTED_TOKENS
         assert not engine.output_processor.has_unfinished_requests()
@@ -408,9 +357,7 @@ async def test_customize_loggers(monkeypatch):
         await engine.do_log_stats()
 
         stat_loggers = engine.logger_manager.stat_loggers
-        assert (
-            len(stat_loggers) == 3
-        )  # MockLoggingStatLogger + LoggingStatLogger +  Promethus Logger
+        assert len(stat_loggers) == 3  # MockLoggingStatLogger + LoggingStatLogger +  Promethus Logger
         print(f"{stat_loggers=}")
         stat_loggers[0].per_engine_stat_loggers[0].log.assert_called_once()
         assert isinstance(stat_loggers[1], PerEngineStatLoggerAdapter)
@@ -514,9 +461,7 @@ async def test_check_health():
         await engine.check_health()
 
 
-@pytest.mark.parametrize(
-    "output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY]
-)
+@pytest.mark.parametrize("output_kind", [RequestOutputKind.DELTA, RequestOutputKind.FINAL_ONLY])
 @pytest.mark.asyncio
 async def test_abort_final_output(output_kind: RequestOutputKind):
     """Test that abort() returns a final output with correct information."""
@@ -538,9 +483,7 @@ async def test_abort_final_output(output_kind: RequestOutputKind):
         )
 
         outputs: list[RequestOutput] = []
-        generated = asyncio.create_task(
-            collect_outputs(engine, request_id, TEXT_PROMPT, sampling_params, outputs)
-        )
+        generated = asyncio.create_task(collect_outputs(engine, request_id, TEXT_PROMPT, sampling_params, outputs))
 
         # Let it generate some tokens
         await asyncio.sleep(0.5)
@@ -588,9 +531,7 @@ async def collect_outputs(
 ) -> RequestOutput | None:
     """Helper to collect outputs and return the final one."""
     final_output: RequestOutput | None = None
-    async for output in engine.generate(
-        request_id=request_id, prompt=prompt, sampling_params=sampling_params
-    ):
+    async for output in engine.generate(request_id=request_id, prompt=prompt, sampling_params=sampling_params):
         if not output.finished:
             outputs_list.append(output)
         final_output = output

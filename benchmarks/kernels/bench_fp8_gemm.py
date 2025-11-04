@@ -11,30 +11,14 @@ from aphrodite.triton_utils import triton
 
 PROVIDER_CFGS = {
     "torch-bf16": dict(enabled=True),
-    "fp8-tensor-w-token-a": dict(
-        w="tensor", a="token", no_a_quant=False, enabled=False
-    ),
-    "fp8-tensor-w-tensor-a": dict(
-        w="tensor", a="tensor", no_a_quant=False, enabled=True
-    ),
-    "fp8-channel-w-token-a": dict(
-        w="channel", a="token", no_a_quant=False, enabled=True
-    ),
-    "fp8-channel-w-tensor-a": dict(
-        w="channel", a="tensor", no_a_quant=False, enabled=False
-    ),
-    "fp8-tensor-w-token-a-noquant": dict(
-        w="tensor", a="token", no_a_quant=True, enabled=False
-    ),
-    "fp8-tensor-w-tensor-a-noquant": dict(
-        w="tensor", a="tensor", no_a_quant=True, enabled=True
-    ),
-    "fp8-channel-w-token-a-noquant": dict(
-        w="channel", a="token", no_a_quant=True, enabled=True
-    ),
-    "fp8-channel-w-tensor-a-noquant": dict(
-        w="channel", a="tensor", no_a_quant=True, enabled=False
-    ),
+    "fp8-tensor-w-token-a": dict(w="tensor", a="token", no_a_quant=False, enabled=False),
+    "fp8-tensor-w-tensor-a": dict(w="tensor", a="tensor", no_a_quant=False, enabled=True),
+    "fp8-channel-w-token-a": dict(w="channel", a="token", no_a_quant=False, enabled=True),
+    "fp8-channel-w-tensor-a": dict(w="channel", a="tensor", no_a_quant=False, enabled=False),
+    "fp8-tensor-w-token-a-noquant": dict(w="tensor", a="token", no_a_quant=True, enabled=False),
+    "fp8-tensor-w-tensor-a-noquant": dict(w="tensor", a="tensor", no_a_quant=True, enabled=True),
+    "fp8-channel-w-token-a-noquant": dict(w="channel", a="token", no_a_quant=True, enabled=True),
+    "fp8-channel-w-tensor-a-noquant": dict(w="channel", a="tensor", no_a_quant=True, enabled=False),
 }
 
 _enabled = [k for k, v in PROVIDER_CFGS.items() if v["enabled"]]
@@ -52,11 +36,7 @@ def _quant_weight_fp8(b: torch.Tensor, w_type: str, device: str):
 def build_fp8_runner(cfg, a, b, dtype, device):
     b_fp8, scale_b_fp8 = _quant_weight_fp8(b, cfg["w"], device)
 
-    scale_a_const = (
-        torch.ones(1, device=device, dtype=torch.float32)
-        if cfg["a"] == "tensor"
-        else None
-    )
+    scale_a_const = torch.ones(1, device=device, dtype=torch.float32) if cfg["a"] == "tensor" else None
 
     if cfg["no_a_quant"]:
         if cfg["a"] == "tensor":
@@ -114,9 +94,7 @@ def benchmark(batch_size, provider, N, K):
     else:
         cfg = PROVIDER_CFGS[provider]
         run_quant = build_fp8_runner(cfg, a, b, dtype, device)
-        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(
-            lambda: run_quant(), quantiles=quantiles
-        )
+        ms, min_ms, max_ms = triton.testing.do_bench_cudagraph(lambda: run_quant(), quantiles=quantiles)
 
     to_tflops = lambda t_ms: (2 * M * N * K) * 1e-12 / (t_ms * 1e-3)
     return to_tflops(ms), to_tflops(max_ms), to_tflops(min_ms)

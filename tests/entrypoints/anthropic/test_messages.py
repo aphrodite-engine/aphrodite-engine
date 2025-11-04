@@ -75,9 +75,7 @@ async def test_anthropic_tool_call(client: anthropic.AsyncAnthropic):
     resp = await client.messages.create(
         model="claude-3-7-sonnet-latest",
         max_tokens=1024,
-        messages=[
-            {"role": "user", "content": "What's the weather like in New York today?"}
-        ],
+        messages=[{"role": "user", "content": "What's the weather like in New York today?"}],
         tools=[
             {
                 "name": "get_current_weather",
@@ -87,8 +85,7 @@ async def test_anthropic_tool_call(client: anthropic.AsyncAnthropic):
                     "properties": {
                         "location": {
                             "type": "string",
-                            "description": "City or region, for example: "
-                            "New York, London, Tokyo, etc.",
+                            "description": "City or region, for example: New York, London, Tokyo, etc.",
                         }
                     },
                     "required": ["location"],
@@ -116,15 +113,13 @@ async def test_anthropic_tool_call(client: anthropic.AsyncAnthropic):
             tools=[
                 {
                     "name": "get_current_weather",
-                    "description": "Useful for querying the weather "
-                    "in a specified city.",
+                    "description": "Useful for querying the weather in a specified city.",
                     "input_schema": {
                         "type": "object",
                         "properties": {
                             "location": {
                                 "type": "string",
-                                "description": "City or region, for example: "
-                                "New York, London, Tokyo, etc.",
+                                "description": "City or region, for example: New York, London, Tokyo, etc.",
                             }
                         },
                         "required": ["location"],

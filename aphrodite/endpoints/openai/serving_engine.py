@@ -3,8 +3,7 @@ import json
 import sys
 import time
 import traceback
-from collections.abc import (AsyncGenerator, Callable, Iterable, Mapping,
-                             Sequence)
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from typing import Any, ClassVar, Generic, TypeAlias, TypeVar
@@ -21,66 +20,73 @@ else:
     from typing_extensions import TypedDict
 
 import aphrodite.envs as envs
-from aphrodite.common.beam_search import (BeamSearchSequence,
-                                          create_sort_beams_key_function)
+from aphrodite.common.beam_search import BeamSearchSequence, create_sort_beams_key_function
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import BeamSearchParams, SamplingParams
 from aphrodite.endpoints.chat_utils import (
-    ChatCompletionMessageParam, ChatTemplateContentFormatOption,
-    ConversationMessage, apply_hf_chat_template, apply_mistral_chat_template,
-    parse_chat_messages_futures, resolve_chat_template_content_format)
+    ChatCompletionMessageParam,
+    ChatTemplateContentFormatOption,
+    ConversationMessage,
+    apply_hf_chat_template,
+    apply_mistral_chat_template,
+    parse_chat_messages_futures,
+    resolve_chat_template_content_format,
+)
 from aphrodite.endpoints.context import ConversationContext
 from aphrodite.endpoints.logger import RequestLogger
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 ChatCompletionResponse,
-                                                 ClassificationRequest,
-                                                 ClassificationResponse,
-                                                 CompletionRequest,
-                                                 CompletionResponse,
-                                                 DetokenizeRequest,
-                                                 EmbeddingChatRequest,
-                                                 EmbeddingCompletionRequest,
-                                                 EmbeddingRequest,
-                                                 EmbeddingResponse, ErrorInfo,
-                                                 ErrorResponse,
-                                                 IOProcessorRequest,
-                                                 PoolingResponse,
-                                                 RerankRequest,
-                                                 ResponsesRequest,
-                                                 ScoreRequest, ScoreResponse,
-                                                 TokenizeChatRequest,
-                                                 TokenizeCompletionRequest,
-                                                 TokenizeResponse,
-                                                 TranscriptionRequest,
-                                                 TranscriptionResponse,
-                                                 TranslationRequest)
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ClassificationRequest,
+    ClassificationResponse,
+    CompletionRequest,
+    CompletionResponse,
+    DetokenizeRequest,
+    EmbeddingChatRequest,
+    EmbeddingCompletionRequest,
+    EmbeddingRequest,
+    EmbeddingResponse,
+    ErrorInfo,
+    ErrorResponse,
+    IOProcessorRequest,
+    PoolingResponse,
+    RerankRequest,
+    ResponsesRequest,
+    ScoreRequest,
+    ScoreResponse,
+    TokenizeChatRequest,
+    TokenizeCompletionRequest,
+    TokenizeResponse,
+    TranscriptionRequest,
+    TranscriptionResponse,
+    TranslationRequest,
+)
 from aphrodite.endpoints.openai.serving_models import OpenAIServingModels
-from aphrodite.endpoints.openai.tool_parsers import (ToolParser,
-                                                     ToolParserManager)
-from aphrodite.endpoints.renderer import (BaseRenderer, CompletionRenderer,
-                                          RenderConfig)
+from aphrodite.endpoints.openai.tool_parsers import ToolParser, ToolParserManager
+from aphrodite.endpoints.renderer import BaseRenderer, CompletionRenderer, RenderConfig
 from aphrodite.endpoints.utils import _validate_truncation_size
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.inputs.data import PromptType
 from aphrodite.inputs.data import TokensPrompt as EngineTokensPrompt
-from aphrodite.inputs.parse import (PromptComponents, get_prompt_components,
-                                    is_explicit_encoder_decoder_prompt)
+from aphrodite.inputs.parse import PromptComponents, get_prompt_components, is_explicit_encoder_decoder_prompt
 from aphrodite.logger import init_logger
 from aphrodite.logprobs import Logprob, PromptLogprobs
 from aphrodite.lora.request import LoRARequest
 from aphrodite.multimodal import (  # noqa: F401 - Required to resolve Pydantic error in RequestProcessingMixin
-    MultiModalDataDict, MultiModalUUIDDict)
-from aphrodite.outputs import (CompletionOutput, PoolingRequestOutput,
-                               RequestOutput)
+    MultiModalDataDict,
+    MultiModalUUIDDict,
+)
+from aphrodite.outputs import CompletionOutput, PoolingRequestOutput, RequestOutput
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
-from aphrodite.tracing import (contains_trace_headers, extract_trace_headers,
-                               log_tracing_disabled_warning)
-from aphrodite.transformers_utils.tokenizer import (AnyTokenizer,
-                                                    MistralTokenizer)
+from aphrodite.tracing import contains_trace_headers, extract_trace_headers, log_tracing_disabled_warning
+from aphrodite.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer
 from aphrodite.utils import random_uuid
-from aphrodite.utils.async_utils import (AsyncMicrobatchTokenizer,
-                                         collect_from_async_generator,
-                                         make_async, merge_async_iterators)
+from aphrodite.utils.async_utils import (
+    AsyncMicrobatchTokenizer,
+    collect_from_async_generator,
+    make_async,
+    merge_async_iterators,
+)
 from aphrodite.utils.collection_utils import is_list_of
 from aphrodite.v1.engine import EngineCoreRequest
 
@@ -96,16 +102,10 @@ CompletionLikeRequest: TypeAlias = (
     | TokenizeCompletionRequest
 )
 
-ChatLikeRequest: TypeAlias = (
-    ChatCompletionRequest | EmbeddingChatRequest | TokenizeChatRequest
-)
+ChatLikeRequest: TypeAlias = ChatCompletionRequest | EmbeddingChatRequest | TokenizeChatRequest
 SpeechToTextRequest: TypeAlias = TranscriptionRequest | TranslationRequest
 AnyRequest: TypeAlias = (
-    CompletionLikeRequest
-    | ChatLikeRequest
-    | SpeechToTextRequest
-    | ResponsesRequest
-    | IOProcessorRequest
+    CompletionLikeRequest | ChatLikeRequest | SpeechToTextRequest | ResponsesRequest | IOProcessorRequest
 )
 
 AnyResponse: TypeAlias = (
@@ -133,19 +133,11 @@ RequestPrompt: TypeAlias = list[int] | str | TextTokensPrompt | EmbedsPrompt
 
 
 def is_text_tokens_prompt(prompt: RequestPrompt) -> TypeIs[TextTokensPrompt]:
-    return (
-        isinstance(prompt, dict)
-        and "prompt_token_ids" in prompt
-        and "prompt_embeds" not in prompt
-    )
+    return isinstance(prompt, dict) and "prompt_token_ids" in prompt and "prompt_embeds" not in prompt
 
 
 def is_embeds_prompt(prompt: RequestPrompt) -> TypeIs[EmbedsPrompt]:
-    return (
-        isinstance(prompt, dict)
-        and "prompt_token_ids" not in prompt
-        and "prompt_embeds" in prompt
-    )
+    return isinstance(prompt, dict) and "prompt_token_ids" not in prompt and "prompt_embeds" in prompt
 
 
 RequestT = TypeVar("RequestT", bound=AnyRequest)
@@ -169,12 +161,8 @@ class ResponseGenerationMixin(BaseModel):
     managing result generators and final batch results.
     """
 
-    result_generator: (
-        AsyncGenerator[tuple[int, RequestOutput | PoolingRequestOutput], None] | None
-    ) = None
-    final_res_batch: list[RequestOutput | PoolingRequestOutput] = Field(
-        default_factory=list
-    )
+    result_generator: AsyncGenerator[tuple[int, RequestOutput | PoolingRequestOutput], None] | None = None
+    final_res_batch: list[RequestOutput | PoolingRequestOutput] = Field(default_factory=list)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -267,9 +255,9 @@ class OpenAIServing:
         Returns (engine_client, serving_models) tuple.
         Falls back to self.engine_client and self.models if model not in registry.
         """
-        if raw_request is not None and hasattr(raw_request.app, 'state'):
+        if raw_request is not None and hasattr(raw_request.app, "state"):
             state = raw_request.app.state
-            if hasattr(state, 'model_registry') and state.model_registry and model_name in state.model_registry:
+            if hasattr(state, "model_registry") and state.model_registry and model_name in state.model_registry:
                 model_info = state.model_registry[model_name]
                 return model_info.engine_client, model_info.serving_models
 
@@ -290,12 +278,8 @@ class OpenAIServing:
         )
 
         try:
-            if tool_parser_name == "pythonic" and self.model_config.model.startswith(
-                "meta-llama/Llama-3.2"
-            ):
-                logger.warning(
-                    "Llama3.2 models may struggle to emit valid pythonic tool calls"
-                )
+            if tool_parser_name == "pythonic" and self.model_config.model.startswith("meta-llama/Llama-3.2"):
+                logger.warning("Llama3.2 models may struggle to emit valid pythonic tool calls")
             parser = ToolParserManager.get_tool_parser(tool_parser_name)
         except Exception as e:
             raise TypeError(
@@ -341,18 +325,14 @@ class OpenAIServing:
         processor = self.processor
         tokenizer = processor.tokenizer
         if tokenizer is None:
-            raise ValueError(
-                "You cannot use beam search when `skip_tokenizer_init` is True"
-            )
+            raise ValueError("You cannot use beam search when `skip_tokenizer_init` is True")
 
         eos_token_id: int = tokenizer.eos_token_id  # type: ignore
 
         if is_explicit_encoder_decoder_prompt(prompt):
             raise NotImplementedError
         else:
-            processed_inputs = processor.input_preprocessor._prompt_to_llm_inputs(
-                prompt
-            )
+            processed_inputs = processor.input_preprocessor._prompt_to_llm_inputs(prompt)
 
         if processed_inputs["type"] == "embeds":
             raise NotImplementedError
@@ -377,9 +357,7 @@ class OpenAIServing:
             prompt_token_ids = prompt.get("prompt_token_ids", [])  # type: ignore
             multi_modal_data = prompt.get("multi_modal_data")  # type: ignore
 
-        mm_processor_kwargs: dict[str, Any] | None = processed_inputs.get(
-            "mm_processor_kwargs"
-        )  # type: ignore
+        mm_processor_kwargs: dict[str, Any] | None = processed_inputs.get("mm_processor_kwargs")  # type: ignore
 
         tokenized_length = len(prompt_token_ids)
 
@@ -420,9 +398,7 @@ class OpenAIServing:
             tasks = []
             request_id_batch = f"{request_id}-{random_uuid()}"
 
-            for i, (individual_prompt, lora_req) in enumerate(
-                zip(prompts_batch, lora_req_batch)
-            ):
+            for i, (individual_prompt, lora_req) in enumerate(zip(prompts_batch, lora_req_batch)):
                 request_id_item = f"{request_id_batch}-beam-{i}"
                 task = asyncio.create_task(
                     collect_from_async_generator(
@@ -452,8 +428,7 @@ class OpenAIServing:
                                     if include_stop_str_in_output
                                     else current_beam.tokens,
                                     logprobs=current_beam.logprobs + [logprobs],
-                                    cum_logprob=current_beam.cum_logprob
-                                    + logprob_obj.logprob,
+                                    cum_logprob=current_beam.cum_logprob + logprob_obj.logprob,
                                     finish_reason="stop",
                                     stop_reason=eos_token_id,
                                 )
@@ -464,8 +439,7 @@ class OpenAIServing:
                                     tokens=current_beam.tokens + [token_id],
                                     logprobs=current_beam.logprobs + [logprobs],
                                     lora_request=current_beam.lora_request,
-                                    cum_logprob=current_beam.cum_logprob
-                                    + logprob_obj.logprob,
+                                    cum_logprob=current_beam.cum_logprob + logprob_obj.logprob,
                                     multi_modal_data=current_beam.multi_modal_data,
                                     mm_processor_kwargs=current_beam.mm_processor_kwargs,
                                 )
@@ -496,9 +470,7 @@ class OpenAIServing:
                     token_ids=beam.tokens[tokenized_length:],
                     index=i,
                     logprobs=beam.logprobs,
-                    finish_reason=beam.finish_reason
-                    if beam.finish_reason is not None
-                    else "length",
+                    finish_reason=beam.finish_reason if beam.finish_reason is not None else "length",
                     stop_reason=beam.stop_reason,
                 )
                 for (i, beam) in enumerate(best_beams)
@@ -602,14 +574,9 @@ class OpenAIServing:
     def _validate_request(self, ctx: ServeContext) -> ErrorResponse | None:
         truncate_prompt_tokens = getattr(ctx.request, "truncate_prompt_tokens", None)
 
-        if (
-            truncate_prompt_tokens is not None
-            and truncate_prompt_tokens > self.max_model_len
-        ):
+        if truncate_prompt_tokens is not None and truncate_prompt_tokens > self.max_model_len:
             return self.create_error_response(
-                "truncate_prompt_tokens value is "
-                "greater than max_model_len."
-                " Please, select a smaller truncation size."
+                "truncate_prompt_tokens value is greater than max_model_len. Please, select a smaller truncation size."
             )
         return None
 
@@ -618,9 +585,7 @@ class OpenAIServing:
         ctx: ServeContext,
     ) -> PoolingParams | ErrorResponse:
         if not hasattr(ctx.request, "to_pooling_params"):
-            return self.create_error_response(
-                "Request type does not support pooling parameters"
-            )
+            return self.create_error_response("Request type does not support pooling parameters")
 
         return ctx.request.to_pooling_params()
 
@@ -629,16 +594,10 @@ class OpenAIServing:
         ctx: ServeContext,
     ) -> ErrorResponse | None:
         """Schedule the request and get the result generator."""
-        generators: list[
-            AsyncGenerator[RequestOutput | PoolingRequestOutput, None]
-        ] = []
+        generators: list[AsyncGenerator[RequestOutput | PoolingRequestOutput, None]] = []
 
         try:
-            trace_headers = (
-                None
-                if ctx.raw_request is None
-                else await self._get_trace_headers(ctx.raw_request.headers)
-            )
+            trace_headers = None if ctx.raw_request is None else await self._get_trace_headers(ctx.raw_request.headers)
 
             pooling_params = self._create_pooling_params(ctx)
             if isinstance(pooling_params, ErrorResponse):
@@ -696,9 +655,7 @@ class OpenAIServing:
                 final_res_batch[i] = res
 
             if None in final_res_batch:
-                return self.create_error_response(
-                    "Failed to generate results for all prompts"
-                )
+                return self.create_error_response("Failed to generate results for all prompts")
 
             ctx.final_res_batch = [res for res in final_res_batch if res is not None]
 
@@ -719,9 +676,7 @@ class OpenAIServing:
                 traceback.print_exc()
             else:
                 traceback.print_stack()
-        return ErrorResponse(
-            error=ErrorInfo(message=message, type=err_type, code=status_code.value)
-        )
+        return ErrorResponse(error=ErrorInfo(message=message, type=err_type, code=status_code.value))
 
     def create_streaming_error_response(
         self,
@@ -730,9 +685,7 @@ class OpenAIServing:
         status_code: HTTPStatus = HTTPStatus.BAD_REQUEST,
     ) -> str:
         json_str = json.dumps(
-            self.create_error_response(
-                message=message, err_type=err_type, status_code=status_code
-            ).model_dump()
+            self.create_error_response(message=message, err_type=err_type, status_code=status_code).model_dump()
         )
         return json_str
 
@@ -758,10 +711,7 @@ class OpenAIServing:
         ):
             if isinstance(load_result, LoRARequest):
                 return None
-            if (
-                isinstance(load_result, ErrorResponse)
-                and load_result.error.code == HTTPStatus.BAD_REQUEST.value
-            ):
+            if isinstance(load_result, ErrorResponse) and load_result.error.code == HTTPStatus.BAD_REQUEST.value:
                 error_response = load_result
 
         return error_response or self.create_error_response(
@@ -797,16 +747,16 @@ class OpenAIServing:
         self,
         request: AnyRequest,
         supports_default_mm_loras: bool = False,
-        raw_request = None,
+        raw_request=None,
     ) -> LoRARequest | None:
         # First check local models (for backward compatibility)
         if request.model in self.models.lora_requests:
             return self.models.lora_requests[request.model]
 
         # Check registry for multi-model support
-        if raw_request is not None and hasattr(raw_request.app, 'state'):
+        if raw_request is not None and hasattr(raw_request.app, "state"):
             state = raw_request.app.state
-            if hasattr(state, 'model_registry') and state.model_registry and request.model in state.model_registry:
+            if hasattr(state, "model_registry") and state.model_registry and request.model in state.model_registry:
                 model_info = state.model_registry[request.model]
                 if request.model in model_info.serving_models.lora_requests:
                     return model_info.serving_models.lora_requests[request.model]
@@ -835,11 +785,7 @@ class OpenAIServing:
             return message_types
 
         for message in request.messages:
-            if (
-                isinstance(message, dict)
-                and "content" in message
-                and isinstance(message["content"], list)
-            ):
+            if isinstance(message, dict) and "content" in message and isinstance(message["content"], list):
                 for content_dict in message["content"]:
                     if "type" in content_dict:
                         message_types.add(content_dict["type"].split("_")[0])
@@ -854,18 +800,15 @@ class OpenAIServing:
     ) -> TextTokensPrompt:
         async_tokenizer = self._get_async_tokenizer(tokenizer)
 
-        if (
-            self.model_config.encoder_config is not None
-            and self.model_config.encoder_config.get("do_lower_case", False)
+        if self.model_config.encoder_config is not None and self.model_config.encoder_config.get(
+            "do_lower_case", False
         ):
             prompt = prompt.lower()
 
         truncate_prompt_tokens = getattr(request, "truncate_prompt_tokens", None)
 
         if truncate_prompt_tokens is None:
-            encoded = await async_tokenizer(
-                prompt, add_special_tokens=add_special_tokens
-            )
+            encoded = await async_tokenizer(prompt, add_special_tokens=add_special_tokens)
         elif truncate_prompt_tokens < 0:
             # Negative means we cap at the model's max length
             encoded = await async_tokenizer(
@@ -1034,10 +977,7 @@ class OpenAIServing:
     ) -> ErrorResponse | None:
         if not trust_request_chat_template and (
             request_chat_template is not None
-            or (
-                chat_template_kwargs
-                and chat_template_kwargs.get("chat_template") is not None
-            )
+            or (chat_template_kwargs and chat_template_kwargs.get("chat_template") is not None)
         ):
             return self.create_error_response(
                 "Chat template is passed with request, but "
@@ -1131,9 +1071,7 @@ class OpenAIServing:
                 "Prompt has to be a string",
                 "when the tokenizer is not initialised",
             )
-            prompt_inputs = TextTokensPrompt(
-                prompt=request_prompt, prompt_token_ids=[1]
-            )
+            prompt_inputs = TextTokensPrompt(prompt=request_prompt, prompt_token_ids=[1])
         elif isinstance(request_prompt, str):
             prompt_inputs = await self._tokenize_prompt_input_async(
                 request,
@@ -1143,17 +1081,13 @@ class OpenAIServing:
             )
         else:
             # For MistralTokenizer
-            assert is_list_of(request_prompt, int), (
-                "Prompt has to be either a string or a list of token ids"
-            )
+            assert is_list_of(request_prompt, int), "Prompt has to be either a string or a list of token ids"
             prompt_inputs = TextTokensPrompt(
                 prompt=tokenizer.decode(request_prompt),
                 prompt_token_ids=request_prompt,
             )
 
-        engine_prompt = EngineTokensPrompt(
-            prompt_token_ids=prompt_inputs["prompt_token_ids"]
-        )
+        engine_prompt = EngineTokensPrompt(prompt_token_ids=prompt_inputs["prompt_token_ids"])
         if mm_data is not None:
             engine_prompt["multi_modal_data"] = mm_data
 
@@ -1180,9 +1114,7 @@ class OpenAIServing:
     ) -> tuple[EngineCoreRequest, dict[str, Any]]:
         """Use the Processor to process inputs for AsyncLLM."""
         tokenization_kwargs: dict[str, Any] = {}
-        _validate_truncation_size(
-            self.max_model_len, params.truncate_prompt_tokens, tokenization_kwargs
-        )
+        _validate_truncation_size(self.max_model_len, params.truncate_prompt_tokens, tokenization_kwargs)
 
         engine_request = self.processor.process_inputs(
             request_id,
@@ -1307,9 +1239,7 @@ class OpenAIServing:
         return None
 
     @staticmethod
-    def _base_request_id(
-        raw_request: Request | None, default: str | None = None
-    ) -> str | None:
+    def _base_request_id(raw_request: Request | None, default: str | None = None) -> str | None:
         """Pulls the request id to use from a header, if provided"""
         default = default or random_uuid()
         if raw_request is None:
@@ -1331,7 +1261,7 @@ class OpenAIServing:
             return logprob.decoded_token
         return tokenizer.decode(token_id)
 
-    def _is_model_supported(self, model_name: str | None, raw_request = None) -> bool:
+    def _is_model_supported(self, model_name: str | None, raw_request=None) -> bool:
         if not model_name:
             return True
 
@@ -1340,9 +1270,9 @@ class OpenAIServing:
             return True
 
         # Check registry for multi-model support
-        if raw_request is not None and hasattr(raw_request.app, 'state'):
+        if raw_request is not None and hasattr(raw_request.app, "state"):
             state = raw_request.app.state
-            if hasattr(state, 'model_registry') and state.model_registry and model_name in state.model_registry:
+            if hasattr(state, "model_registry") and state.model_registry and model_name in state.model_registry:
                 return True
 
         return False

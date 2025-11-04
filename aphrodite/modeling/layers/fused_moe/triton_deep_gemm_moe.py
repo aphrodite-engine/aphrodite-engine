@@ -2,11 +2,9 @@ import torch
 
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import (
-    DeepGemmExperts, _valid_deep_gemm, _valid_deep_gemm_shape)
+from aphrodite.modeling.layers.fused_moe.deep_gemm_moe import DeepGemmExperts, _valid_deep_gemm, _valid_deep_gemm_shape
 from aphrodite.modeling.layers.fused_moe.fused_moe import TritonExperts
-from aphrodite.utils.deep_gemm import (get_mk_alignment_for_contiguous_layout,
-                                       is_deep_gemm_e8m0_used)
+from aphrodite.utils.deep_gemm import get_mk_alignment_for_contiguous_layout, is_deep_gemm_e8m0_used
 
 
 class TritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
@@ -25,9 +23,7 @@ class TritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
             and self.block_shape == get_mk_alignment_for_contiguous_layout()
         )
 
-        self.deep_gemm_expert = (
-            DeepGemmExperts(self.quant_config) if self.allow_deep_gemm else None
-        )
+        self.deep_gemm_expert = DeepGemmExperts(self.quant_config) if self.allow_deep_gemm else None
 
     @property
     def activation_formats(
@@ -35,24 +31,19 @@ class TritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
     ) -> tuple[mk.FusedMoEActivationFormat, mk.FusedMoEActivationFormat]:
         assert (
             self.deep_gemm_expert is None
-            or self.triton_expert.activation_formats
-            == self.deep_gemm_expert.activation_formats
+            or self.triton_expert.activation_formats == self.deep_gemm_expert.activation_formats
         )
         return self.triton_expert.activation_formats
 
     def supports_chunking(self) -> bool:
         dge = self.deep_gemm_expert
         te = self.triton_expert
-        return (dge is None or dge.supports_chunking()) and (
-            te is None or te.supports_chunking()
-        )
+        return (dge is None or dge.supports_chunking()) and (te is None or te.supports_chunking())
 
     def supports_expert_map(self) -> bool:
         dge = self.deep_gemm_expert
         te = self.triton_expert
-        return (dge is None or dge.supports_expert_map()) and (
-            te is None or te.supports_expert_map()
-        )
+        return (dge is None or dge.supports_expert_map()) and (te is None or te.supports_expert_map())
 
     def finalize_weight_and_reduce_impl(self) -> mk.TopKWeightAndReduce:
         dge = self.deep_gemm_expert
@@ -87,9 +78,7 @@ class TritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
         # Note: the deep gemm workspaces are strictly larger than the triton
         # workspaces so we can be pessimistic here and allocate for DeepGemm
         # even if we fall back to triton later, e.g. if expert maps are set.
-        if self.allow_deep_gemm and (
-            is_deep_gemm_e8m0_used() or _valid_deep_gemm_shape(M, N, K)
-        ):
+        if self.allow_deep_gemm and (is_deep_gemm_e8m0_used() or _valid_deep_gemm_shape(M, N, K)):
             assert self.deep_gemm_expert is not None
             return self.deep_gemm_expert.workspace_shapes(
                 M,
@@ -129,9 +118,7 @@ class TritonOrDeepGemmExperts(mk.FusedMoEPermuteExpertsUnpermute):
         expert_tokens_meta: mk.ExpertTokensMetadata | None,
         apply_router_weight_on_input: bool,
     ):
-        use_deep_gemm = self.allow_deep_gemm and (
-            is_deep_gemm_e8m0_used() or _valid_deep_gemm(hidden_states, w1, w2)
-        )
+        use_deep_gemm = self.allow_deep_gemm and (is_deep_gemm_e8m0_used() or _valid_deep_gemm(hidden_states, w1, w2))
 
         experts = self.deep_gemm_expert if use_deep_gemm else self.triton_expert
         assert experts is not None

@@ -8,15 +8,17 @@ import numpy.typing as npt
 from PIL import Image
 
 import aphrodite.envs as envs
-from aphrodite.config.multimodal import (AudioDummyOptions, BaseDummyOptions,
-                                         ImageDummyOptions, VideoDummyOptions)
+from aphrodite.config.multimodal import AudioDummyOptions, BaseDummyOptions, ImageDummyOptions, VideoDummyOptions
 from aphrodite.logger import init_logger
 
-from .inputs import (MultiModalDataDict, MultiModalEncDecInputs,
-                     MultiModalInputs, MultiModalKwargsItems,
-                     MultiModalPlaceholderDict)
-from .processing import (BaseMultiModalProcessor, BaseProcessingInfo,
-                         EncDecMultiModalProcessor)
+from .inputs import (
+    MultiModalDataDict,
+    MultiModalEncDecInputs,
+    MultiModalInputs,
+    MultiModalKwargsItems,
+    MultiModalPlaceholderDict,
+)
+from .processing import BaseMultiModalProcessor, BaseProcessingInfo, EncDecMultiModalProcessor
 
 logger = init_logger(__name__)
 
@@ -130,8 +132,7 @@ class BaseDummyInputsBuilder(ABC, Generic[_I]):
         if overrides and overrides.length:
             if overrides.length > length:
                 logger.warning(
-                    "audio.length override (%d) exceeds model's "
-                    "maximum length (%d), will be ignored",
+                    "audio.length override (%d) exceeds model's maximum length (%d), will be ignored",
                     overrides.length,
                     length,
                 )
@@ -153,8 +154,7 @@ class BaseDummyInputsBuilder(ABC, Generic[_I]):
             if overrides.width:
                 if overrides.width > width:
                     logger.warning(
-                        "image.width override (%d) exceeds model's "
-                        "maximum width (%d), will be ignored",
+                        "image.width override (%d) exceeds model's maximum width (%d), will be ignored",
                         overrides.width,
                         width,
                     )
@@ -162,8 +162,7 @@ class BaseDummyInputsBuilder(ABC, Generic[_I]):
             if overrides.height:
                 if overrides.height > height:
                     logger.warning(
-                        "image.height override (%d) exceeds model's "
-                        "maximum height (%d), will be ignored",
+                        "image.height override (%d) exceeds model's maximum height (%d), will be ignored",
                         overrides.height,
                         height,
                     )
@@ -186,8 +185,7 @@ class BaseDummyInputsBuilder(ABC, Generic[_I]):
             if overrides.num_frames:
                 if overrides.num_frames > num_frames:
                     logger.warning(
-                        "video.num_frames override (%d) exceeds model's "
-                        "maximum number of frames (%d), will be ignored",
+                        "video.num_frames override (%d) exceeds model's maximum number of frames (%d), will be ignored",
                         overrides.num_frames,
                         num_frames,
                     )
@@ -195,8 +193,7 @@ class BaseDummyInputsBuilder(ABC, Generic[_I]):
             if overrides.width:
                 if overrides.width > width:
                     logger.warning(
-                        "video.width override (%d) exceeds model's "
-                        "maximum width (%d), will be ignored",
+                        "video.width override (%d) exceeds model's maximum width (%d), will be ignored",
                         overrides.width,
                         width,
                     )
@@ -204,8 +201,7 @@ class BaseDummyInputsBuilder(ABC, Generic[_I]):
             if overrides.height:
                 if overrides.height > height:
                     logger.warning(
-                        "video.height override (%d) exceeds model's "
-                        "maximum height (%d), will be ignored",
+                        "video.height override (%d) exceeds model's maximum height (%d), will be ignored",
                         overrides.height,
                         height,
                     )
@@ -248,9 +244,7 @@ class MultiModalProfiler(Generic[_I]):
             mm_counts = self.get_mm_limits()
 
         factory = self.dummy_inputs
-        processor_inputs = factory.get_dummy_processor_inputs(
-            seq_len, mm_counts, mm_options
-        )
+        processor_inputs = factory.get_dummy_processor_inputs(seq_len, mm_counts, mm_options)
 
         return self.processor.apply(
             prompt=processor_inputs.prompt,
@@ -267,10 +261,7 @@ class MultiModalProfiler(Generic[_I]):
         placeholders_by_modality = mm_inputs["mm_placeholders"]
 
         return {
-            modality: sum(
-                item.get_num_embeds() if mm_embeddings_only else item.length
-                for item in placeholders
-            )
+            modality: sum(item.get_num_embeds() if mm_embeddings_only else item.length for item in placeholders)
             for modality, placeholders in placeholders_by_modality.items()
         }
 

@@ -12,10 +12,6 @@ from itertools import product
 import pandas as pd
 import torch
 import torch.utils.benchmark as TBenchmark
-from torch.utils.benchmark import Measurement as TMeasurement
-from weight_shapes import WEIGHT_SHAPES
-
-from aphrodite import _custom_ops as ops
 from aphrodite.model_executor.layers.quantization.utils.marlin_utils import (
     GPTQ_MARLIN_MAX_PARALLEL,
     GPTQ_MARLIN_MIN_THREAD_N,
@@ -29,6 +25,10 @@ from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
     pack_rows,
     quantize_weights,
 )
+from torch.utils.benchmark import Measurement as TMeasurement
+from weight_shapes import WEIGHT_SHAPES
+
+from aphrodite import _custom_ops as ops
 from aphrodite.scalar_type import ScalarType, scalar_types
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
@@ -116,9 +116,7 @@ def create_bench_tensors(
     # we want to make sure that weights don't fit into L2 cache between runs so
     #  we construct enough weights to exceed L2 cache, which is 50mb on a H100
     #  so we target total weight size > 2*50mb
-    num_weights = math.ceil(
-        2 * 50 * 1024**2 * 8 / (k * n * types.weight_type.size_bits)
-    )
+    num_weights = math.ceil(2 * 50 * 1024**2 * 8 / (k * n * types.weight_type.size_bits))
 
     a = rand_data((m, k), types.act_type, scale=5)
 
@@ -146,16 +144,8 @@ def create_bench_tensors(
 
         w_ref = w_ref.to(torch.float32)
 
-        w_ch_s = (
-            None
-            if types.channel_scale_type is None
-            else rand_data((n,), types.channel_scale_type)
-        )
-        w_tok_s = (
-            None
-            if types.token_scale_type is None
-            else rand_data((m,), types.token_scale_type)
-        )
+        w_ch_s = None if types.channel_scale_type is None else rand_data((n,), types.channel_scale_type)
+        w_tok_s = None if types.token_scale_type is None else rand_data((m,), types.token_scale_type)
 
         benchmark_tensors.append(
             BenchmarkTensors(
@@ -191,37 +181,27 @@ def cutlass_scaled_mm_create_bench_fn(bt: BenchmarkTensors) -> Callable:
         scale_a = torch.tensor(1.0, dtype=torch.float32, device=bt.a.device)
         scale_b = torch.tensor(1.0, dtype=torch.float32, device=bt.a.device)
     w_col_major = bt.w_ref.to(bt.a.dtype).t().contiguous().t()
-    return lambda: ops.cutlass_scaled_mm(
-        bt.a, w_col_major, scale_a, scale_b, out_dtype=torch.float16
-    )
+    return lambda: ops.cutlass_scaled_mm(bt.a, w_col_major, scale_a, scale_b, out_dtype=torch.float16)
 
 
 def marlin_create_bench_fn(bt: BenchmarkTensors) -> Callable:
     device = bt.a.device
 
-    workspace = MarlinWorkspace(
-        bt.w_ref.shape[1], GPTQ_MARLIN_MIN_THREAD_N, GPTQ_MARLIN_MAX_PARALLEL
-    )
+    workspace = MarlinWorkspace(bt.w_ref.shape[1], GPTQ_MARLIN_MIN_THREAD_N, GPTQ_MARLIN_MAX_PARALLEL)
 
     if bt.w_g_zp is None:
         w_zp = torch.empty(0, dtype=torch.int, device=device)
     else:
-        w_zp = marlin_zero_points(
-            bt.w_g_zp, bt.w_ref.shape[0], bt.w_ref.shape[1], bt.wtype.size_bits
-        )
+        w_zp = marlin_zero_points(bt.w_g_zp, bt.w_ref.shape[0], bt.w_ref.shape[1], bt.wtype.size_bits)
 
     if bt.group_size is None:
         w_s = torch.tensor([], device="cuda", dtype=torch.half)
     else:
-        w_s = marlin_permute_scales(
-            bt.w_g_s, bt.w_ref.shape[0], bt.w_ref.shape[1], bt.group_size
-        )
+        w_s = marlin_permute_scales(bt.w_g_s, bt.w_ref.shape[0], bt.w_ref.shape[1], bt.group_size)
 
     sort_indices = torch.empty(0, dtype=torch.int, device=device)
     g_idx = torch.empty(0, dtype=torch.int, device=device)
-    w_q = ops.gptq_marlin_repack(
-        bt.w_q, sort_indices, bt.w_ref.shape[0], bt.w_ref.shape[1], bt.wtype.size_bits
-    )
+    w_q = ops.gptq_marlin_repack(bt.w_q, sort_indices, bt.w_ref.shape[0], bt.w_ref.shape[1], bt.wtype.size_bits)
 
     if bt.a.dtype.is_floating_point:
         assert bt.w_ch_s is None
@@ -254,13 +234,9 @@ def marlin_create_bench_fn(bt: BenchmarkTensors) -> Callable:
     return fn
 
 
-def machete_create_bench_fn(
-    bt: BenchmarkTensors, out_type=torch.dtype, schedule=None
-) -> Callable:
+def machete_create_bench_fn(bt: BenchmarkTensors, out_type=torch.dtype, schedule=None) -> Callable:
     w_q = bt.w_q.t().contiguous().t()  # make col major
-    w_q = ops.machete_prepack_B(
-        w_q, bt.a.dtype, bt.wtype, None if bt.w_g_s is None else bt.w_g_s.dtype
-    )
+    w_q = ops.machete_prepack_B(w_q, bt.a.dtype, bt.wtype, None if bt.w_g_s is None else bt.w_g_s.dtype)
 
     w_g_zp = bt.w_g_zp
     if w_g_zp is not None:
@@ -280,9 +256,7 @@ def machete_create_bench_fn(
     )
 
 
-def cutlass_w4a8_create_bench_fn(
-    bt: BenchmarkTensors, out_type=torch.dtype, schedule=None
-) -> Callable:
+def cutlass_w4a8_create_bench_fn(bt: BenchmarkTensors, out_type=torch.dtype, schedule=None) -> Callable:
     w_q = bt.w_q.t().contiguous().t()  # make col major
     w_q = ops.cutlass_encode_and_reorder_int4b(w_q)
     # expects fp8 scales
@@ -393,10 +367,7 @@ def bench(
             label,
             sub_label,
             f"machete ({name_type_string})",
-            [
-                machete_create_bench_fn(bt, out_type=types.output_type)
-                for bt in benchmark_tensors
-            ],
+            [machete_create_bench_fn(bt, out_type=types.output_type) for bt in benchmark_tensors],
         )
     )
 
@@ -407,10 +378,7 @@ def bench(
                 label,
                 sub_label,
                 f"cutlass w4a8 ({name_type_string})",
-                [
-                    cutlass_w4a8_create_bench_fn(bt, out_type=types.output_type)
-                    for bt in benchmark_tensors
-                ],
+                [cutlass_w4a8_create_bench_fn(bt, out_type=types.output_type) for bt in benchmark_tensors],
             )
         )
 
@@ -445,9 +413,7 @@ def bench(
                 sub_label,
                 "machete_best",
                 [
-                    machete_create_bench_fn(
-                        bt, out_type=types.output_type, schedule=schedule
-                    )
+                    machete_create_bench_fn(bt, out_type=types.output_type, schedule=schedule)
                     for bt in benchmark_tensors
                 ],
             )
@@ -483,9 +449,7 @@ def print_timers(timers: list[TMeasurement]):
 def run(args, MKNs: Iterable[tuple[int, int, int]]) -> Iterable[TMeasurement]:
     types = TypeConfig(
         act_type=args.act_type,
-        weight_type=scalar_types.uint4b8
-        if args.group_zero_type is None
-        else scalar_types.uint4,
+        weight_type=scalar_types.uint4b8 if args.group_zero_type is None else scalar_types.uint4,
         output_type=args.out_type,
         group_scale_type=args.group_scale_type,
         group_zero_type=args.group_zero_type,
@@ -541,9 +505,7 @@ def run_square_bench(args):
 def run_range_bench(args):
     m_start, k_start, n_start = (int(x) for x in args.dim_start.split(","))
     m_end, k_end, n_end = (int(x) for x in args.dim_end.split(","))
-    m_increment, k_increment, n_increment = (
-        int(x) for x in args.dim_increment.split(",")
-    )
+    m_increment, k_increment, n_increment = (int(x) for x in args.dim_increment.split(","))
     Ms = list(range(m_start, m_end + 1, m_increment))
     Ks = list(range(k_start, k_end + 1, k_increment))
     Ns = list(range(n_start, n_end + 1, n_increment))
@@ -724,12 +686,8 @@ Benchmark Machete GEMM.
         default=DEFAULT_MODELS,
         choices=WEIGHT_SHAPES.keys(),
     )
-    model_parser.add_argument(
-        "--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES
-    )
-    model_parser.add_argument(
-        "--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES
-    )
+    model_parser.add_argument("--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES)
+    model_parser.add_argument("--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES)
     model_parser.set_defaults(func=run_model_bench)
 
     args = parser.parse_args()

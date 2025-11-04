@@ -30,17 +30,23 @@ from aphrodite.config.utils import getattr_iter
 from aphrodite.distributed import get_pp_group, get_tp_group
 from aphrodite.distributed.utils import get_pp_indices
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
-from aphrodite.modeling.models.interfaces import (SupportsLoRA, SupportsPP,
-                                                  SupportsQuant)
+from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
+from aphrodite.modeling.models.interfaces import SupportsLoRA, SupportsPP, SupportsQuant
 from aphrodite.modeling.models.interfaces_base import AphroditeModel
 from aphrodite.modeling.models.transformers.utils import (
-    get_feature_request_tip, init_on_device_without_buffers, log_replacement,
-    replace_linear_class, replace_rms_norm_class)
+    get_feature_request_tip,
+    init_on_device_without_buffers,
+    log_replacement,
+    replace_linear_class,
+    replace_rms_norm_class,
+)
 from aphrodite.modeling.models.utils import (
-    AutoWeightsLoader, PPMissingLayer, WeightsMapper,
-    make_empty_intermediate_tensors_factory, maybe_prefix)
+    AutoWeightsLoader,
+    PPMissingLayer,
+    WeightsMapper,
+    make_empty_intermediate_tensors_factory,
+    maybe_prefix,
+)
 
 if TYPE_CHECKING:
     from transformers import PreTrainedModel
@@ -132,9 +138,7 @@ class Base(nn.Module, AphroditeModel, SupportsQuant, SupportsLoRA, SupportsPP):
             quant_method_name = self.quant_config.get_name()
             # Check for unsupported quantization methods.
             if quant_method_name == "mxfp4":
-                raise NotImplementedError(
-                    "Transformers backend does not support MXFP4 quantization yet."
-                )
+                raise NotImplementedError("Transformers backend does not support MXFP4 quantization yet.")
             # Skip loading extra bias for GPTQ models.
             if "gptq" in quant_method_name:
                 self.ignore_unexpected_suffixes.append(".bias")
@@ -188,12 +192,8 @@ class Base(nn.Module, AphroditeModel, SupportsQuant, SupportsLoRA, SupportsPP):
             return
 
         if not self.model.supports_pp_plan:
-            tip = get_feature_request_tip(
-                self.model_config.model, self.model_config.trust_remote_code
-            )
-            raise ValueError(
-                f"{type(self.model)} does not support pipeline parallel. {tip}"
-            )
+            tip = get_feature_request_tip(self.model_config.model, self.model_config.trust_remote_code)
+            raise ValueError(f"{type(self.model)} does not support pipeline parallel. {tip}")
 
         module_lists = []
         module_list_idx = None
@@ -205,17 +205,14 @@ class Base(nn.Module, AphroditeModel, SupportsQuant, SupportsLoRA, SupportsPP):
 
         if len(module_lists) > 1:
             raise ValueError(
-                "Pipeline parallel of models with multiple `ModuleList`s "
-                "in the base model are not supported yet!"
+                "Pipeline parallel of models with multiple `ModuleList`s in the base model are not supported yet!"
             )
         if module_list_idx is None:
             raise ValueError(f"Could not find `ModuleList` in {type(self.model)}")
 
         # Layers before module list
         for name in pp_plan[:module_list_idx]:
-            if self.pp_group.is_first_rank or (
-                self.text_config.tie_word_embeddings and self.pp_group.is_last_rank
-            ):
+            if self.pp_group.is_first_rank or (self.text_config.tie_word_embeddings and self.pp_group.is_last_rank):
                 continue
             setattr(self.model, name, PPMissingLayer())
 
@@ -249,12 +246,8 @@ class Base(nn.Module, AphroditeModel, SupportsQuant, SupportsLoRA, SupportsPP):
         tp_plan = self.model.tp_plan
 
         if not tp_plan and self.tp_group.world_size > 1:
-            tip = get_feature_request_tip(
-                self.model_config.model, self.model_config.trust_remote_code
-            )
-            raise ValueError(
-                f"{type(self.model)} does not support tensor parallel. {tip}"
-            )
+            tip = get_feature_request_tip(self.model_config.model, self.model_config.trust_remote_code)
+            raise ValueError(f"{type(self.model)} does not support tensor parallel. {tip}")
 
         # Prefix the patterns because we always start from `self.model`
         tp_plan = {maybe_prefix("model", k): v for k, v in tp_plan.items()}
@@ -270,13 +263,9 @@ class Base(nn.Module, AphroditeModel, SupportsQuant, SupportsLoRA, SupportsPP):
                     # LinearBase, so we set a default style which causes any
                     # unspecified layers to be replaced with ReplicatedLinear
                     style = tp_plan.get(pattern, "replicate")
-                    new_module = replace_linear_class(
-                        child_module, style, self.quant_config, prefix=qual_name
-                    )
+                    new_module = replace_linear_class(child_module, style, self.quant_config, prefix=qual_name)
                 elif child_module.__class__.__name__.endswith("RMSNorm"):
-                    new_module = replace_rms_norm_class(
-                        child_module, self.text_config.hidden_size
-                    )
+                    new_module = replace_rms_norm_class(child_module, self.text_config.hidden_size)
                 else:
                     _recursive_replace(child_module, prefix=qual_name)
 
@@ -317,10 +306,7 @@ class Base(nn.Module, AphroditeModel, SupportsQuant, SupportsLoRA, SupportsPP):
         for i in range(start, end):
             # Handle interleaved sliding window attention
             per_layer_sliding_window = None
-            if (
-                hasattr(self.config, "layer_types")
-                and self.config.layer_types[i] == "sliding_attention"
-            ):
+            if hasattr(self.config, "layer_types") and self.config.layer_types[i] == "sliding_attention":
                 per_layer_sliding_window = self.config.sliding_window
 
             attention_instances[i] = Attention(
@@ -392,11 +378,7 @@ class Base(nn.Module, AphroditeModel, SupportsQuant, SupportsLoRA, SupportsPP):
 
         # If the model scales embeddings inside the input embedding layer we must
         # ensure they are scaled here since VocabParallelEmbedding will not do it
-        if (
-            self.embed_scale is not None
-            and input_ids is not None
-            and inputs_embeds is None
-        ):
+        if self.embed_scale is not None and input_ids is not None and inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings(input_ids)
             input_ids = None
 
@@ -439,6 +421,5 @@ class Base(nn.Module, AphroditeModel, SupportsQuant, SupportsLoRA, SupportsPP):
         required = Version(min_version)
         if installed < required:
             raise ImportError(
-                f"Transformers backend requires transformers>={required} "
-                f"for {feature}, but got {installed}"
+                f"Transformers backend requires transformers>={required} for {feature}, but got {installed}"
             )

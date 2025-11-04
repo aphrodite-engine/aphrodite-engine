@@ -2,20 +2,16 @@ import pytest
 import torch
 
 import aphrodite.plugins
-from aphrodite.compilation.fusion import (FUSED_OPS, FusedRMSQuantKey,
-                                          RMSNormQuantFusionPass)
+from aphrodite.compilation.fusion import FUSED_OPS, FusedRMSQuantKey, RMSNormQuantFusionPass
 from aphrodite.compilation.fx_utils import find_op_nodes
 from aphrodite.compilation.matcher_utils import QUANT_OPS
 from aphrodite.compilation.noop_elimination import NoOpEliminationPass
 from aphrodite.compilation.post_cleanup import PostCleanupPass
-from aphrodite.config import (AphroditeConfig, CompilationConfig,
-                              CompilationMode, ModelConfig, PassConfig)
+from aphrodite.config import AphroditeConfig, CompilationConfig, CompilationMode, ModelConfig, PassConfig
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import (GroupShape, QuantKey,
-                                                      ScaleDesc)
-from aphrodite.quantization.utils.w8a8_utils import (
-    Fp8LinearOp, cutlass_fp8_supported, maybe_create_device_identity)
+from aphrodite.quantization.utils.quant_utils import GroupShape, QuantKey, ScaleDesc
+from aphrodite.quantization.utils.w8a8_utils import Fp8LinearOp, cutlass_fp8_supported, maybe_create_device_identity
 
 from ..utils import override_cutlass_fp8_supported
 from .backend import TestBackend
@@ -47,10 +43,7 @@ class TestModel(torch.nn.Module):
             self.scale = [torch.rand(1, dtype=torch.float32) for _ in range(3)]
         else:
             self.scale = [None for _ in range(3)]
-        self.w = [
-            torch.rand(hidden_size, hidden_size).to(dtype=FP8_DTYPE).t()
-            for _ in range(3)
-        ]
+        self.w = [torch.rand(hidden_size, hidden_size).to(dtype=FP8_DTYPE).t() for _ in range(3)]
 
         with override_cutlass_fp8_supported(not cuda_force_torch):
             self.fp8_linear = Fp8LinearOp(
@@ -66,21 +59,15 @@ class TestModel(torch.nn.Module):
         x = resid = torch.relu(x)
         y = self.norm[0](x)
 
-        x2 = self.fp8_linear.apply(
-            y, self.w[0], self.wscale[0], input_scale=self.scale[0]
-        )
+        x2 = self.fp8_linear.apply(y, self.w[0], self.wscale[0], input_scale=self.scale[0])
         # make sure resid is used for replacement to work
         y2, resid = self.norm[1](x2, resid)
 
-        x3 = self.fp8_linear.apply(
-            y2, self.w[1], self.wscale[1], input_scale=self.scale[1]
-        )
+        x3 = self.fp8_linear.apply(y2, self.w[1], self.wscale[1], input_scale=self.scale[1])
 
         y3, resid = self.norm[2](x3, resid)  # use resid here
 
-        x4 = self.fp8_linear.apply(
-            y3, self.w[2], self.wscale[2], input_scale=self.scale[2]
-        )
+        x4 = self.fp8_linear.apply(y3, self.w[2], self.wscale[2], input_scale=self.scale[2])
 
         y4, resid = self.norm[3](x4, resid)  # use resid here
         return y4
@@ -92,18 +79,10 @@ class TestModel(torch.nn.Module):
         ]
 
     def ops_in_model_before(self):
-        return (
-            [QUANT_OPS[self.quant_key]]
-            if self.enable_quant_fp8_custom_op
-            else [torch.ops.aten.reciprocal]
-        )
+        return [QUANT_OPS[self.quant_key]] if self.enable_quant_fp8_custom_op else [torch.ops.aten.reciprocal]
 
     def ops_in_model_before_partial(self):
-        return (
-            [RMS_OP, RMS_ADD_OP]
-            if self.enable_rms_norm_custom_op
-            else [torch.ops.aten.rsqrt]
-        )
+        return [RMS_OP, RMS_ADD_OP] if self.enable_rms_norm_custom_op else [torch.ops.aten.rsqrt]
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
@@ -115,12 +94,8 @@ class TestModel(torch.nn.Module):
 @pytest.mark.parametrize("enable_quant_fp8_custom_op", [True, False])
 # cuda_force_torch used to test torch code path on platforms that
 # cutlass_fp8_supported() == True.
-@pytest.mark.parametrize(
-    "cuda_force_torch", [True, False] if cutlass_fp8_supported() else [True]
-)
-@pytest.mark.skipif(
-    not current_platform.is_cuda_alike(), reason="Only test on CUDA and ROCm"
-)
+@pytest.mark.parametrize("cuda_force_torch", [True, False] if cutlass_fp8_supported() else [True])
+@pytest.mark.skipif(not current_platform.is_cuda_alike(), reason="Only test on CUDA and ROCm")
 def test_fusion_rmsnorm_quant(
     dtype,
     hidden_size,
@@ -178,9 +153,7 @@ def test_fusion_rmsnorm_quant(
 
         assert fusion_pass.matched_count == 3
         backend.check_before_ops(model.ops_in_model_before())
-        backend.check_before_ops(
-            model.ops_in_model_before_partial(), fully_replaced=False
-        )
+        backend.check_before_ops(model.ops_in_model_before_partial(), fully_replaced=False)
         backend.check_after_ops(model.ops_in_model_after())
 
         # If RMSNorm custom op is disabled (native/torch impl used),

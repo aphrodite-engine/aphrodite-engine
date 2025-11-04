@@ -3,13 +3,11 @@ from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
-from openai.types.responses.tool import (
-    CodeInterpreterContainerCodeInterpreterToolAuto, LocalShell, Mcp, Tool)
+from openai.types.responses.tool import CodeInterpreterContainerCodeInterpreterToolAuto, LocalShell, Mcp, Tool
 
 from aphrodite.endpoints.context import ConversationContext
 from aphrodite.endpoints.openai.protocol import ErrorResponse, ResponsesRequest
-from aphrodite.endpoints.openai.serving_responses import (
-    OpenAIServingResponses, extract_tool_types)
+from aphrodite.endpoints.openai.serving_responses import OpenAIServingResponses, extract_tool_types
 from aphrodite.endpoints.tool_server import ToolServer
 from aphrodite.inputs.data import TokensPrompt as EngineTokensPrompt
 
@@ -90,9 +88,7 @@ def test_extract_tool_types(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # code_interpreter and web_search_preview are allowed,
     # they would be extracted
-    monkeypatch.setenv(
-        "APHRODITE_GPT_OSS_SYSTEM_TOOL_MCP_LABELS", "code_interpreter,web_search_preview"
-    )
+    monkeypatch.setenv("APHRODITE_GPT_OSS_SYSTEM_TOOL_MCP_LABELS", "code_interpreter,web_search_preview")
     assert extract_tool_types(tools) == {
         "local_shell",
         "auto",
@@ -135,17 +131,13 @@ class TestInitializeToolSessions:
         return instance
 
     @pytest.mark.asyncio
-    async def test_initialize_tool_sessions(
-        self, serving_responses_instance, mock_context, mock_exit_stack
-    ):
+    async def test_initialize_tool_sessions(self, serving_responses_instance, mock_context, mock_exit_stack):
         """Test that method works correctly with only MCP tools"""
 
         request = ResponsesRequest(input="test input", tools=[])
 
         # Call the method
-        await serving_responses_instance._initialize_tool_sessions(
-            request, mock_context, mock_exit_stack
-        )
+        await serving_responses_instance._initialize_tool_sessions(request, mock_context, mock_exit_stack)
         assert mock_context.init_tool_sessions_called is False
 
         # Create only MCP tools
@@ -157,16 +149,12 @@ class TestInitializeToolSessions:
         request = ResponsesRequest(input="test input", tools=tools)
 
         # Call the method
-        await serving_responses_instance._initialize_tool_sessions(
-            request, mock_context, mock_exit_stack
-        )
+        await serving_responses_instance._initialize_tool_sessions(request, mock_context, mock_exit_stack)
 
         # Verify that init_tool_sessions was called
         assert mock_context.init_tool_sessions_called
 
-    def test_validate_create_responses_input(
-        self, serving_responses_instance, mock_context, mock_exit_stack
-    ):
+    def test_validate_create_responses_input(self, serving_responses_instance, mock_context, mock_exit_stack):
         request = ResponsesRequest(
             input="test input",
             previous_input_messages=[

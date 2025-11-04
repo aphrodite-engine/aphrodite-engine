@@ -53,9 +53,7 @@ class LoRAConfig:
     )
     """(Deprecated) Maximum size of extra vocabulary that can be present in a 
     LoRA adapter. Will be removed in v0.12.0."""
-    lora_vocab_padding_size: ClassVar[int] = (
-        current_platform.get_lora_vocab_padding_size()
-    )
+    lora_vocab_padding_size: ClassVar[int] = current_platform.get_lora_vocab_padding_size()
     default_mm_loras: dict[str, str] | None = None
     """Dictionary mapping specific modalities to LoRA model paths; this field
     is only applicable to multimodal models and should be leveraged when a
@@ -95,10 +93,7 @@ class LoRAConfig:
         if self.max_cpu_loras is None:
             self.max_cpu_loras = self.max_loras
         elif self.max_cpu_loras < self.max_loras:
-            raise ValueError(
-                f"max_cpu_loras ({self.max_cpu_loras}) must be >= "
-                f"max_loras ({self.max_loras})"
-            )
+            raise ValueError(f"max_cpu_loras ({self.max_cpu_loras}) must be >= max_loras ({self.max_loras})")
 
         return self
 

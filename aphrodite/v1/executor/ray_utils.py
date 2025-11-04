@@ -8,8 +8,7 @@ import aphrodite.platforms
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import ParallelConfig
 from aphrodite.distributed import get_pp_group
-from aphrodite.distributed.kv_transfer.kv_connector.utils import (
-    KVOutputAggregator)
+from aphrodite.distributed.kv_transfer.kv_connector.utils import KVOutputAggregator
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 from aphrodite.utils.network_utils import get_ip
@@ -80,12 +79,8 @@ try:
 
         def execute_model_ray(
             self,
-            scheduler_output: Union[
-                "SchedulerOutput", tuple["SchedulerOutput", "IntermediateTensors"]
-            ],
-        ) -> Union[
-            "ModelRunnerOutput", tuple["SchedulerOutput", "IntermediateTensors"]
-        ]:
+            scheduler_output: Union["SchedulerOutput", tuple["SchedulerOutput", "IntermediateTensors"]],
+        ) -> Union["ModelRunnerOutput", tuple["SchedulerOutput", "IntermediateTensors"]]:
             # This method is used by Ray Compiled Graph to execute the model,
             # and it needs a special logic of self.setup_device_if_necessary()
             self.setup_device_if_necessary()
@@ -95,9 +90,7 @@ try:
             else:
                 scheduler_output, intermediate_tensors = scheduler_output, None
             assert self.worker.model_runner is not None
-            output = self.worker.model_runner.execute_model(
-                scheduler_output, intermediate_tensors
-            )
+            output = self.worker.model_runner.execute_model(scheduler_output, intermediate_tensors)
             if isinstance(output, IntermediateTensors):
                 output = scheduler_output, output
             elif not get_pp_group().is_last_rank:
@@ -158,24 +151,17 @@ def ray_is_available() -> bool:
 def assert_ray_available():
     """Raise an exception if Ray is not available."""
     if ray is None:
-        raise ValueError(
-            f"Failed to import Ray: {ray_import_err}."
-            "Please install Ray with `pip install ray`."
-        )
+        raise ValueError(f"Failed to import Ray: {ray_import_err}.Please install Ray with `pip install ray`.")
 
 
-def _verify_bundles(
-    placement_group: "PlacementGroup", parallel_config: ParallelConfig, device_str: str
-):
+def _verify_bundles(placement_group: "PlacementGroup", parallel_config: ParallelConfig, device_str: str):
     """Verify a given placement group has bundles located in the right place.
 
     There are 2 rules.
     - Warn if all tensor parallel workers cannot fit in a single node.
     - Fail if driver node is not included in a placement group.
     """
-    assert ray.is_initialized(), (
-        "Ray is not initialized although distributed-executor-backend is ray."
-    )
+    assert ray.is_initialized(), "Ray is not initialized although distributed-executor-backend is ray."
     pg_data = placement_group_table(placement_group)
     # bundle_idx -> node_id
     bundle_to_node_ids = pg_data["bundles_to_node_id"]
@@ -343,8 +329,7 @@ def initialize_ray_cluster(
             ray.init("auto")
         except ConnectionError:
             logger.warning(
-                "No existing RAY instance detected. "
-                "A new instance will be launched with current node resources."
+                "No existing RAY instance detected. A new instance will be launched with current node resources."
             )
             ray.init(
                 address=ray_address,
@@ -356,9 +341,7 @@ def initialize_ray_cluster(
 
     device_str = current_platform.ray_device_key
     if not device_str:
-        raise ValueError(
-            f"current platform {current_platform.device_name} does not support ray."
-        )
+        raise ValueError(f"current platform {current_platform.device_name} does not support ray.")
 
     # Create or get the placement group for worker processes
     if parallel_config.placement_group:
@@ -376,9 +359,7 @@ def initialize_ray_cluster(
         for bundle in bundles:
             bundle_devices = bundle.get(device_str, 0)
             if bundle_devices > 1:
-                raise ValueError(
-                    f"Placement group bundle cannot have more than 1 {device_str}."
-                )
+                raise ValueError(f"Placement group bundle cannot have more than 1 {device_str}.")
             if bundle_devices:
                 device_bundles += 1
         if parallel_config.world_size > device_bundles:
@@ -396,15 +377,12 @@ def initialize_ray_cluster(
         # created and wait cluster to be ready
         if parallel_config.world_size > num_devices_in_cluster:
             logger.warning(
-                "The number of required %ss exceeds the total "
-                "number of available %ss in the placement group.",
+                "The number of required %ss exceeds the total number of available %ss in the placement group.",
                 device_str,
                 device_str,
             )
         # Create a new placement group
-        placement_group_specs: list[dict[str, float]] = [
-            {device_str: 1.0} for _ in range(parallel_config.world_size)
-        ]
+        placement_group_specs: list[dict[str, float]] = [{device_str: 1.0} for _ in range(parallel_config.world_size)]
 
         # Aphrodite engine is also a worker to execute model with an accelerator,
         # so it requires to have the device in a current node. Check if
@@ -424,9 +402,7 @@ def initialize_ray_cluster(
         placement_group_specs[0][f"node:{current_ip}"] = 0.001
 
         # By default, Ray packs resources as much as possible.
-        current_placement_group = ray.util.placement_group(
-            placement_group_specs, strategy="PACK"
-        )
+        current_placement_group = ray.util.placement_group(placement_group_specs, strategy="PACK")
         _wait_until_pg_ready(current_placement_group)
 
     assert current_placement_group is not None

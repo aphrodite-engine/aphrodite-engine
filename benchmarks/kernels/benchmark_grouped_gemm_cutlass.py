@@ -1,15 +1,15 @@
 import torch
 import torch.utils.benchmark as benchmark
-from benchmark_shapes import WEIGHT_SHAPES_MOE
-
-from aphrodite import _custom_ops as ops
-from aphrodite.config import ParallelConfig, AphroditeConfig, set_current_aphrodite_config
 from aphrodite.model_executor.layers.fused_moe.config import fp8_w8a8_moe_quant_config
 from aphrodite.model_executor.layers.fused_moe.cutlass_moe import cutlass_moe_fp8
 from aphrodite.model_executor.layers.fused_moe.fused_moe import (
     fused_experts,
     fused_topk,
 )
+from benchmark_shapes import WEIGHT_SHAPES_MOE
+
+from aphrodite import _custom_ops as ops
+from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 DEFAULT_MODELS = [
@@ -27,9 +27,7 @@ PER_OUT_CH_OPTS = [False]
 
 def to_fp8(tensor: torch.Tensor):
     finfo = torch.finfo(torch.float8_e4m3fn)
-    return torch.round(tensor.clamp(min=finfo.min, max=finfo.max)).to(
-        dtype=torch.float8_e4m3fn
-    )
+    return torch.round(tensor.clamp(min=finfo.min, max=finfo.max)).to(dtype=torch.float8_e4m3fn)
 
 
 def bench_run(
@@ -43,10 +41,8 @@ def bench_run(
 ):
     label = "Quant Matmul"
 
-    sub_label = (
-        "{}, num_experts={}, topk={}, per_act_token={} per_out_ch={}, MKN=({})".format(
-            model, num_experts, topk, per_act_token, per_out_ch, mkn
-        )
+    sub_label = "{}, num_experts={}, topk={}, per_act_token={} per_out_ch={}, MKN=({})".format(
+        model, num_experts, topk, per_act_token, per_out_ch, mkn
     )
 
     print(f"Testing: {sub_label}")
@@ -61,9 +57,7 @@ def bench_run(
 
     _, a_scale = ops.scaled_fp8_quant(a)
 
-    w1_q = torch.empty(
-        (num_experts, 2 * n, k), device="cuda", dtype=torch.float8_e4m3fn
-    )
+    w1_q = torch.empty((num_experts, 2 * n, k), device="cuda", dtype=torch.float8_e4m3fn)
     w2_q = torch.empty((num_experts, k, n), device="cuda", dtype=torch.float8_e4m3fn)
     w1_scale = torch.empty((num_experts, 1, 1), device="cuda", dtype=torch.float32)
     w2_scale = torch.empty((num_experts, 1, 1), device="cuda", dtype=torch.float32)
@@ -74,9 +68,7 @@ def bench_run(
 
     score = torch.randn((m, num_experts), device="cuda", dtype=dtype)
 
-    topk_weights, topk_ids, token_expert_indices = fused_topk(
-        a, score, topk, renormalize=False
-    )
+    topk_weights, topk_ids, token_expert_indices = fused_topk(a, score, topk, renormalize=False)
 
     ab_strides1 = torch.full((num_experts,), k, device="cuda", dtype=torch.int64)
     ab_strides2 = torch.full((num_experts,), n, device="cuda", dtype=torch.int64)
@@ -165,9 +157,7 @@ def bench_run(
             per_act_token_quant=per_act_token,
         )
 
-        with set_current_aphrodite_config(
-            AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))
-        ):
+        with set_current_aphrodite_config(AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))):
             return cutlass_moe_fp8(
                 a,
                 w1_q,
@@ -196,9 +186,7 @@ def bench_run(
             w2_scale=w2_scale,
             a1_scale=a_scale,
         )
-        with set_current_aphrodite_config(
-            AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))
-        ):
+        with set_current_aphrodite_config(AphroditeConfig(parallel_config=ParallelConfig(pipeline_parallel_size=1))):
             return fused_experts(
                 a,
                 w1,
@@ -400,9 +388,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = FlexibleArgumentParser(
-        description="Benchmark Marlin across specified models/shapes/batches"
-    )
+    parser = FlexibleArgumentParser(description="Benchmark Marlin across specified models/shapes/batches")
     parser.add_argument(
         "--models",
         nargs="+",
@@ -411,9 +397,7 @@ if __name__ == "__main__":
         choices=WEIGHT_SHAPES_MOE.keys(),
     )
     parser.add_argument("--tp-sizes", nargs="+", type=int, default=DEFAULT_TP_SIZES)
-    parser.add_argument(
-        "--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES
-    )
+    parser.add_argument("--batch-sizes", nargs="+", type=int, default=DEFAULT_BATCH_SIZES)
     parser.add_argument("--limit-k", nargs="+", type=int, default=[])
     parser.add_argument("--limit-n", nargs="+", type=int, default=[])
     parser.add_argument("--limit-num-groups", nargs="+", type=int, default=[])

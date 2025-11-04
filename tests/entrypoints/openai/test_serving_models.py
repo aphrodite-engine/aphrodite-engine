@@ -4,20 +4,15 @@ from unittest.mock import MagicMock
 import pytest
 
 from aphrodite.config import ModelConfig
-from aphrodite.endpoints.openai.protocol import (ErrorResponse,
-                                                 LoadLoRAAdapterRequest,
-                                                 UnloadLoRAAdapterRequest)
-from aphrodite.endpoints.openai.serving_models import (BaseModelPath,
-                                                       OpenAIServingModels)
+from aphrodite.endpoints.openai.protocol import ErrorResponse, LoadLoRAAdapterRequest, UnloadLoRAAdapterRequest
+from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.lora.request import LoRARequest
 
 MODEL_NAME = "hmellor/tiny-random-LlamaForCausalLM"
 BASE_MODEL_PATHS = [BaseModelPath(name=MODEL_NAME, model_path=MODEL_NAME)]
 LORA_LOADING_SUCCESS_MESSAGE = "Success: LoRA adapter '{lora_name}' added successfully."
-LORA_UNLOADING_SUCCESS_MESSAGE = (
-    "Success: LoRA adapter '{lora_name}' removed successfully."
-)
+LORA_UNLOADING_SUCCESS_MESSAGE = "Success: LoRA adapter '{lora_name}' removed successfully."
 
 
 async def _async_serving_models_init() -> OpenAIServingModels:
@@ -43,9 +38,7 @@ async def _async_serving_models_init() -> OpenAIServingModels:
 async def test_serving_model_name():
     serving_models = await _async_serving_models_init()
     assert serving_models.model_name(None) == MODEL_NAME
-    request = LoRARequest(
-        lora_name="adapter", lora_path="/path/to/adapter2", lora_int_id=1
-    )
+    request = LoRARequest(lora_name="adapter", lora_path="/path/to/adapter2", lora_int_id=1)
     assert serving_models.model_name(request) == request.lora_name
 
 
@@ -73,16 +66,12 @@ async def test_load_lora_adapter_missing_fields():
 @pytest.mark.asyncio
 async def test_load_lora_adapter_duplicate():
     serving_models = await _async_serving_models_init()
-    request = LoadLoRAAdapterRequest(
-        lora_name="adapter1", lora_path="/path/to/adapter1"
-    )
+    request = LoadLoRAAdapterRequest(lora_name="adapter1", lora_path="/path/to/adapter1")
     response = await serving_models.load_lora_adapter(request)
     assert response == LORA_LOADING_SUCCESS_MESSAGE.format(lora_name="adapter1")
     assert len(serving_models.lora_requests) == 1
 
-    request = LoadLoRAAdapterRequest(
-        lora_name="adapter1", lora_path="/path/to/adapter1"
-    )
+    request = LoadLoRAAdapterRequest(lora_name="adapter1", lora_path="/path/to/adapter1")
     response = await serving_models.load_lora_adapter(request)
     assert isinstance(response, ErrorResponse)
     assert response.error.type == "InvalidUserInput"
@@ -93,9 +82,7 @@ async def test_load_lora_adapter_duplicate():
 @pytest.mark.asyncio
 async def test_unload_lora_adapter_success():
     serving_models = await _async_serving_models_init()
-    request = LoadLoRAAdapterRequest(
-        lora_name="adapter1", lora_path="/path/to/adapter1"
-    )
+    request = LoadLoRAAdapterRequest(lora_name="adapter1", lora_path="/path/to/adapter1")
     response = await serving_models.load_lora_adapter(request)
     assert len(serving_models.lora_requests) == 1
 

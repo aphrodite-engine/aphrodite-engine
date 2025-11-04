@@ -1,20 +1,16 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from packaging import version
-
 from aphrodite.model_executor.layers.quantization.utils.bitblas_utils import (
     MINIMUM_BITBLAS_VERSION,
 )
+from packaging import version
 
 try:
     import bitblas
 
     if version.parse(bitblas.__version__) < version.parse(MINIMUM_BITBLAS_VERSION):
-        raise ImportError(
-            "bitblas version is wrong. Please "
-            f"install bitblas>={MINIMUM_BITBLAS_VERSION}"
-        )
+        raise ImportError(f"bitblas version is wrong. Please install bitblas>={MINIMUM_BITBLAS_VERSION}")
 except ImportError as e:
     bitblas_import_exception = e
     raise ValueError(
@@ -28,9 +24,7 @@ from bitblas import Matmul, MatmulConfig, auto_detect_nvidia_target
 
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
-parser = FlexibleArgumentParser(
-    description="Benchmark BitBLAS int4 on a specific target."
-)
+parser = FlexibleArgumentParser(description="Benchmark BitBLAS int4 on a specific target.")
 
 # Add arguments to the parser
 parser.add_argument(
@@ -39,9 +33,7 @@ parser.add_argument(
     default=auto_detect_nvidia_target(),
     help="Specify the target device for benchmarking.",
 )
-parser.add_argument(
-    "--group_size", type=int, default=None, help="Group size for grouped quantization."
-)
+parser.add_argument("--group_size", type=int, default=None, help="Group size for grouped quantization.")
 parser.add_argument(
     "--A_dtype",
     type=str,
@@ -88,17 +80,13 @@ parser.add_argument(
     choices=["nt", "nn"],
     help="Matrix layout, 'nt' for non-transpose A and transpose W.",
 )
-parser.add_argument(
-    "--with_bias", action="store_true", help="Include bias in the benchmark."
-)
+parser.add_argument("--with_bias", action="store_true", help="Include bias in the benchmark.")
 parser.add_argument(
     "--with_scaling",
     action="store_true",
     help="Include scaling factor in the quantization.",
 )
-parser.add_argument(
-    "--with_zeros", action="store_true", help="Include zeros in the quantization."
-)
+parser.add_argument("--with_zeros", action="store_true", help="Include zeros in the quantization.")
 parser.add_argument(
     "--zeros_mode",
     type=str,
@@ -236,7 +224,5 @@ for config_key, values in benchmark_results.items():
         input_args_str,
         f"{values['BitBLAS_top20_latency']:.3f} ms",
     ]
-    row_str = "".join(
-        [str(cell).ljust(col_widths[idx]) for idx, cell in enumerate(row)]
-    )
+    row_str = "".join([str(cell).ljust(col_widths[idx]) for idx, cell in enumerate(row)])
     print(row_str)

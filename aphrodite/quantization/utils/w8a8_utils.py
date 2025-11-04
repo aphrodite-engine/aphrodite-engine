@@ -71,9 +71,7 @@ CUTLASS_FP8_SUPPORTED = cutlass_fp8_supported()
 CUTLASS_BLOCK_FP8_SUPPORTED = cutlass_block_fp8_supported()
 
 
-def per_tensor_dequantize(
-    tensor: torch.Tensor, inv_scale: float | torch.Tensor
-) -> torch.Tensor:
+def per_tensor_dequantize(tensor: torch.Tensor, inv_scale: float | torch.Tensor) -> torch.Tensor:
     fake_qweight = tensor.to(torch.float16)
     dq_weight = fake_qweight * inv_scale
     return dq_weight
@@ -84,13 +82,9 @@ def all_close_1d(x: torch.Tensor) -> bool:
     return all(torch.allclose(x[0], x[i]) for i in range(x.shape[0]))
 
 
-def convert_to_channelwise(
-    weight_scale: torch.Tensor, logical_widths: list[int]
-) -> tuple[torch.Tensor, torch.Tensor]:
+def convert_to_channelwise(weight_scale: torch.Tensor, logical_widths: list[int]) -> tuple[torch.Tensor, torch.Tensor]:
     # Create channelwise buffer
-    weight_scale_channel = torch.empty(
-        (sum(logical_widths), 1), dtype=torch.float32, device=weight_scale.device
-    )
+    weight_scale_channel = torch.empty((sum(logical_widths), 1), dtype=torch.float32, device=weight_scale.device)
 
     # Expand each scale to match the size of each logical matrix.
     start = 0
@@ -114,9 +108,7 @@ def requantize_with_max_scale(
     # from disk in this case. Skip requantization in this case (since)
     # we already are quantized with the single scale.
     # * Sample Model: nm-testing/Phi-3-mini-128k-instruct-FP8
-    unfused_module_in_checkpoint = (
-        weight_scale[-1] > torch.finfo(torch.float8_e4m3fn).min
-    )
+    unfused_module_in_checkpoint = weight_scale[-1] > torch.finfo(torch.float8_e4m3fn).min
 
     # If unfused checkpoint, need requanize with the single scale.
     if unfused_module_in_checkpoint:
@@ -152,9 +144,7 @@ def cutlass_w8a8_scaled_mm(
     **kwargs,
 ) -> torch.Tensor:
     # Fused GEMM_DQ
-    output = ops.cutlass_scaled_mm(
-        qinput, weight, out_dtype=out_dtype, scale_a=scale_a, scale_b=scale_b, bias=bias
-    )
+    output = ops.cutlass_scaled_mm(qinput, weight, out_dtype=out_dtype, scale_a=scale_a, scale_b=scale_b, bias=bias)
     return output.view(*output_shape)
 
 
@@ -169,9 +159,7 @@ def flashinfer_w8a8_scaled_mm(
     output_shape: list,
     **kwargs,
 ) -> torch.Tensor:
-    return flashinfer_scaled_fp8_mm(
-        qinput, weight, out_dtype=out_dtype, scale_a=scale_a, scale_b=scale_b, bias=bias
-    )
+    return flashinfer_scaled_fp8_mm(qinput, weight, out_dtype=out_dtype, scale_a=scale_a, scale_b=scale_b, bias=bias)
 
 
 def rocm_per_tensor_w8a8_scaled_mm_impl(
@@ -233,9 +221,7 @@ def rocm_per_tensor_w8a8_scaled_mm(
     bias: torch.Tensor,
     output_shape: list,
 ) -> torch.Tensor:
-    output = torch.ops.aphrodite.rocm_per_tensor_w8a8_scaled_mm_impl(
-        qinput, weight, out_dtype, scale_a, scale_b, bias
-    )
+    output = torch.ops.aphrodite.rocm_per_tensor_w8a8_scaled_mm_impl(qinput, weight, out_dtype, scale_a, scale_b, bias)
     return torch.narrow(output, 0, 0, qinput.shape[0]).view(*output_shape)
 
 
@@ -256,9 +242,7 @@ def torch_per_tensor_w8a8_scaled_mm(
     bias: torch.Tensor,
     output_shape: list,
 ) -> torch.Tensor:
-    output = torch._scaled_mm(
-        qinput, weight, out_dtype=out_dtype, scale_a=scale_a, scale_b=scale_b, bias=bias
-    )
+    output = torch._scaled_mm(qinput, weight, out_dtype=out_dtype, scale_a=scale_a, scale_b=scale_b, bias=bias)
     # A fix for discrepancy in scaled_mm which returns tuple
     # for torch < 2.5 and a single value in torch >= 2.5
     if type(output) is tuple and len(output) == 2:
@@ -371,11 +355,7 @@ def dispatch_w8a8_scaled_mm(
         return cutlass_w8a8_scaled_mm
 
     # If torch.scaled_mm supports per-channel (weights) per-token (inputs)
-    if (
-        not per_tensor_weights
-        and not per_tensor_activations
-        and USE_ROWWISE_TORCH_SCALED_MM
-    ):
+    if not per_tensor_weights and not per_tensor_activations and USE_ROWWISE_TORCH_SCALED_MM:
         return torch_per_token_w8a8_scaled_mm
     # Normally, torch.scaled_mm supports per tensor weights + activations only
     # so fallback to naive if per channel or per token
@@ -415,10 +395,7 @@ class Fp8LinearOp:
         # as it breaks with dynamic shapes.
         if pad_output is None:
             config = get_current_aphrodite_config().compilation_config
-            pad_output = (
-                config.mode < CompilationMode.APHRODITE_COMPILE
-                and self.preferred_backend == "torch"
-            )
+            pad_output = config.mode < CompilationMode.APHRODITE_COMPILE and self.preferred_backend == "torch"
 
         self.output_padding = 17 if pad_output else None
         self.act_quant_static = act_quant_static

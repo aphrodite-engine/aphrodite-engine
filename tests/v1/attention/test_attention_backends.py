@@ -10,15 +10,16 @@ from aphrodite.attention.backends.registry import _Backend
 from aphrodite.config import ModelConfig
 from aphrodite.platforms import current_platform
 from aphrodite.utils.math_utils import cdiv
-from aphrodite.utils.torch_utils import (STR_DTYPE_TO_TORCH_DTYPE,
-                                         is_torch_equal_or_newer)
-from aphrodite.v1.attention.backends.utils import (CommonAttentionMetadata,
-                                                   set_kv_cache_layout)
+from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE, is_torch_equal_or_newer
+from aphrodite.v1.attention.backends.utils import CommonAttentionMetadata, set_kv_cache_layout
 from aphrodite.v1.kv_cache_interface import FullAttentionSpec
-from tests.v1.attention.utils import (BatchSpec, create_aphrodite_config,
-                                      create_common_attn_metadata,
-                                      create_standard_kv_cache_spec,
-                                      try_get_attention_backend)
+from tests.v1.attention.utils import (
+    BatchSpec,
+    create_aphrodite_config,
+    create_common_attn_metadata,
+    create_standard_kv_cache_spec,
+    try_get_attention_backend,
+)
 
 BACKENDS_TO_TEST = [
     _Backend.FLASH_ATTN,
@@ -60,12 +61,8 @@ BATCH_SPECS = {
         seq_lens=[128, 256, 512, 1024, 128, 256, 512, 1024],
         query_lens=[1, 1, 1, 1, 1, 1, 1, 1],
     ),
-    "medium_prefill": BatchSpec(
-        seq_lens=[256, 512, 1024, 2048], query_lens=[16, 16, 16, 16]
-    ),
-    "mixed_medium": BatchSpec(
-        seq_lens=[512, 1024, 2048, 512, 1024, 2048], query_lens=[1, 1, 1, 7, 7, 7]
-    ),
+    "medium_prefill": BatchSpec(seq_lens=[256, 512, 1024, 2048], query_lens=[16, 16, 16, 16]),
+    "mixed_medium": BatchSpec(seq_lens=[512, 1024, 2048, 512, 1024, 2048], query_lens=[1, 1, 1, 7, 7, 7]),
     "large_decode": BatchSpec(seq_lens=[2048] * 32, query_lens=[1] * 32),
     "large_prefill": BatchSpec(seq_lens=[4096] * 8, query_lens=[32] * 8),
     "single_decode": BatchSpec(seq_lens=[1024], query_lens=[1]),
@@ -106,18 +103,13 @@ def create_and_prepopulate_kv_cache(
     """
     batch_size = len(k_contexts)
     seq_lens = common_attn_metadata.seq_lens_cpu
-    query_lens = (
-        common_attn_metadata.query_start_loc_cpu[1:]
-        - common_attn_metadata.query_start_loc_cpu[:-1]
-    )
+    query_lens = common_attn_metadata.query_start_loc_cpu[1:] - common_attn_metadata.query_start_loc_cpu[:-1]
     context_lens = common_attn_metadata.num_computed_tokens_cpu
     block_table = common_attn_metadata.block_table_tensor
     slot_mapping = common_attn_metadata.slot_mapping
 
     # Create KV cache
-    kv_cache = torch.empty(
-        2, num_blocks, block_size, num_kv_heads, head_size, dtype=dtype, device=device
-    )
+    kv_cache = torch.empty(2, num_blocks, block_size, num_kv_heads, head_size, dtype=dtype, device=device)
     kv_cache_flat = kv_cache.view(2, -1, num_kv_heads, head_size)
 
     # Populate the cache with the context tokens
@@ -165,9 +157,7 @@ def create_and_prepopulate_kv_cache(
         token_inter_block_offsets = token_offsets % block_size
         start = common_attn_metadata.query_start_loc_cpu[i]
         end = common_attn_metadata.query_start_loc_cpu[i + 1]
-        slot_mapping[start:end] = block_table[
-            i, block_indices
-        ] * block_size + token_inter_block_offsets.to(device)
+        slot_mapping[start:end] = block_table[i, block_indices] * block_size + token_inter_block_offsets.to(device)
 
     return kv_cache
 
@@ -248,12 +238,8 @@ def run_attention_backend(
         )
 
     # Instantiate implementation
-    num_heads = aphrodite_config.model_config.get_num_attention_heads(
-        aphrodite_config.parallel_config
-    )
-    num_kv_heads = aphrodite_config.model_config.get_num_kv_heads(
-        aphrodite_config.parallel_config
-    )
+    num_heads = aphrodite_config.model_config.get_num_attention_heads(aphrodite_config.parallel_config)
+    num_kv_heads = aphrodite_config.model_config.get_num_kv_heads(aphrodite_config.parallel_config)
     head_size = aphrodite_config.model_config.get_head_size()
     scale = 1.0 / (head_size**0.5)
     impl = impl_cls(
@@ -273,9 +259,7 @@ def run_attention_backend(
     # Run forward pass
     # NOTE: The query, key, and value are already shaped correctly
     # in the calling test function.
-    output = impl.forward(
-        mock_layer, query, key, value, kv_cache, attn_metadata, output=output
-    )
+    output = impl.forward(mock_layer, query, key, value, kv_cache, attn_metadata, output=output)
 
     return output
 
@@ -320,12 +304,8 @@ def _test_backend_correctness(
     batch_size = batch_spec.batch_size
     seq_lens = batch_spec.seq_lens
     query_lens = batch_spec.query_lens
-    num_q_heads = aphrodite_config.model_config.get_num_attention_heads(
-        aphrodite_config.parallel_config
-    )
-    num_kv_heads = aphrodite_config.model_config.get_num_kv_heads(
-        aphrodite_config.parallel_config
-    )
+    num_q_heads = aphrodite_config.model_config.get_num_attention_heads(aphrodite_config.parallel_config)
+    num_kv_heads = aphrodite_config.model_config.get_num_kv_heads(aphrodite_config.parallel_config)
     head_size = aphrodite_config.model_config.get_head_size()
     sliding_window = aphrodite_config.model_config.get_sliding_window()
     dtype = _convert_dtype_to_torch(aphrodite_config.model_config.dtype)
@@ -354,8 +334,7 @@ def _test_backend_correctness(
 
         if num_q_heads != num_kv_heads:
             assert num_q_heads % num_kv_heads == 0, (
-                f"num_q_heads ({num_q_heads}) must be divisible by "
-                f"num_kv_heads ({num_kv_heads})"
+                f"num_q_heads ({num_q_heads}) must be divisible by num_kv_heads ({num_kv_heads})"
             )
             repeats = num_q_heads // num_kv_heads
             k_sdpa_in = k_sdpa_in.repeat_interleave(repeats, dim=1)
@@ -366,9 +345,7 @@ def _test_backend_correctness(
         kv_len = s_len
 
         final_mask_mod = partial(mask_mod, context_len=context_len)
-        block_mask = create_block_mask(
-            final_mask_mod, B=None, H=None, Q_LEN=q_len, KV_LEN=kv_len, device=device
-        )
+        block_mask = create_block_mask(final_mask_mod, B=None, H=None, Q_LEN=q_len, KV_LEN=kv_len, device=device)
         sdpa_out_i = flex_attention(
             q_sdpa_in,
             k_sdpa_in,
@@ -394,9 +371,7 @@ def _test_backend_correctness(
     value_aphrodite = torch.cat(all_v_aphrodite, dim=0)
     sdpa_output = torch.cat(all_sdpa_outputs, dim=0)
 
-    common_attn_metadata = create_common_attn_metadata(
-        batch_spec, aphrodite_config.cache_config.block_size, device
-    )
+    common_attn_metadata = create_common_attn_metadata(batch_spec, aphrodite_config.cache_config.block_size, device)
 
     # 3. Simulate Paged KV Cache and a realistic slot_mapping
     kv_cache = create_and_prepopulate_kv_cache(
@@ -428,9 +403,7 @@ def _test_backend_correctness(
 
         if backend_name == _Backend.FLASHINFER:
             # For FlashInfer default to HND layout and
-            kv_cache_for_backend = (
-                kv_cache_for_backend.transpose(2, 3).contiguous().transpose(2, 3)
-            )
+            kv_cache_for_backend = kv_cache_for_backend.transpose(2, 3).contiguous().transpose(2, 3)
             set_kv_cache_layout("HND")
             reset_kv_cache_layout = True
         elif backend_name == _Backend.TRITON_ATTN:
@@ -456,17 +429,13 @@ def _test_backend_correctness(
 
         # Check shape and dtype consistency
         assert backend_output.shape == sdpa_output.shape, (
-            f"[{backend_name}] shape {backend_output.shape} != "
-            f"SDPA shape {sdpa_output.shape}"
+            f"[{backend_name}] shape {backend_output.shape} != SDPA shape {sdpa_output.shape}"
         )
         assert backend_output.dtype == sdpa_output.dtype, (
-            f"[{backend_name}] dtype {backend_output.dtype} != "
-            f"SDPA dtype {sdpa_output.dtype}"
+            f"[{backend_name}] dtype {backend_output.dtype} != SDPA dtype {sdpa_output.dtype}"
         )
 
-        assert torch.isfinite(backend_output).all(), (
-            f"[{backend_name}] produced non-finite values"
-        )
+        assert torch.isfinite(backend_output).all(), f"[{backend_name}] produced non-finite values"
 
         # Check numerical similarity
         def error_msg(msg: str, backend_name: str):
@@ -511,19 +480,13 @@ def test_causal_backend_correctness(batch_spec_name: str, model: str):
         return (q_idx + context_len) >= kv_idx
 
     batch_spec = BATCH_SPECS[batch_spec_name]
-    LARGE_BLOCK_BACKENDS = (
-        [_Backend.FLEX_ATTENTION] if is_torch_equal_or_newer("2.9.0.dev0") else []
-    )
-    SMALL_BLOCK_BACKENDS = [
-        x for x in BACKENDS_TO_TEST if x not in LARGE_BLOCK_BACKENDS
-    ]
+    LARGE_BLOCK_BACKENDS = [_Backend.FLEX_ATTENTION] if is_torch_equal_or_newer("2.9.0.dev0") else []
+    SMALL_BLOCK_BACKENDS = [x for x in BACKENDS_TO_TEST if x not in LARGE_BLOCK_BACKENDS]
     _test_backend_correctness(batch_spec, model, SMALL_BLOCK_BACKENDS, causal_mask_mod)
 
     # Fast FlexAttention needs to run with block_size=128
     if LARGE_BLOCK_BACKENDS:
-        _test_backend_correctness(
-            batch_spec, model, LARGE_BLOCK_BACKENDS, causal_mask_mod, block_size=128
-        )
+        _test_backend_correctness(batch_spec, model, LARGE_BLOCK_BACKENDS, causal_mask_mod, block_size=128)
 
 
 SLIDING_WINDOW_BACKENDS_TO_TEST = [
@@ -558,19 +521,11 @@ def test_sliding_window_backend_correctness(batch_spec_name: str, model: str):
     batch_spec = BATCH_SPECS[batch_spec_name]
     model_config = ModelConfig(model=model, max_model_len=max(batch_spec.seq_lens))
     sliding_window = model_config.get_sliding_window()
-    sliding_window_mask_mod_fn = partial(
-        sliding_window_mask_mod, sliding_window=sliding_window
-    )
+    sliding_window_mask_mod_fn = partial(sliding_window_mask_mod, sliding_window=sliding_window)
 
-    LARGE_BLOCK_BACKENDS = (
-        [_Backend.FLEX_ATTENTION] if is_torch_equal_or_newer("2.9.0.dev0") else []
-    )
-    SMALL_BLOCK_BACKENDS = [
-        x for x in SLIDING_WINDOW_BACKENDS_TO_TEST if x not in LARGE_BLOCK_BACKENDS
-    ]
-    _test_backend_correctness(
-        batch_spec, model, SMALL_BLOCK_BACKENDS, sliding_window_mask_mod_fn
-    )
+    LARGE_BLOCK_BACKENDS = [_Backend.FLEX_ATTENTION] if is_torch_equal_or_newer("2.9.0.dev0") else []
+    SMALL_BLOCK_BACKENDS = [x for x in SLIDING_WINDOW_BACKENDS_TO_TEST if x not in LARGE_BLOCK_BACKENDS]
+    _test_backend_correctness(batch_spec, model, SMALL_BLOCK_BACKENDS, sliding_window_mask_mod_fn)
 
     # Fast FlexAttention needs to run with block_size=128
     if LARGE_BLOCK_BACKENDS:

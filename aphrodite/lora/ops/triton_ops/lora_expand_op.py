@@ -8,8 +8,7 @@ https://arxiv.org/abs/2310.18547
 import torch
 
 from aphrodite.lora.ops.triton_ops.kernel_utils import do_expand_kernel
-from aphrodite.lora.ops.triton_ops.utils import (_get_lora_b_ptr,
-                                                 get_lora_op_configs)
+from aphrodite.lora.ops.triton_ops.utils import _get_lora_b_ptr, get_lora_op_configs
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
@@ -80,9 +79,7 @@ def _lora_expand_kernel(
 
     # Identify all rows that this CTA should process.
     lora_m_indices_start = tl.load(lora_token_start_loc + lora_idx)
-    cta_lora_seq_indices = (
-        token_indices_sorted_by_lora_ids + lora_m_indices_start + cta_m_offset
-    )
+    cta_lora_seq_indices = token_indices_sorted_by_lora_ids + lora_m_indices_start + cta_m_offset
 
     # Load all relevant row indices.
     offset_m = tl.arange(0, BLOCK_M) % cta_m_len

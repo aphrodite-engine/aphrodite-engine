@@ -4,8 +4,7 @@ from functools import cache, lru_cache
 import torch
 
 from aphrodite import envs
-from aphrodite.modeling.layers.fused_moe.config import (
-    FUSED_MOE_UNQUANTIZED_CONFIG, FusedMoEQuantConfig)
+from aphrodite.modeling.layers.fused_moe.config import FUSED_MOE_UNQUANTIZED_CONFIG, FusedMoEQuantConfig
 from aphrodite.platforms import current_platform
 from aphrodite.utils.torch_utils import direct_register_custom_op
 
@@ -35,11 +34,7 @@ class ActivationMethod(IntEnum):
 
 @cache
 def is_rocm_aiter_moe_enabled() -> bool:
-    return (
-        current_platform.is_rocm()
-        and envs.APHRODITE_ROCM_USE_AITER_MOE
-        and envs.APHRODITE_ROCM_USE_AITER
-    )
+    return current_platform.is_rocm() and envs.APHRODITE_ROCM_USE_AITER_MOE and envs.APHRODITE_ROCM_USE_AITER
 
 
 @cache
@@ -49,9 +44,7 @@ def use_mxfp4_aiter_moe() -> bool:
 
 @cache
 def is_rocm_aiter_fusion_shared_expert_enabled() -> bool:
-    return (
-        envs.APHRODITE_ROCM_USE_AITER_FUSION_SHARED_EXPERTS and is_rocm_aiter_moe_enabled()
-    )
+    return envs.APHRODITE_ROCM_USE_AITER_FUSION_SHARED_EXPERTS and is_rocm_aiter_moe_enabled()
 
 
 aiter_topK_meta_data = None
@@ -81,20 +74,14 @@ def init_aiter_topK_meta_data(
         dtype=torch.int32,
         device="cuda",
     )
-    ns_topk_ids, s_topk_ids = total_topk_ids.split(
-        [top_k, n_shared_experts + is_EP], dim=1
-    )
+    ns_topk_ids, s_topk_ids = total_topk_ids.split([top_k, n_shared_experts + is_EP], dim=1)
     shared_expert_ids = [n_routed_experts + i for i in range(n_shared_experts + is_EP)]
     if is_EP:
-        s_topk_ids_list = [
-            [fake_expertid] * (n_shared_experts + is_EP)
-        ] * max_num_tokens
+        s_topk_ids_list = [[fake_expertid] * (n_shared_experts + is_EP)] * max_num_tokens
         for i in range(tp_rank, max_num_tokens, tp_size):
             s_topk_ids_list[i] = shared_expert_ids
     else:
-        s_topk_ids_list = [
-            list(range(n_routed_experts, fake_expertid))
-        ] * max_num_tokens
+        s_topk_ids_list = [list(range(n_routed_experts, fake_expertid))] * max_num_tokens
     s_topk_ids[:] = torch.tensor(s_topk_ids_list, dtype=torch.int32, device="cuda")
 
     total_topk_weights = torch.empty(
@@ -102,9 +89,7 @@ def init_aiter_topK_meta_data(
         dtype=torch.float32,
         device="cuda",
     )
-    ns_topk_weights, s_topk_weights = total_topk_weights.split(
-        [top_k, n_shared_experts + is_EP], dim=1
-    )
+    ns_topk_weights, s_topk_weights = total_topk_weights.split([top_k, n_shared_experts + is_EP], dim=1)
     s_topk_weights.fill_(shared_experts_score)
     assert aiter_topK_meta_data is None, "AITER topK meta data is already initialized"
     aiter_topK_meta_data = (total_topk_weights, total_topk_ids)
@@ -174,9 +159,7 @@ def rocm_aiter_topk_softmax_impl(
 ) -> None:
     from aiter import topk_softmax
 
-    topk_softmax(
-        topk_weights, topk_indices, token_expert_indices, gating_output, renormalize
-    )
+    topk_softmax(topk_weights, topk_indices, token_expert_indices, gating_output, renormalize)
 
 
 def rocm_aiter_topk_softmax_fake(
@@ -382,12 +365,8 @@ def rocm_aiter_grouped_topk(
         )
         total_topk_weights = total_topk_weights[:token]
         total_topk_ids = total_topk_ids[:token]
-        topk_weights, _ = total_topk_weights.split(
-            [topk, total_topk_weights.shape[1] - topk], dim=1
-        )
-        topk_ids, _ = total_topk_ids.split(
-            [topk, total_topk_ids.shape[1] - topk], dim=1
-        )
+        topk_weights, _ = total_topk_weights.split([topk, total_topk_weights.shape[1] - topk], dim=1)
+        topk_ids, _ = total_topk_ids.split([topk, total_topk_ids.shape[1] - topk], dim=1)
     else:
         topk_ids = torch.empty((token, topk), dtype=torch.int32, device=device)
         topk_weights = torch.empty((token, topk), dtype=torch.float32, device=device)
@@ -435,9 +414,7 @@ def rocm_aiter_fused_experts(
     if quant_config is None:
         quant_config = FUSED_MOE_UNQUANTIZED_CONFIG
 
-    activation_method = (
-        ActivationMethod.SILU if activation == "silu" else ActivationMethod.GELU
-    )
+    activation_method = ActivationMethod.SILU if activation == "silu" else ActivationMethod.GELU
     # All AITER Fused MoE kernels are expecting the following datatypes
     topk_weights = topk_weights.to(torch.float32)
     topk_ids = topk_ids.to(torch.int32)
@@ -445,20 +422,12 @@ def rocm_aiter_fused_experts(
     expert_mask = expert_map if expert_map is not None else None
 
     # w8a8 per-channel quantization
-    if (
-        quant_config.per_act_token_quant
-        and apply_router_weight_on_input
-        and quant_config.use_fp8_w8a8
-    ):
+    if quant_config.per_act_token_quant and apply_router_weight_on_input and quant_config.use_fp8_w8a8:
         # AITER tkw1 kernel for FP8 models with `apply_router_weight_on_input`
         # This applies topk_weights on the GEMM output of the first FC layer
         #  rather than the second FC.
-        assert topk_weights.dim() == 2, (
-            "`topk_weights` should be in shape (num_tokens, topk)"
-        )
-        assert topk_weights.shape[-1] == 1, (
-            "Only support topk=1 when `apply_router_weight_on_input` is True"
-        )
+        assert topk_weights.dim() == 2, "`topk_weights` should be in shape (num_tokens, topk)"
+        assert topk_weights.shape[-1] == 1, "Only support topk=1 when `apply_router_weight_on_input` is True"
 
         return torch.ops.aphrodite.rocm_aiter_asm_moe_tkw1(
             hidden_states,
@@ -495,13 +464,9 @@ def rocm_aiter_fused_experts(
             quant_method = QuantMethod.PER_TENSOR.value
 
         if apply_router_weight_on_input:
-            assert topk_weights.dim() == 2, (
-                "`topk_weights` should be in shape (num_tokens, topk)"
-            )
+            assert topk_weights.dim() == 2, "`topk_weights` should be in shape (num_tokens, topk)"
             _, topk = topk_weights.shape
-            assert topk == 1, (
-                "Only support topk=1 when `apply_router_weight_on_input` is True"
-            )
+            assert topk == 1, "Only support topk=1 when `apply_router_weight_on_input` is True"
 
         return torch.ops.aphrodite.rocm_aiter_fused_moe(
             hidden_states,
@@ -533,9 +498,7 @@ def rocm_aiter_topk_softmax(
     return topk_weights, topk_indices
 
 
-def shuffle_weights(
-    *tensors: torch.Tensor, layout: tuple[int, int] = (16, 16)
-) -> tuple[torch.Tensor, ...]:
+def shuffle_weights(*tensors: torch.Tensor, layout: tuple[int, int] = (16, 16)) -> tuple[torch.Tensor, ...]:
     """
     Applies shuffle_weight function from AITER to each
     input tensor and returns them.

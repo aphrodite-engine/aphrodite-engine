@@ -11,9 +11,7 @@ import typing
 import torch
 
 
-def compute_retained_tokens_count(
-    tokens_per_frame: int, num_frames: int, q: float
-) -> int:
+def compute_retained_tokens_count(tokens_per_frame: int, num_frames: int, q: float) -> int:
     """
     Compute the number of retained tokens for a given video.
     Method ensures that we retain all the tokens from the first frame
@@ -65,21 +63,15 @@ def compute_retention_mask(
     )
     tokens_per_frame = (H // spatial_merge_size) * (W // spatial_merge_size)
     # Core EVS
-    similarity = torch.nn.functional.cosine_similarity(
-        video_embeds[1:, ...], video_embeds[:-1, ...], dim=-1
-    )
+    similarity = torch.nn.functional.cosine_similarity(video_embeds[1:, ...], video_embeds[:-1, ...], dim=-1)
     dissimilarity = 1 - similarity
 
     # Always ensure we include all tokens from the first frame
-    dissimilarity = torch.cat(
-        [255 * torch.ones_like(video_embeds[:1, :, :, 0]), dissimilarity], dim=0
-    )
+    dissimilarity = torch.cat([255 * torch.ones_like(video_embeds[:1, :, :, 0]), dissimilarity], dim=0)
 
     dissimilarity_flat = dissimilarity.view(-1)
     order = torch.argsort(dissimilarity_flat, dim=-1, descending=True, stable=True)
-    retain_num_tokens = compute_retained_tokens_count(
-        tokens_per_frame=tokens_per_frame, num_frames=T, q=q
-    )
+    retain_num_tokens = compute_retained_tokens_count(tokens_per_frame=tokens_per_frame, num_frames=T, q=q)
     topk_indices = order[:retain_num_tokens]
 
     retention_mask = torch.zeros_like(dissimilarity_flat, dtype=torch.bool)
@@ -126,24 +118,9 @@ def compute_mrope_for_media(
         .long()
         .flatten()
     )
-    h_index = (
-        torch.arange(llm_grid_h)
-        .view(1, -1, 1)
-        .expand(llm_grid_t, -1, llm_grid_w)
-        .flatten()
-    )
-    w_index = (
-        torch.arange(llm_grid_w)
-        .view(1, 1, -1)
-        .expand(llm_grid_t, llm_grid_h, -1)
-        .flatten()
-    )
-    llm_grid_w = (
-        torch.tensor([llm_grid_w])
-        .view(1, 1, 1)
-        .expand(llm_grid_t, llm_grid_h, llm_grid_w)
-        .flatten()
-    )
+    h_index = torch.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+    w_index = torch.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+    llm_grid_w = torch.tensor([llm_grid_w]).view(1, 1, 1).expand(llm_grid_t, llm_grid_h, llm_grid_w).flatten()
 
     positions = torch.stack([t_index, h_index, w_index, llm_grid_w], dim=1)
     return positions
@@ -195,9 +172,7 @@ def recompute_mrope_positions(
     """
 
     # Tensors
-    positions: torch.LongTensor = typing.cast(
-        torch.LongTensor, mrope_positions.clone()
-    )  # (3, N)
+    positions: torch.LongTensor = typing.cast(torch.LongTensor, mrope_positions.clone())  # (3, N)
     N = input_ids.numel()
 
     image_mask = input_ids.eq(image_token_id)
@@ -219,9 +194,7 @@ def recompute_mrope_positions(
         delta = int((positions.max().item() + 1) - N) if positions.numel() else -N
         return positions, delta
 
-    vision_start_indices = (input_ids == vision_start_token_id).nonzero(as_tuple=True)[
-        0
-    ]
+    vision_start_indices = (input_ids == vision_start_token_id).nonzero(as_tuple=True)[0]
 
     for mm_pos in multimodal_positions:
         # Each mm_pos can be a complete embedding for single media
@@ -231,9 +204,7 @@ def recompute_mrope_positions(
         # - Current prefill chunk has no vision start indexes at all
         # - Vision start token appeared in previous prefill round
         # - Regular case
-        seen_vision_start_indices = vision_start_indices[
-            vision_start_indices < num_computed_tokens
-        ]
+        seen_vision_start_indices = vision_start_indices[vision_start_indices < num_computed_tokens]
 
         if len(seen_vision_start_indices):
             # If we have encountered some vision start indexes,
@@ -241,33 +212,23 @@ def recompute_mrope_positions(
             # | --- prefill 1 ------| ---- prefill 2 ----- |
             # | TTTTTTTTTSVVVVVVVVVV|VVVVVVTTTTTTTTTTTTTTTT|
             last_vision_start_token = seen_vision_start_indices[-1]
-            seem_mm_tokens_before_last_vision_start = torch.count_nonzero(
-                media_mask[:last_vision_start_token]
-            )
-            in_the_middle_of_media = (
-                seen_mm_tokens > seem_mm_tokens_before_last_vision_start
-            )
+            seem_mm_tokens_before_last_vision_start = torch.count_nonzero(media_mask[:last_vision_start_token])
+            in_the_middle_of_media = seen_mm_tokens > seem_mm_tokens_before_last_vision_start
 
             if in_the_middle_of_media:
-                mm_embeddings_seen = (
-                    seen_mm_tokens - seem_mm_tokens_before_last_vision_start
-                )
+                mm_embeddings_seen = seen_mm_tokens - seem_mm_tokens_before_last_vision_start
                 global_mm_start = last_vision_start_token
             else:
                 # We have completed previous mm_embedding part and
                 # ready to start a new one
-                next_vision_start_token = vision_start_indices[
-                    vision_start_indices >= num_computed_tokens
-                ][0]
+                next_vision_start_token = vision_start_indices[vision_start_indices >= num_computed_tokens][0]
                 mm_embeddings_seen = 0
                 global_mm_start = next_vision_start_token
 
         else:
             # If there were no vision start indexes so far,
             # let's find first vision start index
-            next_vision_start_token = vision_start_indices[
-                vision_start_indices >= num_computed_tokens
-            ][0]
+            next_vision_start_token = vision_start_indices[vision_start_indices >= num_computed_tokens][0]
 
             mm_embeddings_seen = 0
             global_mm_start = next_vision_start_token

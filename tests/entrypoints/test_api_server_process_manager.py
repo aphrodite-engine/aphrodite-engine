@@ -6,8 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from aphrodite.v1.utils import (APIServerProcessManager,
-                                wait_for_completion_or_failure)
+from aphrodite.v1.utils import APIServerProcessManager, wait_for_completion_or_failure
 
 # Global variables to control worker behavior
 WORKER_RUNTIME_SECONDS = 0.5
@@ -87,9 +86,7 @@ def test_api_server_process_manager_init(api_server_args, with_stats_update):
             assert not proc.is_alive()
 
 
-@patch(
-    "aphrodite.endpoints.cli.run.run_api_server_worker_proc", mock_run_api_server_worker
-)
+@patch("aphrodite.endpoints.cli.run.run_api_server_worker_proc", mock_run_api_server_worker)
 def test_wait_for_completion_or_failure(api_server_args):
     """Test that wait_for_completion_or_failure works with failures."""
     global WORKER_RUNTIME_SECONDS
@@ -189,9 +186,7 @@ def test_external_process_monitoring(api_server_args):
     # Create and start the external process
     # (simulates local_engine_manager or coordinator)
     spawn_context = multiprocessing.get_context("spawn")
-    external_proc = spawn_context.Process(
-        target=mock_run_api_server_worker, name="MockExternalProcess"
-    )
+    external_proc = spawn_context.Process(target=mock_run_api_server_worker, name="MockExternalProcess")
     external_proc.start()
 
     # Create the class to simulate a coordinator
@@ -219,9 +214,7 @@ def test_external_process_monitoring(api_server_args):
 
         def run_with_exception_capture():
             try:
-                wait_for_completion_or_failure(
-                    api_server_manager=manager, coordinator=mock_coordinator
-                )
+                wait_for_completion_or_failure(api_server_manager=manager, coordinator=mock_coordinator)
             except Exception as e:
                 result["exception"] = e
 
@@ -237,19 +230,13 @@ def test_external_process_monitoring(api_server_args):
         wait_thread.join(timeout=1.0)
 
         # The wait thread should have completed
-        assert not wait_thread.is_alive(), (
-            "wait_for_completion_or_failure thread still running"
-        )
+        assert not wait_thread.is_alive(), "wait_for_completion_or_failure thread still running"
 
         # Verify that an exception was raised with appropriate error message
         assert result["exception"] is not None, "No exception was raised"
         error_message = str(result["exception"])
-        assert "died with exit code" in error_message, (
-            f"Unexpected error message: {error_message}"
-        )
-        assert "MockExternalProcess" in error_message, (
-            f"Error doesn't mention external process: {error_message}"
-        )
+        assert "died with exit code" in error_message, f"Unexpected error message: {error_message}"
+        assert "MockExternalProcess" in error_message, f"Error doesn't mention external process: {error_message}"
 
         # Verify that all API server processes were terminated as a result
         for i, proc in enumerate(manager.processes):

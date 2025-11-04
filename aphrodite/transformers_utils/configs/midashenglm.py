@@ -21,8 +21,7 @@
 # limitations under the License.
 
 from transformers import PretrainedConfig
-from transformers.models.qwen2_5_omni.configuration_qwen2_5_omni import (
-    Qwen2_5OmniTextConfig)
+from transformers.models.qwen2_5_omni.configuration_qwen2_5_omni import Qwen2_5OmniTextConfig
 
 
 class DashengConfig(PretrainedConfig):
@@ -90,11 +89,7 @@ class MiDashengLMConfig(PretrainedConfig):
     ):
         self.audio_encoder_config = DashengConfig(**(audio_encoder_config or {}))
         self.subsample_factor = subsample_factor
-        self.text_config = (
-            Qwen2_5OmniTextConfig(**text_config)
-            if text_config
-            else Qwen2_5OmniTextConfig()
-        )
+        self.text_config = Qwen2_5OmniTextConfig(**text_config) if text_config else Qwen2_5OmniTextConfig()
         self.text_config.rope_scaling = None  # uses_mrope is false
         self.audio_token_id = audio_token_id
         super().__init__(**kwargs)

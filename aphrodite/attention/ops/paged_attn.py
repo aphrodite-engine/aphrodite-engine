@@ -110,11 +110,8 @@ class PagedAttention:
         if blocksparse_vert_stride is not None and blocksparse_vert_stride > 1:
             # use blocksparse paged attention
             block_size = value_cache.size(-1)
-            assert (
-                blocksparse_block_size > 0 and blocksparse_block_size % block_size == 0
-            ), (
-                f"{blocksparse_block_size=} needs to be a multiple of"
-                f"{block_size=} used in block_tables."
+            assert blocksparse_block_size > 0 and blocksparse_block_size % block_size == 0, (
+                f"{blocksparse_block_size=} needs to be a multiple of{block_size=} used in block_tables."
             )
 
         output = torch.empty_like(query)
@@ -128,9 +125,7 @@ class PagedAttention:
         # to parallelize.
         # TODO(woosuk): Tune this heuristic.
         # For context len > 8192, use V2 kernel to avoid shared memory shortage.
-        use_v1 = max_seq_len <= 8192 and (
-            max_num_partitions == 1 or num_seqs * num_heads > 512
-        )
+        use_v1 = max_seq_len <= 8192 and (max_num_partitions == 1 or num_seqs * num_heads > 512)
 
         if use_v1:
             # Run PagedAttention V1.

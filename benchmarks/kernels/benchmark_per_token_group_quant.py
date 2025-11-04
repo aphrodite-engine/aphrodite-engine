@@ -5,8 +5,8 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import torch
-
 from aphrodite.model_executor.layers.quantization.utils import fp8_utils, int8_utils
+
 from aphrodite.platforms import current_platform
 
 
@@ -89,14 +89,8 @@ def _run_single(
 
     speedup = triton_ms / cuda_ms if cuda_ms else math.inf
 
-    cfg_desc = (
-        f"shape={shape}  gs={group_size:<3}  col_major={column_major:<5}  "
-        f"ue8m0={scale_ue8m0:<5}  dtype={dtype}"
-    )
-    print(
-        f"{cfg_desc:55} | CUDA {cuda_ms:7.3f} ms  | Triton {triton_ms:7.3f} ms  | "
-        f"speed-up ×{speedup:5.2f}"
-    )
+    cfg_desc = f"shape={shape}  gs={group_size:<3}  col_major={column_major:<5}  ue8m0={scale_ue8m0:<5}  dtype={dtype}"
+    print(f"{cfg_desc:55} | CUDA {cuda_ms:7.3f} ms  | Triton {triton_ms:7.3f} ms  | speed-up ×{speedup:5.2f}")
 
 
 def parse_args():

@@ -8,9 +8,11 @@ from typing_extensions import Self
 
 from aphrodite.config.utils import config
 from aphrodite.logger import init_logger
-from aphrodite.utils import (DEFAULT_MAX_NUM_BATCHED_TOKENS,
-                             MULTIMODAL_MODEL_MAX_NUM_BATCHED_TOKENS,
-                             POOLING_MODEL_MAX_NUM_BATCHED_TOKENS)
+from aphrodite.utils import (
+    DEFAULT_MAX_NUM_BATCHED_TOKENS,
+    MULTIMODAL_MODEL_MAX_NUM_BATCHED_TOKENS,
+    POOLING_MODEL_MAX_NUM_BATCHED_TOKENS,
+)
 
 logger = init_logger(__name__)
 
@@ -176,10 +178,7 @@ class SchedulerConfig:
             # In single user mode, we only need to support one sequence at a
             # time. max_num_seqs will be set to 1 here, and cuda_graph_sizes
             # will be set to [2] in AphroditeConfig.__post_init__.
-            logger.info(
-                "Single user mode enabled. Setting max_num_seqs from %d to 1.",
-                self.max_num_seqs
-            )
+            logger.info("Single user mode enabled. Setting max_num_seqs from %d to 1.", self.max_num_seqs)
             self.max_num_seqs = 1
 
         if is_encoder_decoder:
@@ -188,10 +187,7 @@ class SchedulerConfig:
             self.chunked_prefill_enabled = False
             self.enable_chunked_prefill = False
             self.long_prefill_token_threshold = 0
-            logger.info(
-                "Encoder-decoder models do not support chunked prefill nor"
-                " prefix caching; disabling both."
-            )
+            logger.info("Encoder-decoder models do not support chunked prefill nor prefix caching; disabling both.")
 
         if self.max_num_batched_tokens is None:
             if self.enable_chunked_prefill:
@@ -200,9 +196,7 @@ class SchedulerConfig:
                 # If max_model_len is too short, use
                 # DEFAULT_MAX_NUM_BATCHED_TOKENS as the default value
                 # for higher throughput.
-                self.max_num_batched_tokens = max(
-                    self.max_model_len, DEFAULT_MAX_NUM_BATCHED_TOKENS
-                )
+                self.max_num_batched_tokens = max(self.max_model_len, DEFAULT_MAX_NUM_BATCHED_TOKENS)
 
             if self.runner_type == "pooling":
                 # Choose specific value for higher throughput
@@ -220,9 +214,7 @@ class SchedulerConfig:
             # When using default settings,
             # Ensure max_num_batched_tokens does not exceed model limit.
             # Some models (e.g., Whisper) have embeddings tied to max length.
-            self.max_num_batched_tokens = min(
-                self.max_num_seqs * self.max_model_len, self.max_num_batched_tokens
-            )
+            self.max_num_batched_tokens = min(self.max_num_seqs * self.max_model_len, self.max_num_batched_tokens)
 
         self.max_num_encoder_input_tokens = self.max_num_batched_tokens
         self.encoder_cache_size = self.max_num_batched_tokens
@@ -252,10 +244,7 @@ class SchedulerConfig:
 
     @model_validator(mode="after")
     def _verify_args(self) -> Self:
-        if (
-            self.max_num_batched_tokens < self.max_model_len
-            and not self.chunked_prefill_enabled
-        ):
+        if self.max_num_batched_tokens < self.max_model_len and not self.chunked_prefill_enabled:
             raise ValueError(
                 f"max_num_batched_tokens ({self.max_num_batched_tokens}) is "
                 f"smaller than max_model_len ({self.max_model_len}). "
@@ -281,23 +270,15 @@ class SchedulerConfig:
             )
 
         if self.num_lookahead_slots < 0:
-            raise ValueError(
-                "num_lookahead_slots "
-                f"({self.num_lookahead_slots}) must be greater than or "
-                "equal to 0."
-            )
+            raise ValueError(f"num_lookahead_slots ({self.num_lookahead_slots}) must be greater than or equal to 0.")
 
         if self.max_num_partial_prefills < 1:
             raise ValueError(
-                f"max_num_partial_prefills ({self.max_num_partial_prefills}) "
-                "must be greater than or equal to 1."
+                f"max_num_partial_prefills ({self.max_num_partial_prefills}) must be greater than or equal to 1."
             )
         elif self.max_num_partial_prefills > 1:
             if not self.chunked_prefill_enabled:
-                raise ValueError(
-                    "Chunked prefill must be enabled to set "
-                    "max_num_partial_prefills > 1."
-                )
+                raise ValueError("Chunked prefill must be enabled to set max_num_partial_prefills > 1.")
 
             if self.long_prefill_token_threshold > self.max_model_len:
                 raise ValueError(
@@ -306,9 +287,7 @@ class SchedulerConfig:
                     f"than the max_model_len ({self.max_model_len})."
                 )
 
-        if (self.max_long_partial_prefills < 1) or (
-            self.max_long_partial_prefills > self.max_num_partial_prefills
-        ):
+        if (self.max_long_partial_prefills < 1) or (self.max_long_partial_prefills > self.max_num_partial_prefills):
             raise ValueError(
                 f"max_long_partial_prefills ({self.max_long_partial_prefills}) "
                 "must be greater than or equal to 1 and less than or equal to "

@@ -4,9 +4,11 @@ import torch
 
 from aphrodite.attention.backends.abstract import AttentionBackend
 from aphrodite.config import AphroditeConfig
-from aphrodite.v1.attention.backends.utils import (AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata,
-                                                   split_decodes_and_prefills)
+from aphrodite.v1.attention.backends.utils import (
+    AttentionMetadataBuilder,
+    CommonAttentionMetadata,
+    split_decodes_and_prefills,
+)
 from aphrodite.v1.kv_cache_interface import AttentionSpec, MambaSpec
 
 
@@ -52,10 +54,8 @@ class LinearAttentionMetadataBuilder(AttentionMetadataBuilder[LinearAttentionMet
 
         state_indices_tensor = common_attn_metadata.block_table_tensor[:, 0]
 
-        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
-            split_decodes_and_prefills(
-                common_attn_metadata, decode_threshold=self.reorder_batch_threshold
-            )
+        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
+            common_attn_metadata, decode_threshold=self.reorder_batch_threshold
         )
 
         attn_metadata = LinearAttentionMetadata(

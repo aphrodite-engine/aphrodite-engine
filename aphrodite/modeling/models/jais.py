@@ -29,23 +29,16 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size)
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.distributed import get_pp_group, get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
+from aphrodite.modeling.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 from aphrodite.transformers_utils.configs import JAISConfig
 
 from .interfaces import SupportsPP
-from .utils import (is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import is_pp_missing_parameter, make_empty_intermediate_tensors_factory, make_layers, maybe_prefix
 
 
 class SwiGLUActivation(nn.Module):
@@ -168,11 +161,7 @@ class JAISMLP(nn.Module):
         if self.swiglu:
             hidden_states2, _ = self.c_fc2(hidden_states)
         hidden_states, _ = self.c_fc(hidden_states)
-        hidden_states = (
-            self.act(hidden_states, hidden_states2)
-            if self.swiglu
-            else self.act(hidden_states)
-        )
+        hidden_states = self.act(hidden_states, hidden_states2) if self.swiglu else self.act(hidden_states)
         hidden_states, _ = self.c_proj(hidden_states)
         return hidden_states
 
@@ -190,9 +179,7 @@ class JAISBlock(nn.Module):
         inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
 
         self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
-        self.attn = JAISAttention(
-            config, cache_config, quant_config, prefix=f"{prefix}.attn"
-        )
+        self.attn = JAISAttention(config, cache_config, quant_config, prefix=f"{prefix}.attn")
         self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         self.mlp = JAISMLP(inner_dim, config, quant_config)
 
@@ -253,9 +240,7 @@ class JAISModel(nn.Module):
         )
 
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
-        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
-            ["hidden_states"], config.n_embd
-        )
+        self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(["hidden_states"], config.n_embd)
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.wte(input_ids)
@@ -275,9 +260,7 @@ class JAISModel(nn.Module):
                 hidden_states = inputs_embeds + position_embeds
             else:
                 hidden_states = inputs_embeds
-            hidden_states *= torch.tensor(
-                float(self.embeddings_scale), dtype=hidden_states.dtype
-            )
+            hidden_states *= torch.tensor(float(self.embeddings_scale), dtype=hidden_states.dtype)
         else:
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
@@ -299,9 +282,7 @@ class JAISLMHeadModel(nn.Module, SupportsPP):
         quant_config = aphrodite_config.quant_config
         self.config = config
         self.quant_config = quant_config
-        self.transformer = JAISModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "transformer")
-        )
+        self.transformer = JAISModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "transformer"))
         if self.config.tie_word_embeddings:
             self.lm_head = self.transformer.wte
         else:
@@ -314,12 +295,8 @@ class JAISLMHeadModel(nn.Module, SupportsPP):
             self.output_logits_scale = config.width_scale
         else:
             self.output_logits_scale = config.mup_output_alpha * config.mup_width_scale
-        self.logits_processor = LogitsProcessor(
-            vocab_size=config.vocab_size, scale=self.output_logits_scale
-        )
-        self.make_empty_intermediate_tensors = (
-            self.transformer.make_empty_intermediate_tensors
-        )
+        self.logits_processor = LogitsProcessor(vocab_size=config.vocab_size, scale=self.output_logits_scale)
+        self.make_empty_intermediate_tensors = self.transformer.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.transformer.get_input_embeddings(input_ids)
@@ -331,9 +308,7 @@ class JAISLMHeadModel(nn.Module, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> IntermediateTensors | torch.Tensor:
-        hidden_states = self.transformer(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.transformer(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(

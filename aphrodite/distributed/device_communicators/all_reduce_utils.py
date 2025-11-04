@@ -14,11 +14,9 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 import aphrodite.envs as envs
-from aphrodite.distributed.device_communicators.cuda_wrapper import (
-    CudaRTLibrary)
+from aphrodite.distributed.device_communicators.cuda_wrapper import CudaRTLibrary
 from aphrodite.logger import init_logger
-from aphrodite.modeling.layers.batch_invariant import (
-    aphrodite_is_batch_invariant)
+from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
 from aphrodite.utils.system_utils import update_environment_variables
 from aphrodite.utils.torch_utils import cuda_device_count_stateless
 
@@ -68,8 +66,7 @@ NCCL_SYMM_MEM_ALL_REDUCE_CONFIG: dict[str, Any] = {
 
 
 def should_nccl_symm_mem_allreduce(world_size: int, input_tensor: torch.Tensor) -> bool:
-    from aphrodite.distributed.device_communicators.pynccl_allocator import (
-        is_symmetric_memory_enabled)
+    from aphrodite.distributed.device_communicators.pynccl_allocator import is_symmetric_memory_enabled
 
     if aphrodite_is_batch_invariant():
         return False
@@ -233,8 +230,7 @@ def can_actually_p2p(
         b = result_queue.get()
         if a != b:
             logger.warning(
-                "Two processes do not agree on the P2P access"
-                " status on %d -> %d, treat as disabled.",
+                "Two processes do not agree on the P2P access status on %d -> %d, treat as disabled.",
                 src,
                 tgt,
             )
@@ -275,15 +271,11 @@ def gpu_p2p_access_check(src: int, tgt: int) -> bool:
     if cuda_visible_devices is None:
         cuda_visible_devices = ",".join(str(i) for i in range(num_dev))
 
-    path = os.path.join(
-        envs.APHRODITE_CACHE_ROOT, f"gpu_p2p_access_cache_for_{cuda_visible_devices}.json"
-    )
+    path = os.path.join(envs.APHRODITE_CACHE_ROOT, f"gpu_p2p_access_cache_for_{cuda_visible_devices}.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     from aphrodite.distributed.parallel_state import get_world_group
 
-    if (not is_distributed or get_world_group().local_rank == 0) and (
-        not os.path.exists(path)
-    ):
+    if (not is_distributed or get_world_group().local_rank == 0) and (not os.path.exists(path)):
         # only the local master process (with local_rank == 0) can
         #  enter this block to calculate the cache
         logger.info("generating GPU P2P access cache in %s", path)
@@ -303,9 +295,7 @@ def gpu_p2p_access_check(src: int, tgt: int) -> bool:
         # because the subprocess might produce logging output
         with tempfile.NamedTemporaryFile() as output_file:
             input_bytes = pickle.dumps((batch_src, batch_tgt, output_file.name))
-            returned = subprocess.run(
-                [sys.executable, __file__], input=input_bytes, capture_output=True
-            )
+            returned = subprocess.run([sys.executable, __file__], input=input_bytes, capture_output=True)
             # check if the subprocess is successful
             try:
                 returned.check_returncode()

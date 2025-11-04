@@ -60,17 +60,13 @@ async def test_shutdown_on_engine_failure():
     # Poll until server is ready
     while time.time() - start_time < 30:
         try:
-            await client.completions.create(
-                model=MODEL_NAME, prompt="Hello", max_tokens=1
-            )
+            await client.completions.create(model=MODEL_NAME, prompt="Hello", max_tokens=1)
             break
         except Exception:
             time.sleep(0.5)
             if proc.poll() is not None:
                 stdout, stderr = proc.communicate(timeout=1)
-                pytest.fail(
-                    f"Server died during startup. stdout: {stdout}, stderr: {stderr}"
-                )
+                pytest.fail(f"Server died during startup. stdout: {stdout}, stderr: {stderr}")
     else:
         proc.terminate()
         proc.wait(timeout=5)
@@ -82,9 +78,7 @@ async def test_shutdown_on_engine_failure():
 
     # Verify API calls now fail
     with pytest.raises((openai.APIConnectionError, openai.APIStatusError)):
-        await client.completions.create(
-            model=MODEL_NAME, prompt="This should fail", max_tokens=1
-        )
+        await client.completions.create(model=MODEL_NAME, prompt="This should fail", max_tokens=1)
 
     return_code = proc.wait(timeout=5)
     assert return_code is not None

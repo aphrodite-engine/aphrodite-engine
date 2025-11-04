@@ -6,6 +6,7 @@ if typing.TYPE_CHECKING:
 else:
     FlexibleArgumentParser = argparse.ArgumentParser
 
+
 class CLISubcommand:
     """Base class for CLI argument handlers."""
 
@@ -19,7 +20,5 @@ class CLISubcommand:
         # No validation by default
         pass
 
-    def subparser_init(
-            self,
-            subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
+    def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         raise NotImplementedError("Subclasses should implement this method")

@@ -20,8 +20,7 @@ import torch
 from torch.nn import Parameter
 
 from aphrodite.config import AphroditeConfig
-from aphrodite.distributed import (get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size)
+from aphrodite.distributed import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.linear import set_weight_attrs
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 
@@ -74,10 +73,7 @@ class Fairseq2LlamaForCausalLM(LlamaForCausalLM):
             skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None),
         )
         return loader.load_weights(
-            (
-                self.reshape_fairseq2_weights(name, loaded_weight, params)
-                for name, loaded_weight in weights
-            )
+            (self.reshape_fairseq2_weights(name, loaded_weight, params) for name, loaded_weight in weights)
         )
 
     def flag_sharded_weights(self, params: dict[str, Parameter]):
@@ -109,11 +105,7 @@ class Fairseq2LlamaForCausalLM(LlamaForCausalLM):
                 attn_in //= self.tp_size
                 n_heads //= self.tp_size
             attn_out = self.config.hidden_size
-            return (
-                w.view(n_heads, attn_in // n_heads // 2, 2, attn_out)
-                .transpose(1, 2)
-                .reshape(attn_in, attn_out)
-            )
+            return w.view(n_heads, attn_in // n_heads // 2, 2, attn_out).transpose(1, 2).reshape(attn_in, attn_out)
 
         modules = name.split(".")
 
@@ -134,9 +126,9 @@ class Fairseq2LlamaForCausalLM(LlamaForCausalLM):
             # In fairseq2, vocab size has to be divisible by tp_size
             # so we don't worry about padding
             if self.tp_size > 1 and loaded_weight.shape[dim] < self.config.vocab_size:
-                assert (
-                    loaded_weight.shape[dim] * self.tp_size == self.config.vocab_size
-                ), "vocab_size should be divisible by tp_size."
+                assert loaded_weight.shape[dim] * self.tp_size == self.config.vocab_size, (
+                    "vocab_size should be divisible by tp_size."
+                )
                 repeats = [1] * len(loaded_weight.size())
                 repeats[dim] = self.tp_size
                 # repeat to match vocab size and to be easily 'narrow'able

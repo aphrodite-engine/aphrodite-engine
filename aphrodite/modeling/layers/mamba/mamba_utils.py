@@ -3,8 +3,7 @@ import torch
 from aphrodite.config.cache import MambaDType
 from aphrodite.config.model import ModelDType
 from aphrodite.distributed import divide
-from aphrodite.utils.torch_utils import (STR_DTYPE_TO_TORCH_DTYPE,
-                                         get_kv_cache_torch_dtype)
+from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE, get_kv_cache_torch_dtype
 
 
 class MambaStateDtypeCalculator:
@@ -27,9 +26,7 @@ class MambaStateDtypeCalculator:
         mamba_cache_dtype: MambaDType,
         mamba_ssm_cache_dtype: MambaDType,
     ) -> tuple[torch.dtype, ...]:
-        return cls._mamba_state_dtype(
-            model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype
-        )
+        return cls._mamba_state_dtype(model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype)
 
     @classmethod
     def mamba2_state_dtype(
@@ -38,9 +35,7 @@ class MambaStateDtypeCalculator:
         mamba_cache_dtype: MambaDType,
         mamba_ssm_cache_dtype: MambaDType,
     ) -> tuple[torch.dtype, ...]:
-        return cls._mamba_state_dtype(
-            model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype
-        )
+        return cls._mamba_state_dtype(model_dtype, mamba_cache_dtype, mamba_ssm_cache_dtype)
 
     @classmethod
     def _mamba_state_dtype(

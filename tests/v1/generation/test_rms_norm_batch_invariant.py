@@ -8,8 +8,7 @@ with the standard CUDA-based implementation to ensure numerical accuracy.
 import pytest
 import torch
 
-from aphrodite.modeling.layers.batch_invariant import (
-    rms_norm as triton_rms_norm)
+from aphrodite.modeling.layers.batch_invariant import rms_norm as triton_rms_norm
 from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.platforms import current_platform
 
@@ -24,9 +23,7 @@ skip_unsupported = pytest.mark.skipif(
 @pytest.mark.parametrize("hidden_size", [512, 2048, 4096, 8192])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("eps", [1e-6, 1e-5])
-def test_rms_norm_batch_invariant_vs_standard(
-    batch_size: int, hidden_size: int, dtype: torch.dtype, eps: float
-):
+def test_rms_norm_batch_invariant_vs_standard(batch_size: int, hidden_size: int, dtype: torch.dtype, eps: float):
     """
     Compare batch-invariant Triton RMS norm against standard CUDA implementation.
 
@@ -62,9 +59,7 @@ def test_rms_norm_batch_invariant_vs_standard(
         standard_output,
         rtol=rtol,
         atol=atol,
-        msg=f"RMS norm mismatch for batch_size={batch_size}, "
-        f"hidden_size={hidden_size}, "
-        f"dtype={dtype}, eps={eps}",
+        msg=f"RMS norm mismatch for batch_size={batch_size}, hidden_size={hidden_size}, dtype={dtype}, eps={eps}",
     )
 
 
@@ -84,9 +79,7 @@ def test_rms_norm_3d_input(batch_size: int, seq_len: int, hidden_size: int):
     eps = 1e-6
 
     torch.manual_seed(42)
-    input_tensor = torch.randn(
-        batch_size, seq_len, hidden_size, dtype=dtype, device=device
-    )
+    input_tensor = torch.randn(batch_size, seq_len, hidden_size, dtype=dtype, device=device)
     weight = torch.randn(hidden_size, dtype=dtype, device=device)
 
     # Standard implementation
@@ -147,18 +140,10 @@ def test_rms_norm_numerical_stability():
         triton_output = triton_rms_norm(input_tensor, weight, eps=eps)
 
         # Check for NaN or Inf
-        assert not torch.isnan(standard_output).any(), (
-            f"Standard RMS norm produced NaN for test case {idx}"
-        )
-        assert not torch.isinf(standard_output).any(), (
-            f"Standard RMS norm produced Inf for test case {idx}"
-        )
-        assert not torch.isnan(triton_output).any(), (
-            f"Triton RMS norm produced NaN for test case {idx}"
-        )
-        assert not torch.isinf(triton_output).any(), (
-            f"Triton RMS norm produced Inf for test case {idx}"
-        )
+        assert not torch.isnan(standard_output).any(), f"Standard RMS norm produced NaN for test case {idx}"
+        assert not torch.isinf(standard_output).any(), f"Standard RMS norm produced Inf for test case {idx}"
+        assert not torch.isnan(triton_output).any(), f"Triton RMS norm produced NaN for test case {idx}"
+        assert not torch.isinf(triton_output).any(), f"Triton RMS norm produced Inf for test case {idx}"
 
         # Compare outputs - very lenient for extreme values with float16
         torch.testing.assert_close(

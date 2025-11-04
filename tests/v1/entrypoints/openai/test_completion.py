@@ -61,9 +61,7 @@ async def test_single_completion(client: openai.AsyncOpenAI, model_name: str) ->
     choice = completion.choices[0]
     assert len(choice.text) >= 5
     assert choice.finish_reason == "length"
-    assert completion.usage == openai.types.CompletionUsage(
-        completion_tokens=5, prompt_tokens=6, total_tokens=11
-    )
+    assert completion.usage == openai.types.CompletionUsage(completion_tokens=5, prompt_tokens=6, total_tokens=11)
 
     # test using token IDs
     completion = await client.completions.create(
@@ -141,12 +139,8 @@ async def test_some_logprobs(client: openai.AsyncOpenAI, model_name: str):
     "model_name",
     [MODEL_NAME],
 )
-async def test_too_many_completion_logprobs(
-    client: openai.AsyncOpenAI, model_name: str
-) -> None:
-    with pytest.raises(
-        (openai.BadRequestError, openai.APIError)
-    ):  # test using token IDs
+async def test_too_many_completion_logprobs(client: openai.AsyncOpenAI, model_name: str) -> None:
+    with pytest.raises((openai.BadRequestError, openai.APIError)):  # test using token IDs
         await client.completions.create(
             model=model_name,
             prompt=[0, 0, 0, 0, 0],
@@ -157,9 +151,7 @@ async def test_too_many_completion_logprobs(
             logprobs=21,
         )
         ...
-    with pytest.raises(
-        (openai.BadRequestError, openai.APIError)
-    ):  # test using token IDs
+    with pytest.raises((openai.BadRequestError, openai.APIError)):  # test using token IDs
         stream = await client.completions.create(
             model=model_name,
             prompt=[0, 0, 0, 0, 0],
@@ -188,9 +180,7 @@ async def test_too_many_completion_logprobs(
     "model_name, prompt_logprobs",
     [(MODEL_NAME, -1), (MODEL_NAME, 0), (MODEL_NAME, 1), (MODEL_NAME, None)],
 )
-async def test_prompt_logprobs_completion(
-    client: openai.AsyncOpenAI, model_name: str, prompt_logprobs: int | None
-):
+async def test_prompt_logprobs_completion(client: openai.AsyncOpenAI, model_name: str, prompt_logprobs: int | None):
     params: dict = {
         "prompt": ["A robot may not injure another robot", "My name is"],
         "model": model_name,
@@ -219,9 +209,7 @@ async def test_prompt_logprobs_completion(
     "model_name",
     [MODEL_NAME],
 )
-async def test_completion_streaming(
-    client: openai.AsyncOpenAI, model_name: str
-) -> None:
+async def test_completion_streaming(client: openai.AsyncOpenAI, model_name: str) -> None:
     prompt = "What is an LLM?"
 
     single_completion = await client.completions.create(
@@ -291,9 +279,7 @@ async def test_parallel_no_streaming(client: openai.AsyncOpenAI, model_name: str
     num_unique = len(completion_repeats)
     if num_unique != n:
         repeats = {txt: num for (txt, num) in completion_repeats.items() if num > 1}
-        raise AssertionError(
-            f"Expected {n} unique completions, got {num_unique}; repeats: {repeats}."
-        )
+        raise AssertionError(f"Expected {n} unique completions, got {num_unique}; repeats: {repeats}.")
 
 
 @pytest.mark.asyncio
@@ -329,18 +315,14 @@ async def test_parallel_streaming(client: openai.AsyncOpenAI, model_name: str):
         if chunk.choices[0].finish_reason is not None:
             finish_reason_count += 1
     # Assert `n` completions with correct finish reasons
-    assert finish_reason_count == n, (
-        f"Expected {n} completions with valid indices and finish_reason."
-    )
+    assert finish_reason_count == n, f"Expected {n} completions with valid indices and finish_reason."
     completion_repeats: dict[str, int] = {}
     chunk_lengths = set()
     for chunk in chunks:
         chunk_len = len(chunk)
         # Assert correct number of completion tokens
         chunk_lengths.add(chunk_len)
-        assert chunk_len <= max_tokens, (
-            f"max_tokens={max_tokens} but chunk len is {chunk_len}."
-        )
+        assert chunk_len <= max_tokens, f"max_tokens={max_tokens} but chunk len is {chunk_len}."
         text = "".join(chunk)
         completion_repeats[text] = completion_repeats.get(text, 0) + 1
         print(text)
@@ -350,9 +332,7 @@ async def test_parallel_streaming(client: openai.AsyncOpenAI, model_name: str):
     num_unique = len(completion_repeats)
     if num_unique != n:
         repeats = {txt: num for (txt, num) in completion_repeats.items() if num > 1}
-        raise AssertionError(
-            f"{num_unique} unique completions, expected {n}; repeats: {repeats}"
-        )
+        raise AssertionError(f"{num_unique} unique completions, expected {n}; repeats: {repeats}")
 
 
 @pytest.mark.asyncio
@@ -440,9 +420,7 @@ async def test_completion_stream_options(client: openai.AsyncOpenAI, model_name:
         assert chunk.usage is not None
         assert chunk.usage.prompt_tokens > 0
         assert chunk.usage.completion_tokens > 0
-        assert chunk.usage.total_tokens == (
-            chunk.usage.prompt_tokens + chunk.usage.completion_tokens
-        )
+        assert chunk.usage.total_tokens == (chunk.usage.prompt_tokens + chunk.usage.completion_tokens)
         if chunk.choices[0].finish_reason is not None:
             final_chunk = await anext(stream)
             assert final_chunk.usage is not None
@@ -534,15 +512,9 @@ async def test_batch_completions(client: openai.AsyncOpenAI, model_name: str):
             ),
         )
         assert len(batch.choices) == 4
-        assert batch.choices[0].text != batch.choices[1].text, (
-            "beam search should be different"
-        )
-        assert batch.choices[0].text == batch.choices[2].text, (
-            "two copies of the same prompt should be the same"
-        )
-        assert batch.choices[1].text == batch.choices[3].text, (
-            "two copies of the same prompt should be the same"
-        )
+        assert batch.choices[0].text != batch.choices[1].text, "beam search should be different"
+        assert batch.choices[0].text == batch.choices[2].text, "two copies of the same prompt should be the same"
+        assert batch.choices[1].text == batch.choices[3].text, "two copies of the same prompt should be the same"
 
         # test streaming
         batch = await client.completions.create(
@@ -566,9 +538,7 @@ async def test_batch_completions(client: openai.AsyncOpenAI, model_name: str):
     [MODEL_NAME],
 )
 @pytest.mark.parametrize("logprobs_arg", [1, 0])
-async def test_echo_logprob_completion(
-    client: openai.AsyncOpenAI, model_name: str, logprobs_arg: int
-):
+async def test_echo_logprob_completion(client: openai.AsyncOpenAI, model_name: str, logprobs_arg: int):
     tokenizer = get_tokenizer(tokenizer_name=MODEL_NAME)
     # test using text and token IDs
     for prompt in ("Hello, my name is", [0, 0, 0, 0, 0]):
@@ -617,10 +587,7 @@ async def test_invalid_json_schema(client: openai.AsyncOpenAI, model_name: str) 
         "title": "CarDescription",
         "type": "object",
     }
-    prompt = (
-        "Generate a JSON with the brand, model and car_type of"
-        "the most iconic car from the 90's"
-    )
+    prompt = "Generate a JSON with the brand, model and car_type ofthe most iconic car from the 90's"
     with pytest.raises((openai.BadRequestError, openai.APIError)):
         await client.completions.create(
             model=model_name,
@@ -669,15 +636,10 @@ async def test_invalid_grammar(client: openai.AsyncOpenAI, model_name: str):
         number ::= "1 " | "2 "
     """
 
-    prompt = (
-        "Generate an SQL query to show the 'username' and 'email'"
-        "from the 'users' table."
-    )
+    prompt = "Generate an SQL query to show the 'username' and 'email'from the 'users' table."
     with pytest.raises((openai.BadRequestError, openai.APIError)):
         await client.completions.create(
             model=model_name,
             prompt=prompt,
-            extra_body={
-                "structured_outputs": {"grammar": invalid_simplified_sql_grammar}
-            },
+            extra_body={"structured_outputs": {"grammar": invalid_simplified_sql_grammar}},
         )

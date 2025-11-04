@@ -20,7 +20,6 @@ GGUF_DEFAULT_ALIGNMENT = 32
 
 
 class Keys:
-
     class General:
         ARCHITECTURE = "general.architecture"
         QUANTIZATION_VERSION = "general.quantization_version"
@@ -713,9 +712,9 @@ class TokenType(IntEnum):
 
 
 class RopeScalingType(Enum):
-    NONE = 'none'
-    LINEAR = 'linear'
-    YARN = 'yarn'
+    NONE = "none"
+    LINEAR = "linear"
+    YARN = "yarn"
 
 
 class PoolingType(IntEnum):
@@ -816,8 +815,7 @@ GGML_QUANT_SIZES = {
     GGMLQuantizationType.IQ3_XXS: (256, 2 + QK_K // 4 + QK_K // 8),
     GGMLQuantizationType.IQ1_S: (256, 2 + QK_K // 8 + QK_K // 16),
     GGMLQuantizationType.IQ4_NL: (32, 2 + 16),
-    GGMLQuantizationType.IQ3_S:
-    (256, 2 + QK_K // 4 + QK_K // 8 + QK_K // 32 + 4),
+    GGMLQuantizationType.IQ3_S: (256, 2 + QK_K // 4 + QK_K // 8 + QK_K // 32 + 4),
     GGMLQuantizationType.IQ2_S: (256, 2 + QK_K // 4 + QK_K // 16),
     GGMLQuantizationType.IQ4_XS: (256, 2 + 2 + QK_K // 2 + QK_K // 64),
     GGMLQuantizationType.I8: (1, 1),

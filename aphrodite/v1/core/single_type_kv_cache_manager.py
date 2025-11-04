@@ -6,11 +6,15 @@ from collections.abc import Sequence
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.v1.core.block_pool import BlockPool
 from aphrodite.v1.core.kv_cache_utils import BlockHash, KVCacheBlock
-from aphrodite.v1.kv_cache_interface import (ChunkedLocalAttentionSpec,
-                                             CrossAttentionSpec,
-                                             FullAttentionSpec, KVCacheSpec,
-                                             MambaSpec, MLAAttentionSpec,
-                                             SlidingWindowSpec)
+from aphrodite.v1.kv_cache_interface import (
+    ChunkedLocalAttentionSpec,
+    CrossAttentionSpec,
+    FullAttentionSpec,
+    KVCacheSpec,
+    MambaSpec,
+    MLAAttentionSpec,
+    SlidingWindowSpec,
+)
 from aphrodite.v1.request import Request
 
 
@@ -76,23 +80,15 @@ class SingleTypeKVCacheManager(ABC):
         """
 
         num_required_blocks = cdiv(num_tokens, self.block_size)
-        num_new_blocks = (
-            num_required_blocks
-            - len(new_computed_blocks)
-            - len(self.req_to_blocks[request_id])
-        )
+        num_new_blocks = num_required_blocks - len(new_computed_blocks) - len(self.req_to_blocks[request_id])
         # If a computed block of a request is an eviction candidate (in the
         # free queue and ref_cnt == 0), it will be changed from a free block
         # to a computed block when the request is allocated, so we also count
         # it as needed to be allocated.
-        num_evictable_computed_blocks = sum(
-            blk.ref_cnt == 0 and not blk.is_null for blk in new_computed_blocks
-        )
+        num_evictable_computed_blocks = sum(blk.ref_cnt == 0 and not blk.is_null for blk in new_computed_blocks)
         return num_new_blocks + num_evictable_computed_blocks
 
-    def save_new_computed_blocks(
-        self, request_id: str, new_computed_blocks: Sequence[KVCacheBlock]
-    ) -> None:
+    def save_new_computed_blocks(self, request_id: str, new_computed_blocks: Sequence[KVCacheBlock]) -> None:
         """
         Add the new computed blocks to the request.
 
@@ -111,9 +107,7 @@ class SingleTypeKVCacheManager(ABC):
             # A running request. Should not have new computed blocks.
             assert len(new_computed_blocks) == 0
 
-    def allocate_new_blocks(
-        self, request_id: str, num_tokens: int
-    ) -> list[KVCacheBlock]:
+    def allocate_new_blocks(self, request_id: str, num_tokens: int) -> list[KVCacheBlock]:
         """
         Allocate new blocks for the request to give it at least `num_tokens`
         token slots.
@@ -263,15 +257,10 @@ class FullAttentionManager(SingleTypeKVCacheManager):
         use_eagle: bool,
         dcp_world_size: int = 1,
     ) -> tuple[list[KVCacheBlock], ...]:
-        assert isinstance(
-            kv_cache_spec, (FullAttentionSpec, ChunkedLocalAttentionSpec)
-        ), (
-            "FullAttentionManager can only be used for full attention "
-            "and chunked local attention groups"
+        assert isinstance(kv_cache_spec, (FullAttentionSpec, ChunkedLocalAttentionSpec)), (
+            "FullAttentionManager can only be used for full attention and chunked local attention groups"
         )
-        computed_blocks: tuple[list[KVCacheBlock], ...] = tuple(
-            [] for _ in range(len(kv_cache_group_ids))
-        )
+        computed_blocks: tuple[list[KVCacheBlock], ...] = tuple([] for _ in range(len(kv_cache_group_ids)))
         block_size = kv_cache_spec.block_size
         if dcp_world_size > 1:
             block_size *= dcp_world_size
@@ -280,9 +269,7 @@ class FullAttentionManager(SingleTypeKVCacheManager):
             # block_hashes is a chain of block hashes. If a block hash is not
             # in the cached_block_hash_to_id, the following block hashes are
             # not computed yet for sure.
-            if cached_block := block_pool.get_cached_block(
-                block_hash, kv_cache_group_ids
-            ):
+            if cached_block := block_pool.get_cached_block(block_hash, kv_cache_group_ids):
                 for computed, cached in zip(computed_blocks, cached_block):
                     computed.append(cached)
             else:
@@ -308,9 +295,7 @@ class FullAttentionManager(SingleTypeKVCacheManager):
 
 
 class SlidingWindowManager(SingleTypeKVCacheManager):
-    def __init__(
-        self, kv_cache_spec: SlidingWindowSpec, block_pool: BlockPool, **kwargs
-    ) -> None:
+    def __init__(self, kv_cache_spec: SlidingWindowSpec, block_pool: BlockPool, **kwargs) -> None:
         super().__init__(kv_cache_spec, block_pool, **kwargs)
         self.sliding_window = kv_cache_spec.sliding_window
         self._null_block = block_pool.null_block
@@ -333,9 +318,7 @@ class SlidingWindowManager(SingleTypeKVCacheManager):
 
         # The number of contiguous blocks needed for prefix cache hit.
         # -1 since the input token itself is also included in the window
-        sliding_window_contiguous_blocks = cdiv(
-            kv_cache_spec.sliding_window - 1, kv_cache_spec.block_size
-        )
+        sliding_window_contiguous_blocks = cdiv(kv_cache_spec.sliding_window - 1, kv_cache_spec.block_size)
         if use_eagle:
             # Need to drop the last matched block if eagle is enabled. For
             # sliding window layer, we achieve this by increasing the number of
@@ -349,17 +332,12 @@ class SlidingWindowManager(SingleTypeKVCacheManager):
         # sliding_window_contiguous_blocks),
         # which is good for low cache hit rate scenarios.
         max_num_blocks = max_length // kv_cache_spec.block_size
-        computed_blocks = tuple(
-            [block_pool.null_block] * max_num_blocks
-            for _ in range(len(kv_cache_group_ids))
-        )
+        computed_blocks = tuple([block_pool.null_block] * max_num_blocks for _ in range(len(kv_cache_group_ids)))
         num_contiguous_blocks = 0
         match_found = False
         # Search from right to left and early stop when a match is found.
         for i in range(max_num_blocks - 1, -1, -1):
-            if cached_block := block_pool.get_cached_block(
-                block_hashes[i], kv_cache_group_ids
-            ):
+            if cached_block := block_pool.get_cached_block(block_hashes[i], kv_cache_group_ids):
                 for computed, cached in zip(computed_blocks, cached_block):
                     computed[i] = cached
                 num_contiguous_blocks += 1
@@ -417,9 +395,7 @@ class SlidingWindowManager(SingleTypeKVCacheManager):
 
 
 class ChunkedLocalAttentionManager(SingleTypeKVCacheManager):
-    def __init__(
-        self, kv_cache_spec: ChunkedLocalAttentionSpec, block_pool: BlockPool, **kwargs
-    ) -> None:
+    def __init__(self, kv_cache_spec: ChunkedLocalAttentionSpec, block_pool: BlockPool, **kwargs) -> None:
         super().__init__(kv_cache_spec, block_pool, **kwargs)
         self.attention_chunk_size = kv_cache_spec.attention_chunk_size
         self._null_block = block_pool.null_block
@@ -467,19 +443,14 @@ class ChunkedLocalAttentionManager(SingleTypeKVCacheManager):
             A list of cached blocks
         """
         assert isinstance(kv_cache_spec, ChunkedLocalAttentionSpec), (
-            "ChunkedLocalAttentionManager can only be used for "
-            + "chunked local attention groups"
+            "ChunkedLocalAttentionManager can only be used for " + "chunked local attention groups"
         )
-        assert use_eagle is False, (
-            "Hybrid KV cache is not supported for " + "eagle + chunked local attention."
-        )
+        assert use_eagle is False, "Hybrid KV cache is not supported for " + "eagle + chunked local attention."
         assert dcp_world_size == 1, "DCP not support chunked local attn now."
         max_num_blocks = max_length // kv_cache_spec.block_size
         if max_length > 0:
             local_attention_start_idx = (
-                max_length
-                // kv_cache_spec.attention_chunk_size
-                * kv_cache_spec.attention_chunk_size
+                max_length // kv_cache_spec.attention_chunk_size * kv_cache_spec.attention_chunk_size
             )
         else:
             local_attention_start_idx = 0
@@ -487,18 +458,13 @@ class ChunkedLocalAttentionManager(SingleTypeKVCacheManager):
         # with null blocks, and blocks inside window based on cache lookup
         # result [null] [null] ... [null] [hit block 1 (1st block contain
         # last window)] [hit block 2] ... [hit block x]
-        local_attention_start_block_idx = (
-            local_attention_start_idx // kv_cache_spec.block_size
-        )
+        local_attention_start_block_idx = local_attention_start_idx // kv_cache_spec.block_size
         computed_blocks: tuple[list[KVCacheBlock], ...] = tuple(
-            [block_pool.null_block] * local_attention_start_block_idx
-            for _ in range(len(kv_cache_group_ids))
+            [block_pool.null_block] * local_attention_start_block_idx for _ in range(len(kv_cache_group_ids))
         )
         for i in range(local_attention_start_block_idx, max_num_blocks):
             block_hash = block_hashes[i]
-            if cached_block := block_pool.get_cached_block(
-                block_hash, kv_cache_group_ids
-            ):
+            if cached_block := block_pool.get_cached_block(block_hash, kv_cache_group_ids):
                 for computed, cached in zip(computed_blocks, cached_block):
                     computed.append(cached)
             else:
@@ -516,11 +482,7 @@ class ChunkedLocalAttentionManager(SingleTypeKVCacheManager):
         # is in the second chunk, there are 1 prev chunk, the start idx
         # is 1024. for 1023, it will be 0.
         num_cached_block = self.num_cached_block.get(request_id, 0)
-        local_attention_start_idx = (
-            (num_computed_tokens)
-            // self.attention_chunk_size
-            * self.attention_chunk_size
-        )
+        local_attention_start_idx = (num_computed_tokens) // self.attention_chunk_size * self.attention_chunk_size
         first_useful_block_idx = local_attention_start_idx // self.block_size
         if num_cached_block > 0:
             # Make sure we don't delete the last cached block
@@ -559,20 +521,14 @@ class MambaManager(SingleTypeKVCacheManager):
         use_eagle: bool,
         dcp_world_size: int = 1,
     ) -> tuple[list[KVCacheBlock], ...]:
-        assert isinstance(kv_cache_spec, MambaSpec), (
-            "MambaManager can only be used for mamba groups"
-        )
+        assert isinstance(kv_cache_spec, MambaSpec), "MambaManager can only be used for mamba groups"
         assert dcp_world_size == 1, "DCP not support mamba now."
-        computed_blocks: tuple[list[KVCacheBlock], ...] = tuple(
-            [] for _ in range(len(kv_cache_group_ids))
-        )
+        computed_blocks: tuple[list[KVCacheBlock], ...] = tuple([] for _ in range(len(kv_cache_group_ids)))
 
         max_num_blocks = max_length // kv_cache_spec.block_size
         # Search from right to left and early stop when a match is found.
         for i in range(max_num_blocks - 1, -1, -1):
-            if cached_block := block_pool.get_cached_block(
-                block_hashes[i], kv_cache_group_ids
-            ):
+            if cached_block := block_pool.get_cached_block(block_hashes[i], kv_cache_group_ids):
                 for computed, cached in zip(computed_blocks, cached_block):
                     # the hit length logic later assumes:
                     #  hit_length = len(hit_blocks_other_attn[0])
@@ -606,34 +562,22 @@ class MambaManager(SingleTypeKVCacheManager):
         # speculative decoding (MTP/EAGLE) with linear attention.
         assert isinstance(self.kv_cache_spec, MambaSpec)
         if self.kv_cache_spec.num_speculative_blocks > 0:
-            num_tokens += (
-                self.kv_cache_spec.block_size
-                * self.kv_cache_spec.num_speculative_blocks
-            )
-        return super().get_num_blocks_to_allocate(
-            request_id, num_tokens, new_computed_blocks
-        )
+            num_tokens += self.kv_cache_spec.block_size * self.kv_cache_spec.num_speculative_blocks
+        return super().get_num_blocks_to_allocate(request_id, num_tokens, new_computed_blocks)
 
-    def allocate_new_blocks(
-        self, request_id: str, num_tokens: int
-    ) -> list[KVCacheBlock]:
+    def allocate_new_blocks(self, request_id: str, num_tokens: int) -> list[KVCacheBlock]:
         # Allocate extra `num_speculative_blocks` blocks for
         # speculative decoding (MTP/EAGLE) with linear attention.
         assert isinstance(self.kv_cache_spec, MambaSpec)
         if self.kv_cache_spec.num_speculative_blocks > 0:
-            num_tokens += (
-                self.kv_cache_spec.block_size
-                * self.kv_cache_spec.num_speculative_blocks
-            )
+            num_tokens += self.kv_cache_spec.block_size * self.kv_cache_spec.num_speculative_blocks
         return super().allocate_new_blocks(request_id, num_tokens)
 
 
 class CrossAttentionManager(SingleTypeKVCacheManager):
     """Manager for cross-attention KV cache in encoder-decoder models."""
 
-    def save_new_computed_blocks(
-        self, request_id: str, new_computed_blocks: Sequence[KVCacheBlock]
-    ) -> None:
+    def save_new_computed_blocks(self, request_id: str, new_computed_blocks: Sequence[KVCacheBlock]) -> None:
         # We do not cache blocks for cross-attention to be shared between
         # requests, so  `new_computed_blocks` should always be empty.
         assert len(new_computed_blocks) == 0
@@ -686,9 +630,7 @@ spec_manager_map: dict[type[KVCacheSpec], type[SingleTypeKVCacheManager]] = {
 }
 
 
-def get_manager_for_kv_cache_spec(
-    kv_cache_spec: KVCacheSpec, **kwargs
-) -> SingleTypeKVCacheManager:
+def get_manager_for_kv_cache_spec(kv_cache_spec: KVCacheSpec, **kwargs) -> SingleTypeKVCacheManager:
     manager_class = spec_manager_map[type(kv_cache_spec)]
     manager = manager_class(kv_cache_spec, **kwargs)
     return manager

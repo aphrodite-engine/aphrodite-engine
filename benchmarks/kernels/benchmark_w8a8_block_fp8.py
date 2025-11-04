@@ -9,20 +9,18 @@ from datetime import datetime
 from typing import Any
 
 import torch
-from tqdm import tqdm
-
 from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
     _w8a8_triton_block_scaled_mm,
 )
+from tqdm import tqdm
+
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import triton
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 mp.set_start_method("spawn", force=True)
 
-assert current_platform.is_cuda(), (
-    "Only support tune w8a8 block fp8 kernel on CUDA device."
-)
+assert current_platform.is_cuda(), "Only support tune w8a8 block fp8 kernel on CUDA device."
 
 DTYPE_MAP = {
     "float32": torch.float32,
@@ -76,9 +74,7 @@ def w8a8_block_matmul(
     C = A.new_empty(C_shape, dtype=output_dtype)
 
     def grid(META):
-        return (
-            triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
-        )
+        return (triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),)
 
     if A.dtype == torch.float8_e4m3fn:
         kernel = _w8a8_triton_block_scaled_mm
@@ -169,9 +165,7 @@ def get_weight_shapes(tp_size):
     return weight_shapes
 
 
-def benchmark_config(
-    A, B, As, Bs, block_size, config, out_dtype=torch.float16, num_iters=10
-):
+def benchmark_config(A, B, As, Bs, block_size, config, out_dtype=torch.float16, num_iters=10):
     def run():
         w8a8_block_matmul(A, B, As, Bs, block_size, config, out_dtype)
 
@@ -203,14 +197,10 @@ def tune(M, N, K, block_size, out_dtype, search_space, input_type):
         fp8_info = torch.finfo(torch.float8_e4m3fn)
         fp8_max, fp8_min = fp8_info.max, fp8_info.min
 
-        A_fp32 = (
-            (torch.rand(M, K, dtype=torch.float32, device="cuda") - 0.5) * 2 * fp8_max
-        )
+        A_fp32 = (torch.rand(M, K, dtype=torch.float32, device="cuda") - 0.5) * 2 * fp8_max
         A = A_fp32.clamp(min=fp8_min, max=fp8_max).to(torch.float8_e4m3fn)
 
-        B_fp32 = (
-            (torch.rand(N, K, dtype=torch.float32, device="cuda") - 0.5) * 2 * fp8_max
-        )
+        B_fp32 = (torch.rand(N, K, dtype=torch.float32, device="cuda") - 0.5) * 2 * fp8_max
         B = B_fp32.clamp(min=fp8_min, max=fp8_max).to(torch.float8_e4m3fn)
     else:
         raise RuntimeError("Currently, only support tune w8a8 block fp8 kernel.")
@@ -220,10 +210,7 @@ def tune(M, N, K, block_size, out_dtype, search_space, input_type):
     k_tiles = (K + block_k - 1) // block_k
 
     As = torch.rand(M, k_tiles, dtype=torch.float32, device="cuda") * factor_for_scale
-    Bs = (
-        torch.rand(n_tiles, k_tiles, dtype=torch.float32, device="cuda")
-        * factor_for_scale
-    )
+    Bs = torch.rand(n_tiles, k_tiles, dtype=torch.float32, device="cuda") * factor_for_scale
 
     best_config = None
     best_time = float("inf")
@@ -264,8 +251,7 @@ def save_configs(
     os.makedirs(save_path, exist_ok=True)
     device_name = current_platform.get_device_name().replace(" ", "_")
     json_file_name = (
-        f"N={N},K={K},device_name={device_name},dtype={input_type}_w8a8,"
-        f"block_shape=[{block_n},{block_k}].json"
+        f"N={N},K={K},device_name={device_name},dtype={input_type}_w8a8,block_shape=[{block_n},{block_k}].json"
     )
 
     config_file_path = os.path.join(save_path, json_file_name)
@@ -293,9 +279,7 @@ def tune_on_gpu(args_dict):
     input_type = args.input_type
 
     search_space = get_configs_compute_bound()
-    search_space = [
-        config for config in search_space if block_k % config["BLOCK_SIZE_K"] == 0
-    ]
+    search_space = [config for config in search_space if block_k % config["BLOCK_SIZE_K"] == 0]
 
     start = time.time()
     for shape in tqdm(weight_shapes, desc=f"GPU {gpu_id} - Shapes"):

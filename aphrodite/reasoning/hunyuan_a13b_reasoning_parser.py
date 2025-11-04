@@ -3,8 +3,7 @@ from collections.abc import Sequence
 import regex as re
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
 
@@ -127,9 +126,7 @@ class HunyuanA13BReasoningParser(ReasoningParser):
 
         return None, model_output
 
-    def _is_strict_increasing_subsequence(
-        self, subsequence: Sequence[int], sequence: Sequence[int]
-    ) -> bool:
+    def _is_strict_increasing_subsequence(self, subsequence: Sequence[int], sequence: Sequence[int]) -> bool:
         if not subsequence:
             return False
 
@@ -222,13 +219,9 @@ class HunyuanA13BReasoningParser(ReasoningParser):
 
                 # Return content based on current state
                 if self.current_state == "think":
-                    return DeltaMessage(
-                        reasoning_content=buffered_content, content=None
-                    )
+                    return DeltaMessage(reasoning_content=buffered_content, content=None)
                 else:
-                    return DeltaMessage(
-                        reasoning_content=None, content=buffered_content
-                    )
+                    return DeltaMessage(reasoning_content=None, content=buffered_content)
             else:
                 # No buffered content, send normally
                 if self.current_state == "think":

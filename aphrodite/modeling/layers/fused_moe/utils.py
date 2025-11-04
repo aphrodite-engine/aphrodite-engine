@@ -5,8 +5,7 @@ import torch
 
 from aphrodite import _custom_ops as ops
 from aphrodite.quantization.utils.fp8_utils import per_token_group_quant_fp8
-from aphrodite.quantization.utils.int8_utils import (
-    per_token_group_quant_int8, per_token_quant_int8)
+from aphrodite.quantization.utils.int8_utils import per_token_group_quant_int8, per_token_quant_int8
 from aphrodite.quantization.utils.mxfp4_utils import quant_dequant_mxfp4
 from aphrodite.quantization.utils.mxfp6_utils import quant_dequant_mxfp6
 from aphrodite.quantization.utils.mxfp8_utils import mxfp8_e4m3_quantize
@@ -67,9 +66,7 @@ def count_expert_num_tokens(
     of tokens assigned to the ith expert.
     """
     assert topk_ids.dtype.is_signed, "The kernel uses -1 to represent invalid topk_ids"
-    expert_num_tokens = torch.empty(
-        (num_local_experts), device=topk_ids.device, dtype=torch.int32
-    )
+    expert_num_tokens = torch.empty((num_local_experts), device=topk_ids.device, dtype=torch.int32)
 
     grid = num_local_experts
     BLOCK_SIZE = min(topk_ids.numel(), 1024)
@@ -93,9 +90,7 @@ def _resize_cache(x: torch.Tensor, v: tuple[int, ...]) -> torch.Tensor:
     Shrink the given tensor and apply the given view to it.  This is
     used to resize the intermediate fused_moe caches.
     """
-    assert prod(v) <= x.numel(), (
-        f"{v} ({prod(v)}) <= {x.shape} ({x.numel()})"
-    )  # CUDAGRAPH unfriendly?
+    assert prod(v) <= x.numel(), f"{v} ({prod(v)}) <= {x.shape} ({x.numel()})"  # CUDAGRAPH unfriendly?
     return x.flatten()[: prod(v)].view(*v)
 
 
@@ -104,9 +99,7 @@ def _nvfp4_quantize(
     A_scale: torch.Tensor | None,
     is_sf_swizzled_layout: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    return flashinfer_fp4_quantize(
-        A, A_scale, is_sf_swizzled_layout=is_sf_swizzled_layout
-    )
+    return flashinfer_fp4_quantize(A, A_scale, is_sf_swizzled_layout=is_sf_swizzled_layout)
 
 
 def _fp8_quantize(
@@ -122,9 +115,7 @@ def _fp8_quantize(
     if block_shape is None:
         # TODO(luka): use QuantFP8 custom op
         #  https://github.com/vllm-project/vllm/issues/20711
-        A, A_scale = ops.scaled_fp8_quant(
-            A, A_scale, use_per_token_if_dynamic=per_act_token
-        )
+        A, A_scale = ops.scaled_fp8_quant(A, A_scale, use_per_token_if_dynamic=per_act_token)
     else:
         assert not per_act_token
         assert len(block_shape) == 2
@@ -278,9 +269,7 @@ def normalize_batched_scales_shape(
     if scales is not None and scales.ndim < 3:
         if scales.numel() == 1:
             scales = scales.view(1)
-            scales = torch.repeat_interleave(scales, num_experts, dim=0).view(
-                num_experts, 1, 1
-            )
+            scales = torch.repeat_interleave(scales, num_experts, dim=0).view(num_experts, 1, 1)
         else:
             scales = scales.view(num_experts, -1, scales.size(-1))
 

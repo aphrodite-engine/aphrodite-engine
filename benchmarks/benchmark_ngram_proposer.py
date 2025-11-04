@@ -7,6 +7,7 @@ from benchmark_utils import TimeCollector
 from tabulate import tabulate
 
 from aphrodite.config import (
+    AphroditeConfig,
     CacheConfig,
     DeviceConfig,
     LoadConfig,
@@ -14,7 +15,6 @@ from aphrodite.config import (
     ParallelConfig,
     SchedulerConfig,
     SpeculativeConfig,
-    AphroditeConfig,
 )
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
@@ -59,10 +59,7 @@ def benchmark_propose(args):
             with collector:
                 for i in range(args.num_req):
                     proposer.propose(tokens[i, :])
-        rows.append(
-            [args.num_req, args.num_token, args.min_ngram, max_ngram]
-            + collector.dump_avg_max()
-        )
+        rows.append([args.num_req, args.num_token, args.min_ngram, max_ngram] + collector.dump_avg_max())
 
     print(
         tabulate(
@@ -112,9 +109,7 @@ def benchmark_batched_propose(args):
     # monkey patch aphrodite.v1.worker.gpu_model_runner.get_pp_group
     mock_pp_group = mock.MagicMock()
     mock_pp_group.world_size = 1
-    with mock.patch(
-        "aphrodite.v1.worker.gpu_model_runner.get_pp_group", return_value=mock_pp_group
-    ):
+    with mock.patch("aphrodite.v1.worker.gpu_model_runner.get_pp_group", return_value=mock_pp_group):
         runner = GPUModelRunner(aphrodite_config, DEVICE)
 
         # hack max model len
@@ -133,9 +128,7 @@ def benchmark_batched_propose(args):
         dummy_input_batch._req_ids = list(str(id) for id in range(args.num_req))
         dummy_input_batch.spec_decode_unsupported_reqs = ()
         dummy_input_batch.num_tokens_no_spec = [args.num_token] * args.num_req
-        dummy_input_batch.token_ids_cpu = np.random.randint(
-            0, 20, (args.num_req, args.num_token)
-        )
+        dummy_input_batch.token_ids_cpu = np.random.randint(0, 20, (args.num_req, args.num_token))
 
         runner.input_batch = dummy_input_batch
 
@@ -157,24 +150,16 @@ def benchmark_batched_propose(args):
 
 
 def invoke_main() -> None:
-    parser = FlexibleArgumentParser(
-        description="Benchmark the performance of N-gram speculative decode drafting"
-    )
-    parser.add_argument(
-        "--batched", action="store_true", help="consider time to prepare batch"
-    )
+    parser = FlexibleArgumentParser(description="Benchmark the performance of N-gram speculative decode drafting")
+    parser.add_argument("--batched", action="store_true", help="consider time to prepare batch")
     parser.add_argument(
         "--num-iteration",
         type=int,
         default=100,
         help="Number of iterations to run to stabilize final data readings",
     )
-    parser.add_argument(
-        "--num-req", type=int, default=128, help="Number of requests in the batch"
-    )
-    parser.add_argument(
-        "--num-token", type=int, default=1500, help="Number of tokens for each request"
-    )
+    parser.add_argument("--num-req", type=int, default=128, help="Number of requests in the batch")
+    parser.add_argument("--num-token", type=int, default=1500, help="Number of tokens for each request")
     parser.add_argument(
         "--min-ngram",
         type=int,

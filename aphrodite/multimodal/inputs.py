@@ -4,8 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from itertools import accumulate
-from typing import (TYPE_CHECKING, Any, Literal, Optional, TypeAlias,
-                    TypedDict, Union, cast, final)
+from typing import TYPE_CHECKING, Any, Literal, Optional, TypeAlias, TypedDict, Union, cast, final
 
 import numpy as np
 from typing_extensions import NotRequired, TypeVar, deprecated
@@ -33,9 +32,7 @@ A `transformers.image_utils.ImageInput` representing a single image
 item, which can be passed to a HuggingFace `ImageProcessor`.
 """
 
-HfVideoItem: TypeAlias = Union[
-    list["Image"], np.ndarray, "torch.Tensor", list[np.ndarray], list["torch.Tensor"]
-]
+HfVideoItem: TypeAlias = Union[list["Image"], np.ndarray, "torch.Tensor", list[np.ndarray], list["torch.Tensor"]]
 """
 A `transformers.image_utils.VideoInput` representing a single video
 item, which can be passed to a HuggingFace `VideoProcessor`.
@@ -57,9 +54,7 @@ which are treated as image embeddings;
 these are directly passed to the model without HF processing.
 """
 
-VideoItem: TypeAlias = Union[
-    HfVideoItem, "torch.Tensor", tuple[HfVideoItem, dict[str, Any]]
-]
+VideoItem: TypeAlias = Union[HfVideoItem, "torch.Tensor", tuple[HfVideoItem, dict[str, Any]]]
 """
 A `transformers.video_utils.VideoInput` representing a single video item. 
 This can be passed to a HuggingFace `VideoProcessor` 
@@ -196,13 +191,9 @@ def nested_tensors_equal(a: NestedTensors, b: NestedTensors) -> bool:
         return isinstance(a, torch.Tensor) and torch.equal(b, a)
 
     if isinstance(a, list):
-        return isinstance(b, list) and all(
-            nested_tensors_equal(a_, b_) for a_, b_ in zip(a, b)
-        )
+        return isinstance(b, list) and all(nested_tensors_equal(a_, b_) for a_, b_ in zip(a, b))
     if isinstance(b, list):
-        return isinstance(a, list) and all(
-            nested_tensors_equal(b_, a_) for b_, a_ in zip(b, a)
-        )
+        return isinstance(a, list) and all(nested_tensors_equal(b_, a_) for b_, a_ in zip(b, a))
 
     # Both a and b are scalars
     return a == b
@@ -422,9 +413,7 @@ class MultiModalFlatField(BaseMultiModalField):
     ) -> Sequence[MultiModalFieldElem]:
         field_factory = self._field_factory(modality=modality, key=key)
         if not is_list_of(self.slices, slice, check="all"):
-            assert isinstance(data, torch.Tensor), (
-                "torch.Tensor is required for multiple slices"
-            )
+            assert isinstance(data, torch.Tensor), "torch.Tensor is required for multiple slices"
         return [field_factory(data[cast(slice, s)]) for s in self.slices]
 
     def _reduce_data(
@@ -622,15 +611,11 @@ class MultiModalFieldConfig:
         """
 
         if size_per_item.ndim != 1:
-            raise ValueError(
-                "size_per_item should be a 1-D tensor, "
-                f"but found shape: {size_per_item.shape}"
-            )
+            raise ValueError(f"size_per_item should be a 1-D tensor, but found shape: {size_per_item.shape}")
 
         slice_idxs = [0, *accumulate(size_per_item)]
         slices = [
-            (slice(None, None, None),) * dim
-            + (slice(slice_idxs[i], slice_idxs[i + 1]),)
+            (slice(None, None, None),) * dim + (slice(slice_idxs[i], slice_idxs[i + 1]),)
             for i in range(len(size_per_item))
         ]
 
@@ -763,10 +748,7 @@ class MultiModalKwargsItems(UserDict[str, Sequence[_I]]):
             batch_sizes = {k: len(v) for k, v in elems_in_modality.items()}
 
             if len(set(batch_sizes.values())) > 1:
-                raise ValueError(
-                    f"Cannot merge different batch sizes for {modality=}! "
-                    f"Found: {batch_sizes=}"
-                )
+                raise ValueError(f"Cannot merge different batch sizes for {modality=}! Found: {batch_sizes=}")
 
             batch_size = next(iter(batch_sizes.values()))
             for item_idx in range(batch_size):
@@ -782,10 +764,7 @@ class MultiModalKwargsItems(UserDict[str, Sequence[_I]]):
 
     def __getitem__(self, modality: str) -> Sequence[_I]:
         if modality not in self:
-            raise KeyError(
-                f"Modality {modality!r} not found. "
-                f"Available modalities: {set(self.keys())}"
-            )
+            raise KeyError(f"Modality {modality!r} not found. Available modalities: {set(self.keys())}")
 
         return super().__getitem__(modality)  # type: ignore[return-value]
 
@@ -802,24 +781,18 @@ class MultiModalKwargsItems(UserDict[str, Sequence[_I]]):
         for modality, items in self.items():
             for i, item in enumerate(items):
                 if item is None:
-                    raise RuntimeError(
-                        f"Cannot build data from empty mm_items[{modality}][{i}]"
-                    )
+                    raise RuntimeError(f"Cannot build data from empty mm_items[{modality}][{i}]")
 
                 for key, elem in item.items():
                     elems_by_key[key].append(elem)
 
         return MultiModalKwargs(
-            {
-                key: elems[0].field.reduce_data(elems, pin_memory=pin_memory)
-                for key, elems in elems_by_key.items()
-            }
+            {key: elems[0].field.reduce_data(elems, pin_memory=pin_memory) for key, elems in elems_by_key.items()}
         )
 
 
 MultiModalKwargsOptionalItems: TypeAlias = (
-    MultiModalKwargsItems[MultiModalKwargsItem]
-    | MultiModalKwargsItems[MultiModalKwargsItem | None]
+    MultiModalKwargsItems[MultiModalKwargsItem] | MultiModalKwargsItems[MultiModalKwargsItem | None]
 )
 
 
@@ -857,9 +830,7 @@ class MultiModalKwargs(UserDict[str, NestedTensors]):
         return MultiModalKwargsItems.from_seq(items).get_data(pin_memory=pin_memory)
 
     @staticmethod
-    def _try_stack(
-        nested_tensors: NestedTensors, pin_memory: bool = False
-    ) -> NestedTensors:
+    def _try_stack(nested_tensors: NestedTensors, pin_memory: bool = False) -> NestedTensors:
         """
         Stack the inner dimensions that have the same shape in
         a nested list of tensors.
@@ -902,9 +873,7 @@ class MultiModalKwargs(UserDict[str, NestedTensors]):
         return torch.stack(tensors_, out=outputs)
 
     @staticmethod
-    def batch(
-        inputs_list: list["MultiModalKwargs"], pin_memory: bool = False
-    ) -> BatchedTensorInputs:
+    def batch(inputs_list: list["MultiModalKwargs"], pin_memory: bool = False) -> BatchedTensorInputs:
         """
         Batch multiple inputs together into a dictionary.
 
@@ -925,10 +894,7 @@ class MultiModalKwargs(UserDict[str, NestedTensors]):
             for k, v in inputs.items():
                 item_lists[k].append(v)
 
-        return {
-            k: MultiModalKwargs._try_stack(item_list, pin_memory)
-            for k, item_list in item_lists.items()
-        }
+        return {k: MultiModalKwargs._try_stack(item_list, pin_memory) for k, item_list in item_lists.items()}
 
     @staticmethod
     def as_kwargs(
@@ -943,10 +909,7 @@ class MultiModalKwargs(UserDict[str, NestedTensors]):
 
     def __getitem__(self, key: str):
         if key not in self:
-            raise KeyError(
-                f"Keyword argument {key!r} not found. "
-                f"Available keys: {set(self.keys())}"
-            )
+            raise KeyError(f"Keyword argument {key!r} not found. Available keys: {set(self.keys())}")
 
         return super().__getitem__(key)
 

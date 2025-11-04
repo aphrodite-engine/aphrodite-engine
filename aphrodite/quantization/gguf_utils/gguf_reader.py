@@ -19,8 +19,14 @@ if __name__ == "__main__":
     # Allow running file in package as a script.
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from .constants import (GGML_QUANT_SIZES, GGUF_DEFAULT_ALIGNMENT, GGUF_MAGIC,
-                        GGUF_VERSION, GGMLQuantizationType, GGUFValueType)
+from .constants import (
+    GGML_QUANT_SIZES,
+    GGUF_DEFAULT_ALIGNMENT,
+    GGUF_MAGIC,
+    GGUF_VERSION,
+    GGMLQuantizationType,
+    GGUFValueType,
+)
 
 READER_SUPPORTED_VERSIONS = [2, GGUF_VERSION]
 
@@ -57,7 +63,7 @@ class ReaderTensor(NamedTuple):
 
 class GGUFReader:
     # I - same as host, S - swapped
-    byte_order: Literal['I' | 'S'] = 'I'
+    byte_order: Literal["I" | "S"] = "I"
     alignment: int = GGUF_DEFAULT_ALIGNMENT
 
     # Note: Internal helper, API may change.
@@ -75,51 +81,41 @@ class GGUFReader:
         GGUFValueType.BOOL: np.bool_,
     }
 
-    def __init__(self,
-                 path: os.PathLike[str] | str,
-                 mode: Literal['r' | 'r+' | 'c'] = 'r'):
+    def __init__(self, path: os.PathLike[str] | str, mode: Literal["r" | "r+" | "c"] = "r"):
         self.data = np.memmap(path, mode=mode)
         offs = 0
-        if self._get(offs, np.uint32, override_order='<')[0] != GGUF_MAGIC:
-            raise ValueError('GGUF magic invalid')
+        if self._get(offs, np.uint32, override_order="<")[0] != GGUF_MAGIC:
+            raise ValueError("GGUF magic invalid")
         offs += 4
         temp_version = self._get(offs, np.uint32)
         if temp_version[0] & 65535 == 0:
             # If we get 0 here that means it's (probably) a GGUF file created for
             # the opposite byte order of the machine this script is running on.
-            self.byte_order = 'S'
+            self.byte_order = "S"
             temp_version = temp_version.newbyteorder(self.byte_order)
         version = temp_version[0]
         if version not in READER_SUPPORTED_VERSIONS:
-            raise ValueError(
-                f'Sorry, file appears to be version {version} which we cannot handle'
-            )
+            raise ValueError(f"Sorry, file appears to be version {version} which we cannot handle")
         self.fields: OrderedDict[str, ReaderField] = OrderedDict()
         self.tensors: list[ReaderTensor] = []
-        offs += self._push_field(
-            ReaderField(offs, 'GGUF.version', [temp_version], [0],
-                        [GGUFValueType.UINT32]))
+        offs += self._push_field(ReaderField(offs, "GGUF.version", [temp_version], [0], [GGUFValueType.UINT32]))
         temp_counts = self._get(offs, np.uint64, 2)
-        offs += self._push_field(
-            ReaderField(offs, 'GGUF.tensor_count', [temp_counts[:1]], [0],
-                        [GGUFValueType.UINT64]))
-        offs += self._push_field(
-            ReaderField(offs, 'GGUF.kv_count', [temp_counts[1:]], [0],
-                        [GGUFValueType.UINT64]))
+        offs += self._push_field(ReaderField(offs, "GGUF.tensor_count", [temp_counts[:1]], [0], [GGUFValueType.UINT64]))
+        offs += self._push_field(ReaderField(offs, "GGUF.kv_count", [temp_counts[1:]], [0], [GGUFValueType.UINT64]))
         tensor_count, kv_count = temp_counts
         offs = self._build_fields(offs, kv_count)
         offs, tensors_fields = self._build_tensors_fields(offs, tensor_count)
-        new_align = self.fields.get('general.alignment')
+        new_align = self.fields.get("general.alignment")
         if new_align is not None:
             if new_align.types != [GGUFValueType.UINT32]:
-                raise ValueError('Bad type for general.alignment field')
+                raise ValueError("Bad type for general.alignment field")
             self.alignment = new_align.parts[-1][0]
         padding = offs % self.alignment
         if padding != 0:
             offs += self.alignment - padding
         self._build_tensors(offs, tensors_fields)
 
-    _DT = TypeVar('_DT', bound=npt.DTypeLike)
+    _DT = TypeVar("_DT", bound=npt.DTypeLike)
 
     # Fetch a key/value metadata field by key.
     def get_field(self, key: str) -> Union[ReaderField, None]:
@@ -134,26 +130,20 @@ class GGUFReader:
         offset: int,
         dtype: npt.DTypeLike,
         count: int = 1,
-        override_order: None | Literal['I' | 'S' | '<'] = None,
+        override_order: None | Literal["I" | "S" | "<"] = None,
     ) -> npt.NDArray[Any]:
         count = int(count)
         itemsize = int(np.empty([], dtype=dtype).itemsize)
         end_offs = offset + itemsize * count
-        return (self.data[offset:end_offs].view(
-            dtype=dtype)[:count].newbyteorder(override_order
-                                              or self.byte_order))
+        return self.data[offset:end_offs].view(dtype=dtype)[:count].newbyteorder(override_order or self.byte_order)
 
     def _push_field(self, field: ReaderField, skip_sum: bool = False) -> int:
         if field.name in self.fields:
-            raise KeyError(
-                f'Duplicate {field.name} already in list at offset {field.offset}'
-            )
+            raise KeyError(f"Duplicate {field.name} already in list at offset {field.offset}")
         self.fields[field.name] = field
         return 0 if skip_sum else sum(int(part.nbytes) for part in field.parts)
 
-    def _get_str(
-            self, offset: int
-    ) -> tuple[npt.NDArray[np.uint64], npt.NDArray[np.uint8]]:
+    def _get_str(self, offset: int) -> tuple[npt.NDArray[np.uint64], npt.NDArray[np.uint8]]:
         slen = self._get(offset, np.uint64)
         return slen, self._get(offset + 8, np.uint8, slen[0])
 
@@ -185,8 +175,7 @@ class GGUFReader:
             aparts: list[npt.NDArray[Any]] = [raw_itype, alen]
             data_idxs: list[int] = []
             for idx in range(alen[0]):
-                curr_size, curr_parts, curr_idxs, curr_types = self._get_field_parts(
-                    offs, raw_itype[0])
+                curr_size, curr_parts, curr_idxs, curr_types = self._get_field_parts(offs, raw_itype[0])
                 if idx == 0:
                     types += curr_types
                 idxs_offs = len(aparts)
@@ -195,7 +184,7 @@ class GGUFReader:
                 offs += curr_size
             return offs - orig_offs, aparts, data_idxs, types
         # We can't deal with this one.
-        raise ValueError('Unknown/unhandled field type {gtype}')
+        raise ValueError("Unknown/unhandled field type {gtype}")
 
     def _get_tensor(self, orig_offs: int) -> ReaderField:
         offs = orig_offs
@@ -211,7 +200,7 @@ class GGUFReader:
         offs += int(offset_tensor.nbytes)
         return ReaderField(
             orig_offs,
-            str(bytes(name_data), encoding='utf-8'),
+            str(bytes(name_data), encoding="utf-8"),
             [name_len, name_data, n_dims, dims, raw_dtype, offset_tensor],
             [1, 3, 4, 5],
         )
@@ -225,22 +214,22 @@ class GGUFReader:
             offs += int(raw_kv_type.nbytes)
             parts: list[npt.NDArray[Any]] = [kv_klen, kv_kdata, raw_kv_type]
             idxs_offs = len(parts)
-            field_size, field_parts, field_idxs, field_types = self._get_field_parts(
-                offs, raw_kv_type[0])
+            field_size, field_parts, field_idxs, field_types = self._get_field_parts(offs, raw_kv_type[0])
             parts += field_parts
-            self._push_field(ReaderField(
-                orig_offs,
-                str(bytes(kv_kdata), encoding='utf-8'),
-                parts,
-                [idx + idxs_offs for idx in field_idxs],
-                field_types,
-            ),
-                             skip_sum=True)
+            self._push_field(
+                ReaderField(
+                    orig_offs,
+                    str(bytes(kv_kdata), encoding="utf-8"),
+                    parts,
+                    [idx + idxs_offs for idx in field_idxs],
+                    field_types,
+                ),
+                skip_sum=True,
+            )
             offs += field_size
         return offs
 
-    def _build_tensors_fields(self, offs: int,
-                              count: int) -> tuple[int, list[ReaderField]]:
+    def _build_tensors_fields(self, offs: int, count: int) -> tuple[int, list[ReaderField]]:
         tensor_fields = []
         for _ in range(count):
             field = self._get_tensor(offs)
@@ -248,8 +237,7 @@ class GGUFReader:
             tensor_fields.append(field)
         return offs, tensor_fields
 
-    def _build_tensors(self, start_offs: int,
-                       fields: list[ReaderField]) -> None:
+    def _build_tensors(self, start_offs: int, fields: list[ReaderField]) -> None:
         tensors = []
         for field in fields:
             _name_len, name_data, _n_dims, dims, raw_dtype, offset_tensor = field.parts
@@ -285,7 +273,7 @@ class GGUFReader:
                 item_type = np.uint8
             tensors.append(
                 ReaderTensor(
-                    name=str(bytes(name_data), encoding='utf-8'),
+                    name=str(bytes(name_data), encoding="utf-8"),
                     tensor_type=ggml_type,
                     shape=dims,
                     n_elements=n_elems,
@@ -293,5 +281,6 @@ class GGUFReader:
                     data_offset=data_offs,
                     data=self._get(data_offs, item_type, item_count),
                     field=field,
-                ))
+                )
+            )
         self.tensors = tensors

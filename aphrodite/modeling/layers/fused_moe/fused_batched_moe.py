@@ -4,13 +4,17 @@ import torch
 
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.fused_moe import (
-    try_get_optimal_moe_config)
+from aphrodite.modeling.layers.fused_moe.fused_moe import try_get_optimal_moe_config
 from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceDelegate, TopKWeightAndReduceNaiveBatched)
+    TopKWeightAndReduceDelegate,
+    TopKWeightAndReduceNaiveBatched,
+)
 from aphrodite.modeling.layers.fused_moe.utils import (
-    _resize_cache, moe_kernel_quantize_input, normalize_batched_scales_shape,
-    normalize_scales_shape)
+    _resize_cache,
+    moe_kernel_quantize_input,
+    normalize_batched_scales_shape,
+    normalize_scales_shape,
+)
 from aphrodite.quantization.utils.quant_utils import group_broadcast
 from aphrodite.triton_utils import tl, triton
 
@@ -55,9 +59,7 @@ def moe_mmk(
     offs_k = tl.arange(0, BLOCK_K)
 
     if use_w8a16:
-        b_scale_ptrs = (
-            b_scale_ptr + expert_id * stride_bse + offs_n[None, :] * stride_bsn
-        )
+        b_scale_ptrs = b_scale_ptr + expert_id * stride_bse + offs_n[None, :] * stride_bsn
         b_scale = tl.load(b_scale_ptrs)
 
     if use_w8a8:
@@ -103,9 +105,7 @@ def moe_mmk(
             if group_k > 0 and group_n > 0:
                 k_start = k * BLOCK_K
                 offs_ks = k_start // group_k
-                a_scale = tl.load(
-                    a_scale_ptrs + offs_ks * stride_ask, mask=mask_m, other=0.0
-                )
+                a_scale = tl.load(a_scale_ptrs + offs_ks * stride_ask, mask=mask_m, other=0.0)
                 b_scale = tl.load(b_scale_ptrs + offs_ks * stride_bsk)
 
                 accumulator += tl.dot(a, b) * a_scale[:, None] * b_scale[None, :]
@@ -297,12 +297,7 @@ def batched_triton_kernel(
 
     a_ptr = a_ptr + expert_id * stride_ae + cta_m_start * stride_am
     b_ptr = b_ptr + expert_id * stride_be + cta_n_start * stride_bn
-    c_ptr = (
-        c_ptr
-        + expert_id * stride_ce
-        + cta_m_start * stride_cm
-        + cta_n_start * stride_cn
-    )
+    c_ptr = c_ptr + expert_id * stride_ce + cta_m_start * stride_cm + cta_n_start * stride_cn
 
     offs_bn = (pid_n * BLOCK_N + tl.arange(0, BLOCK_N).to(tl.int64)) % N
 
@@ -393,12 +388,8 @@ def invoke_moe_batched_triton_kernel(
         assert B_scale.numel() == expert_num_tokens.shape[0]
         B_scale = B_scale.view(-1, 1, 1)
 
-    assert A_scale is None or A_scale.ndim == 3, (
-        f"{0 if A_scale is None else A_scale.shape}"
-    )
-    assert B_scale is None or B_scale.ndim == 1 or B_scale.ndim == 3, (
-        f"{0 if B_scale is None else B_scale.shape}"
-    )
+    assert A_scale is None or A_scale.ndim == 3, f"{0 if A_scale is None else A_scale.shape}"
+    assert B_scale is None or B_scale.ndim == 1 or B_scale.ndim == 3, f"{0 if B_scale is None else B_scale.shape}"
 
     if B_scale is not None:
         if B_scale.ndim == 1:
@@ -521,9 +512,7 @@ class BatchedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
             # TODO: this only works for topK=1, will need to update for topK>1
-            assert topk == 1, (
-                "apply_router_weight_on_input is only implemented for topk=1"
-            )
+            assert topk == 1, "apply_router_weight_on_input is only implemented for topk=1"
             a1.mul_(topk_weights.to(a1.dtype))
 
         num_tokens, hidden_dim = a1.size()
@@ -545,9 +534,7 @@ class BatchedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
         )
 
         if quant_config.is_quantized:
-            scale_shape = quant_config.batched_scale_shape(
-                num_local_experts, self.max_num_tokens, hidden_dim
-            )
+            scale_shape = quant_config.batched_scale_shape(num_local_experts, self.max_num_tokens, hidden_dim)
 
             b_a1_scale = torch.empty(scale_shape, dtype=torch.float32, device=a1.device)
         else:
@@ -592,9 +579,7 @@ class BatchedPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
 
         assert b_a1_scale is None or b_a1_scale.ndim == 3
 
-        expert_tokens_meta = mk.ExpertTokensMetadata(
-            expert_num_tokens=tokens_per_expert, expert_num_tokens_cpu=None
-        )
+        expert_tokens_meta = mk.ExpertTokensMetadata(expert_num_tokens=tokens_per_expert, expert_num_tokens_cpu=None)
 
         return b_a1, b_a1_scale, expert_tokens_meta, None, None
 
@@ -712,10 +697,7 @@ class NaiveBatchedExperts(mk.FusedMoEPermuteExpertsUnpermute):
 
         for expert in range(num_local_experts):
             # Indexing expert_num_tokens doesn't work w/cudagraphs or inductor
-            if (
-                torch.compiler.is_compiling()
-                or torch.cuda.is_current_stream_capturing()
-            ):
+            if torch.compiler.is_compiling() or torch.cuda.is_current_stream_capturing():
                 num = hidden_states.shape[1]
             else:
                 num = int(expert_num_tokens[expert].item())
@@ -759,9 +741,7 @@ def batched_moe_kernel_quantize_input(
         # Note: this does a bunch of extra work because expert_num_tokens is
         # ignored but it does support torch.compile + cudagraphs.
         hidden_dim = A.size(-1)
-        assert A_scale is None or A_scale.ndim <= 2, (
-            f"{A_scale.shape if A_scale is not None else None}"
-        )
+        assert A_scale is None or A_scale.ndim <= 2, f"{A_scale.shape if A_scale is not None else None}"
         A_q, A_q_scale = moe_kernel_quantize_input(
             A.view(-1, hidden_dim), A_scale, qtype, per_act_token_quant, block_shape
         )
@@ -909,9 +889,7 @@ class BatchedTritonExperts(mk.FusedMoEPermuteExpertsUnpermute):
 
         expert_num_tokens = expert_tokens_meta.expert_num_tokens
 
-        E, max_num_tokens, N, K, top_k_num = self.moe_problem_size(
-            hidden_states, w1, w2, topk_ids
-        )
+        E, max_num_tokens, N, K, top_k_num = self.moe_problem_size(hidden_states, w1, w2, topk_ids)
 
         assert w1.size(0) == E
         assert w2.size(0) == E

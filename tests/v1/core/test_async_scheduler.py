@@ -221,9 +221,7 @@ def test_prefix_caching_for_multi_turn():
         block_size=BLOCK_SIZE,
     )
     for i, req in enumerate(next_turn_requests):
-        req.prompt_token_ids = requests[i].prompt_token_ids + list(
-            requests[i].output_token_ids
-        )
+        req.prompt_token_ids = requests[i].prompt_token_ids + list(requests[i].output_token_ids)
         req._all_token_ids = req.prompt_token_ids.copy()
         req.all_token_ids = ConstantList(req._all_token_ids)
         req.block_hashes = []

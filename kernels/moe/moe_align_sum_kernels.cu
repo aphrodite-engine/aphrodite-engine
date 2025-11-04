@@ -314,7 +314,8 @@ void moe_align_block_size(torch::Tensor topk_ids, int64_t num_experts,
               num_tokens_post_pad.data_ptr<int32_t>(), num_experts, block_size,
               topk_ids.numel(), sorted_token_ids.size(0));
         } else {
-          auto align_kernel = aphrodite::moe::moe_align_block_size_kernel<scalar_t>;
+          auto align_kernel =
+              aphrodite::moe::moe_align_block_size_kernel<scalar_t>;
 
           size_t num_warps = CEILDIV(padded_num_experts, experts_per_warp);
           size_t shared_mem_size =
@@ -386,27 +387,33 @@ void moe_sum(torch::Tensor& input,   // [num_tokens, topk, hidden_size]
 
   switch (topk) {
     case 2:
-      APHRODITE_DISPATCH_FLOATING_TYPES(input.scalar_type(), "moe_sum_kernel", [&] {
-        aphrodite::moe::moe_sum_kernel<scalar_t, 2><<<grid, block, 0, stream>>>(
-            output.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
-            hidden_size);
-      });
+      APHRODITE_DISPATCH_FLOATING_TYPES(
+          input.scalar_type(), "moe_sum_kernel", [&] {
+            aphrodite::moe::moe_sum_kernel<scalar_t, 2>
+                <<<grid, block, 0, stream>>>(output.data_ptr<scalar_t>(),
+                                             input.data_ptr<scalar_t>(),
+                                             hidden_size);
+          });
       break;
 
     case 3:
-      APHRODITE_DISPATCH_FLOATING_TYPES(input.scalar_type(), "moe_sum_kernel", [&] {
-        aphrodite::moe::moe_sum_kernel<scalar_t, 3><<<grid, block, 0, stream>>>(
-            output.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
-            hidden_size);
-      });
+      APHRODITE_DISPATCH_FLOATING_TYPES(
+          input.scalar_type(), "moe_sum_kernel", [&] {
+            aphrodite::moe::moe_sum_kernel<scalar_t, 3>
+                <<<grid, block, 0, stream>>>(output.data_ptr<scalar_t>(),
+                                             input.data_ptr<scalar_t>(),
+                                             hidden_size);
+          });
       break;
 
     case 4:
-      APHRODITE_DISPATCH_FLOATING_TYPES(input.scalar_type(), "moe_sum_kernel", [&] {
-        aphrodite::moe::moe_sum_kernel<scalar_t, 4><<<grid, block, 0, stream>>>(
-            output.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
-            hidden_size);
-      });
+      APHRODITE_DISPATCH_FLOATING_TYPES(
+          input.scalar_type(), "moe_sum_kernel", [&] {
+            aphrodite::moe::moe_sum_kernel<scalar_t, 4>
+                <<<grid, block, 0, stream>>>(output.data_ptr<scalar_t>(),
+                                             input.data_ptr<scalar_t>(),
+                                             hidden_size);
+          });
       break;
 
     default:

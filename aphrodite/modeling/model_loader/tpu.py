@@ -9,8 +9,7 @@ from aphrodite.config import AphroditeConfig, ModelConfig
 from aphrodite.distributed.tpu_distributed_utils import get_fqn, shard_model
 from aphrodite.logger import init_logger
 from aphrodite.modeling.model_loader.default_loader import DefaultModelLoader
-from aphrodite.modeling.model_loader.utils import (
-    initialize_model, process_weights_after_loading)
+from aphrodite.modeling.model_loader.utils import initialize_model, process_weights_after_loading
 from aphrodite.utils.torch_utils import set_default_torch_dtype
 
 logger = init_logger(__name__)
@@ -45,8 +44,7 @@ class TPUModelLoader(DefaultModelLoader):
                 self.counter_after_loading_weights = time.perf_counter()
                 logger.info(
                     "Loading weights took %.2f seconds",
-                    self.counter_after_loading_weights
-                    - self.counter_before_loading_weights,
+                    self.counter_after_loading_weights - self.counter_before_loading_weights,
                 )
                 # We only enable strict check for non-quantized models
                 # that have loaded weights tracking currently.
@@ -54,8 +52,7 @@ class TPUModelLoader(DefaultModelLoader):
                     weights_not_loaded = weights_to_load - loaded_weights
                     if weights_not_loaded:
                         raise ValueError(
-                            "Following weights were not initialized from "
-                            f"checkpoint: {weights_not_loaded}"
+                            f"Following weights were not initialized from checkpoint: {weights_not_loaded}"
                         )
             else:
                 logger.info("Use dummy weight during weight loading.")
@@ -80,9 +77,7 @@ class TPUModelLoader(DefaultModelLoader):
         if not model_config.is_multimodal_model:
             model.model = torch.compile(model.model, backend="openxla")
         else:
-            model.language_model.model = torch.compile(
-                model.language_model.model, backend="openxla"
-            )
+            model.language_model.model = torch.compile(model.language_model.model, backend="openxla")
         return model
 
     def _check_model_is_loaded(self, mesh: xs.Mesh | None, model: nn.Module) -> None:

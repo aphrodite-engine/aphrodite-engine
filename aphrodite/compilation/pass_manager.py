@@ -128,9 +128,7 @@ class PostGradPassManager(CustomGraphPass):
             and config.compilation_config.splitting_ops is not None
         ):
             # Sort them so we're not dependent on the ordering.
-            self.inductor_splitting_ops = sorted(
-                config.compilation_config.splitting_ops
-            )
+            self.inductor_splitting_ops = sorted(config.compilation_config.splitting_ops)
 
     def add(self, pass_: InductorPass):
         assert isinstance(pass_, InductorPass)

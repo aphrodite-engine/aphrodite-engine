@@ -3,16 +3,16 @@ from typing import ClassVar
 
 import torch
 
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionMetadata,
-                                                   MultipleOf)
+from aphrodite.attention.backends.abstract import AttentionBackend, AttentionMetadata, MultipleOf
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
 from aphrodite.utils.deep_gemm import get_paged_mqa_logits_metadata
-from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
-                                                   AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata,
-                                                   split_decodes_and_prefills)
+from aphrodite.v1.attention.backends.utils import (
+    AttentionCGSupport,
+    AttentionMetadataBuilder,
+    CommonAttentionMetadata,
+    split_decodes_and_prefills,
+)
 
 logger = init_logger(__name__)
 
@@ -158,9 +158,7 @@ def kv_spans_from_batches(
     L_expand = torch.repeat_interleave(L, counts)  # [N]
     m_expand = torch.repeat_interleave(counts, counts)  # [N]
     # position within the selected block: 1..counts[b]
-    pos_within = (
-        torch.arange(N, dtype=torch.long) - torch.repeat_interleave(q[:-1], counts) + 1
-    )
+    pos_within = torch.arange(N, dtype=torch.long) - torch.repeat_interleave(q[:-1], counts) + 1
 
     local_pos = L_expand - m_expand + pos_within  # [N], 1-based
     end_location = start_tensor + local_pos  # exclusive end
@@ -207,9 +205,7 @@ def split_prefill_chunks(
 
 
 class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
-    cudagraph_support: ClassVar[AttentionCGSupport] = (
-        AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
-    )
+    cudagraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
 
     reorder_batch_threshold: int = 1
 
@@ -230,22 +226,13 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         sm_count = props.multi_processor_count
         self.num_sms = sm_count
 
-        self.decode_lens_buffer = torch.empty(
-            (scheduler_config.max_num_seqs,), dtype=torch.int32, device=self.device
-        )
+        self.decode_lens_buffer = torch.empty((scheduler_config.max_num_seqs,), dtype=torch.int32, device=self.device)
 
         # See: DeepGMM/csrc/apis/attention.hpp
-        self.scheduler_metadata_buffer = torch.empty(
-            (self.num_sms + 1, 2), dtype=torch.int32, device=self.device
-        )
+        self.scheduler_metadata_buffer = torch.empty((self.num_sms + 1, 2), dtype=torch.int32, device=self.device)
 
-    def build_one_prefill_chunk(
-        self, reqs_start, reqs_end, query_start_loc_cpu, seq_lens_cpu, block_table
-    ):
-        prefill_query_start_loc = (
-            query_start_loc_cpu[reqs_start : reqs_end + 1]
-            - query_start_loc_cpu[reqs_start]
-        )
+    def build_one_prefill_chunk(self, reqs_start, reqs_end, query_start_loc_cpu, seq_lens_cpu, block_table):
+        prefill_query_start_loc = query_start_loc_cpu[reqs_start : reqs_end + 1] - query_start_loc_cpu[reqs_start]
         cu_seqlen_ks, cu_seqlen_ke = kv_spans_from_batches(
             prefill_query_start_loc, seq_lens_cpu[reqs_start:reqs_end], self.device
         )
@@ -284,10 +271,8 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         num_tokens = common_attn_metadata.num_actual_tokens
 
         query_start_loc_cpu = common_attn_metadata.query_start_loc_cpu
-        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
-            split_decodes_and_prefills(
-                common_attn_metadata, decode_threshold=self.reorder_batch_threshold
-            )
+        num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = split_decodes_and_prefills(
+            common_attn_metadata, decode_threshold=self.reorder_batch_threshold
         )
 
         assert num_decodes + num_prefills == num_reqs
@@ -321,9 +306,7 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
                 out=self.decode_lens_buffer[:num_decodes],
             )
             decode_lens = self.decode_lens_buffer[:num_decodes]
-            decode_lens_cpu = torch.diff(
-                common_attn_metadata.query_start_loc_cpu[: num_decodes + 1]
-            )
+            decode_lens_cpu = torch.diff(common_attn_metadata.query_start_loc_cpu[: num_decodes + 1])
 
             # Use CPU to avoid GPU sync; breaking async scheduling
             requires_padding = (decode_lens_cpu.max() > decode_lens_cpu.min()).item()

@@ -6,11 +6,9 @@ import torch
 from PIL import Image
 
 from aphrodite.multimodal.image import rescale_image_size
-from aphrodite.multimodal.video import (rescale_video_size,
-                                        sample_frames_from_video)
+from aphrodite.multimodal.video import rescale_video_size, sample_frames_from_video
 
-from ....conftest import (IMAGE_ASSETS, VIDEO_ASSETS, AphroditeRunner,
-                          PromptImageInput, PromptVideoInput)
+from ....conftest import IMAGE_ASSETS, VIDEO_ASSETS, AphroditeRunner, PromptImageInput, PromptVideoInput
 from ...utils import check_logprobs_close
 
 
@@ -109,9 +107,7 @@ def batch_make_image_embeddings(
     # image to pixel values
     image_processor = processor.image_processor
 
-    preprocess_result = image_processor.preprocess(
-        images=images, return_tensors="pt"
-    ).data
+    preprocess_result = image_processor.preprocess(images=images, return_tensors="pt").data
     pixel_values = preprocess_result["pixel_values"]
     image_grid_thw = preprocess_result["image_grid_thw"]
 
@@ -121,12 +117,8 @@ def batch_make_image_embeddings(
             visual = model.visual
 
             pixel_values_on_device = pixel_values.to(visual.device, dtype=visual.dtype)
-            image_grid_thw_on_device = image_grid_thw.to(
-                visual.device, dtype=torch.int64
-            )
-            return visual(
-                pixel_values_on_device, grid_thw=image_grid_thw_on_device
-            ).cpu()
+            image_grid_thw_on_device = image_grid_thw.to(visual.device, dtype=torch.int64)
+            return visual(pixel_values_on_device, grid_thw=image_grid_thw_on_device).cpu()
 
     image_embeds = torch.concat(llm.apply_model(get_image_embeds))
 
@@ -139,19 +131,13 @@ def batch_make_image_embeddings(
         merge_size = image_processor.merge_size
         cur_batch_embed_len = sum(
             grid_thw.prod(-1) // merge_size // merge_size
-            for grid_thw in image_grid_thw[
-                image_counter : image_counter + cur_batch_image_count
-            ]
+            for grid_thw in image_grid_thw[image_counter : image_counter + cur_batch_image_count]
         )
 
         result.append(
             {
-                "image_embeds": image_embeds[
-                    embed_counter : embed_counter + cur_batch_embed_len
-                ],
-                "image_grid_thw": image_grid_thw[
-                    image_counter : image_counter + cur_batch_image_count
-                ],
+                "image_embeds": image_embeds[embed_counter : embed_counter + cur_batch_embed_len],
+                "image_grid_thw": image_grid_thw[image_counter : image_counter + cur_batch_image_count],
             }
         )
 
@@ -198,9 +184,7 @@ def batch_make_video_embeddings(
     # video to pixel values
     image_processor = processor.image_processor
 
-    preprocess_result = image_processor.preprocess(
-        images=None, videos=videos, return_tensors="pt"
-    ).data
+    preprocess_result = image_processor.preprocess(images=None, videos=videos, return_tensors="pt").data
     pixel_values = preprocess_result["pixel_values_videos"]
     video_grid_thw = preprocess_result["video_grid_thw"]
 
@@ -210,12 +194,8 @@ def batch_make_video_embeddings(
             visual = model.visual
 
             pixel_values_on_device = pixel_values.to(visual.device, dtype=visual.dtype)
-            video_grid_thw_on_device = video_grid_thw.to(
-                visual.device, dtype=torch.int64
-            )
-            return visual(
-                pixel_values_on_device, grid_thw=video_grid_thw_on_device
-            ).cpu()
+            video_grid_thw_on_device = video_grid_thw.to(visual.device, dtype=torch.int64)
+            return visual(pixel_values_on_device, grid_thw=video_grid_thw_on_device).cpu()
 
     video_embeds = torch.concat(llm.apply_model(get_image_embeds))
 
@@ -228,19 +208,13 @@ def batch_make_video_embeddings(
         merge_size = image_processor.merge_size
         cur_batch_embed_len = sum(
             grid_thw.prod(-1) // merge_size // merge_size
-            for grid_thw in video_grid_thw[
-                video_counter : video_counter + cur_batch_video_count
-            ]
+            for grid_thw in video_grid_thw[video_counter : video_counter + cur_batch_video_count]
         )
 
         result.append(
             {
-                "video_embeds": video_embeds[
-                    embed_counter : embed_counter + cur_batch_embed_len
-                ],
-                "video_grid_thw": video_grid_thw[
-                    video_counter : video_counter + cur_batch_video_count
-                ],
+                "video_embeds": video_embeds[embed_counter : embed_counter + cur_batch_embed_len],
+                "video_grid_thw": video_grid_thw[video_counter : video_counter + cur_batch_video_count],
             }
         )
 
@@ -303,12 +277,8 @@ def run_embedding_input_test(
                 prompts,
                 max_tokens,
                 num_logprobs=num_logprobs,
-                images=batch_make_image_embeddings(images, processor, aphrodite_model)
-                if images
-                else None,
-                videos=batch_make_video_embeddings(videos, processor, aphrodite_model)
-                if videos
-                else None,
+                images=batch_make_image_embeddings(images, processor, aphrodite_model) if images else None,
+                videos=batch_make_video_embeddings(videos, processor, aphrodite_model) if videos else None,
             )
             for prompts, images, videos in inputs
         ]
@@ -404,10 +374,7 @@ def test_qwen2_vl_multiple_image_embeddings_input(
     inputs_per_case: list[tuple[list[str], PromptImageInput, PromptVideoInput]] = [
         (
             [MULTIIMAGE_PROMPT for _ in size_factors],
-            [
-                [rescale_image_size(image, factor) for image in images]
-                for factor in size_factors
-            ],
+            [[rescale_image_size(image, factor) for image in images] for factor in size_factors],
             [],
         )
     ]
@@ -450,10 +417,7 @@ def test_qwen2_vl_video_embeddings_input(
     num_logprobs: int,
 ) -> None:
     num_frames = 4
-    sampled_vids = [
-        sample_frames_from_video(asset.np_ndarrays, num_frames)
-        for asset in video_assets
-    ]
+    sampled_vids = [sample_frames_from_video(asset.np_ndarrays, num_frames) for asset in video_assets]
 
     inputs_per_case: list[tuple[list[str], PromptImageInput, PromptVideoInput]] = [
         (

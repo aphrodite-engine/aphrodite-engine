@@ -2,11 +2,9 @@ from collections.abc import Sequence
 
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.logger import init_logger
-from aphrodite.reasoning import (DeepSeekR1ReasoningParser, ReasoningParser,
-                                 ReasoningParserManager)
+from aphrodite.reasoning import DeepSeekR1ReasoningParser, ReasoningParser, ReasoningParserManager
 
 from .identity_reasoning_parser import IdentityReasoningParser
 

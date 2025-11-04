@@ -8,9 +8,7 @@ import aphrodite._custom_ops as ops
 
 def to_fp8(tensor: torch.Tensor) -> torch.Tensor:
     finfo = torch.finfo(torch.float8_e4m3fn)
-    return torch.round(tensor.clamp(min=finfo.min, max=finfo.max)).to(
-        dtype=torch.float8_e4m3fn
-    )
+    return torch.round(tensor.clamp(min=finfo.min, max=finfo.max)).to(dtype=torch.float8_e4m3fn)
 
 
 def to_int8(tensor: torch.Tensor) -> torch.Tensor:
@@ -25,9 +23,7 @@ def to_fp16(tensor: torch.Tensor) -> torch.Tensor:
     return tensor.to(dtype=torch.float16)
 
 
-def make_rand_tensors(
-    dtype: torch.dtype, m: int, n: int, k: int
-) -> tuple[torch.Tensor, torch.Tensor]:
+def make_rand_tensors(dtype: torch.dtype, m: int, n: int, k: int) -> tuple[torch.Tensor, torch.Tensor]:
     a = torch.randn((m, k), device="cuda") * 5
     b = torch.randn((n, k), device="cuda").t() * 5
 
@@ -60,9 +56,7 @@ def prune_to_2_4(tensor):
     return pruned.reshape(original_shape)
 
 
-def make_rand_sparse_tensors(
-    dtype: torch.dtype, m: int, n: int, k: int
-) -> tuple[torch.Tensor, torch.Tensor]:
+def make_rand_sparse_tensors(dtype: torch.dtype, m: int, n: int, k: int) -> tuple[torch.Tensor, torch.Tensor]:
     a = torch.randn((m, k), device="cuda") * 5
     b = torch.randn((n, k), device="cuda").t() * 5
 

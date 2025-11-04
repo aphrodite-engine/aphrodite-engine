@@ -4,16 +4,17 @@ from dataclasses import dataclass
 
 import torch
 
-from aphrodite.attention.backends.abstract import (AttentionBackend,
-                                                   AttentionImpl,
-                                                   AttentionMetadata,
-                                                   AttentionType, MultipleOf)
+from aphrodite.attention.backends.abstract import (
+    AttentionBackend,
+    AttentionImpl,
+    AttentionMetadata,
+    AttentionType,
+    MultipleOf,
+)
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.v1.attention.backends.utils import (AttentionCGSupport,
-                                                   AttentionMetadataBuilder,
-                                                   CommonAttentionMetadata)
+from aphrodite.v1.attention.backends.utils import AttentionCGSupport, AttentionMetadataBuilder, CommonAttentionMetadata
 from aphrodite.v1.kv_cache_interface import AttentionSpec
 
 _PARTITION_SIZE_ROCM = 256
@@ -55,18 +56,12 @@ if current_platform.is_rocm():
         seq_len = batch_token_end - batch_token_start
 
         if block_idx * BLOCK_SIZE < seq_len:
-            block_mask = (
-                block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:, None]
-            ) < seq_len
+            block_mask = (block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)[:, None]) < seq_len
 
-            kv_idx = tl.load(
-                block_table + batch_idx * block_table_stride_0 + block_idx
-            ).to(tl.int64)
+            kv_idx = tl.load(block_table + batch_idx * block_table_stride_0 + block_idx).to(tl.int64)
 
             kv_buffer_off = (
-                kv_idx * BLOCK_SIZE * E_DIM
-                + tl.arange(0, BLOCK_SIZE)[:, None] * E_DIM
-                + tl.arange(0, E_DIM)[None, :]
+                kv_idx * BLOCK_SIZE * E_DIM + tl.arange(0, BLOCK_SIZE)[:, None] * E_DIM + tl.arange(0, E_DIM)[None, :]
             )
             k_vals = tl.load(k_buffer_ptr + kv_buffer_off, mask=block_mask, other=0.0)
             if k_vals.dtype.is_fp8():
@@ -208,9 +203,7 @@ if current_platform.is_rocm():
         v_scale: torch.Tensor,
         total_tokens: int = 0,
     ) -> torch.Tensor:
-        return torch.empty(
-            q.shape[0], q.shape[1], v_cache.shape[-2], dtype=q.dtype, device=q.device
-        )
+        return torch.empty(q.shape[0], q.shape[1], v_cache.shape[-2], dtype=q.dtype, device=q.device)
 
     direct_register_custom_op(
         "flash_attn_varlen_func",
@@ -249,9 +242,7 @@ class AiterFlashAttentionMetadata:
     total_tokens: int
 
 
-class AiterFlashAttentionMetadataBuilder(
-    AttentionMetadataBuilder[AiterFlashAttentionMetadata]
-):
+class AiterFlashAttentionMetadataBuilder(AttentionMetadataBuilder[AiterFlashAttentionMetadata]):
     cudagraph_support = AttentionCGSupport.UNIFORM_SINGLE_TOKEN_DECODE
 
     def __init__(
@@ -267,9 +258,7 @@ class AiterFlashAttentionMetadataBuilder(
         self.parallel_config = aphrodite_config.parallel_config
         self.cache_config = aphrodite_config.cache_config
 
-        self.num_heads_q = self.model_config.get_num_attention_heads(
-            self.parallel_config
-        )
+        self.num_heads_q = self.model_config.get_num_attention_heads(self.parallel_config)
         self.num_heads_kv = self.model_config.get_num_kv_heads(self.parallel_config)
         self.headdim = self.model_config.get_head_size()
         self.block_size = kv_cache_spec.block_size
@@ -278,12 +267,9 @@ class AiterFlashAttentionMetadataBuilder(
         self.aot_sliding_window: tuple[int, int] | None = None
         self.total_tokens: int = 0
 
-    def build_for_cudagraph_capture(
-        self, common_attn_metadata: CommonAttentionMetadata
-    ):
+    def build_for_cudagraph_capture(self, common_attn_metadata: CommonAttentionMetadata):
         self.total_tokens = (
-            self.model_config.max_model_len
-            * self.aphrodite_config.scheduler_config.max_num_partial_prefills
+            self.model_config.max_model_len * self.aphrodite_config.scheduler_config.max_num_partial_prefills
         )
         res = self.build(common_prefix_len=0, common_attn_metadata=common_attn_metadata)
         self.total_tokens = 0
@@ -305,18 +291,14 @@ class AiterFlashAttentionMetadataBuilder(
         if max_query_len > 1:
             # We pre-compute cumulative seq len needed for prefill attention
             # here to avoid recomputing it for every layer
-            cu_seq_lens = torch.zeros(
-                seq_lens.shape[0] + 1, dtype=torch.int32, device=seq_lens.device
-            )
+            cu_seq_lens = torch.zeros(seq_lens.shape[0] + 1, dtype=torch.int32, device=seq_lens.device)
             torch.cumsum(seq_lens, dim=0, dtype=cu_seq_lens.dtype, out=cu_seq_lens[1:])
             num_actual_kv_tokens = int(cu_seq_lens[-1].item())
         else:
             cu_seq_lens = None
             num_actual_kv_tokens = 0
 
-        def schedule(
-            batch_size, cu_query_lens, max_query_len, seqlens, max_seq_len, causal
-        ):
+        def schedule(batch_size, cu_query_lens, max_query_len, seqlens, max_seq_len, causal):
             return None
 
         use_cascade = common_prefix_len > 0
@@ -436,10 +418,7 @@ class AiterFlashAttentionImpl(AttentionImpl):
 
         if attn_type != AttentionType.DECODER:
             raise NotImplementedError(
-                "Encoder self-attention and "
-                "encoder/decoder cross-attention "
-                "are not implemented for "
-                "FlashAttentionImpl"
+                "Encoder self-attention and encoder/decoder cross-attention are not implemented for FlashAttentionImpl"
             )
 
     def forward(
@@ -472,9 +451,7 @@ class AiterFlashAttentionImpl(AttentionImpl):
         assert output is not None, "Output tensor must be provided."
 
         if output_scale is not None or output_block_scale is not None:
-            raise NotImplementedError(
-                "fused output quantization is not yet supported for FlashAttentionImpl"
-            )
+            raise NotImplementedError("fused output quantization is not yet supported for FlashAttentionImpl")
 
         if attn_metadata is None:
             # Profiling run.
@@ -543,13 +520,10 @@ class AiterFlashAttentionImpl(AttentionImpl):
             _, num_heads, head_size = query.shape
             nbytes_per_qo_elem = torch.finfo(query.dtype).bits // 8
             num_seqs = seqused_k.shape[0]
-            max_num_partitions = (
-                max_seqlen_k + _PARTITION_SIZE_ROCM - 1
-            ) // _PARTITION_SIZE_ROCM
+            max_num_partitions = (max_seqlen_k + _PARTITION_SIZE_ROCM - 1) // _PARTITION_SIZE_ROCM
 
             workspace_buffer = torch.empty(
-                (num_seqs * num_heads * max_num_partitions * head_size)
-                * nbytes_per_qo_elem
+                (num_seqs * num_heads * max_num_partitions * head_size) * nbytes_per_qo_elem
                 + 2 * (num_seqs * num_heads * max_num_partitions) * 4,
                 dtype=torch.uint8,
                 device=output.device,
@@ -577,6 +551,4 @@ class AiterFlashAttentionImpl(AttentionImpl):
             )
             return output
         else:
-            raise NotImplementedError(
-                "Cascade attention is not implemented for ROCM AITER"
-            )
+            raise NotImplementedError("Cascade attention is not implemented for ROCM AITER")

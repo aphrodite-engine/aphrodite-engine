@@ -19,9 +19,14 @@ else:
 logger = init_logger(__name__)
 
 try:
-    from amdsmi import (AmdSmiException, amdsmi_get_gpu_asic_info,
-                        amdsmi_get_processor_handles, amdsmi_init,
-                        amdsmi_shut_down, amdsmi_topo_get_link_type)
+    from amdsmi import (
+        AmdSmiException,
+        amdsmi_get_gpu_asic_info,
+        amdsmi_get_processor_handles,
+        amdsmi_init,
+        amdsmi_shut_down,
+        amdsmi_topo_get_link_type,
+    )
 except ImportError as e:
     logger.warning("Failed to import from amdsmi with %r", e)
 
@@ -155,11 +160,7 @@ def use_rocm_custom_paged_attention(
     else:
         return (
             ON_GFX11_GFX12
-            and (
-                not envs.APHRODITE_USE_V1
-                or sliding_window == 0
-                or sliding_window == (-1, -1)
-            )
+            and (not envs.APHRODITE_USE_V1 or sliding_window == 0 or sliding_window == (-1, -1))
             and (qtype == torch.half or qtype == torch.bfloat16)
             and head_size == 128
             and block_size == 16
@@ -230,18 +231,14 @@ class RocmPlatform(Platform):
         if use_mla:
             if not use_v1:
                 raise RuntimeError(
-                    "MLA attention backends require the V1 engine. "
-                    "Set APHRODITE_USE_V1=1 to enable them."
+                    "MLA attention backends require the V1 engine. Set APHRODITE_USE_V1=1 to enable them."
                 )
 
-            from aphrodite.v1.attention.backends.mla.rocm_aiter_mla import (
-                is_aiter_mla_enabled)
+            from aphrodite.v1.attention.backends.mla.rocm_aiter_mla import is_aiter_mla_enabled
 
             if selected_backend is None:
                 selected_backend = (
-                    _Backend.ROCM_AITER_MLA
-                    if is_aiter_mla_enabled() or block_size == 1
-                    else _Backend.TRITON_MLA
+                    _Backend.ROCM_AITER_MLA if is_aiter_mla_enabled() or block_size == 1 else _Backend.TRITON_MLA
                 )
 
             if selected_backend == _Backend.TRITON_MLA:
@@ -249,23 +246,19 @@ class RocmPlatform(Platform):
                     logger.info_once("Using Triton MLA backend on V1 engine.")
                     return "aphrodite.v1.attention.backends.mla.triton_mla.TritonMLABackend"
                 raise ValueError(
-                    f" The selected backend, {selected_backend.name},"
-                    f"does not support block size {block_size}."
+                    f" The selected backend, {selected_backend.name},does not support block size {block_size}."
                 )
             if selected_backend == _Backend.ROCM_AITER_MLA:
                 if block_size == 1:
                     logger.info("Using AITER MLA backend on V1 engine.")
-                    return (
-                        "aphrodite.v1.attention.backends.mla.rocm_aiter_mla.AiterMLABackend"  # noqa: E501
-                    )
+                    return "aphrodite.v1.attention.backends.mla.rocm_aiter_mla.AiterMLABackend"  # noqa: E501
                 raise ValueError(
                     f" The selected backend, {selected_backend.name},"
                     f"does not support block size {block_size}."
                     "(currently only supports block size 1)"
                 )
             raise ValueError(
-                f" The selected backend, {selected_backend.name},"
-                f"is not MLA type while requested for MLA backend."
+                f" The selected backend, {selected_backend.name},is not MLA type while requested for MLA backend."
             )
 
         if envs.APHRODITE_USE_V1:
@@ -276,22 +269,13 @@ class RocmPlatform(Platform):
                 envs.APHRODITE_ROCM_USE_AITER and envs.APHRODITE_ROCM_USE_AITER_MHA and on_gfx9()
             ) or selected_backend == _Backend.ROCM_AITER_FA:
                 logger.info("Using Aiter Flash Attention backend on V1 engine.")
-                return (
-                    "aphrodite.v1.attention.backends."
-                    "rocm_aiter_fa.AiterFlashAttentionBackend"
-                )
+                return "aphrodite.v1.attention.backends.rocm_aiter_fa.AiterFlashAttentionBackend"
             if (
                 envs.APHRODITE_ROCM_USE_AITER and envs.APHRODITE_ROCM_USE_AITER_UNIFIED_ATTENTION
             ) or selected_backend == _Backend.ROCM_AITER_UNIFIED_ATTN:
                 logger.info("Using Aiter Unified Attention backend on V1 engine.")
-                return (
-                    "aphrodite.v1.attention.backends."
-                    "rocm_aiter_unified_attn.RocmAiterUnifiedAttentionBackend"
-                )
-            if (
-                envs.APHRODITE_V1_USE_PREFILL_DECODE_ATTENTION
-                or selected_backend == _Backend.ROCM_ATTN
-            ):
+                return "aphrodite.v1.attention.backends.rocm_aiter_unified_attn.RocmAiterUnifiedAttentionBackend"
+            if envs.APHRODITE_V1_USE_PREFILL_DECODE_ATTENTION or selected_backend == _Backend.ROCM_ATTN:
                 # rocm specific backend, with aiter and/or
                 #   triton prefix-prefill
                 logger.info("Using Rocm Attention backend on V1 engine.")
@@ -300,8 +284,7 @@ class RocmPlatform(Platform):
             logger.info("Using Triton Attention backend on V1 engine.")
             return "aphrodite.v1.attention.backends.triton_attn.TritonAttentionBackend"
         raise RuntimeError(
-            "V0 attention backends have been removed. Set APHRODITE_USE_V1=1 "
-            "to select a supported backend."
+            "V0 attention backends have been removed. Set APHRODITE_USE_V1=1 to select a supported backend."
         )
 
     @classmethod
@@ -364,9 +347,7 @@ class RocmPlatform(Platform):
         is_eager_execution = compilation_config == CUDAGraphMode.NONE
 
         use_v1 = envs.APHRODITE_USE_V1
-        use_aiter_rms_norm = (
-            envs.APHRODITE_ROCM_USE_AITER and envs.APHRODITE_ROCM_USE_AITER_RMSNORM
-        )
+        use_aiter_rms_norm = envs.APHRODITE_ROCM_USE_AITER and envs.APHRODITE_ROCM_USE_AITER_RMSNORM
 
         if cache_config and cache_config.block_size is None:
             cache_config.block_size = 16
@@ -385,9 +366,7 @@ class RocmPlatform(Platform):
     @classmethod
     def verify_model_arch(cls, model_arch: str) -> None:
         if model_arch in _ROCM_UNSUPPORTED_MODELS:
-            raise ValueError(
-                f"Model architecture '{model_arch}' is not supported by ROCm for now."
-            )
+            raise ValueError(f"Model architecture '{model_arch}' is not supported by ROCm for now.")
 
         if model_arch in _ROCM_PARTIALLY_SUPPORTED_MODELS:
             msg = _ROCM_PARTIALLY_SUPPORTED_MODELS[model_arch]
@@ -412,17 +391,13 @@ class RocmPlatform(Platform):
         return "aphrodite.lora.punica_wrapper.punica_gpu.PunicaWrapperGPU"
 
     @classmethod
-    def get_current_memory_usage(
-        cls, device: torch.types.Device | None = None
-    ) -> float:
+    def get_current_memory_usage(cls, device: torch.types.Device | None = None) -> float:
         torch.cuda.reset_peak_memory_stats(device)
         return torch.cuda.mem_get_info(device)[1] - torch.cuda.mem_get_info(device)[0]
 
     @classmethod
     def get_device_communicator_cls(cls) -> str:
-        return (
-            "aphrodite.distributed.device_communicators.cuda_communicator.CudaCommunicator"  # noqa
-        )
+        return "aphrodite.distributed.device_communicators.cuda_communicator.CudaCommunicator"  # noqa
 
     @classmethod
     def supports_mx(cls) -> bool:

@@ -7,6 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import torch
 import torch.nn as nn
+
 # TPU XLA related
 import torch_xla
 import torch_xla.core.xla_model as xm
@@ -17,15 +18,11 @@ import aphrodite.envs as envs
 from aphrodite.attention import Attention
 from aphrodite.attention.backends.abstract import AttentionType
 from aphrodite.attention.layer import MLAAttention
-from aphrodite.attention.layers.chunked_local_attention import (
-    ChunkedLocalAttention)
+from aphrodite.attention.layers.chunked_local_attention import ChunkedLocalAttention
 from aphrodite.common.sequence import IntermediateTensors
-from aphrodite.compilation.wrapper import (
-    TorchCompileWrapperWithCustomDispatcher)
-from aphrodite.config import (AphroditeConfig, ParallelConfig,
-                              get_layers_from_aphrodite_config, update_config)
-from aphrodite.distributed.kv_transfer import (get_kv_transfer_group,
-                                               has_kv_transfer_group)
+from aphrodite.compilation.wrapper import TorchCompileWrapperWithCustomDispatcher
+from aphrodite.config import AphroditeConfig, ParallelConfig, get_layers_from_aphrodite_config, update_config
+from aphrodite.distributed.kv_transfer import get_kv_transfer_group, has_kv_transfer_group
 from aphrodite.distributed.kv_transfer.kv_connector.utils import copy_kv_blocks
 from aphrodite.forward_context import set_forward_context
 from aphrodite.logger import init_logger
@@ -33,36 +30,41 @@ from aphrodite.lora.layers import BaseLayerWithLoRA
 from aphrodite.modeling.layers.attention_layer_base import AttentionLayerBase
 from aphrodite.modeling.model_loader import get_model_loader
 from aphrodite.modeling.model_loader.tpu import TPUModelLoader
-from aphrodite.modeling.models.interfaces import (SupportsMultiModal,
-                                                  supports_transcription)
-from aphrodite.modeling.models.interfaces_base import (
-    is_pooling_model, is_text_generation_model)
+from aphrodite.modeling.models.interfaces import SupportsMultiModal, supports_transcription
+from aphrodite.modeling.models.interfaces_base import is_pooling_model, is_text_generation_model
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (BatchedTensorInputs,
-                                         MultiModalKwargsItem,
-                                         PlaceholderRange)
+from aphrodite.multimodal.inputs import BatchedTensorInputs, MultiModalKwargsItem, PlaceholderRange
 from aphrodite.multimodal.utils import group_mm_kwargs_by_modality
 from aphrodite.tasks import GenerationTask, PoolingTask, SupportedTask
 from aphrodite.utils.math_utils import cdiv, prev_power_of_2
 from aphrodite.utils.platform_utils import is_pin_memory_available
 from aphrodite.v1.attention.backends.pallas import (
-    TPU_STR_DTYPE_TO_TORCH_DTYPE, PallasAttentionBackend, PallasMetadata,
-    get_page_size_bytes)
-from aphrodite.v1.kv_cache_interface import (AttentionSpec, FullAttentionSpec,
-                                             KVCacheConfig, KVCacheSpec,
-                                             MLAAttentionSpec,
-                                             SlidingWindowSpec)
-from aphrodite.v1.outputs import (EMPTY_MODEL_RUNNER_OUTPUT, LogprobsLists,
-                                  LogprobsTensors, ModelRunnerOutput)
+    TPU_STR_DTYPE_TO_TORCH_DTYPE,
+    PallasAttentionBackend,
+    PallasMetadata,
+    get_page_size_bytes,
+)
+from aphrodite.v1.kv_cache_interface import (
+    AttentionSpec,
+    FullAttentionSpec,
+    KVCacheConfig,
+    KVCacheSpec,
+    MLAAttentionSpec,
+    SlidingWindowSpec,
+)
+from aphrodite.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, LogprobsLists, LogprobsTensors, ModelRunnerOutput
 from aphrodite.v1.sample.tpu.metadata import TPUSupportedSamplingMetadata
 from aphrodite.v1.sample.tpu.sampler import Sampler as TPUSampler
-from aphrodite.v1.worker.kv_connector_model_runner_mixin import (
-    KVConnectorModelRunnerMixin, KVConnectorOutput)
+from aphrodite.v1.worker.kv_connector_model_runner_mixin import KVConnectorModelRunnerMixin, KVConnectorOutput
 from aphrodite.v1.worker.lora_model_runner_mixin import LoRAModelRunnerMixin
 from aphrodite.v1.worker.tpu_input_batch import CachedRequestState, InputBatch
 
-from .utils import (MultiModalBudget, add_kv_sharing_layers_to_kv_cache_groups,
-                    bind_kv_cache, sanity_check_mm_encoder_outputs)
+from .utils import (
+    MultiModalBudget,
+    add_kv_sharing_layers_to_kv_cache_groups,
+    bind_kv_cache,
+    sanity_check_mm_encoder_outputs,
+)
 
 if TYPE_CHECKING:
     from aphrodite.v1.core.sched.output import SchedulerOutput
@@ -166,9 +168,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.most_model_len = envs.APHRODITE_TPU_MOST_MODEL_LEN
         self.max_num_blocks_per_req = cdiv(self.max_model_len, self.block_size)
         self.num_blocks_per_most_len_req = (
-            cdiv(self.most_model_len, self.block_size)
-            if self.most_model_len is not None
-            else None
+            cdiv(self.most_model_len, self.block_size) if self.most_model_len is not None else None
         )
         # InputBatch needs to work with sampling tensors greater than padding
         # to avoid dynamic shapes. Also, avoid suboptimal alignment.
@@ -183,9 +183,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.max_num_tokens = self.num_tokens_paddings[-1]
 
         # Model-related.
-        self.num_attn_layers = model_config.get_num_layers_by_block_type(
-            parallel_config, "attention"
-        )
+        self.num_attn_layers = model_config.get_num_layers_by_block_type(parallel_config, "attention")
         self.num_query_heads = model_config.get_num_attention_heads(parallel_config)
         self.num_kv_heads = model_config.get_num_kv_heads(parallel_config)
         self.head_size = model_config.get_head_size()
@@ -198,20 +196,16 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # Multi-modal data support
         self.mm_registry = MULTIMODAL_REGISTRY
         self.uses_mrope = model_config.uses_mrope
-        self.supports_mm_inputs = self.mm_registry.supports_multimodal_inputs(
-            model_config
-        )
+        self.supports_mm_inputs = self.mm_registry.supports_multimodal_inputs(model_config)
         # TODO: Support M-RoPE (e.g, Qwen2-VL)
         assert not self.uses_mrope, "TPU does not support M-RoPE yet."
 
-        self._num_slices_per_kv_cache_update_block = (
-            _get_num_slices_per_kv_cache_update_block(
-                get_page_size_bytes(
-                    block_size=self.block_size,
-                    num_kv_heads=self.num_kv_heads,
-                    head_size=self.head_size,
-                    kv_cache_dtype=self.kv_cache_dtype,
-                )
+        self._num_slices_per_kv_cache_update_block = _get_num_slices_per_kv_cache_update_block(
+            get_page_size_bytes(
+                block_size=self.block_size,
+                num_kv_heads=self.num_kv_heads,
+                head_size=self.head_size,
+                kv_cache_dtype=self.kv_cache_dtype,
             )
         )
 
@@ -239,13 +233,9 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # Cached torch/numpy tensor
         # The pytorch tensor and numpy array share the same buffer.
         # Sometimes the numpy op is faster so we create both.
-        self.input_ids_cpu = torch.zeros(
-            self.max_num_tokens, dtype=torch.int32, device="cpu"
-        )
+        self.input_ids_cpu = torch.zeros(self.max_num_tokens, dtype=torch.int32, device="cpu")
 
-        self.positions_cpu = torch.zeros(
-            self.max_num_tokens, dtype=torch.int32, device="cpu"
-        )
+        self.positions_cpu = torch.zeros(self.max_num_tokens, dtype=torch.int32, device="cpu")
         self.positions_np = self.positions_cpu.numpy()
         self.block_table_cpu = torch.zeros(
             (self.max_num_reqs, self.max_num_blocks_per_req),
@@ -255,18 +245,14 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # adjust num_reqs to avoid SMEM OOM.
         self.num_reqs_most_model_len = (
             min(
-                PallasAttentionBackend.get_max_num_seqs(
-                    self.most_model_len, self.block_size
-                ),
+                PallasAttentionBackend.get_max_num_seqs(self.most_model_len, self.block_size),
                 self.max_num_reqs,
             )
             if self.most_model_len is not None
             else None
         )
         self.num_reqs_max_model_len = min(
-            PallasAttentionBackend.get_max_num_seqs(
-                self.max_model_len, self.block_size
-            ),
+            PallasAttentionBackend.get_max_num_seqs(self.max_model_len, self.block_size),
             self.max_num_reqs,
         )
         self.query_start_loc_cpu = torch.zeros(
@@ -298,9 +284,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # Used to initialize positions / context_lens / seq_lens
         # Keep in int64 to avoid overflow with long context
         self.arange_np = np.arange(self.max_num_tokens, dtype=np.int64)
-        self.num_reqs_paddings = _get_req_paddings(
-            min_req_size=MIN_NUM_SEQS, max_req_size=self.max_num_reqs
-        )
+        self.num_reqs_paddings = _get_req_paddings(min_req_size=MIN_NUM_SEQS, max_req_size=self.max_num_reqs)
 
         # Layer pairings for cross-layer KV sharing.
         # If an Attention layer `layer_name` is in the keys of this dict, it
@@ -321,9 +305,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             device="cpu",
             pin_memory=self.pin_memory,
         )
-        self.structured_decode_arange = torch.arange(
-            0, 32, device="cpu", pin_memory=self.pin_memory
-        )
+        self.structured_decode_arange = torch.arange(0, 32, device="cpu", pin_memory=self.pin_memory)
 
         self.mm_budget = (
             MultiModalBudget(
@@ -359,9 +341,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         if new_compiled_graphs == 0:
             return
 
-        logger.info(
-            "Add new %d compiled XLA graphs due to %s", new_compiled_graphs, case_str
-        )
+        logger.info("Add new %d compiled XLA graphs due to %s", new_compiled_graphs, case_str)
         self.num_xla_graphs += new_compiled_graphs
 
     def _verify_num_xla_graphs(self, case_str):
@@ -371,8 +351,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
         curr_cached_graph = xr.get_num_cached_compilation_graph()
         assert self.num_xla_graphs == curr_cached_graph, (
-            "Recompilation after warm up is detected during {}."
-            " num_xla_graphs = {} curr_cached_graph = {}".format(
+            "Recompilation after warm up is detected during {}. num_xla_graphs = {} curr_cached_graph = {}".format(
                 case_str, self.num_xla_graphs, curr_cached_graph
             )
         )
@@ -428,9 +407,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         req_ids_to_add: list[str] = []
         # Add new requests to the cached states.
         for new_req_data in scheduler_output.scheduled_new_reqs:
-            assert new_req_data.sampling_params is not None, (
-                "Pooling is not supported in TPU yet"
-            )
+            assert new_req_data.sampling_params is not None, "Pooling is not supported in TPU yet"
             req_id = new_req_data.req_id
             sampling_params = new_req_data.sampling_params
 
@@ -551,9 +528,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         for layer_name, attn_module in layers.items():
             # Classic Attention path
             if isinstance(attn_module, Attention):
-                if (
-                    kv_tgt_layer := attn_module.kv_sharing_target_layer_name
-                ) is not None:
+                if (kv_tgt_layer := attn_module.kv_sharing_target_layer_name) is not None:
                     # The layer doesn't need its own KV cache and will use that of
                     # the target layer. We skip creating a KVCacheSpec for it, so
                     # that KV cache management logic will act as this layer does
@@ -611,9 +586,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
         return kv_cache_spec
 
-    def _get_slot_mapping_metadata(
-        self, num_reqs, num_scheduled_tokens_per_req
-    ) -> np.ndarray:
+    def _get_slot_mapping_metadata(self, num_reqs, num_scheduled_tokens_per_req) -> np.ndarray:
         """
         Computes metadata for mapping slots to blocks in the key-value (KV)
         cache for a batch of requests.
@@ -638,16 +611,11 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 - slice_len (int): The length of the slice.
         """
         slices_start = self.input_batch.num_computed_tokens_cpu[:num_reqs]
-        slices_end = (
-            self.input_batch.num_computed_tokens_cpu[:num_reqs]
-            + num_scheduled_tokens_per_req
-        )
+        slices_end = self.input_batch.num_computed_tokens_cpu[:num_reqs] + num_scheduled_tokens_per_req
         local_block_start_idx = slices_start // self.block_size
         local_block_end_idx = (slices_end - 1) // self.block_size
         no_repeat_req_indices = self.arange_np[:num_reqs]
-        global_block_start_idx = (
-            no_repeat_req_indices * self.max_num_blocks_per_req + local_block_start_idx
-        )
+        global_block_start_idx = no_repeat_req_indices * self.max_num_blocks_per_req + local_block_start_idx
         block_lens = local_block_end_idx - local_block_start_idx + 1
         global_block_start_idx = np.repeat(global_block_start_idx, block_lens)
         slice_arange = np.concatenate([self.arange_np[:n] for n in block_lens])
@@ -655,28 +623,18 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         block_table_cpu = self.input_batch.block_table[0].get_cpu_tensor()
         block_numbers = block_table_cpu.flatten()[global_block_indices].numpy()
         total_block_len = np.sum(block_lens)
-        slot_mapping_slices = np.repeat(
-            np.array([[0, self.block_size]], dtype=np.int32), total_block_len, axis=0
-        )
+        slot_mapping_slices = np.repeat(np.array([[0, self.block_size]], dtype=np.int32), total_block_len, axis=0)
         cu_block_lens = np.zeros(len(block_lens) + 1, dtype=np.int32)
         np.cumsum(block_lens, out=cu_block_lens[1:])
         for req_idx in range(num_reqs):
-            slot_mapping_slices[cu_block_lens[req_idx]][0] = (
-                slices_start[req_idx] % self.block_size
-            )
-            slot_mapping_slices[cu_block_lens[req_idx + 1] - 1][1] = (
-                slices_end[req_idx] - 1
-            ) % self.block_size + 1
+            slot_mapping_slices[cu_block_lens[req_idx]][0] = slices_start[req_idx] % self.block_size
+            slot_mapping_slices[cu_block_lens[req_idx + 1] - 1][1] = (slices_end[req_idx] - 1) % self.block_size + 1
         slice_lens = slot_mapping_slices[:, 1] - slot_mapping_slices[:, 0]
         cu_slices_lens = np.zeros(len(slice_lens) + 1, dtype=np.int32)
         np.cumsum(slice_lens, out=cu_slices_lens[1:])
-        kv_cache_start_indices = slot_mapping_slices[:, 0] + (
-            block_numbers * self.block_size
-        )
+        kv_cache_start_indices = slot_mapping_slices[:, 0] + (block_numbers * self.block_size)
         new_kv_start_indices = cu_slices_lens[:-1]
-        slot_mapping_metadata = np.stack(
-            [kv_cache_start_indices, new_kv_start_indices, slice_lens], axis=1
-        )
+        slot_mapping_metadata = np.stack([kv_cache_start_indices, new_kv_start_indices, slice_lens], axis=1)
         return slot_mapping_metadata
 
     def _prepare_inputs(self, scheduler_output: "SchedulerOutput", start_index: int):
@@ -701,24 +659,18 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             num_scheduled_tokens_per_req.append(num_tokens)
         if use_max_model_len:
             if len(num_scheduled_tokens_per_req) > self.num_reqs_max_model_len:
-                num_scheduled_tokens_per_req = num_scheduled_tokens_per_req[
-                    : self.num_reqs_max_model_len
-                ]
+                num_scheduled_tokens_per_req = num_scheduled_tokens_per_req[: self.num_reqs_max_model_len]
                 end_index = start_index + self.num_reqs_max_model_len
             else:
                 end_index = num_reqs
         else:
             if len(num_scheduled_tokens_per_req) > self.num_reqs_most_model_len:
-                num_scheduled_tokens_per_req = num_scheduled_tokens_per_req[
-                    : self.num_reqs_most_model_len
-                ]
+                num_scheduled_tokens_per_req = num_scheduled_tokens_per_req[: self.num_reqs_most_model_len]
                 end_index = start_index + self.num_reqs_most_model_len
             else:
                 end_index = num_reqs
         max_num_scheduled_tokens_all_reqs = max(num_scheduled_tokens_per_req)
-        num_scheduled_tokens_per_req = np.array(
-            num_scheduled_tokens_per_req, dtype=np.int32
-        )
+        num_scheduled_tokens_per_req = np.array(num_scheduled_tokens_per_req, dtype=np.int32)
         total_num_scheduled_tokens = sum(num_scheduled_tokens_per_req)
         assert max_num_scheduled_tokens_all_reqs > 0
 
@@ -732,9 +684,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # Get batched arange.
         # E.g., [2, 5, 3] -> [0, 1, 0, 1, 2, 3, 4, 0, 1, 2]
         # For each scheduled token, what is its position in corresponding req.
-        arange = np.concatenate(
-            [self.arange_np[:n] for n in num_scheduled_tokens_per_req]
-        )
+        arange = np.concatenate([self.arange_np[:n] for n in num_scheduled_tokens_per_req])
 
         # Get positions.
         positions_np = self.positions_np[:total_num_scheduled_tokens]
@@ -748,9 +698,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # E.g., [0, 1, 0, 1, 2, 3, 4, 0, 1, 2]
         # -> [0, 1, M, M + 1, M + 2, M + 3, M + 4, 2 * M, 2 * M + 1, 2 * M + 2]
         # where M is the max_model_len.
-        token_indices = (
-            positions_np + req_indices * self.input_batch.token_ids_cpu.shape[1]
-        )
+        token_indices = positions_np + req_indices * self.input_batch.token_ids_cpu.shape[1]
 
         # NOTE(woosuk): We use torch.index_select instead of np.take here
         # because torch.index_select is much faster than np.take for large
@@ -764,60 +712,35 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
         # Prepare the attention metadata.
         self.query_start_loc_np[0] = 0
-        np.cumsum(
-            num_scheduled_tokens_per_req, out=self.query_start_loc_np[1 : num_reqs + 1]
-        )
+        np.cumsum(num_scheduled_tokens_per_req, out=self.query_start_loc_np[1 : num_reqs + 1])
         self.query_start_loc_np[num_reqs + 1 :] = 1
 
-        self.seq_lens_np[:num_reqs] = (
-            self.input_batch.num_computed_tokens_cpu[:num_reqs]
-            + num_scheduled_tokens_per_req
-        )
+        self.seq_lens_np[:num_reqs] = self.input_batch.num_computed_tokens_cpu[:num_reqs] + num_scheduled_tokens_per_req
 
         # Do the padding and copy the tensors to the TPU.
-        padded_total_num_scheduled_tokens = _get_padded_token_len(
-            self.num_tokens_paddings, total_num_scheduled_tokens
-        )
+        padded_total_num_scheduled_tokens = _get_padded_token_len(self.num_tokens_paddings, total_num_scheduled_tokens)
         # Zero out to avoid spurious values from prev iteration (last cp chunk)
-        self.input_ids_cpu[
-            total_num_scheduled_tokens:padded_total_num_scheduled_tokens
-        ] = 0
-        self.input_ids = self.input_ids_cpu[:padded_total_num_scheduled_tokens].to(
-            self.device
-        )
-        self.position_ids = self.positions_cpu[:padded_total_num_scheduled_tokens].to(
-            self.device
-        )
+        self.input_ids_cpu[total_num_scheduled_tokens:padded_total_num_scheduled_tokens] = 0
+        self.input_ids = self.input_ids_cpu[:padded_total_num_scheduled_tokens].to(self.device)
+        self.position_ids = self.positions_cpu[:padded_total_num_scheduled_tokens].to(self.device)
         if use_max_model_len:
-            block_tables = self.block_table_cpu[
-                : self.num_reqs_max_model_len, : self.max_num_blocks_per_req
+            block_tables = self.block_table_cpu[: self.num_reqs_max_model_len, : self.max_num_blocks_per_req]
+            block_tables[:num_reqs, : self.max_num_blocks_per_req] = self.input_batch.block_table[0].get_cpu_tensor()[
+                :num_reqs
             ]
-            block_tables[:num_reqs, : self.max_num_blocks_per_req] = (
-                self.input_batch.block_table[0].get_cpu_tensor()[:num_reqs]
-            )
-            query_start_loc = self.query_start_loc_cpu[
-                : self.num_reqs_max_model_len + 1
-            ].to(self.device)
+            query_start_loc = self.query_start_loc_cpu[: self.num_reqs_max_model_len + 1].to(self.device)
             seq_lens = self.seq_lens_cpu[: self.num_reqs_max_model_len].to(self.device)
         else:
-            block_tables = self.block_table_cpu[
-                : self.num_reqs_most_model_len, : self.num_blocks_per_most_len_req
-            ]
-            block_tables[:num_reqs, : self.num_blocks_per_most_len_req] = (
-                self.input_batch.block_table[0].get_cpu_tensor()[
-                    :num_reqs, : self.num_blocks_per_most_len_req
-                ]
-            )
-            query_start_loc = self.query_start_loc_cpu[
-                : self.num_reqs_most_model_len + 1
-            ].to(self.device)
+            block_tables = self.block_table_cpu[: self.num_reqs_most_model_len, : self.num_blocks_per_most_len_req]
+            block_tables[:num_reqs, : self.num_blocks_per_most_len_req] = self.input_batch.block_table[
+                0
+            ].get_cpu_tensor()[:num_reqs, : self.num_blocks_per_most_len_req]
+            query_start_loc = self.query_start_loc_cpu[: self.num_reqs_most_model_len + 1].to(self.device)
             seq_lens = self.seq_lens_cpu[: self.num_reqs_most_model_len].to(self.device)
         block_tables = block_tables.to(self.device)
 
         # Calculate the slot mapping
-        slot_mapping_metadata = self._get_slot_mapping_metadata(
-            num_reqs, num_scheduled_tokens_per_req
-        )
+        slot_mapping_metadata = self._get_slot_mapping_metadata(num_reqs, num_scheduled_tokens_per_req)
         num_kv_update_slices = slot_mapping_metadata.shape[0]
         padded_num_slices = _get_padded_num_kv_cache_update_slices(
             padded_total_num_scheduled_tokens, self.max_num_reqs, self.block_size
@@ -835,9 +758,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             padded_num_scheduled_tokens_per_req = np.copy(
                 num_scheduled_tokens_per_req
             )  # Copying to avoid accidental state corruption bugs
-            padded_num_scheduled_tokens_per_req[-1] += (
-                padded_total_num_scheduled_tokens - total_num_scheduled_tokens
-            )
+            padded_num_scheduled_tokens_per_req[-1] += padded_total_num_scheduled_tokens - total_num_scheduled_tokens
 
             self.set_active_loras(self.input_batch, padded_num_scheduled_tokens_per_req)
 
@@ -847,9 +768,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             context_lens=seq_lens,
             query_start_loc=query_start_loc,
             num_seqs=torch.tensor([num_reqs], dtype=torch.int32, device=self.device),
-            num_kv_update_slices=torch.tensor(
-                [num_kv_update_slices], dtype=torch.int32, device=self.device
-            ),
+            num_kv_update_slices=torch.tensor([num_kv_update_slices], dtype=torch.int32, device=self.device),
             num_slices_per_kv_cache_update_block=self._num_slices_per_kv_cache_update_block,
         )
         # NOTE(woosuk): Due to chunked prefills, there can be at most 1 partial
@@ -857,9 +776,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # partial request, we do so for simplicity. We will ignore the sampled
         # token from the partial request.
         # TODO: Support prompt logprobs.
-        padded_num_reqs = _get_padded_num_reqs_with_upper_limit(
-            num_reqs, self.max_num_reqs
-        )
+        padded_num_reqs = _get_padded_num_reqs_with_upper_limit(num_reqs, self.max_num_reqs)
         # Indices at which we sample (positions of last token in the sequence).
         # Padded to avoid recompiling when `num_reqs` varies.
         logits_indices = self.query_start_loc_cpu[1 : padded_num_reqs + 1] - 1
@@ -870,16 +787,12 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             padded_num_scheduled_tokens_per_req = np.copy(
                 num_scheduled_tokens_per_req
             )  # Copying to avoid accidental state corruption bugs
-            padded_num_scheduled_tokens_per_req[-1] += (
-                padded_total_num_scheduled_tokens - total_num_scheduled_tokens
-            )
+            padded_num_scheduled_tokens_per_req[-1] += padded_total_num_scheduled_tokens - total_num_scheduled_tokens
 
             self.set_active_loras(self.input_batch, padded_num_scheduled_tokens_per_req)
 
         layer_names = get_layers_from_aphrodite_config(self.aphrodite_config, Attention).keys()
-        per_layer_attn_metadata = {
-            layer_name: attn_metadata for layer_name in layer_names
-        }
+        per_layer_attn_metadata = {layer_name: attn_metadata for layer_name in layer_names}
         return (
             per_layer_attn_metadata,
             logits_indices,
@@ -949,9 +862,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # assume to only have whole mm items to process. Hence we avoid the
         # intrinsic dynamism that `scatter_mm_placeholders` introduces.
         for (mm_hash, pos_info), output in zip(mm_hashes_pos, encoder_outputs):
-            assert pos_info.is_embed is None, (
-                "Expected all positions to be contiguous and embeddings."
-            )
+            assert pos_info.is_embed is None, "Expected all positions to be contiguous and embeddings."
             self.encoder_cache[mm_hash] = output
 
     def _gather_mm_embeddings(
@@ -959,9 +870,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         scheduler_output: "SchedulerOutput",
     ) -> tuple[list[torch.Tensor], torch.Tensor]:
         total_num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
-        padded_total_num_scheduled_tokens = _get_padded_token_len(
-            self.num_tokens_paddings, total_num_scheduled_tokens
-        )
+        padded_total_num_scheduled_tokens = _get_padded_token_len(self.num_tokens_paddings, total_num_scheduled_tokens)
 
         is_mm_embed = self.is_mm_embed_cpu
         is_mm_embed[:padded_total_num_scheduled_tokens] = False
@@ -1005,9 +914,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 encoder_output = self.encoder_cache.get(mm_hash, None)
                 assert encoder_output is not None, f"Encoder cache miss for {mm_hash}."
 
-                assert pos_info.is_embed is None, (
-                    "Expected all positions to be contiguous and embeddings."
-                )
+                assert pos_info.is_embed is None, "Expected all positions to be contiguous and embeddings."
 
                 req_start_pos = req_start_idx + start_pos - num_computed_tokens
                 is_mm_embed[req_start_pos + start_idx : req_start_pos + end_idx] = True
@@ -1081,12 +988,10 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             self.maybe_setup_kv_connector(scheduler_output)
 
         while start_index < self.input_batch.num_reqs:
-            attn_metadata, logits_indices, padded_num_reqs, num_reqs, end_index = (
-                self._prepare_inputs(scheduler_output, start_index)
+            attn_metadata, logits_indices, padded_num_reqs, num_reqs, end_index = self._prepare_inputs(
+                scheduler_output, start_index
             )
-            input_ids, inputs_embeds = self._get_model_inputs(
-                self.input_ids, mm_embed_inputs
-            )
+            input_ids, inputs_embeds = self._get_model_inputs(self.input_ids, mm_embed_inputs)
             torch_xla.sync(wait=False)
             # Run the decoder
             with set_forward_context(
@@ -1105,24 +1010,16 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 self.input_batch, padded_num_reqs, self.device
             )
             if scheduler_output.grammar_bitmask is not None:
-                require_struct_decoding, grammar_bitmask_padded, arange = (
-                    self.prepare_structured_decoding_input(logits, scheduler_output)
+                require_struct_decoding, grammar_bitmask_padded, arange = self.prepare_structured_decoding_input(
+                    logits, scheduler_output
                 )
-                logits = self.structured_decode(
-                    require_struct_decoding, grammar_bitmask_padded, logits, arange
-                )
-            selected_token_ids = self.sample_from_logits_func(
-                logits, tpu_sampling_metadata
-            )
+                logits = self.structured_decode(require_struct_decoding, grammar_bitmask_padded, logits, arange)
+            selected_token_ids = self.sample_from_logits_func(logits, tpu_sampling_metadata)
             # NOTE (NickLucche) Use the original logits (before any penalties or
             # temperature scaling) for the top-k logprobs. We can't enforce it
             # due to recompilations outside torch.compiled code, so just make
             # sure `sample_from_logits` does not modify the logits in-place.
-            logprobs = (
-                self.gather_logprobs(logits, selected_token_ids)
-                if tpu_sampling_metadata.logprobs
-                else None
-            )
+            logprobs = self.gather_logprobs(logits, selected_token_ids) if tpu_sampling_metadata.logprobs else None
 
             # Remove padding on cpu and keep dynamic op outside of xla graph.
             selected_token_ids = selected_token_ids.cpu()[:num_reqs]
@@ -1138,9 +1035,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # should be called right after each single forward pass,
         # instead of the forwards of the entire input batch.
         self.maybe_wait_for_kv_save()
-        finished_sending, finished_recving = self.get_finished_kv_transfers(
-            scheduler_output
-        )
+        finished_sending, finished_recving = self.get_finished_kv_transfers(scheduler_output)
 
         selected_token_ids = torch.cat(combined_selected_tokens, dim=0)
         if tpu_sampling_metadata.logprobs:
@@ -1152,13 +1047,9 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 return result
 
             logprobs_lists = LogprobsLists(
-                logprob_token_ids=concat_lists(
-                    [lp.logprob_token_ids for lp in combined_logprobs]
-                ),
+                logprob_token_ids=concat_lists([lp.logprob_token_ids for lp in combined_logprobs]),
                 logprobs=concat_lists([lp.logprobs for lp in combined_logprobs]),
-                sampled_token_ranks=concat_lists(
-                    [lp.sampled_token_ranks for lp in combined_logprobs]
-                ),
+                sampled_token_ranks=concat_lists([lp.sampled_token_ranks for lp in combined_logprobs]),
             )
         else:
             logprobs_lists = None
@@ -1171,10 +1062,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         for i, req_id in zip(range(num_reqs), self.input_batch.req_ids):
             assert req_id is not None
             req_state = self.requests[req_id]
-            seq_len = (
-                req_state.num_computed_tokens
-                + scheduler_output.num_scheduled_tokens[req_id]
-            )
+            seq_len = req_state.num_computed_tokens + scheduler_output.num_scheduled_tokens[req_id]
             if seq_len >= req_state.num_tokens:
                 request_seq_lens.append((i, req_state, seq_len))
             else:
@@ -1189,9 +1077,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 # so that we could clear the sampled tokens before returning.
                 discard_sampled_tokens_req_indices.append(i)
 
-        assert all(
-            req_id is not None for req_id in self.input_batch.req_ids[:num_reqs]
-        ), "req_ids contains None"
+        assert all(req_id is not None for req_id in self.input_batch.req_ids[:num_reqs]), "req_ids contains None"
         req_ids = cast(list[str], self.input_batch.req_ids[:num_reqs])
 
         prompt_logprobs_dict: dict[str, LogprobsTensors | None] = {}
@@ -1218,15 +1104,11 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         else:
             valid_mask = selected_token_ids != INVALID_TOKEN_ID
             gen_lens = valid_mask.sum(dim=1).tolist()
-            valid_sampled_token_ids = [
-                seq.tolist() for seq in selected_token_ids[valid_mask].split(gen_lens)
-            ]
+            valid_sampled_token_ids = [seq.tolist() for seq in selected_token_ids[valid_mask].split(gen_lens)]
             self.input_batch.num_tokens[:num_reqs] += gen_lens
             for i, req_state, seq_len in request_seq_lens:
                 target_slice = slice(seq_len - gen_lens[i] + 1, seq_len + 1)
-                self.input_batch.token_ids_cpu[i, target_slice] = (
-                    valid_sampled_token_ids[i]
-                )
+                self.input_batch.token_ids_cpu[i, target_slice] = valid_sampled_token_ids[i]
                 req_state.output_token_ids.extend(valid_sampled_token_ids[i])
 
         kv_connector_output = (
@@ -1260,8 +1142,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         allowed_config_names = {"load_config", "model_config"}
         for config_name, config_overrides in overrides.items():
             assert config_name in allowed_config_names, (
-                f"Config `{config_name}` not supported. "
-                f"Allowed configs: {allowed_config_names}"
+                f"Config `{config_name}` not supported. Allowed configs: {allowed_config_names}"
             )
             config = getattr(self, config_name)
             new_config = update_config(config, config_overrides)
@@ -1281,15 +1162,12 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # the embedding weights.
         xm_tp_rank = xr.global_ordinal()
         with patch(
-            "aphrodite.modeling.layers.vocab_parallel_embedding."
-            "get_tensor_model_parallel_rank",
+            "aphrodite.modeling.layers.vocab_parallel_embedding.get_tensor_model_parallel_rank",
             return_value=xm_tp_rank,
         ):
             try:
                 if self.use_spmd:
-                    tpu_loader = TPUModelLoader(
-                        load_config=self.aphrodite_config.load_config
-                    )
+                    tpu_loader = TPUModelLoader(load_config=self.aphrodite_config.load_config)
                     model = tpu_loader.load_model(
                         aphrodite_config=self.aphrodite_config,
                         model_config=self.aphrodite_config.model_config,
@@ -1322,9 +1200,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.sampler = TPUSampler()
 
     def reload_weights(self) -> None:
-        assert getattr(self, "model", None) is not None, (
-            "Cannot reload weights before model is loaded."
-        )
+        assert getattr(self, "model", None) is not None, "Cannot reload weights before model is loaded."
         model_loader = get_model_loader(self.load_config)
         logger.info("Reloading weights inplace...")
         model_loader.load_weights(self.model, model_config=self.model_config)
@@ -1333,30 +1209,20 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
     def _dummy_run(self, num_tokens: int, num_reqs: int, num_blocks: int) -> None:
         if self.supports_mm_inputs:
             input_ids = None
-            inputs_embeds = torch.zeros(
-                (num_tokens, self.hidden_size), dtype=self.dtype, device=self.device
-            )
+            inputs_embeds = torch.zeros((num_tokens, self.hidden_size), dtype=self.dtype, device=self.device)
         else:
             input_ids = torch.zeros((num_tokens), dtype=torch.int32).to(self.device)
             inputs_embeds = None
         actual_num_reqs = min(num_tokens, num_reqs)
         position_ids = torch.zeros(num_tokens, dtype=torch.int32).to(self.device)
-        padded_num_slices = _get_padded_num_kv_cache_update_slices(
-            num_tokens, self.max_num_reqs, self.block_size
-        )
-        num_kv_update_slices = torch.tensor([padded_num_slices], dtype=torch.int32).to(
-            self.device
-        )
-        slot_mapping = torch.zeros((3, padded_num_slices), dtype=torch.int32).to(
-            self.device
-        )
-        block_tables = torch.zeros((num_reqs, num_blocks), dtype=torch.int32).to(
-            self.device
-        )
+        padded_num_slices = _get_padded_num_kv_cache_update_slices(num_tokens, self.max_num_reqs, self.block_size)
+        num_kv_update_slices = torch.tensor([padded_num_slices], dtype=torch.int32).to(self.device)
+        slot_mapping = torch.zeros((3, padded_num_slices), dtype=torch.int32).to(self.device)
+        block_tables = torch.zeros((num_reqs, num_blocks), dtype=torch.int32).to(self.device)
         query_lens = [1] * num_reqs
-        query_start_loc = torch.cumsum(
-            torch.tensor([0] + query_lens, dtype=torch.int32), dim=0, dtype=torch.int32
-        ).to(self.device)
+        query_start_loc = torch.cumsum(torch.tensor([0] + query_lens, dtype=torch.int32), dim=0, dtype=torch.int32).to(
+            self.device
+        )
         context_lens = torch.ones((num_reqs,), dtype=torch.int32).to(self.device)
         num_seqs = torch.tensor([actual_num_reqs], dtype=torch.int32).to(self.device)
         attn_metadata = PallasMetadata(
@@ -1380,28 +1246,18 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         torch._dynamo.mark_dynamic(attn_metadata.query_start_loc, 0)
 
         layer_names = get_layers_from_aphrodite_config(self.aphrodite_config, Attention).keys()
-        per_layer_attn_metadata = {
-            layer_name: attn_metadata for layer_name in layer_names
-        }
+        per_layer_attn_metadata = {layer_name: attn_metadata for layer_name in layer_names}
 
         with (
-            self.maybe_select_dummy_loras(
-                self.lora_config, np.array([num_tokens], dtype=np.int32)
-            ),
+            self.maybe_select_dummy_loras(self.lora_config, np.array([num_tokens], dtype=np.int32)),
             set_forward_context(per_layer_attn_metadata, self.aphrodite_config, 0),
         ):
-            out = self.model(
-                input_ids=input_ids, positions=position_ids, inputs_embeds=inputs_embeds
-            )
+            out = self.model(input_ids=input_ids, positions=position_ids, inputs_embeds=inputs_embeds)
         self._hidden_states_dtype = out.dtype
 
-    def _set_active_loras(
-        self, prompt_lora_mapping, token_lora_mapping, lora_requests
-    ) -> None:
+    def _set_active_loras(self, prompt_lora_mapping, token_lora_mapping, lora_requests) -> None:
         torch_xla.sync(wait=False)  # Captures input updates
-        super()._set_active_loras(
-            prompt_lora_mapping, token_lora_mapping, lora_requests
-        )
+        super()._set_active_loras(prompt_lora_mapping, token_lora_mapping, lora_requests)
         torch_xla.sync(wait=False)  # Captures metadata updates
 
     def _precompile_mm_encoder(self) -> None:
@@ -1417,9 +1273,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         max_items_per_seq_by_modality = mm_budget.max_items_per_batch_by_modality  # noqa: E501
 
         for mode, max_items_per_seq in max_items_per_seq_by_modality.items():
-            logger.info(
-                "Compiling Multimodal %s Encoder with different input shapes.", mode
-            )
+            logger.info("Compiling Multimodal %s Encoder with different input shapes.", mode)
             start = time.perf_counter()
             # No padding for MM encoder just yet.
             for num_items in range(1, max_items_per_seq + 1):
@@ -1430,9 +1284,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 )
                 # Run multimodal encoder.
                 torch_xla.sync(wait=False)
-                mm_embeds = self.model.get_multimodal_embeddings(
-                    **batched_dummy_mm_inputs
-                )
+                mm_embeds = self.model.get_multimodal_embeddings(**batched_dummy_mm_inputs)
                 torch_xla.sync(wait=False)
                 num_patches = mm_embeds[0].shape[0]
                 items_size = num_patches * num_items
@@ -1446,9 +1298,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                         # XLA Workaround: if torch.zeros(..device) is used, XLA
                         # compiles a scalar+expansion op, which won't match
                         # the graph generated at runtime. CPU->TPU must be used
-                        placeholders_ids = torch.zeros(
-                            num_tokens, dtype=torch.int32, device="cpu"
-                        )
+                        placeholders_ids = torch.zeros(num_tokens, dtype=torch.int32, device="cpu")
                         # Align placeholders and actual num mm_embeddings.
                         placeholders_ids[:items_size] = hf_config.image_token_index
 
@@ -1468,9 +1318,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             # Pre-compile `get_input_embeddings` when mm_embeddings are not
             # present. Chunk is only made of text, no mm_placeholders.
             for num_tokens in self.num_tokens_paddings:
-                placeholders_ids = torch.zeros(
-                    num_tokens, dtype=torch.int32, device="cpu"
-                )
+                placeholders_ids = torch.zeros(num_tokens, dtype=torch.int32, device="cpu")
                 placeholders_ids = placeholders_ids.to(self.device)
                 a, b = self._get_model_inputs(
                     placeholders_ids,
@@ -1492,9 +1340,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         start = time.perf_counter()
         for num_tokens in self.num_tokens_paddings:
             logger.info("  -- num_tokens: %d", num_tokens)
-            self._dummy_run(
-                num_tokens, self.num_reqs_max_model_len, self.max_num_blocks_per_req
-            )
+            self._dummy_run(num_tokens, self.num_reqs_max_model_len, self.max_num_blocks_per_req)
             if self.most_model_len is not None:
                 self._dummy_run(
                     num_tokens,
@@ -1513,9 +1359,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         start = time.perf_counter()
         hsize = self.model_config.get_hidden_size()
         for num_tokens in self.num_tokens_paddings:
-            dummy_hidden = torch.zeros(
-                (num_tokens, hsize), device=self.device, dtype=self._hidden_states_dtype
-            )
+            dummy_hidden = torch.zeros((num_tokens, hsize), device=self.device, dtype=self._hidden_states_dtype)
             torch._dynamo.mark_dynamic(dummy_hidden, 0)
             for num_reqs in self.num_reqs_paddings:
                 indices = torch.zeros(num_reqs, dtype=torch.int32, device=self.device)
@@ -1536,9 +1380,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         start = time.perf_counter()
         hsize = self.model_config.get_hidden_size()
         for num_reqs in self.num_reqs_paddings:
-            dummy_hidden = torch.zeros(
-                (num_reqs, hsize), device=self.device, dtype=self._hidden_states_dtype
-            )
+            dummy_hidden = torch.zeros((num_reqs, hsize), device=self.device, dtype=self._hidden_states_dtype)
             torch._dynamo.mark_dynamic(dummy_hidden, 0)
             self.compute_logits(dummy_hidden)
             logger.info("  -- num_seqs: %d", num_reqs)
@@ -1556,9 +1398,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 device=self.device,
                 dtype=self._hidden_states_dtype,
             )
-            dummy_require_struct_decoding = self.require_structured_out_cpu[
-                :num_reqs
-            ].to(self.device)
+            dummy_require_struct_decoding = self.require_structured_out_cpu[:num_reqs].to(self.device)
             dummy_grammar_bitmask = self.grammar_bitmask_cpu[:num_reqs].to(self.device)
             # The first dimension of the above 3 dummy tensors cannot be
             # mark_dynamic because some operations in structured_decode require
@@ -1596,9 +1436,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                     generate_params_if_all_greedy,
                 )
                 sampling_metadata.all_greedy = all_greedy
-                with self.maybe_select_dummy_loras(
-                    self.lora_config, np.array([num_reqs], dtype=np.int32)
-                ):
+                with self.maybe_select_dummy_loras(self.lora_config, np.array([num_reqs], dtype=np.int32)):
                     self.sample_from_logits_func(dummy_logits, sampling_metadata)
             logger.info("  -- num_seqs: %d", num_reqs)
         xm.wait_device_ops()
@@ -1616,9 +1454,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 dtype=self._hidden_states_dtype,
             )
             dummy_tokens = torch.zeros((num_reqs, 1), dtype=torch.int64).to(self.device)
-            with self.maybe_select_dummy_loras(
-                self.lora_config, np.array([num_reqs], dtype=np.int32)
-            ):
+            with self.maybe_select_dummy_loras(self.lora_config, np.array([num_reqs], dtype=np.int32)):
                 self.gather_logprobs(dummy_logits, dummy_tokens)
             logger.info("  -- num_seqs: %d", num_reqs)
         xm.wait_device_ops()
@@ -1646,10 +1482,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         # Profile with multimodal encoder & encoder cache.
         if self.supports_mm_inputs:
             if self.model_config.multimodal_config.skip_mm_profiling:
-                logger.info(
-                    "Skipping memory profiling for multimodal encoder and "
-                    "encoder cache."
-                )
+                logger.info("Skipping memory profiling for multimodal encoder and encoder cache.")
             else:
                 mm_budget = self.mm_budget
                 assert mm_budget is not None
@@ -1660,9 +1493,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                     # modality with the max possible input tokens even when
                     # it supports multiple.
                     dummy_modality = mm_budget.get_modality_with_max_tokens()
-                    max_mm_items_per_batch = mm_budget.max_items_per_batch_by_modality[
-                        dummy_modality
-                    ]
+                    max_mm_items_per_batch = mm_budget.max_items_per_batch_by_modality[dummy_modality]
 
                     logger.info(
                         "Encoder cache will be initialized with a budget of "
@@ -1684,9 +1515,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                     # impact of recompilation until it's fixed.
                     start = time.perf_counter()
                     torch_xla.sync(wait=False)
-                    dummy_encoder_outputs = self.model.get_multimodal_embeddings(
-                        **batched_dummy_mm_inputs
-                    )
+                    dummy_encoder_outputs = self.model.get_multimodal_embeddings(**batched_dummy_mm_inputs)
                     torch_xla.sync(wait=False)
                     xm.wait_device_ops()
                     end = time.perf_counter()
@@ -1704,9 +1533,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                     self.encoder_cache["tmp"] = dict(enumerate(dummy_encoder_outputs))
 
         # Trigger compilation for general shape.
-        self._dummy_run(
-            num_tokens, self.num_reqs_max_model_len, self.max_num_blocks_per_req
-        )
+        self._dummy_run(num_tokens, self.num_reqs_max_model_len, self.max_num_blocks_per_req)
         if self.most_model_len is not None:
             self._dummy_run(
                 num_tokens,
@@ -1749,14 +1576,9 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             cache size of each layer
         """
         if len(kv_cache_config.kv_cache_groups) > 1:
-            raise NotImplementedError(
-                "Hybrid models with more than one KV cache type are not supported yet."
-            )
+            raise NotImplementedError("Hybrid models with more than one KV cache type are not supported yet.")
 
-        if (
-            kv_cache_config.kv_cache_groups[0].kv_cache_spec.block_size
-            != self.block_size
-        ):
+        if kv_cache_config.kv_cache_groups[0].kv_cache_spec.block_size != self.block_size:
             self.input_batch = InputBatch(
                 max_num_reqs=self.max_num_reqs,
                 max_model_len=self.max_model_len,
@@ -1764,18 +1586,11 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 device=self.device,
                 pin_memory=self.pin_memory,
                 vocab_size=self.model_config.get_vocab_size(),
-                block_sizes=[
-                    kv_cache_config.kv_cache_groups[0].kv_cache_spec.block_size
-                ],
-                kernel_block_sizes=[
-                    kv_cache_config.kv_cache_groups[0].kv_cache_spec.block_size
-                ],
+                block_sizes=[kv_cache_config.kv_cache_groups[0].kv_cache_spec.block_size],
+                kernel_block_sizes=[kv_cache_config.kv_cache_groups[0].kv_cache_spec.block_size],
             )
         # Verify dtype compatibility between block_table_cpu and input_batch
-        assert (
-            self.block_table_cpu.dtype
-            == self.input_batch.block_table[0].get_cpu_tensor().dtype
-        )
+        assert self.block_table_cpu.dtype == self.input_batch.block_table[0].get_cpu_tensor().dtype
 
         kv_cache_sizes = {}
         for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
@@ -1798,8 +1613,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                         tp_size = self.original_parallel_config.tensor_parallel_size
                         # TODO: Handle kv cache duplication under SPMD mode.
                         assert num_kv_heads % tp_size == 0, (
-                            f"num_kv_heads {num_kv_heads} must be divisible by "
-                            f"tp_size {tp_size} under SPMD mode"
+                            f"num_kv_heads {num_kv_heads} must be divisible by tp_size {tp_size} under SPMD mode"
                         )
                     kv_cache_shape = PallasAttentionBackend.get_kv_cache_shape(
                         num_blocks,
@@ -1809,9 +1623,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                     )
                     dtype = kv_cache_spec.dtype
 
-                    tpu_kv_cache = torch.zeros(kv_cache_shape, dtype=dtype).to(
-                        self.device
-                    )
+                    tpu_kv_cache = torch.zeros(kv_cache_shape, dtype=dtype).to(self.device)
 
                     kv_caches[layer_name] = tpu_kv_cache
                 else:
@@ -1845,9 +1657,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             compiled_model = self.model.model
         if isinstance(compiled_model, TorchCompileWrapperWithCustomDispatcher):
             logger.info("Clear dynamo cache and cached dynamo bytecode.")
-            torch._dynamo.eval_frame.remove_from_cache(
-                compiled_model.original_code_object
-            )
+            torch._dynamo.eval_frame.remove_from_cache(compiled_model.original_code_object)
             compiled_model.compiled_codes.clear()
 
     @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
@@ -1861,9 +1671,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
     # TODO: Under SPMD mode, sample_from_logits has correctness issue.
     #       Re-enable the torch.compile once the issue is fixed in torchxla.
     # @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
-    def sample_from_logits(
-        self, logits: torch.Tensor, sampling_metadata: TPUSupportedSamplingMetadata
-    ) -> torch.Tensor:
+    def sample_from_logits(self, logits: torch.Tensor, sampling_metadata: TPUSupportedSamplingMetadata) -> torch.Tensor:
         """
         Sample with xla-friendly function. This function is to be traced
         separately from `forward` for lighter compilation overhead.
@@ -1875,9 +1683,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         return out_tokens
 
     @torch.compile(backend="openxla", fullgraph=True, dynamic=False)
-    def gather_logprobs(
-        self, logits: torch.Tensor, sampled_tokens: torch.Tensor
-    ) -> LogprobsTensors:
+    def gather_logprobs(self, logits: torch.Tensor, sampled_tokens: torch.Tensor) -> LogprobsTensors:
         """
         Gather the top_logprobs with corresponding tokens. Use a fixed number
         of logprobs as an alternative to having multiple pre-compiled graphs.
@@ -1904,20 +1710,13 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             logits,
         )
 
-    def apply_grammar_bitmask(
-        self, logits: torch.Tensor, grammar_bitmask: torch.Tensor, arange: torch.Tensor
-    ):
+    def apply_grammar_bitmask(self, logits: torch.Tensor, grammar_bitmask: torch.Tensor, arange: torch.Tensor):
         assert logits.shape[0] == grammar_bitmask.shape[0]
         logits_cloned = logits.clone()
         for i in range(logits.shape[0]):
-            unpacked_bitmask = (
-                torch.bitwise_right_shift(grammar_bitmask[i][:, None], arange[None, :])
-                & 1
-            ) == 0
+            unpacked_bitmask = (torch.bitwise_right_shift(grammar_bitmask[i][:, None], arange[None, :]) & 1) == 0
             unpacked_bitmask = unpacked_bitmask.reshape(-1)[: self.vocab_size]
-            logits_cloned[i] = logits_cloned[i].masked_fill(
-                unpacked_bitmask, -float("inf")
-            )
+            logits_cloned[i] = logits_cloned[i].masked_fill(unpacked_bitmask, -float("inf"))
         return logits_cloned
 
     def get_multimodal_embeddings(self, *args, **kwargs):
@@ -1942,9 +1741,7 @@ class TPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             if req_id not in self.input_batch.req_id_to_index:
                 continue
             batch_index = self.input_batch.req_id_to_index[req_id]
-            self.grammar_bitmask_cpu[batch_index] = torch.from_numpy(
-                grammar_bitmask[cumulative_mask_idx]
-            )
+            self.grammar_bitmask_cpu[batch_index] = torch.from_numpy(grammar_bitmask[cumulative_mask_idx])
             # It's not guaranteed that all requests in this batch require
             # structured output, so create a bool tensor to represent
             # the requests that need structured output.
@@ -2007,9 +1804,7 @@ def _get_padded_num_reqs_with_upper_limit(x: int, upper_limit: int) -> int:
     return min(res, upper_limit)
 
 
-def _get_token_paddings(
-    min_token_size: int, max_token_size: int, padding_gap: int
-) -> list[int]:
+def _get_token_paddings(min_token_size: int, max_token_size: int, padding_gap: int) -> list[int]:
     """Generate a list of padding size, starting from min_token_size,
     ending with a number that can cover max_token_size
 
@@ -2054,9 +1849,7 @@ def _get_padded_token_len(paddings: list[int], x: int) -> int:
     return paddings[index]
 
 
-def _get_padded_num_kv_cache_update_slices(
-    num_tokens: int, max_num_reqs: int, page_size: int
-) -> int:
+def _get_padded_num_kv_cache_update_slices(num_tokens: int, max_num_reqs: int, page_size: int) -> int:
     """Calculates the padded number of KV cache update slices to avoid
     recompilation."""
     # NOTE(chengjiyao): let's say R_i is the token num for i-th request,

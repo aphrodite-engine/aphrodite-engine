@@ -31,11 +31,13 @@ torch._inductor.config.compile_threads = 1
 
 def memory_plan_reuse_patched(self):
     import torch._inductor.ir as ir
-    from torch._inductor.codegen.wrapper import (EnterSubgraphLine,
-                                                 ExitSubgraphLine,
-                                                 MemoryPlanningLine,
-                                                 MemoryPlanningState,
-                                                 SubgraphPythonWrapperCodegen)
+    from torch._inductor.codegen.wrapper import (
+        EnterSubgraphLine,
+        ExitSubgraphLine,
+        MemoryPlanningLine,
+        MemoryPlanningState,
+        SubgraphPythonWrapperCodegen,
+    )
     from torch._inductor.virtualized import V
 
     def get_output_names(graph_outputs) -> list[str]:
@@ -57,16 +59,12 @@ def memory_plan_reuse_patched(self):
         isinstance(V.graph.wrapper_code, SubgraphPythonWrapperCodegen)
         and V.graph.wrapper_code.partition_signatures is not None
     ):
-        out_names = get_output_names(
-            V.graph.wrapper_code.partition_signatures.output_nodes
-        )
+        out_names = get_output_names(V.graph.wrapper_code.partition_signatures.output_nodes)
     else:
         out_names = V.graph.get_output_names()
 
     while (
-        self.lines
-        and isinstance(self.lines[-1], MemoryPlanningLine)
-        and self.lines[-1].node.name not in out_names  # type: ignore[attr-defined]
+        self.lines and isinstance(self.lines[-1], MemoryPlanningLine) and self.lines[-1].node.name not in out_names  # type: ignore[attr-defined]
     ):
         # these lines will be pointless
         self.lines.pop()
@@ -95,16 +93,13 @@ def memory_plan_reuse_patched(self):
 # For more context, see https://github.com/pytorch/pytorch/pull/165815.
 
 
-def get_graph_partition_signature_patched(
-    self, partitions, skip_cudagraphs: list[bool]
-):
+def get_graph_partition_signature_patched(self, partitions, skip_cudagraphs: list[bool]):
     """
     Gets signature for each graph partition, including input nodes, output nodes, and
     whether deallocating an input within graph partition.
     """
     from torch._inductor import dependencies
-    from torch._inductor.ir import (GraphPartitionSignature, MutationOutput,
-                                    NoneLayout)
+    from torch._inductor.ir import GraphPartitionSignature, MutationOutput, NoneLayout
     from torch._inductor.virtualized import V
     from torch.utils._ordered_set import OrderedSet
 
@@ -124,18 +119,14 @@ def get_graph_partition_signature_patched(
             return False
 
         if isinstance(buf.node.layout, NoneLayout):
-            if isinstance(buf.node, MutationOutput) and (
-                real_name := self.mutation_real_name.get(buf_name, None)
-            ):
+            if isinstance(buf.node, MutationOutput) and (real_name := self.mutation_real_name.get(buf_name, None)):
                 return is_none_layout(real_name)
 
             return True
 
         return False
 
-    for partition, skip_cudagraph in zip(
-        reversed(partitions), reversed(skip_cudagraphs)
-    ):
+    for partition, skip_cudagraph in zip(reversed(partitions), reversed(skip_cudagraphs)):
         output_names: OrderedSet[str] = OrderedSet()
 
         for node in partition:
@@ -145,26 +136,16 @@ def get_graph_partition_signature_patched(
 
         # all reads/writes are partition inputs except those generated
         # within the partition and tensor constants
-        read_writes = dependencies.ReadWrites.merge_list(
-            [node.read_writes for node in partition]
-        )
+        read_writes = dependencies.ReadWrites.merge_list([node.read_writes for node in partition])
 
         # WeakDep is fake dependency on unused buffer. It should not appear
         # in partition_input_names for inputs that are actually read or written.
         partition_input_names = (
-            OrderedSet(
-                [
-                    x.name
-                    for x in read_writes.reads | read_writes.writes
-                    if not is_none_layout(x.name)
-                ]
-            )
+            OrderedSet([x.name for x in read_writes.reads | read_writes.writes if not is_none_layout(x.name)])
             - output_names
         )
 
-        partition_input_names = OrderedSet(
-            self.mutation_real_name.get(name, name) for name in partition_input_names
-        )
+        partition_input_names = OrderedSet(self.mutation_real_name.get(name, name) for name in partition_input_names)
 
         buffer_names_to_free: OrderedSet[str] = OrderedSet()
         for node in partition:
@@ -173,22 +154,12 @@ def get_graph_partition_signature_patched(
         # buffer_names_to_free may contain buffers allocated in previous
         # graph partitions. These buffers should also be a partition
         # input.
-        extra_input_names = [
-            name
-            for name in (buffer_names_to_free - output_names)
-            if name in name_to_node
-        ]
+        extra_input_names = [name for name in (buffer_names_to_free - output_names) if name in name_to_node]
         partition_input_names.update(extra_input_names)
 
-        input_nodes = {
-            name: name_to_node[name]
-            for name in partition_input_names
-            if name in name_to_node
-        }
+        input_nodes = {name: name_to_node[name] for name in partition_input_names if name in name_to_node}
         input_deallocation = {
-            name: name in buffer_names_to_free
-            for name in partition_input_names
-            if name in name_to_node
+            name: name in buffer_names_to_free for name in partition_input_names if name in name_to_node
         }
 
         # if an input tensor is not freed in the partition function, it should
@@ -196,26 +167,16 @@ def get_graph_partition_signature_patched(
         # since the returned output tensor is a cudagraph managed tensor with
         # a static tensor address.
         extra_output_names = [
-            name
-            for name in partition_input_names
-            if name in name_to_node and name not in buffer_names_to_free
+            name for name in partition_input_names if name in name_to_node and name not in buffer_names_to_free
         ]
 
         returned_output_names.update(extra_output_names)
 
-        returned_output_names = OrderedSet(
-            self.mutation_real_name.get(name, name) for name in returned_output_names
-        )
+        returned_output_names = OrderedSet(self.mutation_real_name.get(name, name) for name in returned_output_names)
 
-        output_nodes = [
-            name_to_node[name]
-            for name in returned_output_names
-            if not is_none_layout(name)
-        ]
+        output_nodes = [name_to_node[name] for name in returned_output_names if not is_none_layout(name)]
 
-        constant_names = [
-            name for name in partition_input_names if name in V.graph.constants
-        ]
+        constant_names = [name for name in partition_input_names if name in V.graph.constants]
 
         symbol_inputs = self.get_graph_partition_symbol_inputs(partition, input_nodes)
 
@@ -230,9 +191,7 @@ def get_graph_partition_signature_patched(
 
         signatures.append(partition_signature)
 
-        unmet_output_names = partition_input_names.union(
-            unmet_output_names - returned_output_names
-        )
+        unmet_output_names = partition_input_names.union(unmet_output_names - returned_output_names)
 
     return signatures[::-1]
 
@@ -266,12 +225,12 @@ def should_partition_patched(self, node, should_log: bool = False) -> bool:
     """Return True if we should partition the inductor graph on this node"""
 
     import torch._inductor.ir as ir
-    from torch._inductor.scheduler import (BaseSchedulerNode,
-                                           FusedSchedulerNode,
-                                           _custom_should_partition_fns)
-    from torch._inductor.utils import (_unstable_customized_partition_wrapper,
-                                       is_cudagraph_unsafe_op,
-                                       maybe_log_cudagraph_partition)
+    from torch._inductor.scheduler import BaseSchedulerNode, FusedSchedulerNode, _custom_should_partition_fns
+    from torch._inductor.utils import (
+        _unstable_customized_partition_wrapper,
+        is_cudagraph_unsafe_op,
+        maybe_log_cudagraph_partition,
+    )
 
     # Allow users to manually specify if a node should be partitioned
     # Can only do this for FallbackKernels
@@ -284,10 +243,7 @@ def should_partition_patched(self, node, should_log: bool = False) -> bool:
     # When not using cudagraphs, keep all kernels in the `call` function
     # instead of graph partition functions, since graph partition only brings
     # benefit to cudagraph
-    if (
-        not torch._inductor.config.triton.cudagraphs
-        and _unstable_customized_partition_wrapper.wrapper is None
-    ):
+    if not torch._inductor.config.triton.cudagraphs and _unstable_customized_partition_wrapper.wrapper is None:
         return True
 
     # avoid duplicating logs when should_partition is called multiple times

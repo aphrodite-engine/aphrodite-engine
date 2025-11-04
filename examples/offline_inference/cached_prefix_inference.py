@@ -12,7 +12,8 @@ prefix = (
     "teaching role. They have 5 years of previous teaching experience "
     "as an assistant teacher at a co-ed, public school with experience "
     "in middle school math teaching. Based on these information, fulfill "
-    "the following paragraph: ")
+    "the following paragraph: "
+)
 
 # Sample prompts.
 prompts = [
@@ -30,9 +31,9 @@ sampling_params = SamplingParams(temperature=0.0)
 # Create an LLM.
 regular_llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct")
 
-prefix_cached_llm = LLM(model="NousResearch/Meta-Llama-3.1-8B-Instruct",
-                        enable_prefix_caching=True,
-                        gpu_memory_utilization=0.4)
+prefix_cached_llm = LLM(
+    model="NousResearch/Meta-Llama-3.1-8B-Instruct", enable_prefix_caching=True, gpu_memory_utilization=0.4
+)
 print("Results without `enable_prefix_caching`")
 
 # Generate texts from the prompts. The output is a list of RequestOutput objects
@@ -72,10 +73,7 @@ for output in outputs:
 print("-" * 80)
 
 # Compare the results and display the speedup
-generated_same = all([
-    regular_generated_texts[i] == cached_generated_texts[i]
-    for i in range(len(prompts))
-])
+generated_same = all([regular_generated_texts[i] == cached_generated_texts[i] for i in range(len(prompts))])
 print(f"Generated answers are the same: {generated_same}")
 
 speedup = round(duration_regular / duration_cached, 2)

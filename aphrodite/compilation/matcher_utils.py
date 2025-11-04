@@ -10,8 +10,13 @@ from aphrodite.modeling.layers.layernorm import RMSNorm
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.input_quant_fp8 import QuantFP8
 from aphrodite.quantization.utils.quant_utils import (
-    QuantKey, _normalize_quant_group_shape, kFp8DynamicTensorSym,
-    kFp8DynamicTokenSym, kFp8StaticTensorSym, kNvfp4Quant)
+    QuantKey,
+    _normalize_quant_group_shape,
+    kFp8DynamicTensorSym,
+    kFp8DynamicTokenSym,
+    kFp8StaticTensorSym,
+    kNvfp4Quant,
+)
 
 RMS_OP = torch.ops._C.rms_norm.default
 RMS_ADD_OP = torch.ops._C.fused_add_rms_norm.default
@@ -93,9 +98,7 @@ class MatcherRMSNorm(MatcherCustomOp):
         input: torch.Tensor,
         weight: torch.Tensor,
     ) -> torch.Tensor:
-        return RMSNorm.forward_static(
-            input, self.epsilon, input.size(-1), self.model_dtype, weight
-        )
+        return RMSNorm.forward_static(input, self.epsilon, input.size(-1), self.model_dtype, weight)
 
 
 class MatcherFusedAddRMSNorm(MatcherCustomOp):
@@ -134,9 +137,7 @@ class MatcherFusedAddRMSNorm(MatcherCustomOp):
         weight: torch.Tensor,
         residual: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        return RMSNorm.forward_static(
-            input, self.epsilon, input.size(-1), self.model_dtype, weight, residual
-        )
+        return RMSNorm.forward_static(input, self.epsilon, input.size(-1), self.model_dtype, weight, residual)
 
 
 class MatcherQuantFP8(MatcherCustomOp):
@@ -149,9 +150,7 @@ class MatcherQuantFP8(MatcherCustomOp):
         assert quant_key in QUANT_OPS, f"unsupported quantization scheme {quant_key}"
         self.QUANT_OP = QUANT_OPS[quant_key]
 
-        assert quant_key.dtype == current_platform.fp8_dtype(), (
-            "Only QuantFP8 supported by"
-        )
+        assert quant_key.dtype == current_platform.fp8_dtype(), "Only QuantFP8 supported by"
         assert quant_key.scale2 is None
         self.quant_fp8 = QuantFP8(quant_key.scale.static, quant_key.scale.group_shape)
 
@@ -160,15 +159,11 @@ class MatcherQuantFP8(MatcherCustomOp):
         input: torch.Tensor,
         scale: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        result = torch.empty(
-            input.shape, device=input.device, dtype=self.quant_key.dtype
-        )
+        result = torch.empty(input.shape, device=input.device, dtype=self.quant_key.dtype)
 
         if self.quant_key.scale.static:
             assert scale is not None
-            _, result = auto_functionalized(
-                self.QUANT_OP, result=result, input=input, scale=scale
-            )
+            _, result = auto_functionalized(self.QUANT_OP, result=result, input=input, scale=scale)
             return result, scale
         else:
             assert scale is None
@@ -186,9 +181,7 @@ class MatcherQuantFP8(MatcherCustomOp):
         return self.quant_fp8(input, scale)
 
     def make_scale(self, input: torch.Tensor):
-        normalized_group_shape = _normalize_quant_group_shape(
-            input, self.quant_key.scale.group_shape
-        )
+        normalized_group_shape = _normalize_quant_group_shape(input, self.quant_key.scale.group_shape)
         scale_shape = (
             input.shape[0] // normalized_group_shape[0],
             input.shape[1] // normalized_group_shape[1],

@@ -110,15 +110,11 @@ class SampleRequest:
     completion: str = None
 
 
-def sample_requests(
-    tokenizer: PreTrainedTokenizerBase, args: argparse.Namespace
-) -> list[SampleRequest]:
+def sample_requests(tokenizer: PreTrainedTokenizerBase, args: argparse.Namespace) -> list[SampleRequest]:
     if args.dataset == "json" or args.dataset == "json-unique":
         if args.json_schema_path is None:
             dir_path = os.path.dirname(os.path.realpath(__file__))
-            args.json_schema_path = os.path.join(
-                dir_path, "structured_schemas", "structured_schema_1.json"
-            )
+            args.json_schema_path = os.path.join(dir_path, "structured_schemas", "structured_schema_1.json")
         json_schemas = []
         with open(args.json_schema_path) as f:
             schema = json.load(f)
@@ -242,9 +238,7 @@ def sample_requests(
             while idx >= len_dataset:
                 idx -= len_dataset
             schema = dataset["schema"][idx]
-            prompt = tokenizer.apply_chat_template(
-                dataset["prompt"][idx], tokenize=False, add_generation_prompt=True
-            )
+            prompt = tokenizer.apply_chat_template(dataset["prompt"][idx], tokenize=False, add_generation_prompt=True)
             input_len = len(tokenizer(prompt).input_ids)
             completion = dataset["completion"][idx]
 
@@ -288,9 +282,7 @@ async def get_request(
     input_requests = iter(input_requests)
 
     # Calculate scale parameter theta to maintain the desired request_rate.
-    assert burstiness > 0, (
-        f"A positive burstiness factor is expected, but given {burstiness}."
-    )
+    assert burstiness > 0, f"A positive burstiness factor is expected, but given {burstiness}."
     theta = 1.0 / (request_rate * burstiness)
 
     for i, request in enumerate(input_requests):
@@ -331,9 +323,7 @@ def calculate_metrics(
             # serving backends instead of looking at len(outputs[i].itl) since
             # multiple output tokens may be bundled together
             # Note : this may inflate the output token count slightly
-            output_len = len(
-                tokenizer(outputs[i].generated_text, add_special_tokens=False).input_ids
-            )
+            output_len = len(tokenizer(outputs[i].generated_text, add_special_tokens=False).input_ids)
             actual_output_lens.append(output_len)
             total_input += input_requests[i].prompt_len
             tpot = 0
@@ -357,19 +347,13 @@ def calculate_metrics(
 
         if "ttft" in goodput_config_dict:
             valid_metrics.append(ttfts)
-            slo_values.append(
-                goodput_config_dict["ttft"] / MILLISECONDS_TO_SECONDS_CONVERSION
-            )
+            slo_values.append(goodput_config_dict["ttft"] / MILLISECONDS_TO_SECONDS_CONVERSION)
         if "tpot" in goodput_config_dict:
             valid_metrics.append(all_tpots)
-            slo_values.append(
-                goodput_config_dict["tpot"] / MILLISECONDS_TO_SECONDS_CONVERSION
-            )
+            slo_values.append(goodput_config_dict["tpot"] / MILLISECONDS_TO_SECONDS_CONVERSION)
         if "e2el" in goodput_config_dict:
             valid_metrics.append(e2els)
-            slo_values.append(
-                goodput_config_dict["e2el"] / MILLISECONDS_TO_SECONDS_CONVERSION
-            )
+            slo_values.append(goodput_config_dict["e2el"] / MILLISECONDS_TO_SECONDS_CONVERSION)
 
         for req_metric in zip(*valid_metrics):
             is_good_req = all([s >= r for s, r in zip(slo_values, req_metric)])
@@ -378,8 +362,7 @@ def calculate_metrics(
 
     if completed == 0:
         warnings.warn(
-            "All requests failed. This is likely due to a misconfiguration "
-            "on the benchmark arguments.",
+            "All requests failed. This is likely due to a misconfiguration on the benchmark arguments.",
             stacklevel=2,
         )
     metrics = BenchmarkMetrics(
@@ -390,31 +373,22 @@ def calculate_metrics(
         request_goodput=good_completed / dur_s,
         output_throughput=sum(actual_output_lens) / dur_s,
         total_token_throughput=(total_input + sum(actual_output_lens)) / dur_s,
-        mean_ttft_ms=np.mean(ttfts or 0)
-        * 1000,  # ttfts is empty if streaming is not supported by backend
+        mean_ttft_ms=np.mean(ttfts or 0) * 1000,  # ttfts is empty if streaming is not supported by backend
         std_ttft_ms=np.std(ttfts or 0) * 1000,
         median_ttft_ms=np.median(ttfts or 0) * 1000,
-        percentiles_ttft_ms=[
-            (p, np.percentile(ttfts or 0, p) * 1000) for p in selected_percentiles
-        ],
+        percentiles_ttft_ms=[(p, np.percentile(ttfts or 0, p) * 1000) for p in selected_percentiles],
         mean_tpot_ms=np.mean(tpots or 0) * 1000,
         std_tpot_ms=np.std(tpots or 0) * 1000,
         median_tpot_ms=np.median(tpots or 0) * 1000,
-        percentiles_tpot_ms=[
-            (p, np.percentile(tpots or 0, p) * 1000) for p in selected_percentiles
-        ],
+        percentiles_tpot_ms=[(p, np.percentile(tpots or 0, p) * 1000) for p in selected_percentiles],
         mean_itl_ms=np.mean(itls or 0) * 1000,
         std_itl_ms=np.std(itls or 0) * 1000,
         median_itl_ms=np.median(itls or 0) * 1000,
-        percentiles_itl_ms=[
-            (p, np.percentile(itls or 0, p) * 1000) for p in selected_percentiles
-        ],
+        percentiles_itl_ms=[(p, np.percentile(itls or 0, p) * 1000) for p in selected_percentiles],
         mean_e2el_ms=np.mean(e2els or 0) * 1000,
         std_e2el_ms=np.std(e2els or 0) * 1000,
         median_e2el_ms=np.median(e2els or 0) * 1000,
-        percentiles_e2el_ms=[
-            (p, np.percentile(e2els or 0, p) * 1000) for p in selected_percentiles
-        ],
+        percentiles_e2el_ms=[(p, np.percentile(e2els or 0, p) * 1000) for p in selected_percentiles],
     )
 
     return metrics, actual_output_lens
@@ -456,9 +430,7 @@ async def benchmark(
     )
 
     test_request = input_requests[0]
-    test_req_extra_body = (
-        prepare_extra_body(test_request) if 0 in structured_output_req_idx else None
-    )
+    test_req_extra_body = prepare_extra_body(test_request) if 0 in structured_output_req_idx else None
     test_input = RequestFuncInput(
         model=model_id,
         prompt=test_request.prompt,
@@ -510,9 +482,7 @@ async def benchmark(
     tasks: list[asyncio.Task] = []
     expected: list[str] = []
     async for i, request in get_request(input_requests, request_rate, burstiness):
-        extra_body = (
-            prepare_extra_body(request) if i in structured_output_req_idx else None
-        )
+        extra_body = prepare_extra_body(request) if i in structured_output_req_idx else None
         request_func_input = RequestFuncInput(
             model=model_id,
             prompt=request.prompt,
@@ -523,11 +493,7 @@ async def benchmark(
             extra_body=extra_body,
         )
         expected.append(request.completion)
-        tasks.append(
-            asyncio.create_task(
-                limited_request_func(request_func_input=request_func_input, pbar=pbar)
-            )
-        )
+        tasks.append(asyncio.create_task(limited_request_func(request_func_input=request_func_input, pbar=pbar)))
     outputs: list[RequestFuncOutput] = await asyncio.gather(*tasks)
 
     if pbar is not None:
@@ -554,27 +520,11 @@ async def benchmark(
     print("{:<40} {:<10.2f}".format("Benchmark duration (s):", benchmark_duration))
     print("{:<40} {:<10}".format("Total input tokens:", metrics.total_input))
     print("{:<40} {:<10}".format("Total generated tokens:", metrics.total_output))
-    print(
-        "{:<40} {:<10.2f}".format(
-            "Request throughput (req/s):", metrics.request_throughput
-        )
-    )
+    print("{:<40} {:<10.2f}".format("Request throughput (req/s):", metrics.request_throughput))
     if goodput_config_dict:
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Request goodput (req/s):", metrics.request_goodput
-            )
-        )
-    print(
-        "{:<40} {:<10.2f}".format(
-            "Output token throughput (tok/s):", metrics.output_throughput
-        )
-    )
-    print(
-        "{:<40} {:<10.2f}".format(
-            "Total Token throughput (tok/s):", metrics.total_token_throughput
-        )
-    )
+        print("{:<40} {:<10.2f}".format("Request goodput (req/s):", metrics.request_goodput))
+    print("{:<40} {:<10.2f}".format("Output token throughput (tok/s):", metrics.output_throughput))
+    print("{:<40} {:<10.2f}".format("Total Token throughput (tok/s):", metrics.total_token_throughput))
 
     result = {
         "duration": benchmark_duration,
@@ -584,12 +534,8 @@ async def benchmark(
         "request_throughput": metrics.request_throughput,
         "output_throughput": metrics.output_throughput,
         "total_token_throughput": metrics.total_token_throughput,
-        "ttft_description": pd.Series([output.ttft for output in outputs])
-        .describe()
-        .to_dict(),
-        "tpot_description": pd.Series([output.tpot for output in outputs])
-        .describe()
-        .to_dict(),
+        "ttft_description": pd.Series([output.ttft for output in outputs]).describe().to_dict(),
+        "tpot_description": pd.Series([output.tpot for output in outputs]).describe().to_dict(),
         "input_lens": [output.prompt_len for output in outputs],
         "output_lens": actual_output_lens,
         "ttfts": [output.ttft for output in outputs],
@@ -597,10 +543,7 @@ async def benchmark(
         "errors": [output.error for output in outputs],
     }
 
-    ret = [
-        {"generated": output.generated_text, "expected": gt}
-        for output, gt in zip(outputs, expected)
-    ]
+    ret = [{"generated": output.generated_text, "expected": gt} for output, gt in zip(outputs, expected)]
 
     def process_one_metric(
         # E.g., "ttft"
@@ -627,15 +570,9 @@ async def benchmark(
                 getattr(metrics, f"median_{metric_attribute_name}_ms"),
             )
         )
-        result[f"mean_{metric_attribute_name}_ms"] = getattr(
-            metrics, f"mean_{metric_attribute_name}_ms"
-        )
-        result[f"median_{metric_attribute_name}_ms"] = getattr(
-            metrics, f"median_{metric_attribute_name}_ms"
-        )
-        result[f"std_{metric_attribute_name}_ms"] = getattr(
-            metrics, f"std_{metric_attribute_name}_ms"
-        )
+        result[f"mean_{metric_attribute_name}_ms"] = getattr(metrics, f"mean_{metric_attribute_name}_ms")
+        result[f"median_{metric_attribute_name}_ms"] = getattr(metrics, f"median_{metric_attribute_name}_ms")
+        result[f"std_{metric_attribute_name}_ms"] = getattr(metrics, f"std_{metric_attribute_name}_ms")
         for p, value in getattr(metrics, f"percentiles_{metric_attribute_name}_ms"):
             p_word = str(int(p)) if int(p) == p else str(p)
             print("{:<40} {:<10.2f}".format(f"P{p_word} {metric_name} (ms):", value))
@@ -705,11 +642,7 @@ def evaluate(ret, args):
 
     not_none_scores = [score for score in scores if score is not None]
 
-    return (
-        (sum(not_none_scores) / len(not_none_scores) * 100)
-        if len(not_none_scores) > 0
-        else None
-    )
+    return (sum(not_none_scores) / len(not_none_scores) * 100) if len(not_none_scores) > 0 else None
 
 
 def parse_goodput(slo_pairs):
@@ -828,9 +761,7 @@ def main(args: argparse.Namespace):
             "model_id": model_id,
             "tokenizer_id": tokenizer_id,
             "num_prompts": args.num_prompts,
-            "request_rate": args.request_rate
-            if args.request_rate < float("inf")
-            else "inf",
+            "request_rate": args.request_rate if args.request_rate < float("inf") else "inf",
             "burstiness": args.burstiness,
             "max_concurrency": args.max_concurrency,
             "correct_rate(%)": score,
@@ -847,9 +778,7 @@ def main(args: argparse.Namespace):
 
 
 def create_argument_parser():
-    parser = FlexibleArgumentParser(
-        description="Benchmark the online serving throughput."
-    )
+    parser = FlexibleArgumentParser(description="Benchmark the online serving throughput.")
     parser.add_argument(
         "--backend",
         type=str,
@@ -876,9 +805,7 @@ def create_argument_parser():
         default="json",
         choices=["json", "json-unique", "grammar", "regex", "choice", "xgrammar_bench"],
     )
-    parser.add_argument(
-        "--json-schema-path", type=str, default=None, help="Path to json schema."
-    )
+    parser.add_argument("--json-schema-path", type=str, default=None, help="Path to json schema.")
     parser.add_argument(
         "--max-concurrency",
         type=int,
@@ -961,8 +888,7 @@ def create_argument_parser():
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="Use Torch Profiler. The endpoint must be launched with "
-        "APHRODITE_TORCH_PROFILER_DIR to enable profiler.",
+        help="Use Torch Profiler. The endpoint must be launched with APHRODITE_TORCH_PROFILER_DIR to enable profiler.",
     )
     parser.add_argument(
         "--result-dir",

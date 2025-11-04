@@ -11,13 +11,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask, BackgroundTasks
 
 from aphrodite.config import ModelConfig
-from aphrodite.endpoints.chat_utils import (load_chat_template,
-                                            resolve_hf_chat_template,
-                                            resolve_mistral_chat_template)
+from aphrodite.endpoints.chat_utils import load_chat_template, resolve_hf_chat_template, resolve_mistral_chat_template
 from aphrodite.endpoints.openai.args import make_arg_parser
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 CompletionRequest,
-                                                 StreamOptions)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, CompletionRequest, StreamOptions
 from aphrodite.endpoints.openai.serving_models import LoRAModulePath
 from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.engine.protocol import EngineClient
@@ -43,9 +39,9 @@ async def listen_for_disconnect(request: Request) -> None:
             # If load tracking is enabled *and* the counter exists, decrement
             # it. Combines the previous nested checks into a single condition
             # to satisfy the linter rule.
-            if getattr(
-                request.app.state, "enable_server_load_tracking", False
-            ) and hasattr(request.app.state, "server_load_metrics"):
+            if getattr(request.app.state, "enable_server_load_tracking", False) and hasattr(
+                request.app.state, "server_load_metrics"
+            ):
                 request.app.state.server_load_metrics -= 1
             break
 
@@ -82,9 +78,7 @@ def with_cancellation(handler_func):
         handler_task = asyncio.create_task(handler_func(*args, **kwargs))
         cancellation_task = asyncio.create_task(listen_for_disconnect(request))
 
-        done, pending = await asyncio.wait(
-            [handler_task, cancellation_task], return_when=asyncio.FIRST_COMPLETED
-        )
+        done, pending = await asyncio.wait([handler_task, cancellation_task], return_when=asyncio.FIRST_COMPLETED)
         for task in pending:
             task.cancel()
 
@@ -105,9 +99,7 @@ def load_aware_call(func):
         raw_request = kwargs.get("raw_request", args[1] if len(args) > 1 else None)
 
         if raw_request is None:
-            raise ValueError(
-                "raw_request required when server load tracking is enabled"
-            )
+            raise ValueError("raw_request required when server load tracking is enabled")
 
         if not getattr(raw_request.app.state, "enable_server_load_tracking", False):
             return await func(*args, **kwargs)
@@ -238,21 +230,15 @@ def log_non_default_args(args: Namespace | EngineArgs):
         if default_args.model != EngineArgs.model:
             non_default_args["model"] = default_args.model
     else:
-        raise TypeError(
-            "Unsupported argument type. Must be Namespace or EngineArgs instance."
-        )
+        raise TypeError("Unsupported argument type. Must be Namespace or EngineArgs instance.")
 
     logger.info("non-default args: %s", non_default_args)
 
 
-def should_include_usage(
-    stream_options: StreamOptions | None, enable_force_include_usage: bool
-) -> tuple[bool, bool]:
+def should_include_usage(stream_options: StreamOptions | None, enable_force_include_usage: bool) -> tuple[bool, bool]:
     if stream_options:
         include_usage = stream_options.include_usage or enable_force_include_usage
-        include_continuous_usage = include_usage and bool(
-            stream_options.continuous_usage_stats
-        )
+        include_continuous_usage = include_usage and bool(stream_options.continuous_usage_stats)
     else:
         include_usage, include_continuous_usage = enable_force_include_usage, False
     return include_usage, include_continuous_usage
@@ -289,9 +275,7 @@ async def process_chat_template(
 
         if isinstance(tokenizer, MistralTokenizer):
             # The warning is logged in resolve_mistral_chat_template.
-            resolved_chat_template = resolve_mistral_chat_template(
-                chat_template=resolved_chat_template
-            )
+            resolved_chat_template = resolve_mistral_chat_template(chat_template=resolved_chat_template)
         else:
             hf_chat_template = resolve_hf_chat_template(
                 tokenizer=tokenizer,

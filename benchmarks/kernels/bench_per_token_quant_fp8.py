@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 import pandas as pd
 import torch
-
 from aphrodite.model_executor.layers.quantization.input_quant_fp8 import QuantFP8
 from aphrodite.model_executor.layers.quantization.utils.quant_utils import GroupShape
+
 from aphrodite.triton_utils import triton
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
@@ -135,31 +135,21 @@ def compute_geomean_speedups(
     from scipy.stats import gmean
 
     def geo_speedup(group: pd.DataFrame) -> pd.Series:
-        ratios = {
-            col: (group[baseline_col] / group[col]).values for col in speedup_cols
-        }
+        ratios = {col: (group[baseline_col] / group[col]).values for col in speedup_cols}
         return pd.Series({col: gmean(vals) for col, vals in ratios.items()})
 
     if groupby_cols is None:
         result = geo_speedup(df).to_frame().T
     else:
-        result = (
-            df.groupby(groupby_cols)
-            .apply(geo_speedup, include_groups=False)
-            .reset_index()
-        )
+        result = df.groupby(groupby_cols).apply(geo_speedup, include_groups=False).reset_index()
 
     return result
 
 
 if __name__ == "__main__":
-    parser = FlexibleArgumentParser(
-        description="Benchmark the various implementations of QuantFP8 (dynamic-only)"
-    )
+    parser = FlexibleArgumentParser(description="Benchmark the various implementations of QuantFP8 (dynamic-only)")
     parser.add_argument("-c", "--check", action="store_true")
-    parser.add_argument(
-        "--dtype", type=str, choices=["half", "bfloat16", "float"], default="bfloat16"
-    )
+    parser.add_argument("--dtype", type=str, choices=["half", "bfloat16", "float"], default="bfloat16")
     parser.add_argument(
         "--hidden-sizes",
         type=int,
@@ -236,9 +226,7 @@ if __name__ == "__main__":
         for group_shape in group_shapes:
             group_size = group_shape[1]
             print(f"{group_size=}")
-            calculate_diff(
-                batch_size=4, hidden_size=4096, group_shape=group_shape, dtype=dtype
-            )
+            calculate_diff(batch_size=4, hidden_size=4096, group_shape=group_shape, dtype=dtype)
 
     benchmark = triton.testing.perf_report(
         triton.testing.Benchmark(

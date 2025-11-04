@@ -9,13 +9,13 @@ from typing import Any, TypedDict
 
 import ray
 import torch
-from ray.experimental.tqdm_ray import tqdm
-
 from aphrodite.model_executor.layers.fused_moe.config import (
     FusedMoEQuantConfig,
     _get_config_dtype_str,
 )
 from aphrodite.model_executor.layers.fused_moe.fused_moe import *
+from ray.experimental.tqdm_ray import tqdm
+
 from aphrodite.platforms import current_platform
 from aphrodite.transformers_utils.config import get_config
 from aphrodite.triton_utils import triton
@@ -26,9 +26,7 @@ FP8_DTYPE = current_platform.fp8_dtype()
 
 def ensure_divisibility(numerator, denominator, text):
     """Ensure that numerator is divisible by the denominator."""
-    assert numerator % denominator == 0, "{} {} is not divisible by tp {}.".format(
-        text, numerator, denominator
-    )
+    assert numerator % denominator == 0, "{} {} is not divisible by tp {}.".format(text, numerator, denominator)
 
 
 class BenchmarkConfig(TypedDict):
@@ -78,12 +76,8 @@ def benchmark_config(
             dtype=torch.int8,
         )
     else:
-        w1 = torch.randn(
-            num_experts, shard_intermediate_size, hidden_size, dtype=init_dtype
-        )
-        w2 = torch.randn(
-            num_experts, hidden_size, shard_intermediate_size // 2, dtype=init_dtype
-        )
+        w1 = torch.randn(num_experts, shard_intermediate_size, hidden_size, dtype=init_dtype)
+        w2 = torch.randn(num_experts, hidden_size, shard_intermediate_size // 2, dtype=init_dtype)
     gating_output = torch.randn(num_iters, num_tokens, num_experts, dtype=torch.float32)
 
     w1_scale = None
@@ -91,9 +85,7 @@ def benchmark_config(
     a1_scale = None
     a2_scale = None
     if use_int8_w8a16:
-        w1_scale = torch.randn(
-            (num_experts, 2 * shard_intermediate_size), dtype=torch.float32
-        )
+        w1_scale = torch.randn((num_experts, 2 * shard_intermediate_size), dtype=torch.float32)
         w2_scale = torch.randn((hidden_size, num_experts), dtype=torch.float32)
     if use_deep_gemm:
         # we use the default block shape for deepgemm
@@ -109,14 +101,8 @@ def benchmark_config(
             n_tiles_w2 = (K + block_n - 1) // block_n
             k_tiles_w1 = (K + block_k - 1) // block_k
             k_tiles_w2 = (N + block_k - 1) // block_k
-            w1_scale = (
-                torch.rand((E, n_tiles_w1, k_tiles_w1), dtype=torch.float32)
-                * factor_for_scale
-            )
-            w2_scale = (
-                torch.rand((E, n_tiles_w2, k_tiles_w2), dtype=torch.float32)
-                * factor_for_scale
-            )
+            w1_scale = torch.rand((E, n_tiles_w1, k_tiles_w1), dtype=torch.float32) * factor_for_scale
+            w2_scale = torch.rand((E, n_tiles_w2, k_tiles_w2), dtype=torch.float32) * factor_for_scale
         else:
             w1_scale = torch.randn(num_experts, dtype=torch.float32)
             w2_scale = torch.randn(num_experts, dtype=torch.float32)
@@ -264,25 +250,16 @@ def get_configs_compute_bound(use_fp16, block_quant_shape) -> list[dict[str, int
     if block_quant_shape is not None and not use_fp16:
         block_n, block_k = block_quant_shape[0], block_quant_shape[1]
         for config in configs[:]:
-            if (
-                config["BLOCK_SIZE_K"] % block_k != 0
-                or config["BLOCK_SIZE_N"] % block_n != 0
-            ):
+            if config["BLOCK_SIZE_K"] % block_k != 0 or config["BLOCK_SIZE_N"] % block_n != 0:
                 configs.remove(config)
     return configs
 
 
-def prune_rocm_search_space(
-    num_tokens, shard_intermediate_size, hidden_size, search_space, is_fp16, topk
-):
+def prune_rocm_search_space(num_tokens, shard_intermediate_size, hidden_size, search_space, is_fp16, topk):
     N1, K1 = shard_intermediate_size, hidden_size
     N2, K2 = hidden_size, shard_intermediate_size // 2
-    pruned_space_1 = prune_rocm_configs(
-        num_tokens * topk, N1, K1, search_space, is_fp16
-    )
-    pruned_space_2 = prune_rocm_configs(
-        num_tokens * topk, N2, K2, search_space, is_fp16
-    )
+    pruned_space_1 = prune_rocm_configs(num_tokens * topk, N1, K1, search_space, is_fp16)
+    pruned_space_2 = prune_rocm_configs(num_tokens * topk, N2, K2, search_space, is_fp16)
     search_space = merge_unique_dicts(pruned_space_1, pruned_space_2)
     return search_space
 
@@ -320,10 +297,7 @@ def prune_rocm_configs(M, N, K, configs, is_fp16=True):
         SPLIT_K = config.get("SPLIT_K", 1)
         GROUP_M = config.get("GROUP_SIZE_M")
         if is_fp16:
-            if (
-                matrix_instr_nonkdim > BLOCK_SIZE_M
-                or matrix_instr_nonkdim > BLOCK_SIZE_N
-            ):
+            if matrix_instr_nonkdim > BLOCK_SIZE_M or matrix_instr_nonkdim > BLOCK_SIZE_N:
                 continue
             if matrix_instr_nonkdim >= M and matrix_instr_nonkdim != BLOCK_SIZE_M:
                 continue
@@ -348,10 +322,7 @@ def prune_rocm_configs(M, N, K, configs, is_fp16=True):
             continue
         # out of shared memory resource
         # TODO (zhanglx): This does not consider the LDS usage in the epilogue
-        LDS = (
-            BLOCK_SIZE_K * BLOCK_SIZE_M * elemBytes_a
-            + BLOCK_SIZE_K * BLOCK_SIZE_N * elemBytes_b
-        )
+        LDS = BLOCK_SIZE_K * BLOCK_SIZE_M * elemBytes_a + BLOCK_SIZE_K * BLOCK_SIZE_N * elemBytes_b
         if LDS > 65536:
             continue
         # Skip small block sizes and num_warps for large gemm
@@ -408,16 +379,12 @@ class BenchmarkWorker:
         use_deep_gemm: bool = False,
     ) -> tuple[dict[str, int], float]:
         current_platform.seed_everything(self.seed)
-        dtype_str = _get_config_dtype_str(
-            dtype, use_int8_w8a16=use_int8_w8a16, use_fp8_w8a8=use_fp8_w8a8
-        )
+        dtype_str = _get_config_dtype_str(dtype, use_int8_w8a16=use_int8_w8a16, use_fp8_w8a8=use_fp8_w8a8)
         # NOTE(woosuk): The current naming convention uses w2.shape[2], which
         # is the intermediate size after silu_and_mul.
         block_n = block_quant_shape[0] if block_quant_shape else None
         block_k = block_quant_shape[1] if block_quant_shape else None
-        op_config = get_moe_configs(
-            num_experts, shard_intermediate_size // 2, dtype_str, block_n, block_k
-        )
+        op_config = get_moe_configs(num_experts, shard_intermediate_size // 2, dtype_str, block_n, block_k)
         if op_config is None:
             config = get_default_config(
                 num_tokens,
@@ -517,14 +484,8 @@ def sort_config(config: BenchmarkConfig) -> BenchmarkConfig:
         "GROUP_SIZE_M": config["GROUP_SIZE_M"],
         "num_warps": config["num_warps"],
         "num_stages": config["num_stages"],
-        **(
-            {"waves_per_eu": config["waves_per_eu"]} if "waves_per_eu" in config else {}
-        ),
-        **(
-            {"matrix_instr_nonkdim": config["matrix_instr_nonkdim"]}
-            if "matrix_instr_nonkdim" in config
-            else {}
-        ),
+        **({"waves_per_eu": config["waves_per_eu"]} if "waves_per_eu" in config else {}),
+        **({"matrix_instr_nonkdim": config["matrix_instr_nonkdim"]} if "matrix_instr_nonkdim" in config else {}),
         **({"kpack": config["kpack"]} if "kpack" in config else {}),
     }
 
@@ -541,15 +502,11 @@ def save_configs(
     block_quant_shape: list[int],
     save_dir: str,
 ) -> None:
-    dtype_str = _get_config_dtype_str(
-        dtype, use_int8_w8a16=use_int8_w8a16, use_fp8_w8a8=use_fp8_w8a8
-    )
+    dtype_str = _get_config_dtype_str(dtype, use_int8_w8a16=use_int8_w8a16, use_fp8_w8a8=use_fp8_w8a8)
 
     # NOTE(woosuk): The current naming convention uses w2.shape[2], which
     # is the intermediate size after silu_and_mul.
-    filename = get_config_file_name(
-        num_experts, shard_intermediate_size // 2, dtype_str, block_quant_shape
-    )
+    filename = get_config_file_name(num_experts, shard_intermediate_size // 2, dtype_str, block_quant_shape)
     os.makedirs(save_dir, exist_ok=True)
     filename = os.path.join(save_dir, filename)
     print(f"Writing best config to {filename}...")
@@ -690,8 +647,7 @@ def main(args: argparse.Namespace):
         print(f"Start tuning over {len(search_space)} configurations...")
         if use_deep_gemm:
             raise ValueError(
-                "Tuning with --use-deep-gemm is not supported as it only tunes Triton "
-                "kernels. Please remove the flag."
+                "Tuning with --use-deep-gemm is not supported as it only tunes Triton kernels. Please remove the flag."
             )
         start = time.time()
         configs = _distribute(
@@ -713,9 +669,7 @@ def main(args: argparse.Namespace):
                 for batch_size in batch_sizes
             ],
         )
-        best_configs = {
-            M: sort_config(config) for M, config in zip(batch_sizes, configs)
-        }
+        best_configs = {M: sort_config(config) for M, config in zip(batch_sizes, configs)}
         save_configs(
             best_configs,
             E,
@@ -757,20 +711,12 @@ def main(args: argparse.Namespace):
 
 if __name__ == "__main__":
     parser = FlexibleArgumentParser()
-    parser.add_argument(
-        "--model", type=str, default="mistralai/Mixtral-8x7B-Instruct-v0.1"
-    )
-    parser.add_argument(
-        "--tp-size", "-tp", "--tensor-parallel-size", type=int, default=2
-    )
+    parser.add_argument("--model", type=str, default="mistralai/Mixtral-8x7B-Instruct-v0.1")
+    parser.add_argument("--tp-size", "-tp", "--tensor-parallel-size", type=int, default=2)
     parser.add_argument("--enable-expert-parallel", "-enable-ep", action="store_true")
-    parser.add_argument(
-        "--dtype", type=str, choices=["auto", "fp8_w8a8", "int8_w8a16"], default="auto"
-    )
+    parser.add_argument("--dtype", type=str, choices=["auto", "fp8_w8a8", "int8_w8a16"], default="auto")
     parser.add_argument("--use-deep-gemm", action="store_true")
-    parser.add_argument(
-        "--save-dir", type=str, default="./", help="Directory to save tuned results"
-    )
+    parser.add_argument("--save-dir", type=str, default="./", help="Directory to save tuned results")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--batch-size", type=int, nargs="+", required=False)
     parser.add_argument("--tune", action="store_true")

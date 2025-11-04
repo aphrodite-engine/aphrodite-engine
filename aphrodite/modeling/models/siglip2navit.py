@@ -14,10 +14,13 @@ from aphrodite.attention.backends.registry import _Backend
 from aphrodite.attention.layer import maybe_get_vit_flash_attn_backend
 from aphrodite.distributed import divide, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import get_act_fn
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear, LinearBase,
-                                              QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    LinearBase,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.quantization import QuantizationConfig
 
@@ -31,9 +34,7 @@ class VisionRotaryEmbedding(nn.Module):
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> torch.Tensor:
-        seq = torch.arange(
-            seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype
-        )
+        seq = torch.arange(seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
         freqs = torch.outer(seq, self.inv_freq)
         return freqs
 
@@ -107,9 +108,7 @@ class Siglip2VisionEmbeddings(nn.Module):
             assert grid_thws is not None
             pos_embed_new = torch.zeros_like(patch_embeds)
             positional_embeddings = (
-                self.position_embedding.weight.reshape(
-                    self.position_embedding_size, self.position_embedding_size, -1
-                )
+                self.position_embedding.weight.reshape(self.position_embedding_size, self.position_embedding_size, -1)
                 .unsqueeze(0)
                 .permute(0, 3, 1, 2)
             )
@@ -147,9 +146,7 @@ def rotate_half(x, interleaved=False):
         return torch.cat((-x2, x1), dim=-1)
     else:
         x1, x2 = x[..., ::2], x[..., 1::2]
-        return rearrange(
-            torch.stack((-x2, x1), dim=-1), "... d two -> ... (d two)", two=2
-        )
+        return rearrange(torch.stack((-x2, x1), dim=-1), "... d two -> ... (d two)", two=2)
 
 
 def apply_rotary_emb_torch(x, cos, sin, interleaved=False):
@@ -159,12 +156,8 @@ def apply_rotary_emb_torch(x, cos, sin, interleaved=False):
     """
     ro_dim = cos.shape[-1] * 2
     assert ro_dim <= x.shape[-1]
-    cos = repeat(
-        cos, "... d -> ... 1 (2 d)" if not interleaved else "... d -> ... 1 (d 2)"
-    )
-    sin = repeat(
-        sin, "... d -> ... 1 (2 d)" if not interleaved else "... d -> ... 1 (d 2)"
-    )
+    cos = repeat(cos, "... d -> ... 1 (2 d)" if not interleaved else "... d -> ... 1 (d 2)")
+    sin = repeat(sin, "... d -> ... 1 (2 d)" if not interleaved else "... d -> ... 1 (d 2)")
     return torch.cat(
         [
             x[..., :ro_dim] * cos + rotate_half(x[..., :ro_dim], interleaved) * sin,
@@ -236,9 +229,7 @@ class Siglip2Attention(nn.Module):
             prefix=f"{prefix}.out_proj",
         )
 
-        self.tp_size = (
-            1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        )
+        self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
         self.num_heads_per_partition = divide(self.num_heads, self.tp_size)
         self.use_rope = config.use_rope
 
@@ -250,12 +241,10 @@ class Siglip2Attention(nn.Module):
         )
         self.use_upstream_fa = False
 
-        self.attn_backend, self.flash_attn_varlen_func = (
-            maybe_get_vit_flash_attn_backend(
-                self.attn_backend,
-                self.use_upstream_fa,
-                attn_backend_override=attn_backend_override,
-            )
+        self.attn_backend, self.flash_attn_varlen_func = maybe_get_vit_flash_attn_backend(
+            self.attn_backend,
+            self.use_upstream_fa,
+            attn_backend_override=attn_backend_override,
         )
 
         if self.attn_backend not in {
@@ -452,9 +441,7 @@ class Siglip2Encoder(nn.Module):
             ]
         )
 
-        self.rotary_pos_emb = VisionRotaryEmbedding(
-            config.hidden_size // config.num_attention_heads // 2
-        )
+        self.rotary_pos_emb = VisionRotaryEmbedding(config.hidden_size // config.num_attention_heads // 2)
         self.patch_size = config.patch_size
         self.hidden_stride = config.hidden_stride
         self.window_size = config.window_size
@@ -462,9 +449,7 @@ class Siglip2Encoder(nn.Module):
         if config.fullatt_block_indexes is None:
             self.fullatt_block_indexes = None
         else:
-            self.fullatt_block_indexes = [
-                int(i) for i in config.fullatt_block_indexes.split("|")
-            ]
+            self.fullatt_block_indexes = [int(i) for i in config.fullatt_block_indexes.split("|")]
 
     # copied from qwen2.5_vl
     def rot_pos_emb(self, grid_thw):
@@ -501,18 +486,14 @@ class Siglip2Encoder(nn.Module):
         cu_window_seqlens: list = [0]
         window_index_id = 0
         # patch (after merge) number in each window
-        vit_merger_window_size = (
-            self.window_size // self.hidden_stride // self.patch_size
-        )
+        vit_merger_window_size = self.window_size // self.hidden_stride // self.patch_size
 
         for grid_t, grid_h, grid_w in grid_thw:
             llm_grid_h, llm_grid_w = (
                 grid_h // self.hidden_stride,  # number of patch after merge
                 grid_w // self.hidden_stride,
             )
-            index = torch.arange(grid_t * llm_grid_h * llm_grid_w).reshape(
-                grid_t, llm_grid_h, llm_grid_w
-            )
+            index = torch.arange(grid_t * llm_grid_h * llm_grid_w).reshape(grid_t, llm_grid_h, llm_grid_w)
             pad_h = vit_merger_window_size - llm_grid_h % vit_merger_window_size
             pad_w = vit_merger_window_size - llm_grid_w % vit_merger_window_size
             num_windows_h = (llm_grid_h + pad_h) // vit_merger_window_size
@@ -535,9 +516,7 @@ class Siglip2Encoder(nn.Module):
             index_padded = index_padded.reshape(-1)
             index_new = index_padded[index_padded != -100]
             window_index.append(index_new + window_index_id)
-            cu_seqlens_tmp = (
-                seqlens.cumsum(0) * self.spatial_merge_unit + cu_window_seqlens[-1]
-            )
+            cu_seqlens_tmp = seqlens.cumsum(0) * self.spatial_merge_unit + cu_window_seqlens[-1]
             cu_window_seqlens.extend(cu_seqlens_tmp.tolist())
             window_index_id += (grid_t * llm_grid_h * llm_grid_w).item()
         window_index = torch.cat(window_index, dim=0)
@@ -569,22 +548,16 @@ class Siglip2Encoder(nn.Module):
         cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
 
         seq_len, _ = inputs_embeds.size()
-        inputs_embeds = inputs_embeds.reshape(
-            seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1
-        )
+        inputs_embeds = inputs_embeds.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
         inputs_embeds = inputs_embeds[window_index, :, :]
         inputs_embeds = inputs_embeds.reshape(seq_len, -1)
-        rotary_pos_emb = rotary_pos_emb.reshape(
-            seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1
-        )
+        rotary_pos_emb = rotary_pos_emb.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
         rotary_pos_emb = rotary_pos_emb[window_index, :, :]
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         position_embeddings = (emb.cos(), emb.sin())
 
-        cu_seqlens = torch.repeat_interleave(
-            grid_thws[:, 1] * grid_thws[:, 2], grid_thws[:, 0]
-        ).cumsum(
+        cu_seqlens = torch.repeat_interleave(grid_thws[:, 1] * grid_thws[:, 2], grid_thws[:, 0]).cumsum(
             dim=0,
             # Select dtype based on the following factors:
             #  - FA2 requires that cu_seqlens_q must have dtype int32
@@ -606,9 +579,7 @@ class Siglip2Encoder(nn.Module):
                 cu_seqlens_tmp = cu_window_seqlens
             hidden_states = block(hidden_states, cu_seqlens_tmp, position_embeddings)
 
-        hidden_states = hidden_states.reshape(
-            seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1
-        )
+        hidden_states = hidden_states.reshape(seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1)
         hidden_states = hidden_states[reverse_indices, :].reshape(seq_len, -1)
 
         return hidden_states

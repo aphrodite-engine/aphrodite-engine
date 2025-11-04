@@ -5,15 +5,17 @@ from typing import Any
 import regex as re
 
 from aphrodite.endpoints.chat_utils import make_tool_call_id
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaFunctionCall,
-                                                 DeltaMessage, DeltaToolCall,
-                                                 ExtractedToolCallInformation,
-                                                 FunctionCall, ToolCall)
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
-    ToolParser, ToolParserManager)
-from aphrodite.endpoints.openai.tool_parsers.utils import (
-    extract_intermediate_diff)
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionRequest,
+    DeltaFunctionCall,
+    DeltaMessage,
+    DeltaToolCall,
+    ExtractedToolCallInformation,
+    FunctionCall,
+    ToolCall,
+)
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.utils import extract_intermediate_diff
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
@@ -35,9 +37,7 @@ class MinimaxToolParser(ToolParser):
         # Define tool call tokens and patterns
         self.tool_call_start_token = "<tool_calls>"
         self.tool_call_end_token = "</tool_calls>"
-        self.tool_call_regex = re.compile(
-            r"<tool_calls>(.*?)</tool_calls>|<tool_calls>(.*)", re.DOTALL
-        )
+        self.tool_call_regex = re.compile(r"<tool_calls>(.*?)</tool_calls>|<tool_calls>(.*)", re.DOTALL)
         self.thinking_tag_pattern = r"<think>(.*?)</think>"
         self.tool_name_pattern = re.compile(r'"name":\s*"([^"]+)"')
         self.tool_args_pattern = re.compile(r'"arguments":\s*')
@@ -47,10 +47,7 @@ class MinimaxToolParser(ToolParser):
         self.in_thinking_tag = False
 
         if not self.model_tokenizer:
-            raise ValueError(
-                "The model tokenizer must be passed to the ToolParser "
-                "constructor during construction."
-            )
+            raise ValueError("The model tokenizer must be passed to the ToolParser constructor during construction.")
 
         # Get token IDs for tool call start/end tokens
         self.tool_call_start_token_id = self.vocab.get(self.tool_call_start_token)
@@ -75,9 +72,7 @@ class MinimaxToolParser(ToolParser):
 
         def remove_tool_calls_from_think(match):
             think_content = match.group(1)
-            cleaned_content = re.sub(
-                r"<tool_calls>.*?</tool_calls>", "", think_content, flags=re.DOTALL
-            )
+            cleaned_content = re.sub(r"<tool_calls>.*?</tool_calls>", "", think_content, flags=re.DOTALL)
             return f"<think>{cleaned_content}</think>"
 
         return re.sub(
@@ -157,9 +152,7 @@ class MinimaxToolParser(ToolParser):
         processed_output = self.preprocess_model_output(model_output)
 
         if self.tool_call_start_token not in processed_output:
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
         try:
             function_call_tuples = self.tool_call_regex.findall(processed_output)
@@ -186,9 +179,7 @@ class MinimaxToolParser(ToolParser):
                             type="function",
                             function=FunctionCall(
                                 name=function_call["name"],
-                                arguments=json.dumps(
-                                    function_call["arguments"], ensure_ascii=False
-                                ),
+                                arguments=json.dumps(function_call["arguments"], ensure_ascii=False),
                             ),
                         )
                     )
@@ -220,12 +211,8 @@ class MinimaxToolParser(ToolParser):
             )
 
         except Exception:
-            logger.exception(
-                "An unexpected error occurred during tool call extraction."
-            )
-            return ExtractedToolCallInformation(
-                tools_called=False, tool_calls=[], content=model_output
-            )
+            logger.exception("An unexpected error occurred during tool call extraction.")
+            return ExtractedToolCallInformation(tools_called=False, tool_calls=[], content=model_output)
 
     def _update_thinking_state(self, text: str) -> None:
         """
@@ -236,9 +223,7 @@ class MinimaxToolParser(ToolParser):
         """
         open_count = text.count("<think>")
         close_count = text.count("</think>")
-        self.in_thinking_tag = open_count > close_count or (
-            open_count == close_count and text.endswith("</think>")
-        )
+        self.in_thinking_tag = open_count > close_count or (open_count == close_count and text.endswith("</think>"))
 
     def _is_potential_tag_start(self, text: str) -> bool:
         """
@@ -251,10 +236,7 @@ class MinimaxToolParser(ToolParser):
             True if text could be the start of a tool call tag
         """
         for tag in [self.tool_call_start_token, self.tool_call_end_token]:
-            if any(
-                tag.startswith(text[-i:])
-                for i in range(1, min(len(text) + 1, len(tag)))
-            ):
+            if any(tag.startswith(text[-i:]) for i in range(1, min(len(text) + 1, len(tag)))):
                 return True
         return False
 
@@ -346,9 +328,7 @@ class MinimaxToolParser(ToolParser):
 
     def _advance_to_next_tool(self) -> None:
         """Advance to the next tool in the streaming sequence."""
-        self.streaming_state["current_tool_index"] = (
-            int(self.streaming_state["current_tool_index"]) + 1
-        )
+        self.streaming_state["current_tool_index"] = int(self.streaming_state["current_tool_index"]) + 1
 
     def _set_current_tool_index(self, index: int) -> None:
         """
@@ -499,9 +479,7 @@ class MinimaxToolParser(ToolParser):
 
         return remaining_content.rstrip("}").strip()
 
-    def _get_current_tool_content(
-        self, text: str, tool_index: int
-    ) -> tuple[str | None, str | None]:
+    def _get_current_tool_content(self, text: str, tool_index: int) -> tuple[str | None, str | None]:
         """
         Get the content of a specific tool by index.
 
@@ -535,9 +513,7 @@ class MinimaxToolParser(ToolParser):
 
         return name, None
 
-    def _handle_tool_name_streaming(
-        self, tool_content: str, tool_count: int
-    ) -> DeltaMessage | None:
+    def _handle_tool_name_streaming(self, tool_content: str, tool_count: int) -> DeltaMessage | None:
         """
         Handle streaming of tool names.
 
@@ -578,16 +554,12 @@ class MinimaxToolParser(ToolParser):
                     index=next_idx,
                     type="function",
                     id=tool_id,
-                    function=DeltaFunctionCall(name=tool_name).model_dump(
-                        exclude_none=True
-                    ),
+                    function=DeltaFunctionCall(name=tool_name).model_dump(exclude_none=True),
                 )
             ]
         )
 
-    def _handle_tool_args_streaming(
-        self, tool_content: str, tool_count: int
-    ) -> DeltaMessage | None:
+    def _handle_tool_args_streaming(self, tool_content: str, tool_count: int) -> DeltaMessage | None:
         """
         Handle streaming of tool arguments.
 
@@ -630,9 +602,7 @@ class MinimaxToolParser(ToolParser):
                         tool_calls=[
                             DeltaToolCall(
                                 index=current_idx,
-                                function=DeltaFunctionCall(
-                                    arguments=args_delta
-                                ).model_dump(exclude_none=True),
+                                function=DeltaFunctionCall(arguments=args_delta).model_dump(exclude_none=True),
                             )
                         ]
                     )
@@ -648,9 +618,7 @@ class MinimaxToolParser(ToolParser):
                     tool_calls=[
                         DeltaToolCall(
                             index=current_idx,
-                            function=DeltaFunctionCall(
-                                arguments=clean_args_delta
-                            ).model_dump(exclude_none=True),
+                            function=DeltaFunctionCall(arguments=clean_args_delta).model_dump(exclude_none=True),
                         )
                     ]
                 )
@@ -671,15 +639,11 @@ class MinimaxToolParser(ToolParser):
             search_start = pos + 1
 
         think_regions = []
-        for match in re.finditer(
-            self.thinking_tag_pattern, current_text, flags=re.DOTALL
-        ):
+        for match in re.finditer(self.thinking_tag_pattern, current_text, flags=re.DOTALL):
             think_regions.append((match.start(), match.end()))
 
         for pos in end_token_positions:
-            in_think = any(
-                pos >= t_start and pos < t_end for t_start, t_end in think_regions
-            )
+            in_think = any(pos >= t_start and pos < t_end for t_start, t_end in think_regions)
             if not in_think:
                 return True
 
@@ -715,17 +679,11 @@ class MinimaxToolParser(ToolParser):
         processed_current_text = self.preprocess_model_output(current_text)
 
         if self.tool_call_start_token not in processed_current_text:
-            if (
-                self.tool_call_end_token in delta_text
-                and self.tool_call_start_token in current_text
-            ):
+            if self.tool_call_end_token in delta_text and self.tool_call_start_token in current_text:
                 return None
             if delta_text.strip() == "" and self.tool_call_start_token in current_text:
                 return None
-            if (
-                self._get_current_tool_index() != -1
-                and self.tool_call_end_token in current_text
-            ):
+            if self._get_current_tool_index() != -1 and self.tool_call_end_token in current_text:
                 self._reset_streaming_state()
             return DeltaMessage(content=delta_text)
 
@@ -740,9 +698,7 @@ class MinimaxToolParser(ToolParser):
         if original_tool_start is None:
             return None
 
-        content_before_tools = self._extract_content_before_tools(
-            current_text, delta_text, original_tool_start
-        )
+        content_before_tools = self._extract_content_before_tools(current_text, delta_text, original_tool_start)
         if content_before_tools:
             return DeltaMessage(content=content_before_tools)
 
@@ -763,9 +719,7 @@ class MinimaxToolParser(ToolParser):
             ) or self._handle_tool_args_streaming(tool_content, current_tools_count)
 
         except Exception:
-            logger.exception(
-                "An unexpected error occurred ", "during streaming tool call handling."
-            )
+            logger.exception("An unexpected error occurred ", "during streaming tool call handling.")
             return None
 
     def _find_tool_start_outside_thinking(self, current_text: str) -> int | None:
@@ -785,23 +739,16 @@ class MinimaxToolParser(ToolParser):
                 return None
 
             think_regions = [
-                (m.start(), m.end())
-                for m in re.finditer(
-                    r"<think>(.*?)</think>", current_text, flags=re.DOTALL
-                )
+                (m.start(), m.end()) for m in re.finditer(r"<think>(.*?)</think>", current_text, flags=re.DOTALL)
             ]
-            in_think = any(
-                pos >= t_start and pos < t_end for t_start, t_end in think_regions
-            )
+            in_think = any(pos >= t_start and pos < t_end for t_start, t_end in think_regions)
 
             if not in_think:
                 return pos
 
             search_start = pos + 1
 
-    def _extract_content_before_tools(
-        self, current_text: str, delta_text: str, tool_start: int
-    ) -> str | None:
+    def _extract_content_before_tools(self, current_text: str, delta_text: str, tool_start: int) -> str | None:
         """
         Extract content that appears before tool calls.
 

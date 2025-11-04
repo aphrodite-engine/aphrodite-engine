@@ -10,34 +10,40 @@ from aphrodite.attention import Attention
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig, CacheConfig
-from aphrodite.distributed import (get_pp_group,
-                                   get_tensor_model_parallel_rank,
-                                   get_tensor_model_parallel_world_size,
-                                   tensor_model_parallel_all_reduce)
+from aphrodite.distributed import (
+    get_pp_group,
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+    tensor_model_parallel_all_reduce,
+)
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.fused_moe import fused_experts, fused_topk
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              ReplicatedLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.rotary_embedding import get_rope
-from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    ParallelLMHead, VocabParallelEmbedding)
+from aphrodite.modeling.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.utils import set_weight_attrs
 from aphrodite.platforms import current_platform
 from aphrodite.quantization import QuantizationConfig
-from aphrodite.quantization.deepspeedfp import (DeepSpeedFPConfig,
-                                                DeepSpeedFPParameter)
+from aphrodite.quantization.deepspeedfp import DeepSpeedFPConfig, DeepSpeedFPParameter
 from aphrodite.transformers_utils.configs.arctic import ArcticConfig
 
 from .interfaces import SupportsPP, SupportsQuant
-from .utils import (extract_layer_index, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from .utils import (
+    extract_layer_index,
+    is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory,
+    make_layers,
+    maybe_prefix,
+)
 
 logger = init_logger(__name__)
 
@@ -56,9 +62,7 @@ class ArcticMLP(nn.Module):
         self.hidden_size = config.hidden_size
         self.expert_id = expert_id
 
-        self.ffn_dim = (
-            config.intermediate_size if not is_residual_mlp else self.hidden_size
-        )
+        self.ffn_dim = config.intermediate_size if not is_residual_mlp else self.hidden_size
 
         self.w13 = MergedColumnParallelLinear(
             self.hidden_size, [self.ffn_dim] * 2, bias=False, quant_config=quant_config
@@ -71,10 +75,7 @@ class ArcticMLP(nn.Module):
             quant_config=quant_config,
         )
         if config.hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {config.hidden_act}. "
-                "Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {config.hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, hidden_states):
@@ -134,16 +135,12 @@ class ArcticMoE(nn.Module):
             )
             if self.is_quant:
                 self.ws = DeepSpeedFPParameter(
-                    torch.Size(
-                        (self.num_experts, 2 * self.intermediate_size, self.hidden_size)
-                    ),
+                    torch.Size((self.num_experts, 2 * self.intermediate_size, self.hidden_size)),
                     params_dtype=params_dtype,
                     quant_config=quant_config,
                 )
                 self.w2s = DeepSpeedFPParameter(
-                    torch.Size(
-                        (self.num_experts, self.hidden_size, self.intermediate_size)
-                    ),
+                    torch.Size((self.num_experts, self.hidden_size, self.intermediate_size)),
                     params_dtype=params_dtype,
                     quant_config=quant_config,
                 )
@@ -193,9 +190,7 @@ class ArcticMoE(nn.Module):
         if weight_name.endswith("w1.weight"):
             param_data[expert_id, 0:shard_size, :] = loaded_weight[shard, :]
         if weight_name.endswith("w3.weight"):
-            param_data[expert_id, shard_size : 2 * shard_size, :] = loaded_weight[
-                shard, :
-            ]
+            param_data[expert_id, shard_size : 2 * shard_size, :] = loaded_weight[shard, :]
         if weight_name.endswith("w2.weight"):
             param_data[expert_id, :, :] = loaded_weight[:, shard]
         if self.is_quant:
@@ -350,14 +345,10 @@ class ArcticDecoderLayer(nn.Module):
         )
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         if self.use_residual:
-            self.residual_layernorm = RMSNorm(
-                config.hidden_size, eps=config.rms_norm_eps
-            )
+            self.residual_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
             self.residual_mlp = ArcticMLP(
                 config,
                 is_residual_mlp=True,
@@ -410,9 +401,7 @@ class ArcticModel(nn.Module):
         )
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: ArcticDecoderLayer(
-                config, cache_config, quant_config, prefix=prefix
-            ),
+            lambda prefix: ArcticDecoderLayer(config, cache_config, quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
         self._attn_implementation = config._attn_implementation
@@ -455,9 +444,7 @@ class ArcticForCausalLM(nn.Module, SupportsPP, SupportsQuant):
         config = aphrodite_config.model_config.hf_config
         quant_config = aphrodite_config.quant_config
         self.config = config
-        self.model = ArcticModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = ArcticModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.vocab_size = config.vocab_size
         self.lm_head = ParallelLMHead(
             self.vocab_size,
@@ -470,12 +457,8 @@ class ArcticForCausalLM(nn.Module, SupportsPP, SupportsQuant):
         self.num_experts = config.num_local_experts
         self.num_experts_per_tok = config.num_experts_per_tok
         self.unpadded_vocab_size = config.vocab_size
-        self.logits_processor = LogitsProcessor(
-            self.unpadded_vocab_size, config.vocab_size
-        )
-        self.make_empty_intermediate_tensors = (
-            self.model.make_empty_intermediate_tensors
-        )
+        self.logits_processor = LogitsProcessor(self.unpadded_vocab_size, config.vocab_size)
+        self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
@@ -487,9 +470,7 @@ class ArcticForCausalLM(nn.Module, SupportsPP, SupportsQuant):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor | IntermediateTensors:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(
@@ -545,15 +526,9 @@ class ArcticForCausalLM(nn.Module, SupportsPP, SupportsQuant):
             else:
                 # MoE layers
                 for expert_id in range(self.config.num_local_experts):
-                    expert_params_mapping.append(
-                        ("ws", f"experts.{expert_id}.w1.weight", expert_id)
-                    )
-                    expert_params_mapping.append(
-                        ("w2s", f"experts.{expert_id}.w2.weight", expert_id)
-                    )
-                    expert_params_mapping.append(
-                        ("ws", f"experts.{expert_id}.w3.weight", expert_id)
-                    )
+                    expert_params_mapping.append(("ws", f"experts.{expert_id}.w1.weight", expert_id))
+                    expert_params_mapping.append(("w2s", f"experts.{expert_id}.w2.weight", expert_id))
+                    expert_params_mapping.append(("ws", f"experts.{expert_id}.w3.weight", expert_id))
 
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
@@ -597,9 +572,7 @@ class ArcticForCausalLM(nn.Module, SupportsPP, SupportsQuant):
                             continue
                         param = params_dict[name]
                         weight_loader = param.weight_loader
-                        weight_loader(
-                            param, loaded_weight, weight_name, expert_id=shard_id
-                        )
+                        weight_loader(param, loaded_weight, weight_name, expert_id=shard_id)
                         break
                     else:
                         if name.endswith(".bias") and name not in params_dict:
@@ -608,9 +581,7 @@ class ArcticForCausalLM(nn.Module, SupportsPP, SupportsQuant):
                             continue
                         param = params_dict[name]
 
-                        weight_loader = getattr(
-                            param, "weight_loader", default_weight_loader
-                        )
+                        weight_loader = getattr(param, "weight_loader", default_weight_loader)
                         weight_loader(param, loaded_weight)
             loaded_params.add(name)
         return loaded_params

@@ -5,8 +5,7 @@ from typing import Any
 
 import pytest
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionToolsParam,
-                                                 FunctionCall, ToolCall)
+from aphrodite.endpoints.openai.protocol import ChatCompletionToolsParam, FunctionCall, ToolCall
 from aphrodite.endpoints.openai.tool_parsers import MinimaxToolParser
 from aphrodite.transformers_utils.tokenizer import get_tokenizer
 
@@ -63,14 +62,10 @@ def sample_tools():
     ]
 
 
-def assert_tool_calls(
-    actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]
-):
+def assert_tool_calls(actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]):
     assert len(actual_tool_calls) == len(expected_tool_calls)
 
-    for actual_tool_call, expected_tool_call in zip(
-        actual_tool_calls, expected_tool_calls
-    ):
+    for actual_tool_call, expected_tool_call in zip(actual_tool_calls, expected_tool_calls):
         assert isinstance(actual_tool_call.id, str)
         assert len(actual_tool_call.id) > 16
 
@@ -80,9 +75,7 @@ def assert_tool_calls(
 
 def test_extract_tool_calls_no_tools(minimax_tool_parser):
     model_output = "This is a test"
-    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert not extracted_tool_calls.tools_called
     assert extracted_tool_calls.tool_calls == []
     assert extracted_tool_calls.content == model_output
@@ -211,12 +204,8 @@ def test_extract_tool_calls_no_tools(minimax_tool_parser):
         ),
     ],
 )
-def test_extract_tool_calls(
-    minimax_tool_parser, model_output, expected_tool_calls, expected_content
-):
-    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+def test_extract_tool_calls(minimax_tool_parser, model_output, expected_tool_calls, expected_content):
+    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert extracted_tool_calls.tools_called
 
     assert_tool_calls(extracted_tool_calls.tool_calls, expected_tool_calls)
@@ -255,9 +244,7 @@ Let me help you with the weather. <tool_calls>
 {"name": "get_current_weather", "arguments": {"city": "Miami", "state": "FL", "unit": "fahrenheit"}}
 </tool_calls>"""
 
-    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     assert len(extracted_tool_calls.tool_calls) == 1
@@ -281,9 +268,7 @@ def test_extract_tool_calls_invalid_json(minimax_tool_parser):
 {"name": "another_valid_tool", "arguments": {"param": "value"}}
 </tool_calls>"""
 
-    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     # Should extract only the valid JSON tool calls
@@ -301,9 +286,7 @@ def test_extract_tool_calls_missing_name_or_arguments(minimax_tool_parser):
 {"name": "another_valid_tool", "arguments": {"param": "value"}}
 </tool_calls>"""
 
-    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     # Should extract only the valid tool calls with both name and arguments
@@ -428,9 +411,7 @@ def test_extract_tool_calls_multiline_json_not_supported(minimax_tool_parser):
 }
 </tool_calls>"""
 
-    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = minimax_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     # Multiline JSON is currently not supported, should return no tools called
     assert not extracted_tool_calls.tools_called
@@ -508,9 +489,7 @@ def test_streaming_arguments_incremental_output(minimax_tool_parser):
                     # If this is truly incremental, the fragment should be relatively small
                     # compared to the complete arguments so far
                     if len(args_fragment) > len(previous_args_content):
-                        print(
-                            "Warning: Fragment seems cumulative rather than incremental"
-                        )
+                        print("Warning: Fragment seems cumulative rather than incremental")
 
                 previous_args_content = args_fragment
 
@@ -527,9 +506,7 @@ def test_streaming_arguments_delta_only(minimax_tool_parser):
     minimax_tool_parser.streamed_args_for_tool = []
 
     # Simulate two consecutive calls with growing arguments
-    call1_text = (
-        '<tool_calls>\n{"name": "test_tool", "arguments": {"param1": "value1"}}'
-    )
+    call1_text = '<tool_calls>\n{"name": "test_tool", "arguments": {"param1": "value1"}}'
     call2_text = '<tool_calls>\n{"name": "test_tool", "arguments": {"param1": "value1", "param2": "value2"}}'
 
     print(f"Call 1 text: {repr(call1_text)}")
@@ -576,10 +553,9 @@ def test_streaming_arguments_delta_only(minimax_tool_parser):
 
             # Should only contain the new part, not the full arguments
             # The delta should be something like ', "param2": "value2"}' or just '"param2": "value2"'
-            assert (
-                ', "param2": "value2"}' in args_delta
-                or '"param2": "value2"' in args_delta
-            ), f"Expected delta containing param2, got: {args_delta}"
+            assert ', "param2": "value2"}' in args_delta or '"param2": "value2"' in args_delta, (
+                f"Expected delta containing param2, got: {args_delta}"
+            )
 
             # Should NOT contain the previous parameter data
             assert '"param1": "value1"' not in args_delta, (
@@ -588,9 +564,7 @@ def test_streaming_arguments_delta_only(minimax_tool_parser):
 
             # The delta should be relatively short (incremental, not cumulative)
             expected_max_length = len(', "param2": "value2"}') + 10  # Some tolerance
-            assert len(args_delta) <= expected_max_length, (
-                f"Delta seems too long (possibly cumulative): {args_delta}"
-            )
+            assert len(args_delta) <= expected_max_length, f"Delta seems too long (possibly cumulative): {args_delta}"
 
             print("✓ Delta validation passed")
         else:
@@ -678,9 +652,7 @@ def test_streaming_openai_compatibility(minimax_tool_parser):
             )
             print("✓ No content output as expected")
         else:
-            assert result is not None and hasattr(result, "content"), (
-                f"Stage {i}: Expected content, got {result}"
-            )
+            assert result is not None and hasattr(result, "content"), f"Stage {i}: Expected content, got {result}"
             assert result.content == test_case["expected_content"], (
                 f"Stage {i}: Expected content {test_case['expected_content']}, got {result.content}"
             )
@@ -751,9 +723,7 @@ def test_streaming_thinking_tag_buffering(minimax_tool_parser):
                     f"Stage {i}: Expected no content, got {result}"
                 )
             else:
-                assert result is not None and hasattr(result, "content"), (
-                    f"Stage {i}: Expected content, got {result}"
-                )
+                assert result is not None and hasattr(result, "content"), f"Stage {i}: Expected content, got {result}"
                 assert result.content == test_case["expected_content"], (
                     f"Stage {i}: Expected content {test_case['expected_content']}, got {result.content}"
                 )
@@ -761,16 +731,12 @@ def test_streaming_thinking_tag_buffering(minimax_tool_parser):
 
         # Check tool calls
         if test_case.get("expected_tool_call"):
-            assert (
-                result is not None
-                and hasattr(result, "tool_calls")
-                and result.tool_calls
-            ), f"Stage {i}: Expected tool call, got {result}"
+            assert result is not None and hasattr(result, "tool_calls") and result.tool_calls, (
+                f"Stage {i}: Expected tool call, got {result}"
+            )
 
             tool_call = result.tool_calls[0]
-            assert tool_call.function.name == "real_tool", (
-                f"Expected real_tool, got {tool_call.function.name}"
-            )
+            assert tool_call.function.name == "real_tool", f"Expected real_tool, got {tool_call.function.name}"
             print(f"✓ Real tool call detected: {tool_call.function.name}")
 
     print("✓ Thinking tag buffering test completed successfully")
@@ -875,9 +841,7 @@ def test_streaming_complex_scenario_with_multiple_tools(minimax_tool_parser):
 
     for i, test_case in enumerate(test_stages):
         print(f"\n--- Stage {i}: {test_case['stage']} ---")
-        print(
-            f"Previous: {repr(test_case['previous'][:100])}{'...' if len(test_case['previous']) > 100 else ''}"
-        )
+        print(f"Previous: {repr(test_case['previous'][:100])}{'...' if len(test_case['previous']) > 100 else ''}")
         print(f"Current:  {repr(test_case['current'][-100:])}")
         print(f"Delta:    {repr(test_case['delta'])}")
 
@@ -911,9 +875,7 @@ def test_streaming_complex_scenario_with_multiple_tools(minimax_tool_parser):
         # Check tool calls
         expected_tool_calls = test_case["expected_tool_calls"]
         actual_tool_calls = (
-            len(result.tool_calls)
-            if result and hasattr(result, "tool_calls") and result.tool_calls
-            else 0
+            len(result.tool_calls) if result and hasattr(result, "tool_calls") and result.tool_calls else 0
         )
 
         if expected_tool_calls > 0:
@@ -942,9 +904,7 @@ def test_streaming_complex_scenario_with_multiple_tools(minimax_tool_parser):
             tool_calls_count += actual_tool_calls
             print(f"✓ Detected {actual_tool_calls} tool calls")
         else:
-            assert actual_tool_calls == 0, (
-                f"Stage {i}: Expected no tool calls, got {actual_tool_calls}"
-            )
+            assert actual_tool_calls == 0, f"Stage {i}: Expected no tool calls, got {actual_tool_calls}"
 
     # Verify overall results
     print("\n=== Test Summary ===")
@@ -1023,12 +983,8 @@ Now I'll get the weather information for you. <tool_calls>
                 for tool_call in result.tool_calls:
                     tool_info = {
                         "character_position": i,
-                        "function_name": tool_call.function.name
-                        if tool_call.function
-                        else None,
-                        "arguments": tool_call.function.arguments
-                        if tool_call.function
-                        else None,
+                        "function_name": tool_call.function.name if tool_call.function else None,
+                        "arguments": tool_call.function.arguments if tool_call.function else None,
                     }
                     tool_calls_detected.append(tool_info)
                     print(f"  Char {i}: Tool call detected: {tool_call.function.name}")
@@ -1045,50 +1001,32 @@ Now I'll get the weather information for you. <tool_calls>
     print(f"Reconstructed content length: {len(reconstructed_content)}")
 
     # Verify thinking tags content is preserved
-    assert "<think>" in reconstructed_content, (
-        "Opening thinking tag should be preserved in content"
-    )
-    assert "</think>" in reconstructed_content, (
-        "Closing thinking tag should be preserved in content"
-    )
+    assert "<think>" in reconstructed_content, "Opening thinking tag should be preserved in content"
+    assert "</think>" in reconstructed_content, "Closing thinking tag should be preserved in content"
 
     # Verify that tool calls inside thinking tags are NOT extracted as actual tool calls
-    thinking_tool_calls = [
-        tc for tc in tool_calls_detected if tc["function_name"] == "internal_analysis"
-    ]
+    thinking_tool_calls = [tc for tc in tool_calls_detected if tc["function_name"] == "internal_analysis"]
     assert len(thinking_tool_calls) == 0, (
         f"Tool calls inside thinking tags should be ignored, but found: {thinking_tool_calls}"
     )
 
     # Verify that real tool calls outside thinking tags ARE extracted
-    weather_tool_calls = [
-        tc for tc in tool_calls_detected if tc["function_name"] == "get_current_weather"
-    ]
-    area_tool_calls = [
-        tc for tc in tool_calls_detected if tc["function_name"] == "calculate_area"
-    ]
+    weather_tool_calls = [tc for tc in tool_calls_detected if tc["function_name"] == "get_current_weather"]
+    area_tool_calls = [tc for tc in tool_calls_detected if tc["function_name"] == "calculate_area"]
     print(tool_calls_detected)
-    assert len(weather_tool_calls) > 0, (
-        "get_current_weather tool call should be detected"
-    )
+    assert len(weather_tool_calls) > 0, "get_current_weather tool call should be detected"
     assert len(area_tool_calls) > 0, "calculate_area tool call should be detected"
 
     # Verify tool call arguments are properly streamed
-    weather_args_found = any(
-        tc["arguments"] for tc in weather_tool_calls if tc["arguments"]
-    )
+    weather_args_found = any(tc["arguments"] for tc in weather_tool_calls if tc["arguments"])
     area_args_found = any(tc["arguments"] for tc in area_tool_calls if tc["arguments"])
 
     print(f"Weather tool call with arguments: {weather_args_found}")
     print(f"Area tool call with arguments: {area_args_found}")
 
     # Verify content before and after tool calls
-    assert "I'll help you with the weather analysis." in reconstructed_content, (
-        "Initial content should be preserved"
-    )
-    assert "Here are the results." in reconstructed_content, (
-        "Final content should be preserved"
-    )
+    assert "I'll help you with the weather analysis." in reconstructed_content, "Initial content should be preserved"
+    assert "Here are the results." in reconstructed_content, "Final content should be preserved"
 
     # Verify that <tool_calls> and </tool_calls> tags are not included in the final content
     # (they should be filtered out when not inside thinking tags)
@@ -1097,10 +1035,7 @@ Now I'll get the weather information for you. <tool_calls>
     if "<think>" in content_outside_thinking and "</think>" in content_outside_thinking:
         start_think = content_outside_thinking.find("<think>")
         end_think = content_outside_thinking.find("</think>") + len("</think>")
-        content_outside_thinking = (
-            content_outside_thinking[:start_think]
-            + content_outside_thinking[end_think:]
-        )
+        content_outside_thinking = content_outside_thinking[:start_think] + content_outside_thinking[end_think:]
 
     # Outside thinking tags, tool_calls tags should be filtered
     tool_calls_in_content = content_outside_thinking.count("<tool_calls>")
@@ -1122,7 +1057,9 @@ def test_streaming_character_by_character_simple_tool_call(minimax_tool_parser):
     reset_streaming_state(minimax_tool_parser)
 
     # Simple tool call text
-    simple_text = 'Let me check the weather. <tool_calls>\n{"name": "get_weather", "arguments": {"city": "NYC"}}\n</tool_calls>'
+    simple_text = (
+        'Let me check the weather. <tool_calls>\n{"name": "get_weather", "arguments": {"city": "NYC"}}\n</tool_calls>'
+    )
 
     print("\n=== Simple character-by-character test ===")
     print(f"Text: {repr(simple_text)}")
@@ -1149,9 +1086,7 @@ def test_streaming_character_by_character_simple_tool_call(minimax_tool_parser):
         if result:
             if hasattr(result, "content") and result.content:
                 content_parts.append(result.content)
-                print(
-                    f"  Char {i} ({repr(delta_text)}): Content: {repr(result.content)}"
-                )
+                print(f"  Char {i} ({repr(delta_text)}): Content: {repr(result.content)}")
 
             if hasattr(result, "tool_calls") and result.tool_calls:
                 for tool_call in result.tool_calls:
@@ -1160,9 +1095,7 @@ def test_streaming_character_by_character_simple_tool_call(minimax_tool_parser):
                         print(f"  Char {i}: Tool name: {tool_call.function.name}")
                     if tool_call.function and tool_call.function.arguments:
                         tool_args_sent = True
-                        print(
-                            f"  Char {i}: Tool args: {repr(tool_call.function.arguments)}"
-                        )
+                        print(f"  Char {i}: Tool args: {repr(tool_call.function.arguments)}")
 
     # Verify basic expectations
     reconstructed_content = "".join(content_parts)
@@ -1170,9 +1103,7 @@ def test_streaming_character_by_character_simple_tool_call(minimax_tool_parser):
 
     assert tool_name_sent, "Tool name should be sent during streaming"
     assert tool_args_sent, "Tool arguments should be sent during streaming"
-    assert "Let me check the weather." in reconstructed_content, (
-        "Initial content should be preserved"
-    )
+    assert "Let me check the weather." in reconstructed_content, "Initial content should be preserved"
 
     print("✓ Simple character-by-character test passed")
 
@@ -1214,9 +1145,7 @@ def test_streaming_character_by_character_with_buffering(minimax_tool_parser):
 
     # The parser should handle the edge case where </tool_calls> appears before <tool_calls>
     assert "Hello" in final_content, "Initial 'Hello' should be preserved"
-    assert "world" in final_content, (
-        "Content after false closing tag should be preserved"
-    )
+    assert "world" in final_content, "Content after false closing tag should be preserved"
     assert "done" in final_content, "Final content should be preserved"
 
     print("✓ Buffering character-by-character test passed")

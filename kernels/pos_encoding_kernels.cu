@@ -165,20 +165,22 @@ void rotary_embedding(
   dim3 block(std::min<int64_t>(num_heads * rot_dim / 2, 512));
   const at::cuda::OptionalCUDAGuard device_guard(device_of(query));
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  APHRODITE_DISPATCH_FLOATING_TYPES(query.scalar_type(), "rotary_embedding", [&] {
-    if (is_neox) {
-      aphrodite::rotary_embedding_kernel<scalar_t, true><<<grid, block, 0, stream>>>(
-          positions.data_ptr<int64_t>(), query.data_ptr<scalar_t>(),
-          key.has_value() ? key->data_ptr<scalar_t>() : nullptr,
-          cos_sin_cache.data_ptr<scalar_t>(), rot_dim, query_stride, key_stride,
-          head_stride, num_heads, num_kv_heads, head_size);
-    } else {
-      aphrodite::rotary_embedding_kernel<scalar_t, false>
-          <<<grid, block, 0, stream>>>(
-              positions.data_ptr<int64_t>(), query.data_ptr<scalar_t>(),
-              key.has_value() ? key->data_ptr<scalar_t>() : nullptr,
-              cos_sin_cache.data_ptr<scalar_t>(), rot_dim, query_stride,
-              key_stride, head_stride, num_heads, num_kv_heads, head_size);
-    }
-  });
+  APHRODITE_DISPATCH_FLOATING_TYPES(
+      query.scalar_type(), "rotary_embedding", [&] {
+        if (is_neox) {
+          aphrodite::rotary_embedding_kernel<scalar_t, true>
+              <<<grid, block, 0, stream>>>(
+                  positions.data_ptr<int64_t>(), query.data_ptr<scalar_t>(),
+                  key.has_value() ? key->data_ptr<scalar_t>() : nullptr,
+                  cos_sin_cache.data_ptr<scalar_t>(), rot_dim, query_stride,
+                  key_stride, head_stride, num_heads, num_kv_heads, head_size);
+        } else {
+          aphrodite::rotary_embedding_kernel<scalar_t, false>
+              <<<grid, block, 0, stream>>>(
+                  positions.data_ptr<int64_t>(), query.data_ptr<scalar_t>(),
+                  key.has_value() ? key->data_ptr<scalar_t>() : nullptr,
+                  cos_sin_cache.data_ptr<scalar_t>(), rot_dim, query_stride,
+                  key_stride, head_stride, num_heads, num_kv_heads, head_size);
+        }
+      });
 }

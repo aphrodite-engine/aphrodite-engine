@@ -38,9 +38,7 @@ def main(
     current_platform.seed_everything(seed)
 
     scale = float(1.0 / (head_size**0.5))
-    query = torch.empty(
-        num_seqs, num_query_heads, head_size, dtype=dtype, device=device
-    )
+    query = torch.empty(num_seqs, num_query_heads, head_size, dtype=dtype, device=device)
     query.uniform_(-scale, scale)
 
     assert num_query_heads % num_kv_heads == 0
@@ -56,9 +54,7 @@ def main(
     max_num_blocks_per_seq = (max_seq_len + block_size - 1) // block_size
     block_tables_lst: list[list[int]] = []
     for _ in range(num_seqs):
-        block_table = [
-            random.randint(0, NUM_BLOCKS - 1) for _ in range(max_num_blocks_per_seq)
-        ]
+        block_table = [random.randint(0, NUM_BLOCKS - 1) for _ in range(max_num_blocks_per_seq)]
         block_tables_lst.append(block_table)
 
     block_tables = torch.tensor(block_tables_lst, dtype=torch.int, device=device)
@@ -191,8 +187,7 @@ def main(
 
 if __name__ == "__main__":
     logger.warning(
-        "This script benchmarks the paged attention kernel. "
-        "By default this is no longer used in Aphrodite inference."
+        "This script benchmarks the paged attention kernel. By default this is no longer used in Aphrodite inference."
     )
 
     parser = FlexibleArgumentParser(description="Benchmark the paged attention kernel.")
@@ -209,9 +204,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--block-size", type=int, choices=[16, 32], default=16)
     parser.add_argument("--use-alibi", action="store_true")
-    parser.add_argument(
-        "--dtype", type=str, choices=["half", "bfloat16", "float"], default="half"
-    )
+    parser.add_argument("--dtype", type=str, choices=["half", "bfloat16", "float"], default="half")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument(
@@ -223,9 +216,7 @@ if __name__ == "__main__":
         "data type. CUDA 11.8+ supports fp8 (=fp8_e4m3) and fp8_e5m2. "
         "ROCm (AMD GPU) supports fp8 (=fp8_e4m3)",
     )
-    parser.add_argument(
-        "--custom-paged-attn", action="store_true", help="Use custom paged attention"
-    )
+    parser.add_argument("--custom-paged-attn", action="store_true", help="Use custom paged attention")
     args = parser.parse_args()
     print(args)
 

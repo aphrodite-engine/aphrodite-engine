@@ -1,7 +1,7 @@
 # Supports VPTQ compression, see https://arxiv.org/abs/2409.17066
 
 import math
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 import torch
 import torch.nn.functional as F
@@ -16,7 +16,6 @@ from aphrodite.quantization.base_config import QuantizationConfig
 
 
 class MetaData:
-
     def __init__(self):
         self.num_codebooks = 1
         self.num_centroids = 0
@@ -40,27 +39,22 @@ def unpack_index_tensor(
     wf = torch.arange(0, 32, 1, device=pack_tensor.device).view(1, 1, 1, -1)
     out = torch.bitwise_right_shift(torch.unsqueeze(pack_tensor, -1), wf)
     torch.bitwise_and(out, 1, out=out)
-    pad_size = (pack_tensor.shape[-1] * 32) % (index_bits * num_elements +
-                                               res_bits * num_res_elements)
+    pad_size = (pack_tensor.shape[-1] * 32) % (index_bits * num_elements + res_bits * num_res_elements)
     out = out.reshape(*pack_tensor.shape[:-1], -1)
     if pad_size > 0:
         out = out[..., :-pad_size]
     out = out.reshape(*pack_tensor.shape[:-1], -1, total_bits)
-    wf1 = torch.arange(0, total_bits, 1,
-                       device=pack_tensor.device).view(1, 1, 1, -1)
+    wf1 = torch.arange(0, total_bits, 1, device=pack_tensor.device).view(1, 1, 1, -1)
     out = torch.bitwise_left_shift(out, wf1).sum(dim=-1)
 
     unpack_indice = out.to(torch.uint64).view(torch.int64)
 
-    indices = (unpack_indice & ((1 << index_bits) - 1)).view(torch.uint64).to(
-        torch.int64)
+    indices = (unpack_indice & ((1 << index_bits) - 1)).view(torch.uint64).to(torch.int64)
 
     # indices = indices.squeeze()
 
     if res_bits > 0:
-        res_indices = ((unpack_indice >> index_bits) &
-                       ((1 << index_bits) - 1)).view(torch.uint64).to(
-                           torch.int64)
+        res_indices = ((unpack_indice >> index_bits) & ((1 << index_bits) - 1)).view(torch.uint64).to(torch.int64)
         # res_indices = res_indices.squeeze()
     else:
         res_indices = None
@@ -70,26 +64,24 @@ def unpack_index_tensor(
 
 # dequantize the weight from the quantization codes
 def dequantize_weight(
-        indices: torch.
-    IntTensor,  #  [num_out_groups, num_in_groups, num_codebooks]
-        codebooks: torch.
-    Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
-        res_codebooks: torch.
-    Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
-        weight_scale: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        weight_bias: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        perm: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        metadata: MetaData) -> torch.Tensor:
+    indices: torch.IntTensor,  #  [num_out_groups, num_in_groups, num_codebooks]
+    codebooks: torch.Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
+    res_codebooks: torch.Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
+    weight_scale: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    weight_bias: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    perm: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    metadata: MetaData,
+) -> torch.Tensor:
     """
     Decode float weights from quantization codes. Differentiable.
-    :param codes: tensor of integer quantization codes, shape 
+    :param codes: tensor of integer quantization codes, shape
         [*dims, num_out_groups, num_in_groups, num_codebooks]
-    :param codebooks: tensor of vectors for each quantization code, 
+    :param codebooks: tensor of vectors for each quantization code,
         [num_codebooks, codebook_size, out_group_size, in_group_size]
-    :param scales: weight will be multiplied by this factor, must be 
-        broadcastble with 
+    :param scales: weight will be multiplied by this factor, must be
+        broadcastble with
         [*dims, out_groups, num_in_groups, out_group_size, in_group_size]
-    :return: reconstructed weight tensor of shape 
+    :return: reconstructed weight tensor of shape
         [*dims, num_in_groups*group_size]
     """
     output_size = metadata.output_size
@@ -100,13 +92,10 @@ def dequantize_weight(
     group_size = metadata.group_size
 
     codebooks = codebooks.view(num_codebooks, num_centroids, vector_len)
-    res_codebooks = res_codebooks.view(
-        num_codebooks, num_res_centroids,
-        vector_len) if num_res_centroids > 0 else None
+    res_codebooks = res_codebooks.view(num_codebooks, num_res_centroids, vector_len) if num_res_centroids > 0 else None
     index_bits = math.ceil(math.log2(num_centroids))
     enable_residual = num_res_centroids > 0
-    index_res_bits = math.ceil(
-        math.log2(num_res_centroids)) if enable_residual else 0
+    index_res_bits = math.ceil(math.log2(num_res_centroids)) if enable_residual else 0
 
     # print(f"indices shape: {indices.shape}")
     indices, res_indices = unpack_index_tensor(
@@ -121,8 +110,7 @@ def dequantize_weight(
     indices = indices.unsqueeze(-1).expand(-1, -1, -1, vector_len)
     indices = indices.reshape(num_codebooks, -1, vector_len)
     selected_centroids = torch.gather(codebooks, 1, indices)
-    selected_centroids = selected_centroids.view(num_codebooks, -1, group_size,
-                                                 vector_len)
+    selected_centroids = selected_centroids.view(num_codebooks, -1, group_size, vector_len)
     selected_centroids = selected_centroids.permute(0, 1, 3, 2)
 
     qweight = selected_centroids.reshape(num_codebooks, -1, group_size)
@@ -130,17 +118,17 @@ def dequantize_weight(
     qweight = qweight.reshape(-1, num_codebooks * group_size)
 
     if enable_residual:
-        res_codebooks = res_codebooks.view(num_codebooks, num_res_centroids,
-                                           vector_len)
+        res_codebooks = res_codebooks.view(num_codebooks, num_res_centroids, vector_len)
         res_indices = res_indices.unsqueeze(-1).expand(-1, -1, -1, vector_len)
         res_indices = res_indices.reshape(num_codebooks, -1, vector_len)
         selected_res_centroids = torch.gather(res_codebooks, 1, res_indices)
-        selected_res_centroids = selected_res_centroids.reshape(
-            num_codebooks, -1, group_size, vector_len)
+        selected_res_centroids = selected_res_centroids.reshape(num_codebooks, -1, group_size, vector_len)
         selected_res_centroids = selected_res_centroids.permute(0, 1, 3, 2)
-        qweight = qweight + (selected_res_centroids.reshape(
-            num_codebooks, -1, group_size).permute(1, 0, 2).reshape(
-                -1, num_codebooks * group_size))
+        qweight = qweight + (
+            selected_res_centroids.reshape(num_codebooks, -1, group_size)
+            .permute(1, 0, 2)
+            .reshape(-1, num_codebooks * group_size)
+        )
 
     padding = -output_size % vector_len
     if padding > 0:
@@ -161,18 +149,16 @@ def dequantize_weight(
 
 # do the quantized matmul in a generic way, it's quite slow
 def generic_dequantize_gemm(
-        input: torch.Tensor,  #  [..., in_features]
-        indices: torch.
-    IntTensor,  #  [num_out_groups, num_in_groups, num_codebooks]
-        codebooks: torch.
-    Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
-        res_codebooks: torch.
-    Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
-        weight_scale: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        weight_bias: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        perm: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        bias: Optional[torch.Tensor],
-        metadata: MetaData) -> torch.Tensor:
+    input: torch.Tensor,  #  [..., in_features]
+    indices: torch.IntTensor,  #  [num_out_groups, num_in_groups, num_codebooks]
+    codebooks: torch.Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
+    res_codebooks: torch.Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
+    weight_scale: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    weight_bias: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    perm: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    bias: torch.Tensor | None,
+    metadata: MetaData,
+) -> torch.Tensor:
     dequantized_weight = dequantize_weight(
         indices,
         codebooks,
@@ -187,57 +173,71 @@ def generic_dequantize_gemm(
 
 # call the optimized version of the dequantized matmul
 def optimized_dequantize_gemm(
-        input: torch.Tensor,  #  [..., in_features]
-        indices: torch.
-    IntTensor,  #  [num_out_groups, num_in_groups, num_codebooks]
-        codebooks: torch.
-    Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
-        res_codebooks: torch.
-    Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
-        weight_scale: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        weight_bias: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        perm: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        bias: Optional[torch.Tensor],
-        metadata: MetaData) -> torch.Tensor:
-    codebooks = codebooks.view(metadata.num_codebooks, metadata.num_centroids,
-                               metadata.vector_len)
-    res_codebooks = res_codebooks.view(
-        metadata.num_codebooks, metadata.num_res_centroids,
-        metadata.vector_len) if metadata.num_res_centroids > 0 else None
+    input: torch.Tensor,  #  [..., in_features]
+    indices: torch.IntTensor,  #  [num_out_groups, num_in_groups, num_codebooks]
+    codebooks: torch.Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
+    res_codebooks: torch.Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
+    weight_scale: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    weight_bias: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    perm: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    bias: torch.Tensor | None,
+    metadata: MetaData,
+) -> torch.Tensor:
+    codebooks = codebooks.view(metadata.num_codebooks, metadata.num_centroids, metadata.vector_len)
+    res_codebooks = (
+        res_codebooks.view(metadata.num_codebooks, metadata.num_res_centroids, metadata.vector_len)
+        if metadata.num_res_centroids > 0
+        else None
+    )
     if input.numel() // input.shape[-1] < 3:
         return ops.vptq_gemm(
-            input, indices, codebooks, weight_scale, weight_bias,
+            input,
+            indices,
+            codebooks,
+            weight_scale,
+            weight_bias,
             [metadata.vector_len, weight_scale.shape[0], metadata.output_size],
-            None, res_codebooks, None, None, perm, bias)
+            None,
+            res_codebooks,
+            None,
+            None,
+            perm,
+            bias,
+        )
     if perm is None:
         invert_perm = None
     else:
-        invert_perm = torch.argsort(perm.view(torch.uint16).to(
-            torch.int64)).to(torch.uint16).view(torch.int16)
+        invert_perm = torch.argsort(perm.view(torch.uint16).to(torch.int64)).to(torch.uint16).view(torch.int16)
     dequantized_weight = ops.vptq_dequant(
-        indices, codebooks, weight_scale, weight_bias,
+        indices,
+        codebooks,
+        weight_scale,
+        weight_bias,
         [metadata.vector_len, weight_scale.shape[0], metadata.output_size],
-        None, res_codebooks, None, None, invert_perm)
+        None,
+        res_codebooks,
+        None,
+        None,
+        invert_perm,
+    )
     return F.linear(input, dequantized_weight, bias)
 
 
 # Handle QKV projection and gate-up projection
 # we will do Q K V separately
 def merged_dequantize_gemm(
-        input: torch.Tensor,  #  [..., in_features]
-        indices: torch.
-    IntTensor,  #  [num_out_groups, num_in_groups, num_codebooks]
-        codebooks: torch.
-    Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
-        res_codebooks: torch.
-    Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
-        weight_scale: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        weight_bias: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        perm: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
-        output_partition_sizes: List[int],
-        bias: Optional[torch.Tensor],
-        metadata: MetaData) -> torch.Tensor:
-    output_shape = input.shape[:-1] + (sum(output_partition_sizes), )
+    input: torch.Tensor,  #  [..., in_features]
+    indices: torch.IntTensor,  #  [num_out_groups, num_in_groups, num_codebooks]
+    codebooks: torch.Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
+    res_codebooks: torch.Tensor,  #  [num_codebooks, codebook_size, out_group_size, in_group_size]
+    weight_scale: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    weight_bias: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    perm: torch.Tensor,  #  [num_out_groups, 1, 1, 1]
+    output_partition_sizes: list[int],
+    bias: torch.Tensor | None,
+    metadata: MetaData,
+) -> torch.Tensor:
+    output_shape = input.shape[:-1] + (sum(output_partition_sizes),)
     output = torch.empty(output_shape, dtype=input.dtype, device=input.device)
 
     indice_sizes = getattr(indices, "shard_sizes", [])
@@ -252,28 +252,26 @@ def merged_dequantize_gemm(
     codebooks_offset = 0
 
     num_linears = len(output_partition_sizes)
-    for linear_idx, output_size, indice_size in zip(range(num_linears),
-                                                    output_partition_sizes,
-                                                    indice_sizes):
+    for linear_idx, output_size, indice_size in zip(range(num_linears), output_partition_sizes, indice_sizes):
         metadata.output_size = output_size
         if len(output_extra_offsets) > 1:
-            metadata.output_size = output_size + output_extra_offsets[tp_rank][
-                linear_idx]
+            metadata.output_size = output_size + output_extra_offsets[tp_rank][linear_idx]
         shard_output = optimized_dequantize_gemm(
-            input, indices.narrow(1, indice_offset, indice_size),
+            input,
+            indices.narrow(1, indice_offset, indice_size),
             codebooks.narrow(0, codebooks_offset, num_codebooks),
             res_codebooks.narrow(0, codebooks_offset, num_codebooks),
             weight_scale.narrow(0, input_offset, input_size),
             weight_bias.narrow(0, input_offset, input_size),
-            perm.narrow(0, input_offset, input_size) if perm is not None else
-            None, bias if bias is None else bias.narrow(
-                0, output_offset, output_size), metadata)
+            perm.narrow(0, input_offset, input_size) if perm is not None else None,
+            bias if bias is None else bias.narrow(0, output_offset, output_size),
+            metadata,
+        )
 
         output_slice = output.narrow(-1, output_offset, output_size)
         if tp_rank > 0 and len(output_extra_offsets) > tp_rank:
-            shard_output = shard_output.narrow(
-                -1, output_extra_offsets[tp_rank][linear_idx], output_size)
-        assert (output_slice.shape == shard_output.shape)
+            shard_output = shard_output.narrow(-1, output_extra_offsets[tp_rank][linear_idx], output_size)
+        assert output_slice.shape == shard_output.shape
         output_slice.copy_(shard_output)
         output_offset += output_size
         indice_offset += indice_size
@@ -289,23 +287,22 @@ class VPTQConfig(QuantizationConfig):
 
     def __init__(
         self,
-        config_for_layers: Dict[str, Dict[str, Any]],
-        shared_layer_config: Dict[str, Dict[str, Any]],
+        config_for_layers: dict[str, dict[str, Any]],
+        shared_layer_config: dict[str, dict[str, Any]],
     ) -> None:
         super().__init__()
         self.config_for_layers = config_for_layers
         self.shared_layer_config = shared_layer_config
 
     def __repr__(self) -> str:
-        return (f"VPTQConfig(config_for_layers={self.config_for_layers}, "
-                f"shared_layer_config={self.shared_layer_config})")
+        return f"VPTQConfig(config_for_layers={self.config_for_layers}, shared_layer_config={self.shared_layer_config})"
 
     @classmethod
     def get_name(cls) -> QuantizationMethods:
         return "vptq"
 
     @classmethod
-    def get_supported_act_dtypes(cls) -> List[torch.dtype]:
+    def get_supported_act_dtypes(cls) -> list[torch.dtype]:
         return [torch.half, torch.bfloat16]
 
     @classmethod
@@ -313,27 +310,26 @@ class VPTQConfig(QuantizationConfig):
         return 70
 
     @classmethod
-    def get_config_filenames(cls) -> List[str]:
+    def get_config_filenames(cls) -> list[str]:
         return []  # no extra configs.
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "VPTQConfig":
-        config_for_layers: Dict[str, Any] = {}
-        shared_layer_config: Dict[str, Any] = {}
+    def from_config(cls, config: dict[str, Any]) -> "VPTQConfig":
+        config_for_layers: dict[str, Any] = {}
+        shared_layer_config: dict[str, Any] = {}
         if "config_for_layers" in config:
-            config_for_layers = cls.get_from_keys(config,
-                                                  ["config_for_layers"])
+            config_for_layers = cls.get_from_keys(config, ["config_for_layers"])
         if "shared_layer_config" in config:
-            shared_layer_config = cls.get_from_keys(config,
-                                                    ["shared_layer_config"])
-        assert len(config_for_layers) > 0 or len(shared_layer_config) > 0, \
+            shared_layer_config = cls.get_from_keys(config, ["shared_layer_config"])
+        assert len(config_for_layers) > 0 or len(shared_layer_config) > 0, (
             "VPTQConfig must have at least one of 'config_for_layers'\
              or 'shared_layer_config'"
+        )
 
         return cls(config_for_layers, shared_layer_config)
 
-    def get_config_for_key(self, prefix:str, key:str):
-        merged_name = '.'.join([prefix,key])
+    def get_config_for_key(self, prefix: str, key: str):
+        merged_name = ".".join([prefix, key])
         if merged_name in self.config_for_layers:
             return self.config_for_layers[merged_name]
         elif key in self.shared_layer_config:
@@ -341,11 +337,10 @@ class VPTQConfig(QuantizationConfig):
         else:
             raise ValueError(f"Cannot find config for ({prefix}, {key})")
 
-    def get_quant_method(self, layer: torch.nn.Module,
-                         prefix: str) -> Optional["VPTQLinearMethod"]:
+    def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> Optional["VPTQLinearMethod"]:
         if isinstance(layer, LinearBase):
             linear_name = prefix.split(".")[-1]
-            base_name = prefix[:prefix.rfind('.')]
+            base_name = prefix[: prefix.rfind(".")]
             if linear_name == "qkv_proj":
                 quant_config = {
                     "q_proj": self.get_config_for_key(base_name, "q_proj"),
@@ -354,8 +349,7 @@ class VPTQConfig(QuantizationConfig):
                 }
             elif linear_name == "gate_up_proj":
                 quant_config = {
-                    "gate_proj": self.get_config_for_key(base_name,
-                                                         "gate_proj"),
+                    "gate_proj": self.get_config_for_key(base_name, "gate_proj"),
                     "up_proj": self.get_config_for_key(base_name, "up_proj"),
                 }
             else:
@@ -363,7 +357,7 @@ class VPTQConfig(QuantizationConfig):
             return VPTQLinearMethod(quant_config)
         return None
 
-    def get_scaled_act_names(self) -> List[str]:
+    def get_scaled_act_names(self) -> list[str]:
         return []
 
 
@@ -373,18 +367,14 @@ class VPTQLinearMethod(LinearMethodBase):
         quant_config: The VPTQ quantization config.
     """
 
-    def __init__(self, quant_config: Dict[str, Any]):
+    def __init__(self, quant_config: dict[str, Any]):
         self.quant_config = quant_config
 
     @staticmethod
-    def quantized_weight_loader(
-            indice_sizes,
-            narrow_dim=1):  # specific for layer.indices/weight_scale&bias
-
-        def wrap_weight_loader(param: torch.nn.Parameter,
-                               loaded_weight: torch.Tensor,
-                               loaded_shard_id: Optional[Union[str,
-                                                               int]] = None):
+    def quantized_weight_loader(indice_sizes, narrow_dim=1):  # specific for layer.indices/weight_scale&bias
+        def wrap_weight_loader(
+            param: torch.nn.Parameter, loaded_weight: torch.Tensor, loaded_shard_id: str | int | None = None
+        ):
             if isinstance(loaded_shard_id, str):
                 _loaded_shard_id = ["q", "k", "v"].index(loaded_shard_id)
             else:
@@ -401,24 +391,27 @@ class VPTQLinearMethod(LinearMethodBase):
                 )
 
             # split for TP
-            loaded_weight = loaded_weight.narrow(narrow_dim, offset,
-                                                 end - offset)
+            loaded_weight = loaded_weight.narrow(narrow_dim, offset, end - offset)
             assert param_data.shape == loaded_weight.shape
             param_data.copy_(loaded_weight)
 
         return wrap_weight_loader
 
-    def create_weights(self, layer: torch.nn.Module,
-                       input_size_per_partition: int,
-                       output_partition_sizes: List[int], input_size: int,
-                       output_size: int, params_dtype: torch.dtype,
-                       **extra_weight_attrs):
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        input_size_per_partition: int,
+        output_partition_sizes: list[int],
+        input_size: int,
+        output_size: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ):
         row_parallel_tp_size = input_size // input_size_per_partition
         col_parallel_tp_size = output_size // sum(output_partition_sizes)
 
         if params_dtype != torch.half and params_dtype != torch.bfloat16:
-            raise ValueError(
-                "Only half and bfloat16 are currently supported by vptq")
+            raise ValueError("Only half and bfloat16 are currently supported by vptq")
         quant_config = self.quant_config.get("q_proj", self.quant_config)
         quant_config = quant_config.get("gate_proj", quant_config)
 
@@ -433,7 +426,8 @@ class VPTQLinearMethod(LinearMethodBase):
         assert not enable_perm, (
             "perm is not absorbed in this model, please process it \
 by `pip install vptq && python -m vptq.tools.pre_process \
---input_path xx --output_path xx`")
+--input_path xx --output_path xx`"
+        )
         assert input_size == group_size
         group_size = input_size_per_partition
         metadata = MetaData()
@@ -444,29 +438,31 @@ by `pip install vptq && python -m vptq.tools.pre_process \
         layer.metadata = metadata
 
         num_linears = len(output_partition_sizes)
-        orig_weight_loader = extra_weight_attrs['weight_loader']
+        orig_weight_loader = extra_weight_attrs["weight_loader"]
 
         if enable_norm:
             wrapped_weight_loader = VPTQLinearMethod.quantized_weight_loader(
-                [[(
-                    input_size_per_partition * tp_ind,
-                    input_size_per_partition * (tp_ind + 1),
-                ) for num in output_partition_sizes]
-                 for tp_ind in range(row_parallel_tp_size)
-                 ][get_tensor_model_parallel_rank() % row_parallel_tp_size],
+                [
+                    [
+                        (
+                            input_size_per_partition * tp_ind,
+                            input_size_per_partition * (tp_ind + 1),
+                        )
+                        for num in output_partition_sizes
+                    ]
+                    for tp_ind in range(row_parallel_tp_size)
+                ][get_tensor_model_parallel_rank() % row_parallel_tp_size],
                 0,
             )
             extra_weight_attrs["weight_loader"] = wrapped_weight_loader
 
             extra_weight_attrs["output_dim"] = 0
-            weight_scale = Parameter(torch.empty(input_size_per_partition *
-                                                 num_linears,
-                                                 dtype=params_dtype),
-                                     requires_grad=False)
-            weight_bias = Parameter(torch.empty(input_size_per_partition *
-                                                num_linears,
-                                                dtype=params_dtype),
-                                    requires_grad=False)
+            weight_scale = Parameter(
+                torch.empty(input_size_per_partition * num_linears, dtype=params_dtype), requires_grad=False
+            )
+            weight_bias = Parameter(
+                torch.empty(input_size_per_partition * num_linears, dtype=params_dtype), requires_grad=False
+            )
             set_weight_attrs(weight_scale, extra_weight_attrs)
             set_weight_attrs(weight_bias, extra_weight_attrs)
             layer.register_parameter("weight_scale", weight_scale)
@@ -474,32 +470,32 @@ by `pip install vptq && python -m vptq.tools.pre_process \
             extra_weight_attrs["weight_loader"] = orig_weight_loader
 
         index_bits = int(math.log2(num_centroids))
-        res_index_bits = int(
-            math.log2(num_res_centroids)) if enable_residual else 0
+        res_index_bits = int(math.log2(num_res_centroids)) if enable_residual else 0
         total_index_bits = index_bits + res_index_bits
         packed_groupsize = math.ceil(group_size * total_index_bits / 32)
 
-        indice_sizes = [[(math.floor(num * tp_ind / vector_len),
-                          math.ceil(num * (tp_ind + 1) / vector_len))
-                         for num in output_partition_sizes]
-                        for tp_ind in range(col_parallel_tp_size)]
-        tp_output_offset = [[(num * tp_ind) % vector_len
-                             for num in output_partition_sizes]
-                            for tp_ind in range(col_parallel_tp_size)]
+        indice_sizes = [
+            [
+                (math.floor(num * tp_ind / vector_len), math.ceil(num * (tp_ind + 1) / vector_len))
+                for num in output_partition_sizes
+            ]
+            for tp_ind in range(col_parallel_tp_size)
+        ]
+        tp_output_offset = [
+            [(num * tp_ind) % vector_len for num in output_partition_sizes] for tp_ind in range(col_parallel_tp_size)
+        ]
         if col_parallel_tp_size > 1:
-            this_rank_indice_sizes = indice_sizes[
-                get_tensor_model_parallel_rank()]
+            this_rank_indice_sizes = indice_sizes[get_tensor_model_parallel_rank()]
         else:
             this_rank_indice_sizes = indice_sizes[0]
         shard_sizes = [i[1] - i[0] for i in this_rank_indice_sizes]
         num_indices = sum(shard_sizes)
-        indices = Parameter(torch.empty(
-            (num_codebooks, num_indices, packed_groupsize), dtype=torch.int32),
-                            requires_grad=False)
+        indices = Parameter(
+            torch.empty((num_codebooks, num_indices, packed_groupsize), dtype=torch.int32), requires_grad=False
+        )
         if row_parallel_tp_size == 1:
-            wrapped_weight_loader = VPTQLinearMethod.quantized_weight_loader(
-                this_rank_indice_sizes)
-            extra_weight_attrs['weight_loader'] = wrapped_weight_loader
+            wrapped_weight_loader = VPTQLinearMethod.quantized_weight_loader(this_rank_indice_sizes)
+            extra_weight_attrs["weight_loader"] = wrapped_weight_loader
 
         set_weight_attrs(
             indices,
@@ -515,28 +511,25 @@ by `pip install vptq && python -m vptq.tools.pre_process \
         extra_weight_attrs["output_dim"] = 1
         set_weight_attrs(indices, extra_weight_attrs)
         layer.register_parameter("indices", indices)
-        extra_weight_attrs['weight_loader'] = orig_weight_loader
+        extra_weight_attrs["weight_loader"] = orig_weight_loader
 
         extra_weight_attrs.pop("output_dim")
         extra_weight_attrs["is_metadata"] = True
-        centroids = torch.nn.Embedding(num_codebooks * num_linears,
-                                       num_centroids * vector_len,
-                                       dtype=params_dtype)
+        centroids = torch.nn.Embedding(num_codebooks * num_linears, num_centroids * vector_len, dtype=params_dtype)
         set_weight_attrs(centroids.weight, extra_weight_attrs)
         set_weight_attrs(
             centroids.weight,
             {
                 # metadata indicates fixed size concatenated along dim 0
-                "codebook_sizes":
-                [num_centroids * vector_len for _ in output_partition_sizes],
+                "codebook_sizes": [num_centroids * vector_len for _ in output_partition_sizes],
             },
         )
         layer.centroids = centroids
         # layer.register_parameter("centroids", centroids)
         if enable_residual:
-            res_centroids = torch.nn.Embedding(num_codebooks * num_linears,
-                                               num_res_centroids * vector_len,
-                                               dtype=params_dtype)
+            res_centroids = torch.nn.Embedding(
+                num_codebooks * num_linears, num_res_centroids * vector_len, dtype=params_dtype
+            )
             set_weight_attrs(res_centroids.weight, extra_weight_attrs)
             # layer.register_parameter("res_centroids", res_centroids)
             layer.res_centroids = res_centroids
@@ -544,10 +537,7 @@ by `pip install vptq && python -m vptq.tools.pre_process \
                 res_centroids.weight,
                 {
                     # metadata indicates fixed size concatenated along dim 1
-                    "codebook_sizes": [
-                        num_res_centroids * vector_len
-                        for _ in output_partition_sizes
-                    ],
+                    "codebook_sizes": [num_res_centroids * vector_len for _ in output_partition_sizes],
                 },
             )
 
@@ -555,21 +545,26 @@ by `pip install vptq && python -m vptq.tools.pre_process \
         self,
         layer: torch.nn.Module,
         x: torch.Tensor,
-        bias: Optional[torch.Tensor] = None,
+        bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        weight_scale = layer.weight_scale if hasattr(layer,
-                                                     "weight_scale") else None
-        weight_bias = layer.weight_bias if hasattr(layer,
-                                                   "weight_bias") else None
+        weight_scale = layer.weight_scale if hasattr(layer, "weight_scale") else None
+        weight_bias = layer.weight_bias if hasattr(layer, "weight_bias") else None
         perm = layer.perm if hasattr(layer, "perm") else None
         indices = layer.indices
         output_partition_sizes = getattr(indices, "output_partition_sizes", [])
         centroids = layer.centroids.weight
-        res_centroids = layer.res_centroids.weight if hasattr(
-            layer, "res_centroids") else None
+        res_centroids = layer.res_centroids.weight if hasattr(layer, "res_centroids") else None
 
         # fall back all unoptimized formats
-        return merged_dequantize_gemm(x, indices, centroids, res_centroids,
-                                      weight_scale, weight_bias, perm,
-                                      output_partition_sizes, bias,
-                                      layer.metadata)
+        return merged_dequantize_gemm(
+            x,
+            indices,
+            centroids,
+            res_centroids,
+            weight_scale,
+            weight_bias,
+            perm,
+            output_partition_sizes,
+            bias,
+            layer.metadata,
+        )

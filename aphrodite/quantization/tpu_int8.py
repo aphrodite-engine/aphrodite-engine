@@ -42,9 +42,7 @@ class Int8TpuConfig(QuantizationConfig):
         activation_scheme = cls.get_from_keys(config, ["activation_scheme"])
         return cls(activation_scheme=activation_scheme)
 
-    def get_quant_method(
-        self, layer: Module, prefix: str
-    ) -> Optional["TPUInt8LinearMethod"]:
+    def get_quant_method(self, layer: Module, prefix: str) -> Optional["TPUInt8LinearMethod"]:
         if isinstance(layer, LinearBase):
             return TPUInt8LinearMethod(self)
         return None
@@ -82,9 +80,7 @@ class TPUInt8LinearMethod(LinearMethodBase):
         )
         layer.register_parameter("weight", weight)
 
-    def _quantize_weight(
-        self, weight: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _quantize_weight(self, weight: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         weight_dtype = weight.dtype
         weight = weight.cpu().to(torch.float32)
         n_bit = 8
@@ -94,9 +90,7 @@ class TPUInt8LinearMethod(LinearMethodBase):
         max_val = weight.abs().amax(dim=-1, keepdim=True)
         max_val = max_val.clamp(min=eps)
         qscale = max_val / max_int
-        qweight = torch.clamp(
-            torch.round(weight * (1.0 / qscale)), min_int, max_int
-        ).to(torch.int8)
+        qweight = torch.clamp(torch.round(weight * (1.0 / qscale)), min_int, max_int).to(torch.int8)
         qscale = qscale.squeeze().to(weight_dtype)
         return qweight, qscale
 
@@ -125,9 +119,7 @@ class TPUInt8LinearMethod(LinearMethodBase):
             ) from err
         weight = layer.weight
         scale = layer.scale
-        out = torch.ops.xla.quantized_matmul_int8(
-            x, weight, scale, quantize_activation=self.quantize_activation
-        )
+        out = torch.ops.xla.quantized_matmul_int8(x, weight, scale, quantize_activation=self.quantize_activation)
         if bias is not None:
             out = out + bias
         return out

@@ -8,40 +8,41 @@ from torch.nn import LayerNorm
 from transformers.models.qwen2_vl import Qwen2VLProcessor
 
 from aphrodite.attention.backends.registry import _Backend
-from aphrodite.attention.layer import (check_upstream_fa_availability,
-                                       maybe_get_vit_flash_attn_backend)
+from aphrodite.attention.layer import check_upstream_fa_availability, maybe_get_vit_flash_attn_backend
 from aphrodite.common.sequence import IntermediateTensors
 from aphrodite.config import AphroditeConfig
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.distributed import utils as dist_utils
-from aphrodite.distributed.parallel_state import (
-    get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size)
+from aphrodite.distributed.parallel_state import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (ColumnParallelLinear,
-                                              MergedColumnParallelLinear,
-                                              QKVParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+    RowParallelLinear,
+)
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import (MultiModalEmbeddings,
-                                                  SupportsLoRA,
-                                                  SupportsMultiModal,
-                                                  SupportsPP)
+from aphrodite.modeling.models.interfaces import MultiModalEmbeddings, SupportsLoRA, SupportsMultiModal, SupportsPP
 from aphrodite.modeling.models.module_mapping import MultiModelKeys
 from aphrodite.modeling.models.qwen2 import Qwen2ForCausalLM
 from aphrodite.modeling.models.qwen2_5_vl import Qwen2_5_VisionAttention
-from aphrodite.modeling.models.qwen2_vl import (Qwen2VLDummyInputsBuilder,
-                                                Qwen2VLMultiModalProcessor,
-                                                Qwen2VLProcessingInfo)
-from aphrodite.modeling.models.utils import (AutoWeightsLoader, WeightsMapper,
-                                             init_aphrodite_registered_model,
-                                             maybe_prefix)
+from aphrodite.modeling.models.qwen2_vl import (
+    Qwen2VLDummyInputsBuilder,
+    Qwen2VLMultiModalProcessor,
+    Qwen2VLProcessingInfo,
+)
+from aphrodite.modeling.models.utils import (
+    AutoWeightsLoader,
+    WeightsMapper,
+    init_aphrodite_registered_model,
+    maybe_prefix,
+)
 from aphrodite.modeling.models.vision import get_vit_attn_backend
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import MultiModalDataDict
 from aphrodite.quantization import QuantizationConfig
-from aphrodite.transformers_utils.configs.dotsocr import (DotsOCRConfig,
-                                                          DotsVisionConfig)
+from aphrodite.transformers_utils.configs.dotsocr import DotsOCRConfig, DotsVisionConfig
 from aphrodite.utils.tensor_schema import TensorSchema, TensorShape
 
 from .vision import run_dp_sharded_mrope_vision_model
@@ -152,9 +153,7 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def apply_rotary_pos_emb_vision(
-    tensor: torch.Tensor, freqs: torch.Tensor
-) -> torch.Tensor:
+def apply_rotary_pos_emb_vision(tensor: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
     orig_dtype = tensor.dtype
     tensor = tensor.float()
 
@@ -178,9 +177,7 @@ class VisionRotaryEmbedding(nn.Module):
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> torch.Tensor:
-        seq = torch.arange(
-            seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype
-        )
+        seq = torch.arange(seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
         freqs = torch.outer(seq, self.inv_freq)
         return freqs
 
@@ -247,14 +244,10 @@ class DotsVisionAttention(nn.Module):
         super().__init__()
 
         self.embed_dim = dim
-        self.tp_size = (
-            1 if use_data_parallel else get_tensor_model_parallel_world_size()
-        )
+        self.tp_size = 1 if use_data_parallel else get_tensor_model_parallel_world_size()
         self.tp_rank = 0 if use_data_parallel else get_tensor_model_parallel_rank()
         self.hidden_size_per_attention_head = dist_utils.divide(dim, num_heads)
-        self.num_attention_heads_per_partition = dist_utils.divide(
-            num_heads, self.tp_size
-        )
+        self.num_attention_heads_per_partition = dist_utils.divide(num_heads, self.tp_size)
         # qkv/proj follow Qwen2-VL style; bias controlled by arg
         self.qkv = QKVParallelLinear(
             hidden_size=dim,
@@ -281,12 +274,10 @@ class DotsVisionAttention(nn.Module):
         )
         self.use_upstream_fa = False
 
-        self.attn_backend, self.flash_attn_varlen_func = (
-            maybe_get_vit_flash_attn_backend(
-                self.attn_backend,
-                self.use_upstream_fa,
-                attn_backend_override=attn_backend_override,
-            )
+        self.attn_backend, self.flash_attn_varlen_func = maybe_get_vit_flash_attn_backend(
+            self.attn_backend,
+            self.use_upstream_fa,
+            attn_backend_override=attn_backend_override,
         )
         if self.attn_backend not in {
             _Backend.FLASH_ATTN,
@@ -294,9 +285,7 @@ class DotsVisionAttention(nn.Module):
             _Backend.XFORMERS,
             _Backend.ROCM_AITER_FA,
         }:
-            raise RuntimeError(
-                f"Unsupported vision attention backend: {self.attn_backend}"
-            )
+            raise RuntimeError(f"Unsupported vision attention backend: {self.attn_backend}")
         self.is_flash_attn_backend = self.attn_backend in {
             _Backend.FLASH_ATTN,
             _Backend.ROCM_AITER_FA,
@@ -363,12 +352,8 @@ class DotsVisionAttention(nn.Module):
             from xformers import ops as xops
             from xformers.ops.fmha.attn_bias import BlockDiagonalMask
 
-            attn_bias = BlockDiagonalMask.from_seqlens(
-                q_seqlen=seqlens, kv_seqlen=None, device=q.device
-            )
-            context_layer = xops.memory_efficient_attention_forward(
-                q, k, v, attn_bias=attn_bias, p=0, scale=None
-            )
+            attn_bias = BlockDiagonalMask.from_seqlens(q_seqlen=seqlens, kv_seqlen=None, device=q.device)
+            context_layer = xops.memory_efficient_attention_forward(q, k, v, attn_bias=attn_bias, p=0, scale=None)
         else:
             raise RuntimeError("Unsupported attention backend")
 
@@ -568,17 +553,11 @@ class DotsVisionTransformer(nn.Module):
             dtype=torch.get_default_dtype(),
             attn_backend_override=attn_backend_override,
         )
-        if self.attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(
-            torch.get_default_dtype()
-        ):
+        if self.attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(torch.get_default_dtype()):
             self.attn_backend = _Backend.FLASH_ATTN
         self.out_hidden_size = config.hidden_size
         # Keep blocks for compatibility with other vision towers
-        num_layers = (
-            config.num_hidden_layers
-            if num_hidden_layers_override is None
-            else num_hidden_layers_override
-        )
+        num_layers = config.num_hidden_layers if num_hidden_layers_override is None else num_hidden_layers_override
         self.blocks = nn.ModuleList(
             [
                 DotsVisionBlock(
@@ -647,22 +626,15 @@ class DotsVisionTransformer(nn.Module):
         rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(1)
         return rotary_pos_emb
 
-    def compute_attn_mask_seqlen(
-        self, cu_seqlens: torch.Tensor
-    ) -> tuple[int | None, list[int] | None]:
+    def compute_attn_mask_seqlen(self, cu_seqlens: torch.Tensor) -> tuple[int | None, list[int] | None]:
         max_seqlen, seqlens = None, None
-        if (
-            self.attn_backend == _Backend.FLASH_ATTN
-            or self.attn_backend == _Backend.ROCM_AITER_FA
-        ):
+        if self.attn_backend == _Backend.FLASH_ATTN or self.attn_backend == _Backend.ROCM_AITER_FA:
             max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max().item()
         elif self.attn_backend == _Backend.XFORMERS:
             seqlens = (cu_seqlens[1:] - cu_seqlens[:-1]).tolist()
         return max_seqlen, seqlens
 
-    def forward(
-        self, hidden_states: torch.Tensor, grid_thw: list[list[int]]
-    ) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor, grid_thw: list[list[int]]) -> torch.Tensor:
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
 
         # Convert grid_thw to tensor (always expecting list format now)
@@ -670,9 +642,7 @@ class DotsVisionTransformer(nn.Module):
         hidden_states = hidden_states.to(self.dtype)
         hidden_states = self.patch_embed(hidden_states, grid_thw)
 
-        cu_seqlens = torch.repeat_interleave(
-            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
-        ).cumsum(
+        cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0,
             dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
         )
@@ -746,11 +716,7 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
             self.config.vision_config = vision_config
         else:
             vision_config = self.config.vision_config
-        attn_backend_override = (
-            multimodal_config.mm_encoder_attn_backend
-            if multimodal_config is not None
-            else None
-        )
+        attn_backend_override = multimodal_config.mm_encoder_attn_backend if multimodal_config is not None else None
         self.vision_tower = DotsVisionTransformer(
             vision_config,
             quant_config=self.quant_config,
@@ -765,9 +731,7 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
             architectures=["Qwen2ForCausalLM"],
         )
 
-    def _parse_and_validate_image_input(
-        self, **kwargs: object
-    ) -> DotsOCRImageInputs | None:
+    def _parse_and_validate_image_input(self, **kwargs: object) -> DotsOCRImageInputs | None:
         pixel_values = kwargs.pop("pixel_values", None)
         image_embeds = kwargs.pop("image_embeds", None)
         image_grid_thw = kwargs.pop("image_grid_thw", None)
@@ -789,9 +753,7 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
                 image_grid_thw=image_grid_thw,
             )
 
-    def _process_image_input(
-        self, image_input: DotsOCRImageInputs
-    ) -> tuple[torch.Tensor, ...]:
+    def _process_image_input(self, image_input: DotsOCRImageInputs) -> tuple[torch.Tensor, ...]:
         grid_thw = image_input["image_grid_thw"]
         assert grid_thw.ndim == 2
         grid_thw_list = grid_thw.tolist()
@@ -809,16 +771,11 @@ class DotsOCRForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, SupportsLoRA
                     rope_type="rope_3d",
                 )
             else:
-                image_embeds = self.vision_tower(pixel_values, grid_thw_list)[
-                    :, : self.config.hidden_size
-                ]
+                image_embeds = self.vision_tower(pixel_values, grid_thw_list)[:, : self.config.hidden_size]
 
         # Split concatenated embeddings for each image item.
         merge_size = self.vision_tower.spatial_merge_size
-        sizes = (
-            torch.tensor(grid_thw_list, dtype=torch.long).prod(-1)
-            // (merge_size * merge_size)
-        ).tolist()
+        sizes = (torch.tensor(grid_thw_list, dtype=torch.long).prod(-1) // (merge_size * merge_size)).tolist()
 
         return image_embeds.split(sizes)
 

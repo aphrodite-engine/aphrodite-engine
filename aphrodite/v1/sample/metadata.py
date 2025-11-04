@@ -9,7 +9,6 @@ from aphrodite.v1.sample.logits_processor import LogitsProcessors
 
 @dataclass
 class SamplingMetadata:
-
     # Temperature
     temperature: torch.Tensor | None
     dynatemp_min: torch.Tensor | None

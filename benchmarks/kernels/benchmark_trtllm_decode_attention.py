@@ -81,9 +81,7 @@ def benchmark_decode(
         kv_cache = ref_kv_cache
 
     max_num_blocks_per_seq = (max_seq_len + block_size - 1) // block_size
-    block_tables = torch.randint(
-        0, NUM_BLOCKS, (batch_size, max_num_blocks_per_seq), dtype=torch.int32
-    )
+    block_tables = torch.randint(0, NUM_BLOCKS, (batch_size, max_num_blocks_per_seq), dtype=torch.int32)
     kv_indptr = [0]
     kv_indices = []
     kv_last_page_lens = []
@@ -269,10 +267,7 @@ if __name__ == "__main__":
             f"kv_cache_dtype: {kv_quant_dtype}, "
             f"output_dtype: {o_quant_dtype}"
         )
-        print(
-            "\tbatch_size\tmax_seq_len\ttrtllm_mean\ttrtllm_std\tbaseline_mean\t"
-            "baseline_std\tspeedup_percent"
-        )
+        print("\tbatch_size\tmax_seq_len\ttrtllm_mean\ttrtllm_std\tbaseline_mean\tbaseline_std\tspeedup_percent")
         for max_seq_len in max_seq_lens:
             for bs in batch_sizes:
                 result = benchmark_decode(

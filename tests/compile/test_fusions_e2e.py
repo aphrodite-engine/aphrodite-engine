@@ -9,8 +9,7 @@ import pytest
 import regex as re
 
 from aphrodite import LLM, SamplingParams
-from aphrodite.config import (CompilationConfig, CompilationMode,
-                              CUDAGraphMode, PassConfig)
+from aphrodite.config import CompilationConfig, CompilationMode, CUDAGraphMode, PassConfig
 from aphrodite.platforms import current_platform
 from aphrodite.utils.flashinfer import has_flashinfer
 from aphrodite.utils.torch_utils import is_torch_equal_or_newer
@@ -98,8 +97,7 @@ CUSTOM_OPS_FP8 = ["-quant_fp8"]  # , "+quant_fp8"]
 
 
 @pytest.mark.parametrize(
-    "model_name, model_kwargs, backend, "
-    "attention_fusions, allreduce_fusions, custom_ops",
+    "model_name, model_kwargs, backend, attention_fusions, allreduce_fusions, custom_ops",
     # Test attention+quant_fp8 fusion with custom and torch impls of QuantFP8
     list(flat_product(MODELS_FP8, CUSTOM_OPS_FP8))
     # quant_fp4 only has the custom impl
@@ -117,9 +115,7 @@ def test_attn_quant(
     caplog_mp_spawn,
     monkeypatch,
 ):
-    if backend == _Backend.FLASHINFER and (
-        not current_platform.is_device_capability((10, 0)) or not has_flashinfer()
-    ):
+    if backend == _Backend.FLASHINFER and (not current_platform.is_device_capability((10, 0)) or not has_flashinfer()):
         pytest.skip("FlashInfer attn fusion requires Blackwell and flashinfer")
     if inductor_graph_partition and not is_torch_equal_or_newer("2.9.0.dev"):
         pytest.skip("Inductor graph partition requires torch>=2.9")
@@ -180,22 +176,15 @@ def custom_ops_product(*custom_ops_lists: list[str]) -> Iterable[str]:
 
 @multi_gpu_test(num_gpus=2)
 @pytest.mark.parametrize(
-    "model_name, model_kwargs, backend, "
-    "attention_fusions, allreduce_fusions, custom_ops",
+    "model_name, model_kwargs, backend, attention_fusions, allreduce_fusions, custom_ops",
     # Toggle RMSNorm and QuantFP8 for FP8 models
-    list(
-        flat_product(
-            MODELS_FP8, custom_ops_product(CUSTOM_OPS_FP8, CUSTOM_OPS_RMS_NORM)
-        )
-    )
+    list(flat_product(MODELS_FP8, custom_ops_product(CUSTOM_OPS_FP8, CUSTOM_OPS_RMS_NORM)))
     # Toggle RMSNorm for FP4 models and unquant models
     + list(flat_product(MODELS_FP4 + MODELS, CUSTOM_OPS_RMS_NORM)),
 )
 @pytest.mark.parametrize("inductor_graph_partition", [True, False])
 @pytest.mark.skipif(
-    not current_platform.is_cuda()
-    or not has_flashinfer()
-    or not current_platform.has_device_capability(90),
+    not current_platform.is_cuda() or not has_flashinfer() or not current_platform.has_device_capability(90),
     reason="allreduce+rmsnorm fusion requires flashinfer",
 )
 def test_tp2_attn_quant_allreduce_rmsnorm(
@@ -248,9 +237,7 @@ def test_tp2_attn_quant_allreduce_rmsnorm(
     )
 
     with caplog_mp_spawn(logging.DEBUG) as log_holder:
-        run_model(
-            compilation_config, model_name, tensor_parallel_size=2, **model_kwargs
-        )
+        run_model(compilation_config, model_name, tensor_parallel_size=2, **model_kwargs)
     matches = re.findall(
         r"fusion_attn.py:\d+] Fused quant onto (\d+) attention nodes",
         log_holder.text,
@@ -272,9 +259,7 @@ def test_tp2_attn_quant_allreduce_rmsnorm(
 
 def run_model(compile_config: int | CompilationConfig, model: str, **model_kwargs):
     compilation_config = (
-        compile_config
-        if isinstance(compile_config, CompilationConfig)
-        else CompilationConfig(mode=compile_config)
+        compile_config if isinstance(compile_config, CompilationConfig) else CompilationConfig(mode=compile_config)
     )
 
     prompts = [

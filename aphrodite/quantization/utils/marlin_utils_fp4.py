@@ -4,8 +4,12 @@ import aphrodite._custom_ops as ops
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.utils.marlin_utils import (
-    USE_FP32_REDUCE_DEFAULT, marlin_make_workspace_new, marlin_permute_bias,
-    marlin_permute_scales, should_use_atomic_add_reduce)
+    USE_FP32_REDUCE_DEFAULT,
+    marlin_make_workspace_new,
+    marlin_permute_bias,
+    marlin_permute_scales,
+    should_use_atomic_add_reduce,
+)
 from aphrodite.scalar_type import scalar_types
 
 FP4_MARLIN_SUPPORTED_GROUP_SIZES = [16]
@@ -31,14 +35,10 @@ def nvfp4_marlin_process_scales(marlin_scales):
 
     # 8 is the number of scale number using by one thread
     marlin_scales = marlin_scales.view(marlin_scales.size(0) // 2, 2, -1, 8)
-    marlin_scales = marlin_scales.permute(0, 2, 1, 3).reshape(
-        marlin_scales.size(0) * 2, -1
-    )
+    marlin_scales = marlin_scales.permute(0, 2, 1, 3).reshape(marlin_scales.size(0) * 2, -1)
 
     # fit the layout of fp8 dequantization
-    marlin_scales = marlin_scales.view(-1, 4)[:, [0, 2, 1, 3]].view(
-        marlin_scales.size(0), -1
-    )
+    marlin_scales = marlin_scales.view(-1, 4)[:, [0, 2, 1, 3]].view(marlin_scales.size(0), -1)
 
     # We assume that weight_scale (FP8-S1E4M3) is always greater
     # than or equal to 0. So we can convert
@@ -57,14 +57,10 @@ def nvfp4_marlin_process_scales(marlin_scales):
 def mxfp4_marlin_process_scales(marlin_scales):
     # 8 is the number of scale number using by one thread
     marlin_scales = marlin_scales.view(marlin_scales.size(0) // 2, 2, -1, 8)
-    marlin_scales = marlin_scales.permute(0, 2, 1, 3).reshape(
-        marlin_scales.size(0) * 2, -1
-    )
+    marlin_scales = marlin_scales.permute(0, 2, 1, 3).reshape(marlin_scales.size(0) * 2, -1)
 
     # fit the layout of fp8 dequantization
-    marlin_scales = marlin_scales.view(-1, 4)[:, [0, 2, 1, 3]].view(
-        marlin_scales.size(0), -1
-    )
+    marlin_scales = marlin_scales.view(-1, 4)[:, [0, 2, 1, 3]].view(marlin_scales.size(0), -1)
     marlin_scales = marlin_scales.to(torch.float8_e8m0fnu)
     return marlin_scales
 
@@ -169,9 +165,7 @@ def prepare_fp4_layer_for_marlin(layer: torch.nn.Module) -> None:
         weight_scale = weight_scale.view(torch.float8_e8m0fnu)
 
     weight_scale = weight_scale.to(param_dtype)
-    weight_scale = marlin_permute_scales(
-        s=weight_scale, size_k=part_size_k, size_n=part_size_n, group_size=group_size
-    )
+    weight_scale = marlin_permute_scales(s=weight_scale, size_k=part_size_k, size_n=part_size_n, group_size=group_size)
 
     if is_nvfp4:
         weight_scale = nvfp4_marlin_process_scales(weight_scale)
@@ -257,9 +251,7 @@ def prepare_moe_fp4_layer_for_marlin(layer: torch.nn.Module) -> None:
         for i in range(e):
             scale = scales[i].T
 
-            marlin_scales = marlin_permute_scales(
-                s=scale, size_k=size_k, size_n=size_n, group_size=group_size
-            )
+            marlin_scales = marlin_permute_scales(s=scale, size_k=size_k, size_n=size_n, group_size=group_size)
             if is_nvfp4:
                 marlin_scales = nvfp4_marlin_process_scales(marlin_scales)
             else:
@@ -302,9 +294,7 @@ def rand_marlin_weight_nvfp4_like(weight, group_size):
     global_scale = scales.max() / 448
     scales = (scales / global_scale).to(torch.float8_e4m3fn)
 
-    fp4_weight = torch.randint(
-        0, 256, (size_n, size_k // 2), dtype=torch.uint8, device=weight.device
-    )
+    fp4_weight = torch.randint(0, 256, (size_n, size_k // 2), dtype=torch.uint8, device=weight.device)
     fp4_weight_part_1 = (fp4_weight & 0b10000000) | ((fp4_weight & 0b01110000) >> 2)
     fp4_weight_part_1 = fp4_weight_part_1.view(torch.float8_e4m3fn)
     fp4_weight_part_1 = fp4_weight_part_1.to(weight.dtype) * (2**6)
@@ -314,14 +304,8 @@ def rand_marlin_weight_nvfp4_like(weight, group_size):
     fp4_weight_part_2 = fp4_weight_part_2.view(torch.float8_e4m3fn)
     fp4_weight_part_2 = fp4_weight_part_2.to(weight.dtype) * (2**6)
 
-    weight_ref = torch.cat(
-        [fp4_weight_part_2.unsqueeze(2), fp4_weight_part_1.unsqueeze(2)], 2
-    ).view(size_n, size_k)
-    weight_ref = (
-        weight_ref
-        * global_scale.to(weight.dtype)
-        * scales.repeat_interleave(group_size, 1).to(weight.dtype)
-    )
+    weight_ref = torch.cat([fp4_weight_part_2.unsqueeze(2), fp4_weight_part_1.unsqueeze(2)], 2).view(size_n, size_k)
+    weight_ref = weight_ref * global_scale.to(weight.dtype) * scales.repeat_interleave(group_size, 1).to(weight.dtype)
 
     marlin_qweight = ops.gptq_marlin_repack(
         b_q_weight=fp4_weight.view(torch.int32).T.contiguous(),
@@ -355,9 +339,7 @@ def rand_marlin_weight_mxfp4_like(weight, group_size):
     )
     scales = scales.view(torch.float8_e8m0fnu)
 
-    fp4_weight = torch.randint(
-        0, 256, (size_n, size_k // 2), dtype=torch.uint8, device=weight.device
-    )
+    fp4_weight = torch.randint(0, 256, (size_n, size_k // 2), dtype=torch.uint8, device=weight.device)
     fp4_weight_part_1 = (fp4_weight & 0b10000000) | ((fp4_weight & 0b01110000) >> 2)
     fp4_weight_part_1 = fp4_weight_part_1.view(torch.float8_e4m3fn)
     fp4_weight_part_1 = fp4_weight_part_1.to(weight.dtype) * (2**6)
@@ -367,9 +349,7 @@ def rand_marlin_weight_mxfp4_like(weight, group_size):
     fp4_weight_part_2 = fp4_weight_part_2.view(torch.float8_e4m3fn)
     fp4_weight_part_2 = fp4_weight_part_2.to(weight.dtype) * (2**6)
 
-    weight_ref = torch.cat(
-        [fp4_weight_part_2.unsqueeze(2), fp4_weight_part_1.unsqueeze(2)], 2
-    ).view(size_n, size_k)
+    weight_ref = torch.cat([fp4_weight_part_2.unsqueeze(2), fp4_weight_part_1.unsqueeze(2)], 2).view(size_n, size_k)
     weight_ref = weight_ref * scales.repeat_interleave(group_size, 1).to(weight.dtype)
 
     marlin_qweight = ops.gptq_marlin_repack(

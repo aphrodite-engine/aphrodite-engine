@@ -111,9 +111,7 @@ def ref_single_query_cached_kv_attention(
         output[i].copy_(out, non_blocking=True)
 
 
-@pytest.mark.parametrize(
-    "version", ["v1", "v2"] if not current_platform.is_rocm() else ["v1", "v2", "rocm"]
-)
+@pytest.mark.parametrize("version", ["v1", "v2"] if not current_platform.is_rocm() else ["v1", "v2", "rocm"])
 @pytest.mark.parametrize("num_seqs", NUM_GEN_SEQS)
 @pytest.mark.parametrize("num_heads", NUM_HEADS)
 @pytest.mark.parametrize("head_size", HEAD_SIZES)
@@ -136,17 +134,13 @@ def test_paged_attention(
     seed: int,
     device: str,
 ) -> None:
-    if (kv_cache_dtype == "fp8" and head_size % 16) or (
-        version == "rocm" and head_size not in (64, 128)
-    ):
+    if (kv_cache_dtype == "fp8" and head_size % 16) or (version == "rocm" and head_size not in (64, 128)):
         pytest.skip()
 
     if (
         version == "rocm"
         and current_platform.is_navi()
-        and (
-            kv_cache_dtype == "fp8" or head_size != 128 or block_size != 16 or use_alibi
-        )
+        and (kv_cache_dtype == "fp8" or head_size != 128 or block_size != 16 or use_alibi)
     ):
         pytest.skip()
 
@@ -174,9 +168,7 @@ def test_paged_attention(
     max_num_blocks_per_seq = (max_seq_len + block_size - 1) // block_size
     block_tables_lst: list[list[int]] = []
     for _ in range(num_seqs):
-        block_table = [
-            random.randint(0, NUM_BLOCKS - 1) for _ in range(max_num_blocks_per_seq)
-        ]
+        block_table = [random.randint(0, NUM_BLOCKS - 1) for _ in range(max_num_blocks_per_seq)]
         block_tables_lst.append(block_table)
 
     block_tables = torch.tensor(block_tables_lst, dtype=torch.int)
@@ -365,16 +357,12 @@ def test_paged_attention(
         # Convert cache data back to dtype.
         x = 16 // torch.tensor([], dtype=dtype).element_size()
         key_cache_shape = (NUM_BLOCKS, num_kv_heads, head_size // x, block_size, x)
-        dequantized_key_cache = torch.empty(
-            size=key_cache_shape, dtype=dtype, device=device
-        )
+        dequantized_key_cache = torch.empty(size=key_cache_shape, dtype=dtype, device=device)
         ops.convert_fp8(dequantized_key_cache, key_cache)
         key_cache = dequantized_key_cache
 
         value_cache_shape = value_cache.shape
-        dequantized_value_cache = torch.empty(
-            size=value_cache_shape, dtype=dtype, device=device
-        )
+        dequantized_value_cache = torch.empty(size=value_cache_shape, dtype=dtype, device=device)
         ops.convert_fp8(dequantized_value_cache, value_cache)
         value_cache = dequantized_value_cache
 
@@ -427,9 +415,7 @@ def ref_multi_query_kv_attention(
         if alibi_bias:
             attn_mask = alibi_bias[i]
         else:
-            attn_mask = torch.triu(
-                torch.ones(seq_len, seq_len, dtype=dtype), diagonal=1
-            )
+            attn_mask = torch.triu(torch.ones(seq_len, seq_len, dtype=dtype), diagonal=1)
             attn_mask = attn_mask * torch.finfo(dtype).min
             attn_mask = attn_mask.to(dtype=dtype)
 
@@ -451,9 +437,7 @@ def ref_multi_query_kv_attention(
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("device", CUDA_DEVICES)
-@pytest.mark.skipif(
-    current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm."
-)
+@pytest.mark.skipif(current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm.")
 @torch.inference_mode()
 def test_multi_query_kv_attention(
     num_seqs: int,
@@ -475,9 +459,7 @@ def test_multi_query_kv_attention(
 
     scale = float(1.0 / (head_size**0.5))
     num_query_heads, num_kv_heads = num_heads
-    qkv = torch.empty(
-        num_tokens, num_query_heads + 2 * num_kv_heads, head_size, dtype=dtype
-    )
+    qkv = torch.empty(num_tokens, num_query_heads + 2 * num_kv_heads, head_size, dtype=dtype)
     qkv.uniform_(-scale, scale)
     query, key, value = qkv.split([num_query_heads, num_kv_heads, num_kv_heads], dim=1)
 
@@ -507,8 +489,7 @@ def test_multi_query_kv_attention(
             start += seq_len
         # xformers.AttentionBias to Tensor for use in reference impl.
         alibi_bias = [
-            b.materialize((1, num_query_heads, i, i), device=device).squeeze()
-            for b, i in zip(attn_bias, seq_lens)
+            b.materialize((1, num_query_heads, i, i), device=device).squeeze() for b, i in zip(attn_bias, seq_lens)
         ]
     else:
         attn_bias = BlockDiagonalCausalMask.from_seqlens(seq_lens)
@@ -545,9 +526,7 @@ def test_multi_query_kv_attention(
 @pytest.mark.parametrize("dtype", DTYPES)
 @pytest.mark.parametrize("seed", SEEDS)
 @pytest.mark.parametrize("device", CUDA_DEVICES)
-@pytest.mark.skipif(
-    current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm."
-)
+@pytest.mark.skipif(current_platform.is_rocm(), reason="Xformers backend is not supported on ROCm.")
 @torch.inference_mode()
 def test_multi_query_kv_attention_with_alibi(
     num_seqs: int,

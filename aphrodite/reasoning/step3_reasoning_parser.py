@@ -3,8 +3,7 @@ from collections.abc import Sequence
 import regex as re
 from transformers import PreTrainedTokenizerBase
 
-from aphrodite.endpoints.openai.protocol import (ChatCompletionRequest,
-                                                 DeltaMessage)
+from aphrodite.endpoints.openai.protocol import ChatCompletionRequest, DeltaMessage
 from aphrodite.logger import init_logger
 from aphrodite.reasoning import ReasoningParser, ReasoningParserManager
 
@@ -28,16 +27,12 @@ class Step3ReasoningParser(ReasoningParser):
 
         if not self.model_tokenizer:
             raise ValueError(
-                "The model tokenizer must be passed to the ReasoningParser "
-                "constructor during construction."
+                "The model tokenizer must be passed to the ReasoningParser constructor during construction."
             )
 
         self.think_end_token_id = self.vocab.get(self.think_end_token)
         if self.think_end_token_id is None:
-            raise RuntimeError(
-                "Step3 reasoning parser could not locate think end "
-                "token in the tokenizer!"
-            )
+            raise RuntimeError("Step3 reasoning parser could not locate think end token in the tokenizer!")
 
     def extract_reasoning_content_streaming(
         self,

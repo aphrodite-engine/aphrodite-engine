@@ -2,9 +2,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from aphrodite.modeling.layers.fla.ops.layernorm_guard import (layer_norm_fwd,
-                                                               layernorm_fn,
-                                                               rms_norm_ref)
+from aphrodite.modeling.layers.fla.ops.layernorm_guard import layer_norm_fwd, layernorm_fn, rms_norm_ref
 from aphrodite.platforms import current_platform
 
 
@@ -119,9 +117,7 @@ def test_layer_norm_fwd_basic(
     eps = 1e-6
 
     # Run the triton kernel
-    out, mean, rstd = layer_norm_fwd(
-        x, weight, bias, eps, z=None, is_rms_norm=is_rms_norm
-    )
+    out, mean, rstd = layer_norm_fwd(x, weight, bias, eps, z=None, is_rms_norm=is_rms_norm)
 
     # Run reference implementation
     ref_out = layer_norm_ref(x, weight, bias, z=None, eps=eps, is_rms_norm=is_rms_norm)
@@ -204,9 +200,7 @@ def test_layer_norm_fwd_with_groups(
 ) -> None:
     """Test layer norm forward pass with group normalization."""
     if hidden_size % group_size != 0:
-        pytest.skip(
-            f"hidden_size {hidden_size} not divisible by group_size {group_size}"
-        )
+        pytest.skip(f"hidden_size {hidden_size} not divisible by group_size {group_size}")
 
     current_platform.seed_everything(42)
     device = torch.device("cuda:0")
@@ -220,14 +214,10 @@ def test_layer_norm_fwd_with_groups(
     ngroups = hidden_size // group_size
 
     # Run the triton kernel
-    out, mean, rstd = layer_norm_fwd(
-        x, weight, bias, eps, z=None, group_size=group_size, is_rms_norm=is_rms_norm
-    )
+    out, mean, rstd = layer_norm_fwd(x, weight, bias, eps, z=None, group_size=group_size, is_rms_norm=is_rms_norm)
 
     # Run reference implementation
-    ref_out = layer_norm_ref(
-        x, weight, bias, z=None, eps=eps, group_size=group_size, is_rms_norm=is_rms_norm
-    )
+    ref_out = layer_norm_ref(x, weight, bias, z=None, eps=eps, group_size=group_size, is_rms_norm=is_rms_norm)
 
     # Check outputs
     assert out.shape == x.shape
@@ -290,14 +280,10 @@ def test_strided_input(dtype: torch.dtype) -> None:
     eps = 1e-6
 
     # Run the triton kernel with contiguous input
-    out, mean, rstd = layer_norm_fwd(
-        x_contiguous, weight, bias, eps, z=None, is_rms_norm=False
-    )
+    out, mean, rstd = layer_norm_fwd(x_contiguous, weight, bias, eps, z=None, is_rms_norm=False)
 
     # Run reference implementation
-    ref_out = layer_norm_ref(
-        x_contiguous, weight, bias, z=None, eps=eps, is_rms_norm=False
-    )
+    ref_out = layer_norm_ref(x_contiguous, weight, bias, z=None, eps=eps, is_rms_norm=False)
 
     # Check outputs
     torch.testing.assert_close(out, ref_out, atol=1e-2, rtol=1e-2)
@@ -326,9 +312,7 @@ def test_output_buffer_provided(
     out_buffer = torch.empty_like(x)
 
     # Run the triton kernel with provided output
-    out, mean, rstd = layer_norm_fwd(
-        x, weight, bias, eps, z=None, out=out_buffer, is_rms_norm=False
-    )
+    out, mean, rstd = layer_norm_fwd(x, weight, bias, eps, z=None, out=out_buffer, is_rms_norm=False)
 
     # Check that the provided buffer was used
     assert out.data_ptr() == out_buffer.data_ptr()

@@ -107,9 +107,7 @@ def run_test(
             )
             aphrodite_outputs_per_mm.append(aphrodite_output)
 
-    hf_model = hf_runner(
-        model, dtype=dtype, auto_cls=auto_cls, model_kwargs=hf_model_kwargs
-    )
+    hf_model = hf_runner(model, dtype=dtype, auto_cls=auto_cls, model_kwargs=hf_model_kwargs)
 
     # Some models need to patch things like the model processor, e.g., internvl
     if patch_hf_runner is not None:
@@ -169,19 +167,12 @@ def process_runner_outputs(
 ):
     """Applies the runner processor(s) to the runner outputs, if any."""
     if first_runner_processor is not None:
-        first_runner_outputs = process_outputs(
-            first_runner_processor, model, first_runner_outputs
-        )
+        first_runner_outputs = process_outputs(first_runner_processor, model, first_runner_outputs)
     if second_runner_processor is not None:
-        second_runner_outputs = process_outputs(
-            second_runner_processor, model, second_runner_outputs
-        )
+        second_runner_outputs = process_outputs(second_runner_processor, model, second_runner_outputs)
     return first_runner_outputs, second_runner_outputs
 
 
 def process_outputs(output_processor, model, outputs_per_image):
     """Applies a model specific post-processor function to a runner's output"""
-    return [
-        [output_processor(res, model) for res in outputs]
-        for outputs in outputs_per_image
-    ]
+    return [[output_processor(res, model) for res in outputs] for outputs in outputs_per_image]

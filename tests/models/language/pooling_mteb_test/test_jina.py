@@ -4,10 +4,11 @@ import pytest
 
 from aphrodite import PoolingParams
 from tests.models.language.pooling.embed_utils import (
-    check_embeddings_close, correctness_test_embed_models, matryoshka_fy)
-from tests.models.utils import (CLSPoolingEmbedModelInfo,
-                                CLSPoolingRerankModelInfo, EmbedModelInfo,
-                                RerankModelInfo)
+    check_embeddings_close,
+    correctness_test_embed_models,
+    matryoshka_fy,
+)
+from tests.models.utils import CLSPoolingEmbedModelInfo, CLSPoolingRerankModelInfo, EmbedModelInfo, RerankModelInfo
 
 from .mteb_utils import mteb_test_embed_models, mteb_test_rerank_models
 
@@ -35,15 +36,11 @@ def test_embed_models_mteb(hf_runner, aphrodite_runner, model_info: EmbedModelIn
     def hf_model_callback(model):
         model.encode = partial(model.encode, task="text-matching")
 
-    mteb_test_embed_models(
-        hf_runner, aphrodite_runner, model_info, hf_model_callback=hf_model_callback
-    )
+    mteb_test_embed_models(hf_runner, aphrodite_runner, model_info, hf_model_callback=hf_model_callback)
 
 
 @pytest.mark.parametrize("model_info", EMBEDDING_MODELS)
-def test_embed_models_correctness(
-    hf_runner, aphrodite_runner, model_info: EmbedModelInfo, example_prompts
-) -> None:
+def test_embed_models_correctness(hf_runner, aphrodite_runner, model_info: EmbedModelInfo, example_prompts) -> None:
     def hf_model_callback(model):
         model.encode = partial(model.encode, task="text-matching")
 
@@ -57,9 +54,7 @@ def test_embed_models_correctness(
 
 
 @pytest.mark.parametrize("model_info", RERANK_MODELS)
-def test_rerank_models_mteb(
-    hf_runner, aphrodite_runner, model_info: RerankModelInfo
-) -> None:
+def test_rerank_models_mteb(hf_runner, aphrodite_runner, model_info: RerankModelInfo) -> None:
     mteb_test_rerank_models(hf_runner, aphrodite_runner, model_info)
 
 
@@ -89,21 +84,15 @@ def test_matryoshka(
         hf_outputs = hf_model.encode(example_prompts, task="text-matching")
         hf_outputs = matryoshka_fy(hf_outputs, dimensions)
 
-    with aphrodite_runner(
-        model_info.name, runner="pooling", dtype=dtype, max_model_len=None
-    ) as aphrodite_model:
+    with aphrodite_runner(model_info.name, runner="pooling", dtype=dtype, max_model_len=None) as aphrodite_model:
         assert aphrodite_model.llm.llm_engine.model_config.is_matryoshka
 
-        matryoshka_dimensions = (
-            aphrodite_model.llm.llm_engine.model_config.matryoshka_dimensions
-        )
+        matryoshka_dimensions = aphrodite_model.llm.llm_engine.model_config.matryoshka_dimensions
         assert matryoshka_dimensions is not None
 
         if dimensions not in matryoshka_dimensions:
             with pytest.raises(ValueError):
-                aphrodite_model.embed(
-                    example_prompts, pooling_params=PoolingParams(dimensions=dimensions)
-                )
+                aphrodite_model.embed(example_prompts, pooling_params=PoolingParams(dimensions=dimensions))
         else:
             aphrodite_outputs = aphrodite_model.embed(
                 example_prompts, pooling_params=PoolingParams(dimensions=dimensions)

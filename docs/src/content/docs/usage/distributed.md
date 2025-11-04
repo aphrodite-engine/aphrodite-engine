@@ -27,7 +27,7 @@ To run multi-GPU inference with the LLM class, set the `tensor_parallel_size` to
 ```py
 from aphrodite import LLM
 llm = LLM("facebook/opt-13b", tensor_parallel_size=4)
-output = llm.generate("San Franciso is a")
+output = llm.generate("San Francisco is a")
 ```
 
 CLI:

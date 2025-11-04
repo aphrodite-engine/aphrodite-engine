@@ -3,16 +3,17 @@ import pytest
 from aphrodite.attention.layer import Attention
 from aphrodite.common.pooling_params import PoolingParams
 from aphrodite.common.sampling_params import SamplingParams
-from aphrodite.config import (AphroditeConfig, CacheConfig, ModelConfig,
-                              SchedulerConfig, set_current_aphrodite_config)
+from aphrodite.config import AphroditeConfig, CacheConfig, ModelConfig, SchedulerConfig, set_current_aphrodite_config
 from aphrodite.utils.mem_constants import GiB_bytes
-from aphrodite.v1.core.kv_cache_utils import (estimate_max_model_len,
-                                              get_kv_cache_configs)
-from aphrodite.v1.core.sched.output import (CachedRequestData, NewRequestData,
-                                            SchedulerOutput)
+from aphrodite.v1.core.kv_cache_utils import estimate_max_model_len, get_kv_cache_configs
+from aphrodite.v1.core.sched.output import CachedRequestData, NewRequestData, SchedulerOutput
 from aphrodite.v1.worker.tpu_model_runner import (
-    TPUModelRunner, _get_padded_num_reqs_with_upper_limit,
-    _get_padded_token_len, _get_req_paddings, _get_token_paddings)
+    TPUModelRunner,
+    _get_padded_num_reqs_with_upper_limit,
+    _get_padded_token_len,
+    _get_req_paddings,
+    _get_token_paddings,
+)
 
 
 def get_aphrodite_config():
@@ -470,9 +471,7 @@ def test_init_kv_cache_without_kv_sharing():
     # 2 (non-MLA) * 8 (num_heads) * 128 (head_dim)
     # * 2 (bfloat16, kv_cache dtype) * 128 (block_size) = 512KB
     num_expected_blocks = 20480  # 20GB / 512KB / 2 (num layers)
-    kv_cache_config = get_kv_cache_configs(
-        aphrodite_config, [kv_cache_spec], [available_memory]
-    )[0]
+    kv_cache_config = get_kv_cache_configs(aphrodite_config, [kv_cache_spec], [available_memory])[0]
     assert kv_cache_config.num_blocks == num_expected_blocks
     assert len(kv_cache_config.kv_cache_tensors) == 2
     assert kv_cache_config.kv_cache_tensors[0].size == available_memory // 2
@@ -488,9 +487,7 @@ def test_init_kv_cache_without_kv_sharing():
     # this will only allocate 2 block worth of memory (2 * 512kb)
     kv_cache_config.num_blocks = 1
     for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
-        kv_cache_tensor.size = kv_cache_spec[
-            kv_cache_tensor.shared_by[0]
-        ].page_size_bytes
+        kv_cache_tensor.size = kv_cache_spec[kv_cache_tensor.shared_by[0]].page_size_bytes
 
     model_runner.initialize_kv_cache(kv_cache_config)
 
@@ -542,9 +539,7 @@ def test_init_kv_cache_with_kv_sharing_valid():
     # with KV sharing, we can allocate (available_mem//page_size//1) blocks
     # which is twice as many as without KV sharing
     num_expected_blocks = 2 * 20480  # 20GB / 512KB
-    kv_cache_config = get_kv_cache_configs(
-        aphrodite_config, [kv_cache_spec], [available_memory]
-    )[0]
+    kv_cache_config = get_kv_cache_configs(aphrodite_config, [kv_cache_spec], [available_memory])[0]
     assert kv_cache_config.num_blocks == num_expected_blocks
     assert len(kv_cache_config.kv_cache_tensors) == 1
     # Each layer now has twice the available memory for KV cache

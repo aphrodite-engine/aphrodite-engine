@@ -9,8 +9,7 @@ from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
 from aphrodite.multimodal.inputs import MultiModalDataDict
 
-from .llava_next import (LlavaDummyInputsBuilder, LlavaNextMultiModalProcessor,
-                         LlavaNextProcessingInfo)
+from .llava_next import LlavaDummyInputsBuilder, LlavaNextMultiModalProcessor, LlavaNextProcessingInfo
 from .llava_onevision import LlavaOnevisionForConditionalGeneration
 from .utils import WeightsMapper
 

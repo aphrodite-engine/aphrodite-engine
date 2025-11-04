@@ -12,20 +12,19 @@ from transformers import PretrainedConfig
 
 from aphrodite.config.multimodal import BaseDummyOptions
 from aphrodite.multimodal import MULTIMODAL_REGISTRY
-from aphrodite.multimodal.inputs import (MultiModalDataDict,
-                                         MultiModalKwargsItems)
-from aphrodite.multimodal.parse import (ImageEmbeddingItems,
-                                        ImageProcessorItems,
-                                        MultiModalDataItems)
-from aphrodite.multimodal.processing import (PromptReplacement, PromptUpdate,
-                                             PromptUpdateDetails)
+from aphrodite.multimodal.inputs import MultiModalDataDict, MultiModalKwargsItems
+from aphrodite.multimodal.parse import ImageEmbeddingItems, ImageProcessorItems, MultiModalDataItems
+from aphrodite.multimodal.processing import PromptReplacement, PromptUpdate, PromptUpdateDetails
 from aphrodite.quantization import QuantizationConfig
 
 from .intern_vit import InternVisionModel
-from .internvl import (BaseInternVLDummyInputsBuilder,
-                       BaseInternVLMultiModalProcessor,
-                       BaseInternVLProcessingInfo, BaseInternVLProcessor,
-                       InternVLChatModel)
+from .internvl import (
+    BaseInternVLDummyInputsBuilder,
+    BaseInternVLMultiModalProcessor,
+    BaseInternVLProcessingInfo,
+    BaseInternVLProcessor,
+    InternVLChatModel,
+)
 
 IMG_PAD = "<|vision_pad|>"
 
@@ -48,9 +47,7 @@ class NVLMProcessor(BaseInternVLProcessor):
             tile_pos_identifiers += ["<tile_global_thumbnail>"]
 
         context_size = feature_size // num_patches
-        features = "".join(
-            identifier + IMG_PAD * context_size for identifier in tile_pos_identifiers
-        )
+        features = "".join(identifier + IMG_PAD * context_size for identifier in tile_pos_identifiers)
 
         # We include the start and end as well because "<Image><tile" is
         # tokenized as ["<Image", "><", "tile"], resulting in assertion error
@@ -121,9 +118,7 @@ class NVLMMultiModalProcessor(BaseInternVLMultiModalProcessor[NVLMProcessingInfo
             image_num_patches = []
 
         def get_replacement_nvlm(item_idx: int):
-            images = mm_items.get_items(
-                "image", (ImageEmbeddingItems, ImageProcessorItems)
-            )
+            images = mm_items.get_items("image", (ImageEmbeddingItems, ImageProcessorItems))
 
             if isinstance(images, ImageEmbeddingItems):
                 feature_size = images.get_feature_size(item_idx)
@@ -186,9 +181,7 @@ class NVLM_D_Model(InternVLChatModel):
         if not is_mono:
             vision_feature_layer = config.select_layer
             if vision_feature_layer < 0:
-                num_hidden_layers = (
-                    config.vision_config.num_hidden_layers + vision_feature_layer + 1
-                )
+                num_hidden_layers = config.vision_config.num_hidden_layers + vision_feature_layer + 1
             else:
                 num_hidden_layers = vision_feature_layer + 1
 

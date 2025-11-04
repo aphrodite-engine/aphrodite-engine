@@ -11,12 +11,10 @@ from aphrodite.attention import Attention
 from aphrodite.config import AphroditeConfig, get_layers_from_aphrodite_config
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
-from aphrodite.quantization.utils.quant_utils import (QuantKey, kNvfp4Quant,
-                                                      kStaticTensorScale)
+from aphrodite.quantization.utils.quant_utils import QuantKey, kNvfp4Quant, kStaticTensorScale
 from aphrodite.utils.math_utils import round_up
 
-from .aphrodite_inductor_pass import (AphroditeInductorPass,
-                                      AphroditePatternMatcherPass)
+from .aphrodite_inductor_pass import AphroditeInductorPass, AphroditePatternMatcherPass
 from .fusion import QUANT_OPS, empty_bf16, empty_fp32, empty_i32
 from .fx_utils import is_func
 from .inductor_pass import enable_fake_mode
@@ -51,9 +49,7 @@ class AttentionQuantPattern(ABC):
         self.quant_dtype = quant_key.dtype
         self.dtype = dtype
 
-        assert self.quant_key in QUANT_OPS, (
-            f"unsupported quantization scheme {self.quant_key}"
-        )
+        assert self.quant_key in QUANT_OPS, f"unsupported quantization scheme {self.quant_key}"
         self.QUANT_OP = QUANT_OPS[self.quant_key]
 
     def empty(self, *args, **kwargs):
@@ -120,9 +116,7 @@ class AttentionFp8StaticQuantPattern(AttentionQuantPattern):
         dtype: torch.dtype,
         symmetric: bool = True,
     ):
-        quant_key = QuantKey(
-            dtype=FP8_DTYPE, scale=kStaticTensorScale, symmetric=symmetric
-        )
+        quant_key = QuantKey(dtype=FP8_DTYPE, scale=kStaticTensorScale, symmetric=symmetric)
         super().__init__(layer, quant_key, dtype)
         self.quant_matcher = MatcherQuantFP8(quant_key)
 
@@ -144,9 +138,7 @@ class AttentionFp8StaticQuantPattern(AttentionQuantPattern):
                 output_scale=None,
                 output_block_scale=None,
             )
-            attn_out_view = RESHAPE_OP(
-                at1[1], [q.shape[0], self.num_heads * self.head_size]
-            )
+            attn_out_view = RESHAPE_OP(at1[1], [q.shape[0], self.num_heads * self.head_size])
 
             return self.quant_matcher(attn_out_view, scale)[0]
 
@@ -230,9 +222,7 @@ class AttentionNvfp4QuantPattern(AttentionQuantPattern):
                 output_scale=None,
                 output_block_scale=None,
             )
-            attn_out_view = RESHAPE_OP(
-                at1[1], [q.shape[0], self.num_heads * self.head_size]
-            )
+            attn_out_view = RESHAPE_OP(at1[1], [q.shape[0], self.num_heads * self.head_size])
             at2 = auto_functionalized(
                 self.QUANT_OP,
                 output=output_quant,
@@ -280,9 +270,7 @@ class AttentionNvfp4QuantPattern(AttentionQuantPattern):
             empty_bf16(5, self.num_heads, self.head_size),  # v
             empty_bf16(5, self.num_heads, self.head_size),  # output_attn
             self.empty_quant(5, self.num_heads * self.head_size // 2),  # output_quant
-            empty_i32(
-                128, round_up(self.num_heads * self.head_size // 16, 4)
-            ),  # output_scale
+            empty_i32(128, round_up(self.num_heads * self.head_size // 16, 4)),  # output_scale
             empty_fp32(1, 1),  # input_scale
         ]
 
@@ -320,15 +308,11 @@ class AttnFusionPass(AphroditePatternMatcherPass):
 
         attn_layers = get_layers_from_aphrodite_config(config, Attention)
         for layer_name, layer in attn_layers.items():
-            pattern_fp8 = AttentionFp8StaticQuantPattern(
-                layer, config.model_config.dtype
-            )
+            pattern_fp8 = AttentionFp8StaticQuantPattern(layer, config.model_config.dtype)
             pattern_fp8.register_if_supported(self.patterns)
 
             if current_platform.is_cuda() and hasattr(torch.ops._C, "scaled_fp4_quant"):
-                pattern_nvfp4 = AttentionNvfp4QuantPattern(
-                    layer, config.model_config.dtype
-                )
+                pattern_nvfp4 = AttentionNvfp4QuantPattern(layer, config.model_config.dtype)
                 pattern_nvfp4.register_if_supported(self.patterns)
 
         if len(attn_layers) == 0:

@@ -7,10 +7,13 @@ import torch
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.v1.sample.logits_processor import (LOGITSPROCS_GROUP,
-                                                  AdapterLogitsProcessor,
-                                                  BatchUpdate, LogitsProcessor,
-                                                  RequestLogitsProcessor)
+from aphrodite.v1.sample.logits_processor import (
+    LOGITSPROCS_GROUP,
+    AdapterLogitsProcessor,
+    BatchUpdate,
+    LogitsProcessor,
+    RequestLogitsProcessor,
+)
 from aphrodite.v1.sample.logits_processor.builtin import process_dict_updates
 
 logger = init_logger(__name__)
@@ -46,9 +49,7 @@ prompts = [
 class DummyLogitsProcessor(LogitsProcessor):
     """Fake logit processor to support unit testing and examples"""
 
-    def __init__(
-        self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool
-    ):
+    def __init__(self, aphrodite_config: "AphroditeConfig", device: torch.device, is_pin_memory: bool):
         self.req_info: dict[int, int] = {}
 
     def is_argmax_invariant(self) -> bool:
@@ -59,8 +60,7 @@ class DummyLogitsProcessor(LogitsProcessor):
         process_dict_updates(
             self.req_info,
             batch_update,
-            lambda params, _, __: params.extra_args
-            and (params.extra_args.get("target_token")),
+            lambda params, _, __: params.extra_args and (params.extra_args.get("target_token")),
         )
 
     def apply(self, logits: torch.Tensor) -> torch.Tensor:
@@ -68,12 +68,8 @@ class DummyLogitsProcessor(LogitsProcessor):
             return logits
 
         # Save target values before modification
-        cols = torch.tensor(
-            list(self.req_info.values()), dtype=torch.long, device=logits.device
-        )
-        rows = torch.tensor(
-            list(self.req_info.keys()), dtype=torch.long, device=logits.device
-        )
+        cols = torch.tensor(list(self.req_info.values()), dtype=torch.long, device=logits.device)
+        rows = torch.tensor(list(self.req_info.keys()), dtype=torch.long, device=logits.device)
         values_to_keep = logits[rows, cols].clone()
 
         # Mask all but target tokens
@@ -153,15 +149,12 @@ class WrappedPerReqLogitsProcessor(AdapterLogitsProcessor):
         Returns:
           `Callable` request logits processor, or None
         """
-        target_token: Any | None = params.extra_args and params.extra_args.get(
-            "target_token"
-        )
+        target_token: Any | None = params.extra_args and params.extra_args.get("target_token")
         if target_token is None:
             return None
         if not isinstance(target_token, int):
             logger.warning(
-                "target_token value %s is not int; not applying logits"
-                " processor to request.",
+                "target_token value %s is not int; not applying logits processor to request.",
                 target_token,
             )
             return None

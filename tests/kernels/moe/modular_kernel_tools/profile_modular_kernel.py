@@ -34,9 +34,7 @@ def do_profile(
         torch.cuda.synchronize(torch.cuda.current_device())
 
     # TODO (varun): Add a descriptive trace file name
-    tprof.export_chrome_trace(
-        f"{config.torch_trace_dir_path}/m{config.M}_{pgi.rank}_trace.json"
-    )
+    tprof.export_chrome_trace(f"{config.torch_trace_dir_path}/m{config.M}_{pgi.rank}_trace.json")
 
 
 def profile_modular_kernel(
@@ -110,9 +108,7 @@ def rank_worker(
 def run(config: Config):
     weights: WeightTensors = WeightTensors.make(config)
     aphrodite_config, env_dict = config.make_env_data()
-    parallel_launch_with_config(
-        config.world_size, rank_worker, aphrodite_config, env_dict, config, weights
-    )
+    parallel_launch_with_config(config.world_size, rank_worker, aphrodite_config, env_dict, config, weights)
 
 
 if __name__ == "__main__":
@@ -126,9 +122,7 @@ if __name__ == "__main__":
         )
     )
     args = parser.parse_args()
-    assert args.torch_trace_dir_path is not None, (
-        "Please pass in a directory to store torch traces"
-    )
+    assert args.torch_trace_dir_path is not None, "Please pass in a directory to store torch traces"
     config = make_config(args)
 
     run(config)

@@ -9,8 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from pydantic import TypeAdapter, field_validator
 from pydantic.dataclasses import dataclass
 
-from aphrodite.compilation.inductor_pass import (CallableInductorPass,
-                                                 InductorPass)
+from aphrodite.compilation.inductor_pass import CallableInductorPass, InductorPass
 from aphrodite.config.utils import config
 from aphrodite.logger import init_logger
 from aphrodite.platforms import current_platform
@@ -130,8 +129,7 @@ class PassConfig:
                 )
             if self.enable_attn_fusion:
                 logger.warning_once(
-                    "Fusion enabled but reshape elimination disabled. "
-                    "Attention + quant (fp8) fusion might not work"
+                    "Fusion enabled but reshape elimination disabled. Attention + quant (fp8) fusion might not work"
                 )
 
 
@@ -500,9 +498,7 @@ class CompilationConfig:
         if pass_config_exclude:
             exclude["pass_config"] = pass_config_exclude
 
-        config = TypeAdapter(CompilationConfig).dump_python(
-            self, exclude=exclude, exclude_unset=True
-        )
+        config = TypeAdapter(CompilationConfig).dump_python(self, exclude=exclude, exclude_unset=True)
 
         return str(config)
 
@@ -550,9 +546,7 @@ class CompilationConfig:
         for k, v in self.inductor_passes.items():
             if not isinstance(v, str):
                 assert callable(v), f"pass {k} should be callable or a qualified name"
-                self.inductor_compile_config[k] = (
-                    v if isinstance(v, InductorPass) else CallableInductorPass(v)
-                )
+                self.inductor_compile_config[k] = v if isinstance(v, InductorPass) else CallableInductorPass(v)
                 continue
 
             # resolve function from qualified name
@@ -560,9 +554,7 @@ class CompilationConfig:
             module = ".".join(names[:-1])
             func_name = names[-1]
             func = __import__(module).__dict__[func_name]
-            self.inductor_compile_config[k] = (
-                func if isinstance(func, InductorPass) else CallableInductorPass(func)
-            )
+            self.inductor_compile_config[k] = func if isinstance(func, InductorPass) else CallableInductorPass(func)
 
         if isinstance(self.pass_config, dict):
             self.pass_config = PassConfig(**self.pass_config)
@@ -579,13 +571,8 @@ class CompilationConfig:
 
         # migrate the deprecated flags
         if not self.use_cudagraph:
-            logger.warning(
-                "use_cudagraph is deprecated, use cudagraph_mode=NONE instead."
-            )
-            if (
-                self.cudagraph_mode is not None
-                and self.cudagraph_mode != CUDAGraphMode.NONE
-            ):
+            logger.warning("use_cudagraph is deprecated, use cudagraph_mode=NONE instead.")
+            if self.cudagraph_mode is not None and self.cudagraph_mode != CUDAGraphMode.NONE:
                 raise ValueError(
                     "use_cudagraph and cudagraph_mode are mutually"
                     " exclusive, prefer cudagraph_mode since "
@@ -593,13 +580,8 @@ class CompilationConfig:
                 )
             self.cudagraph_mode = CUDAGraphMode.NONE
         if self.full_cuda_graph:
-            logger.warning(
-                "full_cuda_graph is deprecated, use cudagraph_mode=FULL instead."
-            )
-            if (
-                self.cudagraph_mode is not None
-                and not self.cudagraph_mode.has_full_cudagraphs()
-            ):
+            logger.warning("full_cuda_graph is deprecated, use cudagraph_mode=FULL instead.")
+            if self.cudagraph_mode is not None and not self.cudagraph_mode.has_full_cudagraphs():
                 raise ValueError(
                     "full_cuda_graph and cudagraph_mode are "
                     "mutually exclusive, prefer cudagraph_mode "
@@ -607,9 +589,7 @@ class CompilationConfig:
                 )
             self.cudagraph_mode = CUDAGraphMode.FULL
 
-        if self.use_inductor_graph_partition and not is_torch_equal_or_newer(
-            "2.9.0.dev"
-        ):
+        if self.use_inductor_graph_partition and not is_torch_equal_or_newer("2.9.0.dev"):
             raise ValueError(
                 "use_inductor_graph_partition is only "
                 "supported with torch>=2.9.0.dev. Set "
@@ -632,9 +612,7 @@ class CompilationConfig:
             "eager",
             "inductor",
         ]:
-            raise ValueError(
-                f"Invalid backend for piecewise compilation: {self.backend}"
-            )
+            raise ValueError(f"Invalid backend for piecewise compilation: {self.backend}")
 
         if self.use_inductor is not None:
             logger.warning_once(
@@ -677,9 +655,7 @@ class CompilationConfig:
 
         assert self.mode == CompilationMode.APHRODITE_COMPILE
         if self.backend not in ["eager", "inductor"]:
-            raise ValueError(
-                f"Invalid backend for piecewise compilation: {self.backend}"
-            )
+            raise ValueError(f"Invalid backend for piecewise compilation: {self.backend}")
 
         from aphrodite.compilation.backends import AphroditeBackend
 
@@ -701,8 +677,7 @@ class CompilationConfig:
             for x in self.compile_sizes:
                 if isinstance(x, str):
                     assert x == "cudagraph_capture_sizes", (
-                        "Unrecognized size type in compile_sizes, "
-                        f"expect 'cudagraph_capture_sizes', got {x}"
+                        f"Unrecognized size type in compile_sizes, expect 'cudagraph_capture_sizes', got {x}"
                     )
                     computed_compile_sizes.extend(self.cudagraph_capture_sizes)
                 else:
@@ -716,9 +691,7 @@ class CompilationConfig:
             assert self.cudagraph_capture_sizes[-1] == self.max_cudagraph_capture_size
 
         # pre-compute the mapping from batch size to padded graph size
-        self.bs_to_padded_graph_size = [
-            0 for i in range(self.max_cudagraph_capture_size + 1)
-        ]
+        self.bs_to_padded_graph_size = [0 for i in range(self.max_cudagraph_capture_size + 1)]
         for end, start in zip(
             self.cudagraph_capture_sizes + [self.max_cudagraph_capture_size + 1],
             [0] + self.cudagraph_capture_sizes,
@@ -733,8 +706,7 @@ class CompilationConfig:
         # NOTE: this function needs to be called only when mode is
         # CompilationMode.APHRODITE_COMPILE
         assert self.mode == CompilationMode.APHRODITE_COMPILE, (
-            "set_splitting_ops_for_v1 should only be called when "
-            "mode is CompilationMode.APHRODITE_COMPILE"
+            "set_splitting_ops_for_v1 should only be called when mode is CompilationMode.APHRODITE_COMPILE"
         )
 
         if self.use_inductor_graph_partition:
@@ -800,14 +772,11 @@ class CompilationConfig:
             self.cudagraph_mode = CUDAGraphMode.FULL
 
         assert not self.splitting_ops_contain_attention(), (
-            "attention ops should not be in splitting_ops "
-            "when enable_attn_fusion is True"
+            "attention ops should not be in splitting_ops when enable_attn_fusion is True"
         )
 
     def splitting_ops_contain_attention(self) -> bool:
-        return self.splitting_ops is not None and all(
-            op in self.splitting_ops for op in self._attention_ops
-        )
+        return self.splitting_ops is not None and all(op in self.splitting_ops for op in self._attention_ops)
 
     def is_attention_compiled_piecewise(self) -> bool:
         if not self.splitting_ops_contain_attention():
@@ -840,9 +809,7 @@ class CompilationConfig:
             if op in {"all", "none"}:
                 continue
 
-            assert op[0] in {"+", "-"}, (
-                "Invalid custom op syntax (should be checked during init)"
-            )
+            assert op[0] in {"+", "-"}, "Invalid custom op syntax (should be checked during init)"
 
             # check if op name exists in model
             op_name = op[1:]

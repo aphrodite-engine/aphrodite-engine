@@ -44,8 +44,12 @@ constexpr __host__ __device__ auto roundUp(U a, V b) -> decltype(a + b) {
 [[maybe_unused]] constexpr int32_t kNTileSize = 8;
 [[maybe_unused]] constexpr int32_t kKTileSize = 16;
 
-struct __align__(16) f16x2x4_u32 { uint32_t vals[4]; };
-struct __align__(16) f16x2x2_u32 { uint32_t vals[2]; };
+struct __align__(16) f16x2x4_u32 {
+  uint32_t vals[4];
+};
+struct __align__(16) f16x2x2_u32 {
+  uint32_t vals[2];
+};
 
 struct ALayout_RM {
   template <int KTilesToLoad>

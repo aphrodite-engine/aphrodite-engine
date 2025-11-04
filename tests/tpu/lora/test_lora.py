@@ -27,9 +27,7 @@ def setup_aphrodite(num_loras: int, tp: int) -> aphrodite.LLM:
     )
 
 
-TPU_TENSOR_PARALLEL_SIZES = (
-    [1, tpu.num_available_chips()] if tpu.num_available_chips() > 1 else [1]
-)
+TPU_TENSOR_PARALLEL_SIZES = [1, tpu.num_available_chips()] if tpu.num_available_chips() > 1 else [1]
 
 
 @pytest.mark.parametrize("tp", TPU_TENSOR_PARALLEL_SIZES)
@@ -76,10 +74,7 @@ def test_lora_hotswapping(tp: int):
     """
 
     lora_name_template = "Username6568/Qwen2.5-3B-Instruct-1_plus_1_equals_{}_adapter"
-    lora_requests = [
-        LoRARequest(f"lora_adapter_{i}", i, lora_name_template.format(i))
-        for i in range(1, 5)
-    ]
+    lora_requests = [LoRARequest(f"lora_adapter_{i}", i, lora_name_template.format(i)) for i in range(1, 5)]
 
     llm = setup_aphrodite(1, tp)
 
@@ -111,10 +106,7 @@ def test_multi_lora(tp: int):
     will force Qwen2.5-3B-Instruct to claim 1+1=x, for a range of x.
     """
     lora_name_template = "Username6568/Qwen2.5-3B-Instruct-1_plus_1_equals_{}_adapter"
-    lora_requests = [
-        LoRARequest(f"lora_adapter_{i}", i, lora_name_template.format(i))
-        for i in range(1, 5)
-    ]
+    lora_requests = [LoRARequest(f"lora_adapter_{i}", i, lora_name_template.format(i)) for i in range(1, 5)]
 
     llm = setup_aphrodite(4, tp)
 

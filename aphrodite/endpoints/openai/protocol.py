@@ -3,45 +3,41 @@
 import json
 import time
 from http import HTTPStatus
-from typing import (Annotated, Any, ClassVar, Generic, Literal, TypeAlias,
-                    TypeVar)
+from typing import Annotated, Any, ClassVar, Generic, Literal, TypeAlias, TypeVar
 
-from pydantic_core.core_schema import NoneSchema
 import regex as re
 import torch
 from fastapi import HTTPException, UploadFile
-from openai.types.chat.chat_completion_audio import (
-    ChatCompletionAudio as OpenAIChatCompletionAudio)
-from openai.types.chat.chat_completion_message import (
-    Annotation as OpenAIAnnotation)
+from openai.types.chat.chat_completion_audio import ChatCompletionAudio as OpenAIChatCompletionAudio
+from openai.types.chat.chat_completion_message import Annotation as OpenAIAnnotation
 from openai.types.responses import (
     ResponseCodeInterpreterCallCodeDeltaEvent,
     ResponseCodeInterpreterCallCodeDoneEvent,
     ResponseCodeInterpreterCallCompletedEvent,
     ResponseCodeInterpreterCallInProgressEvent,
-    ResponseCodeInterpreterCallInterpretingEvent)
-from openai.types.responses import (
-    ResponseCompletedEvent as OpenAIResponseCompletedEvent)
-from openai.types.responses import (ResponseContentPartAddedEvent,
-                                    ResponseContentPartDoneEvent)
-from openai.types.responses import (
-    ResponseCreatedEvent as OpenAIResponseCreatedEvent)
-from openai.types.responses import ResponseFunctionToolCall
-from openai.types.responses import (
-    ResponseInProgressEvent as OpenAIResponseInProgressEvent)
-from openai.types.responses import (ResponseInputItemParam, ResponseOutputItem,
-                                    ResponseOutputItemAddedEvent,
-                                    ResponseOutputItemDoneEvent,
-                                    ResponsePrompt, ResponseReasoningItem,
-                                    ResponseReasoningTextDeltaEvent,
-                                    ResponseReasoningTextDoneEvent,
-                                    ResponseStatus,
-                                    ResponseWebSearchCallCompletedEvent,
-                                    ResponseWebSearchCallInProgressEvent,
-                                    ResponseWebSearchCallSearchingEvent)
-from openai.types.responses.response_reasoning_item import (
-    Content as ResponseReasoningTextContent)
+    ResponseCodeInterpreterCallInterpretingEvent,
+    ResponseContentPartAddedEvent,
+    ResponseContentPartDoneEvent,
+    ResponseFunctionToolCall,
+    ResponseInputItemParam,
+    ResponseOutputItem,
+    ResponseOutputItemAddedEvent,
+    ResponseOutputItemDoneEvent,
+    ResponsePrompt,
+    ResponseReasoningItem,
+    ResponseReasoningTextDeltaEvent,
+    ResponseReasoningTextDoneEvent,
+    ResponseStatus,
+    ResponseWebSearchCallCompletedEvent,
+    ResponseWebSearchCallInProgressEvent,
+    ResponseWebSearchCallSearchingEvent,
+)
+from openai.types.responses import ResponseCompletedEvent as OpenAIResponseCompletedEvent
+from openai.types.responses import ResponseCreatedEvent as OpenAIResponseCreatedEvent
+from openai.types.responses import ResponseInProgressEvent as OpenAIResponseInProgressEvent
+from openai.types.responses.response_reasoning_item import Content as ResponseReasoningTextContent
 from openai_harmony import Message as OpenAIHarmonyMessage
+from pydantic_core.core_schema import NoneSchema
 
 from aphrodite.config.pooler import get_use_activation
 from aphrodite.tasks import PoolingTask
@@ -56,20 +52,29 @@ except ImportError:  # For newer openai versions (>= 1.100.0)
 from openai.types.responses.response import IncompleteDetails, ToolChoice
 from openai.types.responses.tool import Tool
 from openai.types.shared import Metadata, Reasoning
-from pydantic import (AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter,
-                      ValidationError, ValidationInfo, field_serializer,
-                      field_validator, model_validator)
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    ValidationInfo,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from aphrodite import envs
 from aphrodite.common.pooling_params import PoolingParams
-from aphrodite.common.sampling_params import (BeamSearchParams,
-                                              RequestOutputKind,
-                                              SamplingParams,
-                                              StructuredOutputsParams)
-from aphrodite.endpoints.chat_utils import (ChatCompletionMessageParam,
-                                            make_tool_call_id)
-from aphrodite.endpoints.score_utils import (ScoreContentPartParam,
-                                             ScoreMultiModalParam)
+from aphrodite.common.sampling_params import (
+    BeamSearchParams,
+    RequestOutputKind,
+    SamplingParams,
+    StructuredOutputsParams,
+)
+from aphrodite.endpoints.chat_utils import ChatCompletionMessageParam, make_tool_call_id
+from aphrodite.endpoints.score_utils import ScoreContentPartParam, ScoreMultiModalParam
 from aphrodite.logger import init_logger
 from aphrodite.logprobs import Logprob
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
@@ -199,9 +204,7 @@ class StructuralTagResponseFormat(OpenAIBaseModel):
     format: Any
 
 
-AnyStructuralTagResponseFormat: TypeAlias = (
-    LegacyStructuralTagResponseFormat | StructuralTagResponseFormat
-)
+AnyStructuralTagResponseFormat: TypeAlias = LegacyStructuralTagResponseFormat | StructuralTagResponseFormat
 
 
 class ResponseFormat(OpenAIBaseModel):
@@ -210,9 +213,7 @@ class ResponseFormat(OpenAIBaseModel):
     json_schema: JsonSchemaResponseFormat | None = None
 
 
-AnyResponseFormat: TypeAlias = (
-    ResponseFormat | StructuralTagResponseFormat | LegacyStructuralTagResponseFormat
-)
+AnyResponseFormat: TypeAlias = ResponseFormat | StructuralTagResponseFormat | LegacyStructuralTagResponseFormat
 
 
 class StreamOptions(OpenAIBaseModel):
@@ -253,9 +254,7 @@ class LogitsProcessorConstructor(BaseModel):
 LogitsProcessors = list[str | LogitsProcessorConstructor]
 
 
-def get_logits_processors(
-    processors: LogitsProcessors | None, pattern: str | None
-) -> list[Any] | None:
+def get_logits_processors(processors: LogitsProcessors | None, pattern: str | None) -> list[Any] | None:
     if processors and pattern:
         logits_processors = []
         for processor in processors:
@@ -269,13 +268,9 @@ def get_logits_processors(
             try:
                 logits_processor = resolve_obj_by_qualname(qualname)
             except Exception as e:
-                raise ValueError(
-                    f"Logits processor '{qualname}' could not be resolved: {e}"
-                ) from e
+                raise ValueError(f"Logits processor '{qualname}' could not be resolved: {e}") from e
             if isinstance(processor, LogitsProcessorConstructor):
-                logits_processor = logits_processor(
-                    *processor.args or [], **processor.kwargs or {}
-                )
+                logits_processor = logits_processor(*processor.args or [], **processor.kwargs or {})
             logits_processors.append(logits_processor)
         return logits_processors
     elif processors:
@@ -287,9 +282,7 @@ def get_logits_processors(
     return None
 
 
-ResponseInputOutputItem: TypeAlias = (
-    ResponseInputItemParam | ResponseReasoningItem | ResponseFunctionToolCall
-)
+ResponseInputOutputItem: TypeAlias = ResponseInputItemParam | ResponseReasoningItem | ResponseFunctionToolCall
 
 
 class ResponsesRequest(OpenAIBaseModel):
@@ -396,26 +389,17 @@ class ResponsesRequest(OpenAIBaseModel):
 
         default_sampling_params = default_sampling_params or {}
         if (temperature := self.temperature) is None:
-            temperature = default_sampling_params.get(
-                "temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"]
-            )
+            temperature = default_sampling_params.get("temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
         if (top_p := self.top_p) is None:
-            top_p = default_sampling_params.get(
-                "top_p", self._DEFAULT_SAMPLING_PARAMS["top_p"]
-            )
+            top_p = default_sampling_params.get("top_p", self._DEFAULT_SAMPLING_PARAMS["top_p"])
         stop_token_ids = default_sampling_params.get("stop_token_ids")
 
         # Structured output
         structured_outputs = None
         if self.text is not None and self.text.format is not None:
             response_format = self.text.format
-            if (
-                response_format.type == "json_schema"
-                and response_format.schema_ is not None
-            ):
-                structured_outputs = StructuredOutputsParams(
-                    json=response_format.schema_
-                )
+            if response_format.type == "json_schema" and response_format.schema_ is not None:
+                structured_outputs = StructuredOutputsParams(json=response_format.schema_)
             elif response_format.type == "json_object":
                 raise NotImplementedError("json_object is not supported")
 
@@ -426,9 +410,7 @@ class ResponsesRequest(OpenAIBaseModel):
             max_tokens=max_tokens,
             logprobs=self.top_logprobs if self.is_include_output_logprobs() else None,
             stop_token_ids=stop_token_ids,
-            output_kind=(
-                RequestOutputKind.DELTA if self.stream else RequestOutputKind.FINAL_ONLY
-            ),
+            output_kind=(RequestOutputKind.DELTA if self.stream else RequestOutputKind.FINAL_ONLY),
             structured_outputs=structured_outputs,
         )
 
@@ -436,10 +418,7 @@ class ResponsesRequest(OpenAIBaseModel):
         """Check if the request includes output logprobs."""
         if self.include is None:
             return False
-        return (
-            isinstance(self.include, list)
-            and "message.output_text.logprobs" in self.include
-        )
+        return isinstance(self.include, list) and "message.output_text.logprobs" in self.include
 
     @model_validator(mode="before")
     def validate_background(cls, data):
@@ -460,13 +439,10 @@ class ResponsesRequest(OpenAIBaseModel):
         if data.get("cache_salt") is not None:
             if not envs.APHRODITE_USE_V1:
                 raise ValueError(
-                    "Parameter 'cache_salt' is not supported with "
-                    "this instance of Aphrodite, which uses engine V0."
+                    "Parameter 'cache_salt' is not supported with this instance of Aphrodite, which uses engine V0."
                 )
             if not isinstance(data["cache_salt"], str) or not data["cache_salt"]:
-                raise ValueError(
-                    "Parameter 'cache_salt' must be a non-empty string if provided."
-                )
+                raise ValueError("Parameter 'cache_salt' must be a non-empty string if provided.")
         return data
 
     @model_validator(mode="before")
@@ -501,8 +477,7 @@ class ResponsesRequest(OpenAIBaseModel):
                 except ValidationError:
                     # Let Pydantic handle validation for malformed function calls
                     logger.debug(
-                        "Failed to parse function_call to ResponseFunctionToolCall, "
-                        "leaving for Pydantic validation"
+                        "Failed to parse function_call to ResponseFunctionToolCall, leaving for Pydantic validation"
                     )
                     processed_input.append(item)
             else:
@@ -522,29 +497,22 @@ class ChatCompletionRequest(OpenAIBaseModel):
     logprobs: bool | None = False
     top_logprobs: int | None = 0
     max_tokens: int | None = Field(
-        default=None,
-        deprecated=
-        'max_tokens is deprecated in favor of the max_completion_tokens field')
+        default=None, deprecated="max_tokens is deprecated in favor of the max_completion_tokens field"
+    )
     max_completion_tokens: int | None = None
     n: int | None = 1
     presence_penalty: float | None = 0.0
     response_format: ResponseFormat | None = None
-    seed: int | None = Field(None,
-                             ge=_LONG_INFO.min,
-                             le=_LONG_INFO.max)
+    seed: int | None = Field(None, ge=_LONG_INFO.min, le=_LONG_INFO.max)
     stop: str | list[str] | None = []
     stream: bool | None = False
     stream_options: StreamOptions | None = None
     temperature: float | None = 0.7
     top_p: float | None = 1.0
     tools: list[ChatCompletionToolsParam] | None = None
-    tool_choice: (
-        Literal["none"]
-        | Literal["auto"]
-        | Literal["required"]
-        | ChatCompletionNamedToolChoiceParam
-        | None
-    ) = "none"
+    tool_choice: Literal["none"] | Literal["auto"] | Literal["required"] | ChatCompletionNamedToolChoiceParam | None = (
+        "none"
+    )
     reasoning_effort: Literal["low", "medium", "high"] | None = None
     include_reasoning: bool = True
     # NOTE this will be ignored by Aphrodite - the model determines the behavior
@@ -581,11 +549,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
     dry_multiplier: float | None = 0
     dry_base: float | None = 1.75
     dry_allowed_length: int | None = 2
-    dry_sequence_breakers: list[str] | None = Field(
-        default=["\n", ":", "\"", "*"])
-    dry_range: int | None = Field(default=0,
-                                     validation_alias=AliasChoices(
-                                         "dry_range", "dry_penalty_last_n"))
+    dry_sequence_breakers: list[str] | None = Field(default=["\n", ":", '"', "*"])
+    dry_range: int | None = Field(default=0, validation_alias=AliasChoices("dry_range", "dry_penalty_last_n"))
     dry_max_ngram: int | None = 12
     dry_max_occurrences: int | None = 8
     dry_early_exit_match_len: int | None = 8
@@ -598,13 +563,16 @@ class ChatCompletionRequest(OpenAIBaseModel):
     token_ban_ranges: list[tuple[list[int], int, int]] | None = None
     banned_phrases: list[str] | None = Field(
         default=None,
-        description=("List of phrases that should be banned from generation. "
-                     "These will be tokenized and matched as complete "
-                     "sequences."),
-        validation_alias=AliasChoices("banned_phrases", "banned_strings"))
+        description=(
+            "List of phrases that should be banned from generation. "
+            "These will be tokenized and matched as complete "
+            "sequences."
+        ),
+        validation_alias=AliasChoices("banned_phrases", "banned_strings"),
+    )
     sampler_priority: list[int] | list[str] | None = Field(
-        default=[],
-        validation_alias=AliasChoices("sampler_priority", "sampler_order"))
+        default=[], validation_alias=AliasChoices("sampler_priority", "sampler_order")
+    )
     allowed_token_ids: list[int] | None = None
     bad_words: list[str] = Field(default_factory=list)
     mirostat_mode: int | None = 0
@@ -619,8 +587,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     echo: bool = Field(
         default=False,
         description=(
-            "If true, the new message will be prepended with the last message "
-            "if they belong to the same role."
+            "If true, the new message will be prepended with the last message if they belong to the same role."
         ),
     )
     add_generation_prompt: bool = Field(
@@ -673,8 +640,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     chat_template_kwargs: dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Additional keyword args to pass to the template renderer. "
-            "Will be accessible by the chat template."
+            "Additional keyword args to pass to the template renderer. Will be accessible by the chat template."
         ),
     )
     mm_processor_kwargs: dict[str, Any] | None = Field(
@@ -806,10 +772,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
 
     aphrodite_xargs: dict[str, str | int | float] | None = Field(
         default=None,
-        description=(
-            "Additional request parameters with string or "
-            "numeric values, used by custom extensions."
-        ),
+        description=("Additional request parameters with string or numeric values, used by custom extensions."),
     )
 
     # doc: end-chat-completion-extra-params
@@ -823,15 +786,11 @@ class ChatCompletionRequest(OpenAIBaseModel):
         "min_p": 0.0,
     }
 
-    def to_beam_search_params(
-            self, max_tokens: int,
-            default_sampling_params: dict) -> BeamSearchParams:
-
+    def to_beam_search_params(self, max_tokens: int, default_sampling_params: dict) -> BeamSearchParams:
         n = self.n if self.n is not None else 1
 
         if (temperature := self.temperature) is None:
-            temperature = default_sampling_params.get(
-                "temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
+            temperature = default_sampling_params.get("temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
 
         return BeamSearchParams(
             beam_width=n,
@@ -849,7 +808,6 @@ class ChatCompletionRequest(OpenAIBaseModel):
         logits_processor_pattern: str | None,
         default_sampling_params: dict,
     ) -> SamplingParams:
-
         # Default parameters
         if (repetition_penalty := self.repetition_penalty) is None:
             repetition_penalty = default_sampling_params.get(
@@ -857,17 +815,13 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 self._DEFAULT_SAMPLING_PARAMS["repetition_penalty"],
             )
         if (temperature := self.temperature) is None:
-            temperature = default_sampling_params.get(
-                "temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
+            temperature = default_sampling_params.get("temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
         if (top_p := self.top_p) is None:
-            top_p = default_sampling_params.get(
-                "top_p", self._DEFAULT_SAMPLING_PARAMS["top_p"])
+            top_p = default_sampling_params.get("top_p", self._DEFAULT_SAMPLING_PARAMS["top_p"])
         if (top_k := self.top_k) is None:
-            top_k = default_sampling_params.get(
-                "top_k", self._DEFAULT_SAMPLING_PARAMS["top_k"])
+            top_k = default_sampling_params.get("top_k", self._DEFAULT_SAMPLING_PARAMS["top_k"])
         if (min_p := self.min_p) is None:
-            min_p = default_sampling_params.get(
-                "min_p", self._DEFAULT_SAMPLING_PARAMS["min_p"])
+            min_p = default_sampling_params.get("min_p", self._DEFAULT_SAMPLING_PARAMS["min_p"])
 
         prompt_logprobs = self.prompt_logprobs
         if prompt_logprobs is None and self.echo:
@@ -917,7 +871,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         dry_sequence_breaker_ids = []
         if self.dry_sequence_breakers:
             for s in self.dry_sequence_breakers:
-                token_id = tokenizer.encode(f'a{s}')[-1]
+                token_id = tokenizer.encode(f"a{s}")[-1]
                 dry_sequence_breaker_ids.append(token_id)
 
         banned_phrases_token_ids = []
@@ -928,13 +882,11 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 phrase_variants = generate_phrase_variants(phrase)
                 for variant in phrase_variants:
                     # Tokenize the variant
-                    token_ids = tokenizer.encode(variant,
-                                                 add_special_tokens=False)
+                    token_ids = tokenizer.encode(variant, add_special_tokens=False)
                     if token_ids:  # Only add non-empty tokenizations
                         banned_phrases_token_ids.append(token_ids)
 
-        extra_args: dict[str, Any] = self.aphrodite_xargs if \
-            self.aphrodite_xargs else {}
+        extra_args: dict[str, Any] = self.aphrodite_xargs if self.aphrodite_xargs else {}
         if self.kv_transfer_params:
             # Pass in kv_transfer_params via extra_args
             extra_args["kv_transfer_params"] = self.kv_transfer_params
@@ -942,21 +894,22 @@ class ChatCompletionRequest(OpenAIBaseModel):
             n=self.n,
             presence_penalty=self.presence_penalty,
             frequency_penalty=self.frequency_penalty,
-            repetition_penalty=self.repetition_penalty,
+            repetition_penalty=repetition_penalty,
             no_repeat_ngram_size=self.no_repeat_ngram_size,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            min_p=self.min_p,
+            temperature=temperature,
+            top_p=top_p,
+            min_p=min_p,
             seed=self.seed,
             stop=self.stop,
             stop_token_ids=self.stop_token_ids,
             max_tokens=max_tokens,
             min_tokens=self.min_tokens,
             logprobs=self.top_logprobs if self.logprobs else None,
-            prompt_logprobs=self.prompt_logprobs if self.prompt_logprobs else
-            (self.top_logprobs if self.echo else None),
+            prompt_logprobs=self.prompt_logprobs
+            if self.prompt_logprobs
+            else (self.top_logprobs if self.echo else None),
             best_of=self.best_of,
-            top_k=self.top_k,
+            top_k=top_k,
             top_a=self.top_a,
             tfs=self.tfs,
             eta_cutoff=self.eta_cutoff,
@@ -990,9 +943,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             custom_token_bans=self.custom_token_bans,
             token_ban_ranges=self.token_ban_ranges,
             sampler_priority=self.sampler_priority,
-            output_kind=RequestOutputKind.DELTA
-            if self.stream
-            else RequestOutputKind.FINAL_ONLY,
+            output_kind=RequestOutputKind.DELTA if self.stream else RequestOutputKind.FINAL_ONLY,
             structured_outputs=self.structured_outputs,
             logit_bias=self.logit_bias,
             bad_words=self.bad_words,
@@ -1007,13 +958,11 @@ class ChatCompletionRequest(OpenAIBaseModel):
             deepconf_threshold=self.deepconf_threshold,
         )
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def validate_stream_options(cls, values):
-        if (values.get('stream_options') is not None
-                and not values.get('stream')):
-            raise ValueError(
-                "stream_options can only be set if stream is true")
+        if values.get("stream_options") is not None and not values.get("stream"):
+            raise ValueError("stream_options can only be set if stream is true")
         return values
 
     @model_validator(mode="before")
@@ -1021,24 +970,18 @@ class ChatCompletionRequest(OpenAIBaseModel):
     def check_logprobs(cls, data):
         if (prompt_logprobs := data.get("prompt_logprobs")) is not None:
             if data.get("stream") and (prompt_logprobs > 0 or prompt_logprobs == -1):
-                raise ValueError(
-                    "`prompt_logprobs` are not available when `stream=True`."
-                )
+                raise ValueError("`prompt_logprobs` are not available when `stream=True`.")
 
             if prompt_logprobs < 0 and prompt_logprobs != -1:
                 raise ValueError("`prompt_logprobs` must be a positive value or -1.")
             if prompt_logprobs == -1 and not envs.APHRODITE_USE_V1:
-                raise ValueError(
-                    "`prompt_logprobs=-1` is only supported with Aphrodite engine V1."
-                )
+                raise ValueError("`prompt_logprobs=-1` is only supported with Aphrodite engine V1.")
         if (top_logprobs := data.get("top_logprobs")) is not None:
             if top_logprobs < 0 and top_logprobs != -1:
                 raise ValueError("`top_logprobs` must be a positive value or -1.")
 
             if (top_logprobs == -1 or top_logprobs > 0) and not data.get("logprobs"):
-                raise ValueError(
-                    "when using `top_logprobs`, `logprobs` must be set to true."
-                )
+                raise ValueError("when using `top_logprobs`, `logprobs` must be set to true.")
 
         return data
 
@@ -1052,15 +995,11 @@ class ChatCompletionRequest(OpenAIBaseModel):
             return data
 
         structured_outputs_kwargs = data["structured_outputs"]
-        count = sum(
-            structured_outputs_kwargs.get(k) is not None
-            for k in ("json", "regex", "choice")
-        )
+        count = sum(structured_outputs_kwargs.get(k) is not None for k in ("json", "regex", "choice"))
         # you can only use one kind of constraints for structured outputs
         if count > 1:
             raise ValueError(
-                "You can only use one kind of constraints for structured "
-                "outputs ('json', 'regex' or 'choice')."
+                "You can only use one kind of constraints for structured outputs ('json', 'regex' or 'choice')."
             )
         # you can only either use structured outputs or tools, not both
         if count > 1 and data.get("tool_choice", "none") not in (
@@ -1068,10 +1007,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             "auto",
             "required",
         ):
-            raise ValueError(
-                "You can only either use constraints for structured outputs "
-                "or tools, not both."
-            )
+            raise ValueError("You can only either use constraints for structured outputs or tools, not both.")
         return data
 
     @model_validator(mode="before")
@@ -1094,9 +1030,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
 
             # make sure that tool choice is either a named tool
             # OR that it's set to "auto" or "required"
-            if data["tool_choice"] not in ["auto", "required"] and not isinstance(
-                data["tool_choice"], dict
-            ):
+            if data["tool_choice"] not in ["auto", "required"] and not isinstance(data["tool_choice"], dict):
                 raise ValueError(
                     f"Invalid value for `tool_choice`: {data['tool_choice']}! "
                     'Only named tools, "none", "auto" or "required" '
@@ -1106,59 +1040,41 @@ class ChatCompletionRequest(OpenAIBaseModel):
             # if tool_choice is "required" but the "tools" list is empty,
             # override the data to behave like "none" to align with
             # OpenAI’s behavior.
-            if (
-                data["tool_choice"] == "required"
-                and isinstance(data["tools"], list)
-                and len(data["tools"]) == 0
-            ):
+            if data["tool_choice"] == "required" and isinstance(data["tools"], list) and len(data["tools"]) == 0:
                 data["tool_choice"] = "none"
                 del data["tools"]
                 return data
 
             # ensure that if "tool_choice" is specified as an object,
             # it matches a valid tool
-            correct_usage_message = (
-                'Correct usage: `{"type": "function",'
-                ' "function": {"name": "my_function"}}`'
-            )
+            correct_usage_message = 'Correct usage: `{"type": "function", "function": {"name": "my_function"}}`'
             if isinstance(data["tool_choice"], dict):
                 valid_tool = False
                 function = data["tool_choice"].get("function")
                 if not isinstance(function, dict):
                     raise ValueError(
-                        f"Invalid value for `function`: `{function}` in "
-                        f"`tool_choice`! {correct_usage_message}"
+                        f"Invalid value for `function`: `{function}` in `tool_choice`! {correct_usage_message}"
                     )
                 if "name" not in function:
-                    raise ValueError(
-                        f"Expected field `name` in `function` in "
-                        f"`tool_choice`! {correct_usage_message}"
-                    )
+                    raise ValueError(f"Expected field `name` in `function` in `tool_choice`! {correct_usage_message}")
                 function_name = function["name"]
                 if not isinstance(function_name, str) or len(function_name) == 0:
                     raise ValueError(
-                        f"Invalid `name` in `function`: `{function_name}`"
-                        f" in `tool_choice`! {correct_usage_message}"
+                        f"Invalid `name` in `function`: `{function_name}` in `tool_choice`! {correct_usage_message}"
                     )
                 for tool in data["tools"]:
                     if tool["function"]["name"] == function_name:
                         valid_tool = True
                         break
                 if not valid_tool:
-                    raise ValueError(
-                        "The tool specified in `tool_choice` does not match any"
-                        " of the specified `tools`"
-                    )
+                    raise ValueError("The tool specified in `tool_choice` does not match any of the specified `tools`")
         return data
 
     @model_validator(mode="before")
     @classmethod
     def check_generation_prompt(cls, data):
         if data.get("continue_final_message") and data.get("add_generation_prompt"):
-            raise ValueError(
-                "Cannot set both `continue_final_message` and "
-                "`add_generation_prompt` to True."
-            )
+            raise ValueError("Cannot set both `continue_final_message` and `add_generation_prompt` to True.")
         return data
 
     @model_validator(mode="before")
@@ -1167,13 +1083,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
         if data.get("cache_salt") is not None:
             if not envs.APHRODITE_USE_V1:
                 raise ValueError(
-                    "Parameter 'cache_salt' is not supported with "
-                    "this instance of Aphrodite, which uses engine V0."
+                    "Parameter 'cache_salt' is not supported with this instance of Aphrodite, which uses engine V0."
                 )
             if not isinstance(data["cache_salt"], str) or not data["cache_salt"]:
-                raise ValueError(
-                    "Parameter 'cache_salt' must be a non-empty string if provided."
-                )
+                raise ValueError("Parameter 'cache_salt' must be a non-empty string if provided.")
         return data
 
 
@@ -1229,11 +1142,8 @@ class CompletionRequest(OpenAIBaseModel):
     dry_multiplier: float | None = 0
     dry_base: float | None = 1.75
     dry_allowed_length: int | None = 2
-    dry_sequence_breakers: list[str] | None = Field(
-        default=["\n", ":", "\"", "*"])
-    dry_range: int | None = Field(default=0,
-                                  validation_alias=AliasChoices(
-                                  "dry_range", "dry_penalty_last_n"))
+    dry_sequence_breakers: list[str] | None = Field(default=["\n", ":", '"', "*"])
+    dry_range: int | None = Field(default=0, validation_alias=AliasChoices("dry_range", "dry_penalty_last_n"))
     dry_max_ngram: int | None = 12
     dry_max_occurrences: int | None = 8
     dry_early_exit_match_len: int | None = 8
@@ -1246,13 +1156,16 @@ class CompletionRequest(OpenAIBaseModel):
     token_ban_ranges: list[tuple[list[int], int, int]] | None = None
     banned_phrases: list[str] | None = Field(
         default=None,
-        description=("List of phrases that should be banned from generation. "
-                     "These will be tokenized and matched as complete "
-                     "sequences."),
-        validation_alias=AliasChoices("banned_phrases", "banned_strings"))
+        description=(
+            "List of phrases that should be banned from generation. "
+            "These will be tokenized and matched as complete "
+            "sequences."
+        ),
+        validation_alias=AliasChoices("banned_phrases", "banned_strings"),
+    )
     sampler_priority: list[int] | list[str] | None = Field(
-        default=[],
-        validation_alias=AliasChoices("sampler_priority", "sampler_order"))
+        default=[], validation_alias=AliasChoices("sampler_priority", "sampler_order")
+    )
     mirostat_mode: int | None = 0
     mirostat_tau: float | None = 0.0
     mirostat_eta: float | None = 0.0
@@ -1265,10 +1178,7 @@ class CompletionRequest(OpenAIBaseModel):
     prompt_embeds: bytes | list[bytes] | None = None
     add_special_tokens: bool = Field(
         default=True,
-        description=(
-            "If true (the default), special tokens (e.g. BOS) will be added to "
-            "the prompt."
-        ),
+        description=("If true (the default), special tokens (e.g. BOS) will be added to the prompt."),
     )
     response_format: AnyResponseFormat | None = Field(
         default=None,
@@ -1402,10 +1312,7 @@ class CompletionRequest(OpenAIBaseModel):
 
     aphrodite_xargs: dict[str, str | int | float] | None = Field(
         default=None,
-        description=(
-            "Additional request parameters with string or "
-            "numeric values, used by custom extensions."
-        ),
+        description=("Additional request parameters with string or numeric values, used by custom extensions."),
     )
 
     # doc: end-completion-extra-params
@@ -1424,7 +1331,6 @@ class CompletionRequest(OpenAIBaseModel):
         max_tokens: int,
         default_sampling_params: dict | None = None,
     ) -> BeamSearchParams:
-
         if default_sampling_params is None:
             default_sampling_params = {}
         n = self.n if self.n is not None else 1
@@ -1448,7 +1354,6 @@ class CompletionRequest(OpenAIBaseModel):
         logits_processor_pattern: str | None,
         default_sampling_params: dict | None = None,
     ) -> SamplingParams:
-
         if default_sampling_params is None:
             default_sampling_params = {}
 
@@ -1459,17 +1364,13 @@ class CompletionRequest(OpenAIBaseModel):
                 self._DEFAULT_SAMPLING_PARAMS["repetition_penalty"],
             )
         if (temperature := self.temperature) is None:
-            temperature = default_sampling_params.get(
-                "temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
+            temperature = default_sampling_params.get("temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
         if (top_p := self.top_p) is None:
-            top_p = default_sampling_params.get(
-                "top_p", self._DEFAULT_SAMPLING_PARAMS["top_p"])
+            top_p = default_sampling_params.get("top_p", self._DEFAULT_SAMPLING_PARAMS["top_p"])
         if (top_k := self.top_k) is None:
-            top_k = default_sampling_params.get(
-                "top_k", self._DEFAULT_SAMPLING_PARAMS["top_k"])
+            top_k = default_sampling_params.get("top_k", self._DEFAULT_SAMPLING_PARAMS["top_k"])
         if (min_p := self.min_p) is None:
-            min_p = default_sampling_params.get(
-                "min_p", self._DEFAULT_SAMPLING_PARAMS["min_p"])
+            min_p = default_sampling_params.get("min_p", self._DEFAULT_SAMPLING_PARAMS["min_p"])
 
         prompt_logprobs = self.prompt_logprobs
         if prompt_logprobs is None and self.echo:
@@ -1487,9 +1388,7 @@ class CompletionRequest(OpenAIBaseModel):
                 self.guided_json = json_schema.json_schema
             elif self.response_format.type == "structural_tag":
                 structural_tag = self.response_format
-                assert structural_tag is not None and isinstance(
-                    structural_tag, StructuralTagResponseFormat
-                )
+                assert structural_tag is not None and isinstance(structural_tag, StructuralTagResponseFormat)
                 s_tag_obj = structural_tag.model_dump(by_alias=True)
                 self.structural_tag = json.dumps(s_tag_obj)
 
@@ -1511,7 +1410,7 @@ class CompletionRequest(OpenAIBaseModel):
         if self.dry_sequence_breakers:
             for s in self.dry_sequence_breakers:
                 s = bytes(s, "utf-8").decode("unicode_escape")
-                token_id = tokenizer.encode(f'a{s}')[-1]
+                token_id = tokenizer.encode(f"a{s}")[-1]
                 dry_sequence_breaker_ids.append(token_id)
 
         banned_phrases_token_ids = []
@@ -1522,13 +1421,11 @@ class CompletionRequest(OpenAIBaseModel):
                 phrase_variants = generate_phrase_variants(phrase)
                 for variant in phrase_variants:
                     # Tokenize the variant
-                    token_ids = tokenizer.encode(variant,
-                                                 add_special_tokens=False)
+                    token_ids = tokenizer.encode(variant, add_special_tokens=False)
                     if token_ids:  # Only add non-empty tokenizations
                         banned_phrases_token_ids.append(token_ids)
 
-        extra_args: dict[str, Any] = \
-            self.aphrodite_xargs if self.aphrodite_xargs else {}
+        extra_args: dict[str, Any] = self.aphrodite_xargs if self.aphrodite_xargs else {}
         if self.kv_transfer_params:
             # Pass in kv_transfer_params via extra_args
             extra_args["kv_transfer_params"] = self.kv_transfer_params
@@ -1537,12 +1434,12 @@ class CompletionRequest(OpenAIBaseModel):
             best_of=self.best_of,
             presence_penalty=self.presence_penalty,
             frequency_penalty=self.frequency_penalty,
-            repetition_penalty=self.repetition_penalty,
+            repetition_penalty=repetition_penalty,
             no_repeat_ngram_size=self.no_repeat_ngram_size,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            min_p=self.min_p,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            min_p=min_p,
             top_a=self.top_a,
             tfs=self.tfs,
             eta_cutoff=self.eta_cutoff,
@@ -1557,8 +1454,7 @@ class CompletionRequest(OpenAIBaseModel):
             max_tokens=max_tokens if not echo_without_generation else 1,
             min_tokens=self.min_tokens,
             logprobs=self.logprobs,
-            prompt_logprobs=self.prompt_logprobs
-            if self.prompt_logprobs else self.logprobs if self.echo else None,
+            prompt_logprobs=self.prompt_logprobs if self.prompt_logprobs else self.logprobs if self.echo else None,
             use_beam_search=self.use_beam_search,
             early_stopping=self.early_stopping,
             skip_special_tokens=self.skip_special_tokens,
@@ -1585,12 +1481,8 @@ class CompletionRequest(OpenAIBaseModel):
             custom_token_bans=self.custom_token_bans,
             token_ban_ranges=self.token_ban_ranges,
             sampler_priority=self.sampler_priority,
-            logits_processors=get_logits_processors(
-                self.logits_processors, logits_processor_pattern
-            ),
-            output_kind=RequestOutputKind.DELTA
-            if self.stream
-            else RequestOutputKind.FINAL_ONLY,
+            logits_processors=get_logits_processors(self.logits_processors, logits_processor_pattern),
+            output_kind=RequestOutputKind.DELTA if self.stream else RequestOutputKind.FINAL_ONLY,
             structured_outputs=self.structured_outputs,
             logit_bias=self.logit_bias,
             allowed_token_ids=self.allowed_token_ids,
@@ -1602,7 +1494,7 @@ class CompletionRequest(OpenAIBaseModel):
             enable_deepconf=self.enable_deepconf,
             deepconf_window_size=self.deepconf_window_size,
             deepconf_threshold=self.deepconf_threshold,
-            )
+        )
 
     @model_validator(mode="before")
     @classmethod
@@ -1611,14 +1503,10 @@ class CompletionRequest(OpenAIBaseModel):
             return data
 
         structured_outputs_kwargs = data["structured_outputs"]
-        count = sum(
-            structured_outputs_kwargs.get(k) is not None
-            for k in ("json", "regex", "choice")
-        )
+        count = sum(structured_outputs_kwargs.get(k) is not None for k in ("json", "regex", "choice"))
         if count > 1:
             raise ValueError(
-                "You can only use one kind of constraints for structured "
-                "outputs ('json', 'regex' or 'choice')."
+                "You can only use one kind of constraints for structured outputs ('json', 'regex' or 'choice')."
             )
         return data
 
@@ -1627,16 +1515,12 @@ class CompletionRequest(OpenAIBaseModel):
     def check_logprobs(cls, data):
         if (prompt_logprobs := data.get("prompt_logprobs")) is not None:
             if data.get("stream") and (prompt_logprobs > 0 or prompt_logprobs == -1):
-                raise ValueError(
-                    "`prompt_logprobs` are not available when `stream=True`."
-                )
+                raise ValueError("`prompt_logprobs` are not available when `stream=True`.")
 
             if prompt_logprobs < 0 and prompt_logprobs != -1:
                 raise ValueError("`prompt_logprobs` must be a positive value or -1.")
             if prompt_logprobs == -1 and not envs.APHRODITE_USE_V1:
-                raise ValueError(
-                    "`prompt_logprobs=-1` is only supported with Aphrodite engine V1."
-                )
+                raise ValueError("`prompt_logprobs=-1` is only supported with Aphrodite engine V1.")
         if (logprobs := data.get("logprobs")) is not None and logprobs < 0:
             raise ValueError("`logprobs` must be a positive value.")
 
@@ -1657,14 +1541,10 @@ class CompletionRequest(OpenAIBaseModel):
         prompt_embeds = data.get("prompt_embeds")
 
         prompt_is_empty = prompt is None or (isinstance(prompt, str) and prompt == "")
-        embeds_is_empty = prompt_embeds is None or (
-            isinstance(prompt_embeds, list) and len(prompt_embeds) == 0
-        )
+        embeds_is_empty = prompt_embeds is None or (isinstance(prompt_embeds, list) and len(prompt_embeds) == 0)
 
         if prompt_is_empty and embeds_is_empty:
-            raise ValueError(
-                "Either prompt or prompt_embeds must be provided and non-empty."
-            )
+            raise ValueError("Either prompt or prompt_embeds must be provided and non-empty.")
 
         return data
 
@@ -1674,36 +1554,31 @@ class CompletionRequest(OpenAIBaseModel):
         if data.get("cache_salt") is not None:
             if not envs.APHRODITE_USE_V1:
                 raise ValueError(
-                    "Parameter 'cache_salt' is not supported with "
-                    "this instance of Aphrodite, which uses engine V0."
+                    "Parameter 'cache_salt' is not supported with this instance of Aphrodite, which uses engine V0."
                 )
             if not isinstance(data["cache_salt"], str) or not data["cache_salt"]:
-                raise ValueError(
-                    "Parameter 'cache_salt' must be a non-empty string if provided."
-                )
+                raise ValueError("Parameter 'cache_salt' must be a non-empty string if provided.")
         return data
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def parse_dry_sequence_breakers(cls, data):
-        if 'dry_sequence_breakers' in data:
-            breakers = data['dry_sequence_breakers']
+        if "dry_sequence_breakers" in data:
+            breakers = data["dry_sequence_breakers"]
             if isinstance(breakers, str):
                 try:
                     # Try to parse as JSON string
-                    data['dry_sequence_breakers'] = json.loads(breakers)
+                    data["dry_sequence_breakers"] = json.loads(breakers)
                 except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON for dry_sequence_breakers:"
-                                     f" {e}") from e
+                    raise ValueError(f"Invalid JSON for dry_sequence_breakers: {e}") from e
 
             # Validate that we now have a list of strings
-            is_list = isinstance(data['dry_sequence_breakers'], list)
-            all_strings = all(
-                isinstance(x, str) for x in data['dry_sequence_breakers'])
+            is_list = isinstance(data["dry_sequence_breakers"], list)
+            all_strings = all(isinstance(x, str) for x in data["dry_sequence_breakers"])
             if not is_list or not all_strings:
                 raise ValueError(
-                    "dry_sequence_breakers must be a list of strings or a "
-                    "JSON string representing a list of strings")
+                    "dry_sequence_breakers must be a list of strings or a JSON string representing a list of strings"
+                )
 
         return data
 
@@ -1721,10 +1596,7 @@ class EmbeddingCompletionRequest(OpenAIBaseModel):
     # --8<-- [start:embedding-extra-params]
     add_special_tokens: bool = Field(
         default=True,
-        description=(
-            "If true (the default), special tokens (e.g. BOS) will be added to "
-            "the prompt."
-        ),
+        description=("If true (the default), special tokens (e.g. BOS) will be added to the prompt."),
     )
     priority: int = Field(
         default=0,
@@ -1813,8 +1685,7 @@ class EmbeddingChatRequest(OpenAIBaseModel):
     chat_template_kwargs: dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Additional keyword args to pass to the template renderer. "
-            "Will be accessible by the chat template."
+            "Additional keyword args to pass to the template renderer. Will be accessible by the chat template."
         ),
     )
     mm_processor_kwargs: dict[str, Any] | None = Field(
@@ -1863,10 +1734,7 @@ class EmbeddingChatRequest(OpenAIBaseModel):
     @classmethod
     def check_generation_prompt(cls, data):
         if data.get("continue_final_message") and data.get("add_generation_prompt"):
-            raise ValueError(
-                "Cannot set both `continue_final_message` and "
-                "`add_generation_prompt` to True."
-            )
+            raise ValueError("Cannot set both `continue_final_message` and `add_generation_prompt` to True.")
         return data
 
     def to_pooling_params(self):
@@ -1983,9 +1851,7 @@ class IOProcessorResponse(OpenAIBaseModel, Generic[T]):
     """
 
 
-PoolingRequest: TypeAlias = (
-    PoolingCompletionRequest | PoolingChatRequest | IOProcessorRequest
-)
+PoolingRequest: TypeAlias = PoolingCompletionRequest | PoolingChatRequest | IOProcessorRequest
 
 
 class ScoreRequest(OpenAIBaseModel):
@@ -2022,8 +1888,7 @@ class ScoreRequest(OpenAIBaseModel):
 
     use_activation: bool | None = Field(
         default=None,
-        description="Whether to use activation for classification outputs. "
-        "Default is True.",
+        description="Whether to use activation for classification outputs. Default is True.",
     )
     # --8<-- [end:score-extra-params]
 
@@ -2069,8 +1934,7 @@ class RerankRequest(OpenAIBaseModel):
 
     use_activation: bool | None = Field(
         default=None,
-        description="Whether to use activation for classification outputs. "
-        "Default is True.",
+        description="Whether to use activation for classification outputs. Default is True.",
     )
     # --8<-- [end:rerank-extra-params]
 
@@ -2139,9 +2003,7 @@ class CompletionResponse(OpenAIBaseModel):
     usage: UsageInfo
 
     # Aphrodite-specific fields that are not in OpenAI spec
-    kv_transfer_params: dict[str, Any] | None = Field(
-        default=None, description="KVTransfer parameters."
-    )
+    kv_transfer_params: dict[str, Any] | None = Field(default=None, description="KVTransfer parameters.")
 
 
 class CompletionResponseStreamChoice(OpenAIBaseModel):
@@ -2257,8 +2119,7 @@ class ClassificationRequest(OpenAIBaseModel):
 
     use_activation: bool | None = Field(
         default=None,
-        description="Whether to use activation for classification outputs. "
-        "Default is True.",
+        description="Whether to use activation for classification outputs. Default is True.",
     )
     # --8<-- [end:classification-extra-params]
 
@@ -2377,9 +2238,7 @@ class ChatCompletionResponse(OpenAIBaseModel):
     # Aphrodite-specific fields that are not in OpenAI spec
     prompt_logprobs: list[dict[int, Logprob] | None] | None = None
     prompt_token_ids: list[int] | None = None
-    kv_transfer_params: dict[str, Any] | None = Field(
-        default=None, description="KVTransfer parameters."
-    )
+    kv_transfer_params: dict[str, Any] | None = Field(default=None, description="KVTransfer parameters.")
 
 
 class DeltaMessage(OpenAIBaseModel):
@@ -2646,9 +2505,7 @@ StreamingResponsesResponse: TypeAlias = (
     | ResponseCodeInterpreterCallCompletedEvent
 )
 
-BatchRequestInputBody: TypeAlias = (
-    ChatCompletionRequest | EmbeddingRequest | ScoreRequest | RerankRequest
-)
+BatchRequestInputBody: TypeAlias = ChatCompletionRequest | EmbeddingRequest | ScoreRequest | RerankRequest
 
 
 class BatchRequestInput(OpenAIBaseModel):
@@ -2697,13 +2554,7 @@ class BatchResponseData(OpenAIBaseModel):
     request_id: str
 
     # The body of the response.
-    body: (
-        ChatCompletionResponse
-        | EmbeddingResponse
-        | ScoreResponse
-        | RerankResponse
-        | None
-    ) = None
+    body: ChatCompletionResponse | EmbeddingResponse | ScoreResponse | RerankResponse | None = None
 
 
 class BatchRequestOutput(OpenAIBaseModel):
@@ -2730,16 +2581,11 @@ class TokenizeCompletionRequest(OpenAIBaseModel):
 
     add_special_tokens: bool = Field(
         default=True,
-        description=(
-            "If true (the default), special tokens (e.g. BOS) will be added to "
-            "the prompt."
-        ),
+        description=("If true (the default), special tokens (e.g. BOS) will be added to the prompt."),
     )
     return_token_strs: bool | None = Field(
         default=False,
-        description=(
-            "If true, also return the token strings corresponding to the token ids."
-        ),
+        description=("If true, also return the token strings corresponding to the token ids."),
     )
 
 
@@ -2757,9 +2603,7 @@ class TokenizeChatRequest(OpenAIBaseModel):
     )
     return_token_strs: bool | None = Field(
         default=False,
-        description=(
-            "If true, also return the token strings corresponding to the token ids."
-        ),
+        description=("If true, also return the token strings corresponding to the token ids."),
     )
     continue_final_message: bool = Field(
         default=False,
@@ -2793,8 +2637,7 @@ class TokenizeChatRequest(OpenAIBaseModel):
     chat_template_kwargs: dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Additional keyword args to pass to the template renderer. "
-            "Will be accessible by the chat template."
+            "Additional keyword args to pass to the template renderer. Will be accessible by the chat template."
         ),
     )
     mm_processor_kwargs: dict[str, Any] | None = Field(
@@ -2810,10 +2653,7 @@ class TokenizeChatRequest(OpenAIBaseModel):
     @classmethod
     def check_generation_prompt(cls, data):
         if data.get("continue_final_message") and data.get("add_generation_prompt"):
-            raise ValueError(
-                "Cannot set both `continue_final_message` and "
-                "`add_generation_prompt` to True."
-            )
+            raise ValueError("Cannot set both `continue_final_message` and `add_generation_prompt` to True.")
         return data
 
 
@@ -2898,9 +2738,7 @@ class TranscriptionRequest(OpenAIBaseModel):
 
     ## TODO (varun) : Support if set to 0, certain thresholds are met !!
 
-    timestamp_granularities: list[Literal["word", "segment"]] = Field(
-        alias="timestamp_granularities[]", default=[]
-    )
+    timestamp_granularities: list[Literal["word", "segment"]] = Field(alias="timestamp_granularities[]", default=[])
     """The timestamp granularities to populate for this transcription.
 
     `response_format` must be set `verbose_json` to use timestamp granularities.
@@ -2920,10 +2758,7 @@ class TranscriptionRequest(OpenAIBaseModel):
 
     aphrodite_xargs: dict[str, str | int | float] | None = Field(
         default=None,
-        description=(
-            "Additional request parameters with string or "
-            "numeric values, used by custom extensions."
-        ),
+        description=("Additional request parameters with string or numeric values, used by custom extensions."),
     )
     # --8<-- [end:transcription-extra-params]
 
@@ -2989,21 +2824,13 @@ class TranscriptionRequest(OpenAIBaseModel):
 
         # Default parameters
         if (temperature := self.temperature) is None:
-            temperature = default_sampling_params.get(
-                "temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"]
-            )
+            temperature = default_sampling_params.get("temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
         if (top_p := self.top_p) is None:
-            top_p = default_sampling_params.get(
-                "top_p", self._DEFAULT_SAMPLING_PARAMS["top_p"]
-            )
+            top_p = default_sampling_params.get("top_p", self._DEFAULT_SAMPLING_PARAMS["top_p"])
         if (top_k := self.top_k) is None:
-            top_k = default_sampling_params.get(
-                "top_k", self._DEFAULT_SAMPLING_PARAMS["top_k"]
-            )
+            top_k = default_sampling_params.get("top_k", self._DEFAULT_SAMPLING_PARAMS["top_k"])
         if (min_p := self.min_p) is None:
-            min_p = default_sampling_params.get(
-                "min_p", self._DEFAULT_SAMPLING_PARAMS["min_p"]
-            )
+            min_p = default_sampling_params.get("min_p", self._DEFAULT_SAMPLING_PARAMS["min_p"])
 
         if (repetition_penalty := self.repetition_penalty) is None:
             repetition_penalty = default_sampling_params.get(
@@ -3021,9 +2848,7 @@ class TranscriptionRequest(OpenAIBaseModel):
             frequency_penalty=self.frequency_penalty,
             repetition_penalty=repetition_penalty,
             presence_penalty=self.presence_penalty,
-            output_kind=RequestOutputKind.DELTA
-            if self.stream
-            else RequestOutputKind.FINAL_ONLY,
+            output_kind=RequestOutputKind.DELTA if self.stream else RequestOutputKind.FINAL_ONLY,
             extra_args=self.aphrodite_xargs,
         )
 
@@ -3225,17 +3050,13 @@ class TranslationRequest(OpenAIBaseModel):
             default_sampling_params = {}
         # Default parameters
         if (temperature := self.temperature) is None:
-            temperature = default_sampling_params.get(
-                "temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"]
-            )
+            temperature = default_sampling_params.get("temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"])
 
         return SamplingParams.from_optional(
             temperature=temperature,
             max_tokens=max_tokens,
             seed=self.seed,
-            output_kind=RequestOutputKind.DELTA
-            if self.stream
-            else RequestOutputKind.FINAL_ONLY,
+            output_kind=RequestOutputKind.DELTA if self.stream else RequestOutputKind.FINAL_ONLY,
         )
 
     @model_validator(mode="before")
@@ -3329,8 +3150,10 @@ class TranslationResponseVerbose(OpenAIBaseModel):
 
 # Anthropic Messages API Protocol Definitions
 
+
 class AnthropicContentBlock(OpenAIBaseModel):
     """Base class for Anthropic content blocks"""
+
     type: str
 
 
@@ -3371,12 +3194,9 @@ class AnthropicThinkingBlock(AnthropicContentBlock):
 
 # Union type for all Anthropic content blocks
 AnthropicContent = (
-    AnthropicTextBlock |
-    AnthropicImageBlock |
-    AnthropicToolUseBlock |
-    AnthropicToolResultBlock |
-    AnthropicThinkingBlock
+    AnthropicTextBlock | AnthropicImageBlock | AnthropicToolUseBlock | AnthropicToolResultBlock | AnthropicThinkingBlock
 )
+
 
 class AnthropicMessage(OpenAIBaseModel):
     role: Literal["user", "assistant"]
@@ -3410,15 +3230,13 @@ class AnthropicToolChoiceTool(OpenAIBaseModel):
 
 
 AnthropicToolChoice = (
-    AnthropicToolChoiceAuto |
-    AnthropicToolChoiceAny |
-    AnthropicToolChoiceNone |
-    AnthropicToolChoiceTool
+    AnthropicToolChoiceAuto | AnthropicToolChoiceAny | AnthropicToolChoiceNone | AnthropicToolChoiceTool
 )
 
 
 class AnthropicThinkingConfig(OpenAIBaseModel):
     """Base class for thinking configurations"""
+
     type: str
 
 
@@ -3481,8 +3299,7 @@ class AnthropicMessagesResponse(OpenAIBaseModel):
     role: Literal["assistant"] = "assistant"
     content: list[AnthropicContent]
     model: str
-    stop_reason: Literal["end_turn", "max_tokens", "stop_sequence",
-                                  "tool_use", "pause_turn", "refusal"] | None = None
+    stop_reason: Literal["end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal"] | None = None
     stop_sequence: str | None = None
     usage: AnthropicUsage
     container: dict[str, Any] | None = None
@@ -3531,7 +3348,7 @@ class AnthropicError(OpenAIBaseModel):
 
 
 AnthropicStreamEvent = (
-    AnthropicMessageStart 
+    AnthropicMessageStart
     | AnthropicContentBlockStart
     | AnthropicContentBlockDelta
     | AnthropicContentBlockStop
@@ -3574,9 +3391,9 @@ class KAIGenerationInputSchema(BaseModel):
     stop_sequence: list[str] | None = None
     include_stop_str_in_output: bool | None = False
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     def check_context(cls, values):  # pylint: disable=no-self-argument
-        assert values.get("max_length") <= values.get(
-            "max_context_length"
-        ), "max_length must not be larger than max_context_length"
+        assert values.get("max_length") <= values.get("max_context_length"), (
+            "max_length must not be larger than max_context_length"
+        )
         return values

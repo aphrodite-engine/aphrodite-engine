@@ -46,11 +46,7 @@ def _get_lora_a_ptr(lora_a_weights: list[torch.Tensor], device: torch.device):
     else:
         lora_ptr_tensor = lora_a_weights[0]
 
-    if (
-        len(set(lora_strides_d0)) > 1
-        or len(set(lora_strides_d1)) > 1
-        or len(set(lora_strides_d2)) > 1
-    ):
+    if len(set(lora_strides_d0)) > 1 or len(set(lora_strides_d1)) > 1 or len(set(lora_strides_d2)) > 1:
         raise ValueError("All LoRA weights must have the same stride.")
 
     _LORA_A_PTR_DICT[key] = (
@@ -62,9 +58,7 @@ def _get_lora_a_ptr(lora_a_weights: list[torch.Tensor], device: torch.device):
     return _LORA_A_PTR_DICT.get(key)
 
 
-def _get_lora_b_ptr(
-    lora_weights: list[torch.Tensor], offset_start: int, device: torch.device
-):
+def _get_lora_b_ptr(lora_weights: list[torch.Tensor], offset_start: int, device: torch.device):
     """
      `_LORA_B_PTR_DICT` collects the required information during `profile_run`,
     After this, it remains constant and subsequent usage is through LUT.
@@ -101,20 +95,16 @@ def _get_lora_b_ptr(
     if len(lora_weights) > 1:
         # note these are device tensors
         lora_ptr_tensor = torch.tensor(tensor_ptrs, device=device, dtype=torch.uint64)
-        slice_start_tensor = torch.tensor(
-            slice_offset_lst, device=device, dtype=torch.uint64
-        )
+        slice_start_tensor = torch.tensor(slice_offset_lst, device=device, dtype=torch.uint64)
     else:
         slice_start_tensor = slice_offset_lst[0]
         lora_ptr_tensor = lora_b_weight[0]
 
     # If each lora has the same stride, there's no need to use a
     # tensor for storage.
-    if (
-        len(set(lora_strides_d0)) == 1
-        and len(set(lora_strides_d1)) == 1
-        and len(set(lora_strides_d2)) == 1
-    ) and len(set(hidden_sizes)) == 1:
+    if (len(set(lora_strides_d0)) == 1 and len(set(lora_strides_d1)) == 1 and len(set(lora_strides_d2)) == 1) and len(
+        set(hidden_sizes)
+    ) == 1:
         lora_strides_d0_tensor = lora_strides_d0[0]
         lora_strides_d1_tensor = lora_strides_d1[0]
         lora_strides_d2_tensor = lora_strides_d2[0]
@@ -155,9 +145,7 @@ def load_lora_op_config(op_type: str, add_inputs: bool | None) -> dict | None:
             config_fname = f"{gpu_name}_{op_type.upper()}.json"
         else:
             assert op_type == "expand"
-            config_fname = (
-                f"{gpu_name}_{op_type.upper()}_{str(add_inputs).upper()}.json"
-            )
+            config_fname = f"{gpu_name}_{op_type.upper()}_{str(add_inputs).upper()}.json"
 
         config_path = Path(f"{user_defined_config_folder}/{config_fname}")
         if not config_path.exists():
@@ -222,26 +210,16 @@ def get_lora_op_configs(
     # config is structured as config_data[max_loras][num_slices][m][k][n] = {}
     # slice by max_loras
     config_data = (
-        config_data.get(str(max_loras))
-        or config_data[min(config_data.keys(), key=lambda x: abs(int(x) - max_loras))]
+        config_data.get(str(max_loras)) or config_data[min(config_data.keys(), key=lambda x: abs(int(x) - max_loras))]
     )
     # slice by num_slices
     config_data = config_data[str(num_slices)]
     # slice by m
-    config_data = (
-        config_data.get(str(m))
-        or config_data[min(config_data.keys(), key=lambda x: abs(int(x) - m))]
-    )
+    config_data = config_data.get(str(m)) or config_data[min(config_data.keys(), key=lambda x: abs(int(x) - m))]
     # slice by k
-    config_data = (
-        config_data.get(str(k))
-        or config_data[min(config_data.keys(), key=lambda x: abs(int(x) - k))]
-    )
+    config_data = config_data.get(str(k)) or config_data[min(config_data.keys(), key=lambda x: abs(int(x) - k))]
     # slice by n
-    config_data = (
-        config_data.get(str(n))
-        or config_data[min(config_data.keys(), key=lambda x: abs(int(x) - n))]
-    )
+    config_data = config_data.get(str(n)) or config_data[min(config_data.keys(), key=lambda x: abs(int(x) - n))]
 
     assert config_data is not None
     return config_data

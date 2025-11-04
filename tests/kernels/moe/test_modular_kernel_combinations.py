@@ -14,19 +14,18 @@ from aphrodite.utils.flashinfer import has_flashinfer_cutlass_fused_moe
 from aphrodite.utils.import_utils import has_deep_ep, has_deep_gemm, has_pplx
 from aphrodite.utils.torch_utils import cuda_device_count_stateless
 
-from .modular_kernel_tools.common import (Config, RankTensors, WeightTensors,
-                                          reference_moe_impl,
-                                          run_modular_kernel)
+from .modular_kernel_tools.common import Config, RankTensors, WeightTensors, reference_moe_impl, run_modular_kernel
 from .modular_kernel_tools.mk_objects import (
-    MK_FUSED_EXPERT_TYPES, MK_MULTI_GPU_PREPARE_FINALIZE_TYPES,
-    MK_QUANT_CONFIGS, MK_SINGLE_GPU_PREPARE_FINALIZE_TYPES, TestMoEQuantConfig,
-    expert_info)
-from .modular_kernel_tools.parallel_utils import (ProcessGroupInfo,
-                                                  parallel_launch_with_config)
-
-has_any_multi_gpu_package = (
-    has_deep_ep() or has_deep_gemm() or has_pplx() or has_flashinfer_cutlass_fused_moe()
+    MK_FUSED_EXPERT_TYPES,
+    MK_MULTI_GPU_PREPARE_FINALIZE_TYPES,
+    MK_QUANT_CONFIGS,
+    MK_SINGLE_GPU_PREPARE_FINALIZE_TYPES,
+    TestMoEQuantConfig,
+    expert_info,
 )
+from .modular_kernel_tools.parallel_utils import ProcessGroupInfo, parallel_launch_with_config
+
+has_any_multi_gpu_package = has_deep_ep() or has_deep_gemm() or has_pplx() or has_flashinfer_cutlass_fused_moe()
 
 meets_multi_gpu_requirements = pytest.mark.skipif(
     not has_any_multi_gpu_package,
@@ -110,10 +109,7 @@ def rank_worker(
             exceptions.append(ex)
 
     if len(exceptions) > 0:
-        raise RuntimeError(
-            f"{len(exceptions)} of {count} tests failed in child process, "
-            f"rank={pgi.rank}."
-        )
+        raise RuntimeError(f"{len(exceptions)} of {count} tests failed in child process, rank={pgi.rank}.")
     else:
         print(f"{count} of {count} tests passed in child process, rank={pgi.rank}.")
 
@@ -125,9 +121,7 @@ def run(config: Config, verbose: bool):
     weights: WeightTensors = WeightTensors.make(config)
 
     aphrodite_config, env_dict = config.make_env_data()
-    parallel_launch_with_config(
-        config.world_size, rank_worker, aphrodite_config, env_dict, config, weights, verbose
-    )
+    parallel_launch_with_config(config.world_size, rank_worker, aphrodite_config, env_dict, config, weights, verbose)
 
 
 Ms = [32, 64]
@@ -148,17 +142,13 @@ def is_nyi_config(config: Config) -> bool:
     if info.needs_matching_quant:
         # The triton kernels expect both per-act-token-quant and
         # per-out-ch-quant or neither.
-        unsupported_quant_config = (
-            config.is_per_act_token_quant + config.is_per_out_ch_quant
-        ) == 1
+        unsupported_quant_config = (config.is_per_act_token_quant + config.is_per_out_ch_quant) == 1
         return unsupported_quant_config
 
     return not info.supports_expert_map
 
 
-def generate_valid_test_cases(
-    world_size: int, prepare_finalize_types
-) -> list[tuple[Any, ...]]:
+def generate_valid_test_cases(world_size: int, prepare_finalize_types) -> list[tuple[Any, ...]]:
     cases = []
     total = 0
 
@@ -223,9 +213,7 @@ def generate_valid_test_cases(
 
 @pytest.mark.parametrize(
     "k,n,e,dtype,quant_config,prepare_finalize_type,fused_experts_type,chunk_size,world_size",
-    generate_valid_test_cases(
-        world_size=2, prepare_finalize_types=MK_MULTI_GPU_PREPARE_FINALIZE_TYPES
-    ),
+    generate_valid_test_cases(world_size=2, prepare_finalize_types=MK_MULTI_GPU_PREPARE_FINALIZE_TYPES),
 )
 @meets_multi_gpu_requirements
 def test_modular_kernel_combinations_multigpu(
@@ -241,11 +229,7 @@ def test_modular_kernel_combinations_multigpu(
     pytestconfig,
 ):
     if cuda_device_count_stateless() < world_size:
-        pytest.skip(
-            f"Not enough GPUs available to run, got "
-            f"{cuda_device_count_stateless()} exepected "
-            f"{world_size}."
-        )
+        pytest.skip(f"Not enough GPUs available to run, got {cuda_device_count_stateless()} exepected {world_size}.")
 
     config = Config(
         Ms=Ms,
@@ -266,9 +250,7 @@ def test_modular_kernel_combinations_multigpu(
 
 @pytest.mark.parametrize(
     "k,n,e,dtype,quant_config,prepare_finalize_type,fused_experts_type,chunk_size,world_size",
-    generate_valid_test_cases(
-        world_size=1, prepare_finalize_types=MK_SINGLE_GPU_PREPARE_FINALIZE_TYPES
-    ),
+    generate_valid_test_cases(world_size=1, prepare_finalize_types=MK_SINGLE_GPU_PREPARE_FINALIZE_TYPES),
 )
 def test_modular_kernel_combinations_singlegpu(
     k: int,
@@ -301,17 +283,14 @@ def test_modular_kernel_combinations_singlegpu(
     if (
         quant_config is not None and quant_config.quant_dtype == torch.float8_e4m3fn
     ) and not current_platform.has_device_capability(89):
-        pytest.skip(
-            "Triton limitation: fp8e4nv data type is not supported on CUDA arch < 89"
-        )
+        pytest.skip("Triton limitation: fp8e4nv data type is not supported on CUDA arch < 89")
     verbosity = pytestconfig.getoption("verbose")
     run(config, verbosity > 0)
 
 
 if __name__ == "__main__":
     # Ability to test individual PrepareAndFinalize and FusedExperts combination
-    from .modular_kernel_tools.cli_args import (make_config,
-                                                make_config_arg_parser)
+    from .modular_kernel_tools.cli_args import make_config, make_config_arg_parser
 
     parser = make_config_arg_parser(
         description=(

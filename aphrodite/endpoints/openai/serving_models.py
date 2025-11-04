@@ -8,11 +8,15 @@ from dataclasses import dataclass
 from http import HTTPStatus
 
 from aphrodite import envs
-from aphrodite.endpoints.openai.protocol import (ErrorInfo, ErrorResponse,
-                                                 LoadLoRAAdapterRequest,
-                                                 ModelCard, ModelList,
-                                                 ModelPermission,
-                                                 UnloadLoRAAdapterRequest)
+from aphrodite.endpoints.openai.protocol import (
+    ErrorInfo,
+    ErrorResponse,
+    LoadLoRAAdapterRequest,
+    ModelCard,
+    ModelList,
+    ModelPermission,
+    UnloadLoRAAdapterRequest,
+)
 from aphrodite.engine.args_tools import AsyncEngineArgs
 from aphrodite.engine.protocol import EngineClient
 from aphrodite.logger import init_logger
@@ -65,9 +69,7 @@ class OpenAIServingModels:
 
         self.lora_resolvers: list[LoRAResolver] = []
         for lora_resolver_name in LoRAResolverRegistry.get_supported_resolvers():
-            self.lora_resolvers.append(
-                LoRAResolverRegistry.get_resolver(lora_resolver_name)
-            )
+            self.lora_resolvers.append(LoRAResolverRegistry.get_resolver(lora_resolver_name))
         self.lora_resolver_lock: dict[str, Lock] = defaultdict(Lock)
 
         self.processor = self.engine_client.processor
@@ -81,12 +83,8 @@ class OpenAIServingModels:
         if self.static_lora_modules is None:
             return
         for lora in self.static_lora_modules:
-            load_request = LoadLoRAAdapterRequest(
-                lora_path=lora.path, lora_name=lora.name
-            )
-            load_result = await self.load_lora_adapter(
-                request=load_request, base_model_name=lora.base_model_name
-            )
+            load_request = LoadLoRAAdapterRequest(lora_path=lora.path, lora_name=lora.name)
+            load_result = await self.load_lora_adapter(request=load_request, base_model_name=lora.base_model_name)
             if isinstance(load_result, ErrorResponse):
                 raise ValueError(load_result.error.message)
 
@@ -121,9 +119,7 @@ class OpenAIServingModels:
             ModelCard(
                 id=lora.lora_name,
                 root=lora.local_path,
-                parent=lora.base_model_name
-                if lora.base_model_name
-                else self.base_model_paths[0].name,
+                parent=lora.base_model_name if lora.base_model_name else self.base_model_paths[0].name,
                 permission=[ModelPermission()],
             )
             for lora in self.lora_requests.values()
@@ -144,9 +140,7 @@ class OpenAIServingModels:
 
             lora_path = request.lora_path
             unique_id = self.lora_id_counter.inc(1)
-            lora_request = LoRARequest(
-                lora_name=lora_name, lora_int_id=unique_id, lora_path=lora_path
-            )
+            lora_request = LoRARequest(lora_name=lora_name, lora_int_id=unique_id, lora_path=lora_path)
             if base_model_name is not None and self.is_base_model(base_model_name):
                 lora_request.base_model_name = base_model_name
 
@@ -161,19 +155,13 @@ class OpenAIServingModels:
                     error_type = "NotFoundError"
                     status_code = HTTPStatus.NOT_FOUND
 
-                return create_error_response(
-                    message=str(e), err_type=error_type, status_code=status_code
-                )
+                return create_error_response(message=str(e), err_type=error_type, status_code=status_code)
 
             self.lora_requests[lora_name] = lora_request
-            logger.info(
-                "Loaded new LoRA adapter: name '%s', path '%s'", lora_name, lora_path
-            )
+            logger.info("Loaded new LoRA adapter: name '%s', path '%s'", lora_name, lora_path)
             return f"Success: LoRA adapter '{lora_name}' added successfully."
 
-    async def unload_lora_adapter(
-        self, request: UnloadLoRAAdapterRequest
-    ) -> ErrorResponse | str:
+    async def unload_lora_adapter(self, request: UnloadLoRAAdapterRequest) -> ErrorResponse | str:
         lora_name = request.lora_name
 
         # Ensure atomicity based on the lora name
@@ -187,9 +175,7 @@ class OpenAIServingModels:
             logger.info("Removed LoRA adapter: name '%s'", lora_name)
             return f"Success: LoRA adapter '{lora_name}' removed successfully."
 
-    async def _check_load_lora_adapter_request(
-        self, request: LoadLoRAAdapterRequest
-    ) -> ErrorResponse | None:
+    async def _check_load_lora_adapter_request(self, request: LoadLoRAAdapterRequest) -> ErrorResponse | None:
         # Check if both 'lora_name' and 'lora_path' are provided
         if not request.lora_name or not request.lora_path:
             return create_error_response(
@@ -201,17 +187,14 @@ class OpenAIServingModels:
         # Check if the lora adapter with the given name already exists
         if request.lora_name in self.lora_requests:
             return create_error_response(
-                message=f"The lora adapter '{request.lora_name}' has already been "
-                "loaded.",
+                message=f"The lora adapter '{request.lora_name}' has already been loaded.",
                 err_type="InvalidUserInput",
                 status_code=HTTPStatus.BAD_REQUEST,
             )
 
         return None
 
-    async def _check_unload_lora_adapter_request(
-        self, request: UnloadLoRAAdapterRequest
-    ) -> ErrorResponse | None:
+    async def _check_unload_lora_adapter_request(self, request: UnloadLoRAAdapterRequest) -> ErrorResponse | None:
         # Check if 'lora_name' is not provided return an error
         if not request.lora_name:
             return create_error_response(
@@ -269,8 +252,7 @@ class OpenAIServingModels:
                         return lora_request
                     except BaseException as e:
                         logger.warning(
-                            "Failed to load LoRA '%s' resolved by %s: %s. "
-                            "Trying next resolver.",
+                            "Failed to load LoRA '%s' resolved by %s: %s. Trying next resolver.",
                             lora_name,
                             resolver.__class__.__name__,
                             e,
@@ -280,9 +262,7 @@ class OpenAIServingModels:
             if found_adapter:
                 # An adapter was found, but all attempts to load it failed.
                 return create_error_response(
-                    message=(
-                        f"LoRA adapter '{lora_name}' was found but could not be loaded."
-                    ),
+                    message=(f"LoRA adapter '{lora_name}' was found but could not be loaded."),
                     err_type="BadRequestError",
                     status_code=HTTPStatus.BAD_REQUEST,
                 )
@@ -294,9 +274,7 @@ class OpenAIServingModels:
                     status_code=HTTPStatus.NOT_FOUND,
                 )
 
-    async def unload_model(
-        self, old_engine_client: EngineClient
-    ) -> dict[str, str | float]:
+    async def unload_model(self, old_engine_client: EngineClient) -> dict[str, str | float]:
         """Unload the current model and free GPU memory.
 
         Returns a dict with status information including timing metrics.
@@ -308,32 +286,32 @@ class OpenAIServingModels:
         try:
             await old_engine_client.wait_for_requests_to_drain(drain_timeout=300)
             drain_time = time.time() - start_time
-            logger.info(f"All requests drained in {drain_time:.2f}s. Shutting down engine...")
+            logger.info("All requests drained in %.2fs. Shutting down engine.", drain_time)
         except TimeoutError:
             drain_time = time.time() - start_time
             logger.warning(
-                f"Timeout waiting for requests to drain after {drain_time:.2f}s. "
-                "Proceeding with shutdown anyway..."
+                "Timeout waiting for requests to drain after %.2fs. Proceeding with shutdown anyway...",
+                drain_time,
             )
 
         # Mark engine as already dead to prevent monitor from triggering API server shutdown
-        if hasattr(old_engine_client, 'engine_core') and hasattr(
-            old_engine_client.engine_core, 'resources'
-        ):
+        if hasattr(old_engine_client, "engine_core") and hasattr(old_engine_client.engine_core, "resources"):
             old_engine_client.engine_core.resources.engine_dead = True
 
         shutdown_start = time.time()
         old_engine_client.shutdown()
 
         import torch.cuda
+
         gc.collect()
         torch.cuda.empty_cache()
 
         shutdown_time = time.time() - shutdown_start
         total_time = time.time() - start_time
         logger.info(
-            f"Engine shutdown complete in {shutdown_time:.2f}s. "
-            f"Total unload time: {total_time:.2f}s. GPU memory freed."
+            "Engine shutdown complete in %.2fs. Total unload time: %.2fs. GPU memory freed.",
+            shutdown_time,
+            total_time,
         )
 
         return {
@@ -356,7 +334,7 @@ class OpenAIServingModels:
             original_args: The original server startup arguments
             model: Optional model name/path to load (different from original)
             config_data: Optional config dict to override settings
- 
+
         Returns:
             Tuple of (new_engine_client, updated_args, response_data)
         """
@@ -370,54 +348,39 @@ class OpenAIServingModels:
         if model is not None:
             old_model = args.model
             args.model = model
-            logger.info(f"Switching model from {old_model} to {model}")
-            config_applied["model"] = {
-                "old": old_model,
-                "new": model,
-                "source": "request"
-            }
+            logger.info("Switching model from %s to %s", old_model, model)
+            config_applied["model"] = {"old": old_model, "new": model, "source": "request"}
 
             if envs.APHRODITE_ENABLE_MULTI_MODEL:
                 # Clear potentially conflicting config parameters when loading a different model
                 # These will be re-set by the model's config if needed
-                if hasattr(args, 'cudagraph_capture_sizes'):
+                if hasattr(args, "cudagraph_capture_sizes"):
                     args.cudagraph_capture_sizes = None
-                if hasattr(args, 'compilation_config') and args.compilation_config and hasattr(
-                    args.compilation_config, 'cudagraph_capture_sizes'
+                if (
+                    hasattr(args, "compilation_config")
+                    and args.compilation_config
+                    and hasattr(args.compilation_config, "cudagraph_capture_sizes")
                 ):
                     args.compilation_config.cudagraph_capture_sizes = None
 
         # Only auto-load aphrodite_config.yaml from model directory if NO explicit config was provided
         if config_data is None:
-            model_config_yaml = get_model_config_yaml(
-                args.model, getattr(args, 'download_dir', None)
-            )
+            model_config_yaml = get_model_config_yaml(args.model, getattr(args, "download_dir", None))
 
             if model_config_yaml:
-                logger.info(
-                    f"Found aphrodite_config in model directory with "
-                    f"{len(model_config_yaml)} settings"
-                )
+                logger.info("Found aphrodite_config in model directory with %d settings", len(model_config_yaml))
                 for key, value in model_config_yaml.items():
-                    attr_name = key.replace('-', '_')
+                    attr_name = key.replace("-", "_")
                     # Don't override the model path if it was explicitly provided in request
-                    if attr_name == 'model' and model is not None:
+                    if attr_name == "model" and model is not None:
                         continue
                     if hasattr(args, attr_name):
                         old_value = getattr(args, attr_name)
                         setattr(args, attr_name, value)
-                        config_applied[key] = {
-                            "old": old_value,
-                            "new": value,
-                            "source": "model_dir"
-                        }
-                        logger.info(
-                            f"Config from model dir: {key} = {value} (was: {old_value})"
-                        )
+                        config_applied[key] = {"old": old_value, "new": value, "source": "model_dir"}
+                        logger.info("Config from model dir: %s = %s (was: %s)", key, value, old_value)
                     else:
-                        logger.warning(
-                            f"Unknown config key in model directory: {key} - ignoring"
-                        )
+                        logger.warning("Unknown config key in model directory: %s - ignoring", key)
 
         # If config was provided, apply it (this overrides everything)
         if config_data is not None:
@@ -428,32 +391,24 @@ class OpenAIServingModels:
 
             # Apply config values to args
             for key, value in config_data.items():
-                attr_name = key.replace('-', '_')
+                attr_name = key.replace("-", "_")
 
                 if hasattr(args, attr_name):
                     old_value = getattr(args, attr_name)
                     setattr(args, attr_name, value)
-                    config_applied[key] = {
-                        "old": old_value,
-                        "new": value,
-                        "source": "uploaded"
-                    }
-                    logger.info(
-                        f"Config override (uploaded): {key} = {value} (was: {old_value})"
-                    )
+                    config_applied[key] = {"old": old_value, "new": value, "source": "uploaded"}
+                    logger.info("Config override (uploaded): %s = %s (was: %s)", key, value, old_value)
                 else:
-                    logger.warning(f"Unknown config key: {key} - ignoring")
+                    logger.warning("Unknown config key: %s - ignoring", key)
 
-            logger.info(f"Applied {len(config_applied)} config overrides")
+            logger.info("Applied %d config overrides", len(config_applied))
 
         logger.info("Model load requested - initializing engine...")
 
         from aphrodite.v1.engine.async_llm import AsyncLLM
 
         engine_args = AsyncEngineArgs.from_cli_args(args)
-        aphrodite_config = engine_args.create_engine_config(
-            usage_context=UsageContext.OPENAI_API_SERVER
-        )
+        aphrodite_config = engine_args.create_engine_config(usage_context=UsageContext.OPENAI_API_SERVER)
 
         new_client = AsyncLLM.from_aphrodite_config(
             aphrodite_config=aphrodite_config,
@@ -464,7 +419,7 @@ class OpenAIServingModels:
         )
 
         total_time = time.time() - start_time
-        logger.info(f"Model load complete in {total_time:.2f}s!")
+        logger.info("Model load complete in %.2fs!", total_time)
 
         response_data = {
             "status": "success",
@@ -475,8 +430,7 @@ class OpenAIServingModels:
 
         if config_applied:
             response_data["config_applied"] = {
-                key: {"value": value["new"], "source": value["source"]}
-                for key, value in config_applied.items()
+                key: {"value": value["new"], "source": value["source"]} for key, value in config_applied.items()
             }
 
         return new_client, args, response_data
@@ -487,6 +441,4 @@ def create_error_response(
     err_type: str = "BadRequestError",
     status_code: HTTPStatus = HTTPStatus.BAD_REQUEST,
 ) -> ErrorResponse:
-    return ErrorResponse(
-        error=ErrorInfo(message=message, type=err_type, code=status_code.value)
-    )
+    return ErrorResponse(error=ErrorInfo(message=message, type=err_type, code=status_code.value))

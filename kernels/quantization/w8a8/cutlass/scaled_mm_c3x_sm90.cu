@@ -29,8 +29,8 @@ void cutlass_scaled_mm_azp_sm90(torch::Tensor& out, torch::Tensor const& a,
   TORCH_CHECK(a_scales.dtype() == torch::kFloat32);
   TORCH_CHECK(b_scales.dtype() == torch::kFloat32);
 
-  aphrodite::cutlass_scaled_mm_azp_sm90_int8(out, a, b, a_scales, b_scales, azp_adj,
-                                        azp, bias);
+  aphrodite::cutlass_scaled_mm_azp_sm90_int8(out, a, b, a_scales, b_scales,
+                                             azp_adj, azp, bias);
 }
 
 #endif

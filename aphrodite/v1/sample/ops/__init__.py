@@ -31,10 +31,7 @@ class SamplingOps:
         if spec_token_ids is None:
             return output_token_ids
 
-        return [
-            [*out, *spec] if spec else out
-            for out, spec in zip(output_token_ids, spec_token_ids)
-        ]
+        return [[*out, *spec] if spec else out for out, spec in zip(output_token_ids, spec_token_ids)]
 
     def apply_logits_processors(
         self,
@@ -43,9 +40,7 @@ class SamplingOps:
         predict_bonus_token: bool = False,
     ) -> torch.Tensor:
         bad_words_token_ids = sampling_metadata.bad_words_token_ids
-        any_penalties_or_bad_words = (
-            bool(bad_words_token_ids) or not sampling_metadata.no_penalties
-        )
+        any_penalties_or_bad_words = bool(bad_words_token_ids) or not sampling_metadata.no_penalties
 
         output_token_ids = sampling_metadata.output_token_ids
         if predict_bonus_token and any_penalties_or_bad_words:
@@ -96,9 +91,7 @@ class SamplingOps:
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
         """Apply DRY sampling to the logits."""
-        if (sampling_metadata.dry_multiplier is not None
-                and sampling_metadata.prompt_token_ids is not None):
-
+        if sampling_metadata.dry_multiplier is not None and sampling_metadata.prompt_token_ids is not None:
             # Convert output_token_ids to tensor
             _, vocab_size = logits.shape
             output_tokens_t = make_tensor_with_pad(
@@ -110,14 +103,15 @@ class SamplingOps:
             ).to(logits.device, non_blocking=True)
 
             # Ensure all required tensors are not None
-            if (sampling_metadata.dry_base is not None
-                    and sampling_metadata.dry_allowed_length is not None
-                    and sampling_metadata.dry_sequence_breaker_ids is not None
-                    and sampling_metadata.dry_ranges is not None
-                    and sampling_metadata.dry_max_ngram is not None
-                    and sampling_metadata.dry_max_occurrences is not None and
-                    sampling_metadata.dry_early_exit_match_len is not None):
-
+            if (
+                sampling_metadata.dry_base is not None
+                and sampling_metadata.dry_allowed_length is not None
+                and sampling_metadata.dry_sequence_breaker_ids is not None
+                and sampling_metadata.dry_ranges is not None
+                and sampling_metadata.dry_max_ngram is not None
+                and sampling_metadata.dry_max_occurrences is not None
+                and sampling_metadata.dry_early_exit_match_len is not None
+            ):
                 logits = apply_all_dry(
                     logits,
                     sampling_metadata.prompt_token_ids,
@@ -162,7 +156,6 @@ class SamplingOps:
         return tfs(logits, sampling_metadata)
 
     def apply_eta_cutoff(
-
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
@@ -238,7 +231,8 @@ class SamplingOps:
                         raise ValueError(
                             f"token_id {token_id} in logit_bias contains "
                             f"out-of-vocab token id. Vocabulary size: "
-                            f"{vocab_size}")
+                            f"{vocab_size}"
+                        )
                     logits[i, token_id] += bias
         return logits
 

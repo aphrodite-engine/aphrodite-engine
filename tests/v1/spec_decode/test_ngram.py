@@ -1,8 +1,7 @@
 import numpy as np
 
 from aphrodite.config import AphroditeConfig, ModelConfig, SpeculativeConfig
-from aphrodite.v1.spec_decode.ngram_proposer import (
-    NgramProposer, _find_longest_matched_ngram_and_propose_tokens)
+from aphrodite.v1.spec_decode.ngram_proposer import NgramProposer, _find_longest_matched_ngram_and_propose_tokens
 
 
 def test_find_longest_matched_ngram_and_propose_tokens():

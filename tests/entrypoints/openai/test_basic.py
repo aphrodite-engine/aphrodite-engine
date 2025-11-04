@@ -116,9 +116,7 @@ async def test_check_health(server: RemoteOpenAIServer):
 @pytest.mark.parametrize(
     "server_args",
     [
-        pytest.param(
-            ["--max-model-len", "10100"], id="default-frontend-multiprocessing"
-        ),
+        pytest.param(["--max-model-len", "10100"], id="default-frontend-multiprocessing"),
         pytest.param(
             ["--disable-frontend-multiprocessing", "--max-model-len", "10100"],
             id="disable-frontend-multiprocessing",
@@ -159,9 +157,7 @@ async def test_request_cancellation(server: RemoteOpenAIServer):
     # If the server had not cancelled all the other requests, then it would not
     # be able to respond to this one within the timeout
     client = server.get_async_client(timeout=5)
-    response = await client.chat.completions.create(
-        messages=chat_input, model=MODEL_NAME, max_tokens=10
-    )
+    response = await client.chat.completions.create(messages=chat_input, model=MODEL_NAME, max_tokens=10)
 
     assert len(response.choices) == 1
 
@@ -204,9 +200,7 @@ async def test_server_load(server: RemoteOpenAIServer):
         )
 
     # Start the completion request in a background thread.
-    completion_future = asyncio.create_task(
-        asyncio.to_thread(make_long_completion_request)
-    )
+    completion_future = asyncio.create_task(asyncio.to_thread(make_long_completion_request))
 
     # Give a short delay to ensure the request has started.
     await asyncio.sleep(0.1)

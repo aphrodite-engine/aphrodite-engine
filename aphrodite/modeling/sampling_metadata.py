@@ -1,14 +1,12 @@
 from array import array
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 
 from aphrodite.common.sampling_params import SamplingParams, SamplingType
 from aphrodite.common.sequence import SequenceData, SequenceGroupMetadata
 from aphrodite.constants import APHRODITE_TOKEN_ID_ARRAY_TYPE
-from aphrodite.utils import (PyObjectCache, async_tensor_h2d,
-                             is_pin_memory_available, make_tensor_with_pad)
+from aphrodite.utils import PyObjectCache, async_tensor_h2d, is_pin_memory_available, make_tensor_with_pad
 
 _SAMPLING_EPS = 1e-5
 
@@ -29,13 +27,13 @@ class SequenceGroupToSample:
     # The length of the sequence (all tokens seen in the past + new token to
     # compute attention) of the sequence group. None if it is in a decode
     # stage.
-    seq_len: Optional[int]
+    seq_len: int | None
     # The length of new query tokens to compute in the current step. None if it
     # is in a decode stage. The length of query_len <= seq_len if chunked
     # prefill is enabled.
-    query_len: Optional[int]
+    query_len: int | None
     # A random number generator for sampling.
-    generator: Optional[torch.Generator]
+    generator: torch.Generator | None
     # True if the sequence group is in prefill stage. False if it is in a
     # decode stage.
     is_prompt: bool
@@ -67,20 +65,19 @@ def gen_seq_group_to_sample_builder(num_seqs: int):
         generator=None,
         is_prompt=True,
         prompt_logprob_indices=[],
-        sample_indices=[])
+        sample_indices=[],
+    )
 
 
 class SamplingMetadataCache:
-    """Used to cache SamplingMetadata objects between scheduler iterations
-    """
+    """Used to cache SamplingMetadata objects between scheduler iterations"""
 
     def __init__(self):
         self._seq_group_to_sample_cache: dict[int, PyObjectCache] = {}
 
     def get_cached_seq_group_to_sample(self, num_seqs):
         if num_seqs not in self._seq_group_to_sample_cache:
-            self._seq_group_to_sample_cache[num_seqs] = PyObjectCache(
-                gen_seq_group_to_sample_builder(num_seqs))
+            self._seq_group_to_sample_cache[num_seqs] = PyObjectCache(gen_seq_group_to_sample_builder(num_seqs))
 
         obj = self._seq_group_to_sample_cache[num_seqs].get_object()
         return obj
@@ -147,20 +144,18 @@ class SamplingMetadata:
         query_lens: list[int],
         device: str,
         pin_memory: bool,
-        generators: Optional[dict[str, torch.Generator]] = None,
-        cache: Optional[SamplingMetadataCache] = None
+        generators: dict[str, torch.Generator] | None = None,
+        cache: SamplingMetadataCache | None = None,
     ) -> "SamplingMetadata":
         (
             seq_groups,
             selected_token_indices,
             categorized_sample_indices,
             num_prompts,
-        ) = _prepare_seq_groups(seq_group_metadata_list, seq_lens, query_lens,
-                                device, generators, cache)
-        selected_token_indices = async_tensor_h2d(selected_token_indices,
-                                                  dtype=torch.long,
-                                                  target_device=device,
-                                                  pin_memory=pin_memory)
+        ) = _prepare_seq_groups(seq_group_metadata_list, seq_lens, query_lens, device, generators, cache)
+        selected_token_indices = async_tensor_h2d(
+            selected_token_indices, dtype=torch.long, target_device=device, pin_memory=pin_memory
+        )
         categorized_sample_indices = {
             t: async_tensor_h2d(
                 seq_ids,
@@ -184,7 +179,8 @@ class SamplingMetadata:
             "SamplingMetadata("
             f"seq_groups={self.seq_groups}, "
             f"selected_token_indices={self.selected_token_indices}, "
-            f"categorized_sample_indices={self.categorized_sample_indices}), ")
+            f"categorized_sample_indices={self.categorized_sample_indices}), "
+        )
 
 
 def _prepare_seq_groups(
@@ -192,10 +188,14 @@ def _prepare_seq_groups(
     seq_lens: list[int],
     query_lens: list[int],
     device: str,
-    generators: Optional[dict[str, torch.Generator]] = None,
-    cache: Optional[SamplingMetadataCache] = None,
-) -> tuple[list[SequenceGroupToSample], list[int], dict[SamplingType,
-                                                        list[int]], int, ]:
+    generators: dict[str, torch.Generator] | None = None,
+    cache: SamplingMetadataCache | None = None,
+) -> tuple[
+    list[SequenceGroupToSample],
+    list[int],
+    dict[SamplingType, list[int]],
+    int,
+]:
     """Prepare sequence groups and indices for sampling.
 
     Args:
@@ -226,10 +226,7 @@ def _prepare_seq_groups(
     # Sampling type -> (
     # indices to sample/prompt logprob within pruned output logits,
     # indices to sample within pruned logits)
-    categorized_sample_indices: dict[SamplingType, list[int]] = {
-        t: []
-        for t in SamplingType
-    }
+    categorized_sample_indices: dict[SamplingType, list[int]] = {t: [] for t in SamplingType}
     # Index of logits to compute logprob. Logits include both prompt logprob
     # and sample logprob indices.
     logit_idx = 0
@@ -249,20 +246,17 @@ def _prepare_seq_groups(
             sample_obj.sample_indices.clear()
         sampling_params = seq_group_metadata.sampling_params
         is_prompt = seq_group_metadata.is_prompt
-        generator: Optional[torch.Generator] = None
+        generator: torch.Generator | None = None
         # If the current seq group is in decode stage, it is None.
-        seq_len: Optional[int] = None
-        query_len: Optional[int] = None
-        prompt_logprob_indices: list[int] = (sample_obj.prompt_logprob_indices
-                                             if cache is not None else [])
-        sample_indices: list[int] = (sample_obj.sample_indices
-                                     if cache is not None else [])
+        seq_len: int | None = None
+        query_len: int | None = None
+        prompt_logprob_indices: list[int] = sample_obj.prompt_logprob_indices if cache is not None else []
+        sample_indices: list[int] = sample_obj.sample_indices if cache is not None else []
         do_sample = seq_group_metadata.do_sample
 
         if seq_group_metadata.is_prompt:
             if sampling_params.seed is not None:
-                generator = torch.Generator(device=device).manual_seed(
-                    sampling_params.seed)
+                generator = torch.Generator(device=device).manual_seed(sampling_params.seed)
                 if generators is not None:
                     generators[seq_group_metadata.request_id] = generator
 
@@ -273,8 +267,7 @@ def _prepare_seq_groups(
             query_len, seq_len = query_lens[i], seq_lens[i]
             # If we need sampling, exclude num_prefill_sample tokens from
             # prompt logprob.
-            prompt_logprob_len = (query_len - num_prefill_sample
-                                  if do_sample else query_len)
+            prompt_logprob_len = query_len - num_prefill_sample if do_sample else query_len
             sample_len = num_prefill_sample if do_sample else 0
         else:
             # Decode
@@ -295,12 +288,10 @@ def _prepare_seq_groups(
         """
 
         if sampling_params.prompt_logprobs is not None:
-            selected_token_indices.extend(
-                range(model_output_idx, model_output_idx + prompt_logprob_len))
+            selected_token_indices.extend(range(model_output_idx, model_output_idx + prompt_logprob_len))
         model_output_idx += prompt_logprob_len
         if do_sample:
-            selected_token_indices.extend(
-                range(model_output_idx, model_output_idx + sample_len))
+            selected_token_indices.extend(range(model_output_idx, model_output_idx + sample_len))
         model_output_idx += sample_len
 
         # We now find indices for logprob computation and sampling.
@@ -317,13 +308,13 @@ def _prepare_seq_groups(
         """
 
         if sampling_params.prompt_logprobs is not None:
-            prompt_logprob_indices.extend(
-                range(logit_idx, logit_idx + prompt_logprob_len))
+            prompt_logprob_indices.extend(range(logit_idx, logit_idx + prompt_logprob_len))
             logit_idx += prompt_logprob_len
         if do_sample:
             sample_indices.extend(range(logit_idx, logit_idx + sample_len))
             categorized_sample_indices[sampling_params.sampling_type].extend(
-                list(range(logit_idx, logit_idx + sample_len)))
+                list(range(logit_idx, logit_idx + sample_len))
+            )
             logit_idx += sample_len
 
         if cache is not None:
@@ -350,8 +341,7 @@ def _prepare_seq_groups(
 
     if cache is not None:
         cache.reset()
-    return (seq_groups, selected_token_indices, categorized_sample_indices,
-            num_prompts)
+    return (seq_groups, selected_token_indices, categorized_sample_indices, num_prompts)
 
 
 @dataclass
@@ -399,8 +389,25 @@ class SamplingTensors:
         vocab_size: int,
         device: torch.device,
         dtype: torch.dtype,
-    ) -> tuple["SamplingTensors", bool, bool, bool, bool, bool, bool, bool,
-               bool, bool, bool, bool, bool, bool, bool, bool, bool]:
+    ) -> tuple[
+        "SamplingTensors",
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+    ]:
         prompt_tokens: list[array] = []
         output_tokens: list[array] = []
         top_ks: list[int] = []
@@ -468,23 +475,23 @@ class SamplingTensors:
                 # Set the temperature to 1 to avoid division by zero.
                 temperature = 1.0
 
-            do_temperatures |= (temperature != 1.0 or
-                                params.dynatemp_min > _SAMPLING_EPS or
-                                params.dynatemp_max > _SAMPLING_EPS)
-            do_top_p_top_k |= (params.top_p < 1.0 - _SAMPLING_EPS or
-                               top_k != vocab_size)
+            do_temperatures |= (
+                temperature != 1.0 or params.dynatemp_min > _SAMPLING_EPS or params.dynatemp_max > _SAMPLING_EPS
+            )
+            do_top_p_top_k |= params.top_p < 1.0 - _SAMPLING_EPS or top_k != vocab_size
             do_top_as |= params.top_a > 0.0
             do_min_p |= params.min_p > _SAMPLING_EPS
-            do_penalties |= (abs(params.presence_penalty) >= _SAMPLING_EPS or
-                             abs(params.frequency_penalty) >= _SAMPLING_EPS or
-                             params.repetition_penalty > 1.0)
+            do_penalties |= (
+                abs(params.presence_penalty) >= _SAMPLING_EPS
+                or abs(params.frequency_penalty) >= _SAMPLING_EPS
+                or params.repetition_penalty > 1.0
+            )
             do_no_repeat_ngrams |= params.no_repeat_ngram_size > 0
             do_tfss |= params.tfs < 1.0 - _SAMPLING_EPS
             do_eta_cutoffs |= params.eta_cutoff > _SAMPLING_EPS
             do_epsilon_cutoffs |= params.epsilon_cutoff > _SAMPLING_EPS
             do_typical_ps |= params.typical_p < 1.0 - _SAMPLING_EPS
-            do_quadratic |= (params.smoothing_factor > _SAMPLING_EPS or
-                             params.smoothing_curve > 1.0)
+            do_quadratic |= params.smoothing_factor > _SAMPLING_EPS or params.smoothing_curve > 1.0
             do_xtc |= params.xtc_probability > _SAMPLING_EPS
             do_nsigmas |= params.nsigma > _SAMPLING_EPS
             do_dry |= params.dry_multiplier > _SAMPLING_EPS
@@ -528,27 +535,20 @@ class SamplingTensors:
             dry_multipliers += [params.dry_multiplier] * n_seqs
             dry_bases += [params.dry_base] * n_seqs
             dry_allowed_lengths += [params.dry_allowed_length] * n_seqs
-            dry_sequence_breaker_ids += (
-                [params.dry_sequence_breaker_ids] * n_seqs)
+            dry_sequence_breaker_ids += [params.dry_sequence_breaker_ids] * n_seqs
             dry_ranges += [params.dry_range] * n_seqs
             dry_max_ngram += [params.dry_max_ngram] * n_seqs
             dry_max_occurrences += [params.dry_max_occurrences] * n_seqs
-            dry_early_exit_match_len += [
-                params.dry_early_exit_match_len] * n_seqs
+            dry_early_exit_match_len += [params.dry_early_exit_match_len] * n_seqs
             skews += [params.skew] * n_seqs
 
         if do_penalties or do_dry or do_no_repeat_ngrams:
             for seq_group in sampling_metadata.seq_groups:
                 seq_ids = seq_group.seq_ids
-                if (seq_group.is_prompt
-                        and params.prompt_logprobs is not None):
+                if seq_group.is_prompt and params.prompt_logprobs is not None:
                     prefill_len = len(seq_group.prompt_logprob_indices)
-                    prompt_tokens.extend(
-                        array(APHRODITE_TOKEN_ID_ARRAY_TYPE)
-                        for _ in range(prefill_len))
-                    output_tokens.extend(
-                        array(APHRODITE_TOKEN_ID_ARRAY_TYPE)
-                        for _ in range(prefill_len))
+                    prompt_tokens.extend(array(APHRODITE_TOKEN_ID_ARRAY_TYPE) for _ in range(prefill_len))
+                    output_tokens.extend(array(APHRODITE_TOKEN_ID_ARRAY_TYPE) for _ in range(prefill_len))
                 if seq_group.do_sample:
                     for seq_id in seq_ids:
                         seq_data = seq_group.seq_data[seq_id]
@@ -591,7 +591,8 @@ class SamplingTensors:
             output_tokens,
             vocab_size,
             device,
-            dtype)
+            dtype,
+        )
         return (
             sampling_tensors,
             do_penalties,
@@ -609,7 +610,8 @@ class SamplingTensors:
             do_nsigmas,
             do_dry,
             do_skews,
-            do_temp_last)
+            do_temp_last,
+        )
 
     @classmethod
     def from_lists(
@@ -649,7 +651,8 @@ class SamplingTensors:
         output_tokens: list[array],
         vocab_size: int,
         device: torch.device,
-        dtype: torch.dtype) -> "SamplingTensors":
+        dtype: torch.dtype,
+    ) -> "SamplingTensors":
         # Note that the performance will be very bad without
         # pinned memory.
         pin_memory = is_pin_memory_available()
@@ -711,10 +714,7 @@ class SamplingTensors:
             dtype=dtype,
             pin_memory=pin_memory,
         )
-        top_as_t = torch.tensor(top_as,
-                                device="cpu",
-                                dtype=dtype,
-                                pin_memory=pin_memory)
+        top_as_t = torch.tensor(top_as, device="cpu", dtype=dtype, pin_memory=pin_memory)
         min_ps_t = torch.tensor(
             min_ps,
             device="cpu",
@@ -751,42 +751,15 @@ class SamplingTensors:
             dtype=torch.int,
             pin_memory=pin_memory,
         )
-        tfss_t = torch.tensor(tfss,
-                              device="cpu",
-                              dtype=dtype,
-                              pin_memory=pin_memory)
-        eta_cutoffs_t = torch.tensor(eta_cutoffs,
-                                     device="cpu",
-                                     dtype=dtype,
-                                     pin_memory=pin_memory)
-        epsilon_cutoffs_t = torch.tensor(epsilon_cutoffs,
-                                         device="cpu",
-                                         dtype=dtype,
-                                         pin_memory=pin_memory)
-        typical_ps_t = torch.tensor(typical_ps,
-                                    device="cpu",
-                                    dtype=dtype,
-                                    pin_memory=pin_memory)
-        smoothing_factors_t = torch.tensor(smoothing_factors,
-                                           device="cpu",
-                                           dtype=dtype,
-                                           pin_memory=pin_memory)
-        smoothing_curves_t = torch.tensor(smoothing_curves,
-                                          device="cpu",
-                                          dtype=dtype,
-                                          pin_memory=pin_memory)
-        xtc_thresholds_t = torch.tensor(xtc_thresholds,
-                                        device="cpu",
-                                        dtype=dtype,
-                                        pin_memory=pin_memory)
-        xtc_probabilities_t = torch.tensor(xtc_probabilities,
-                                           device="cpu",
-                                           dtype=dtype,
-                                           pin_memory=pin_memory)
-        nsigmas_t = torch.tensor(nsigmas,
-                                 device="cpu",
-                                 dtype=dtype,
-                                 pin_memory=pin_memory)
+        tfss_t = torch.tensor(tfss, device="cpu", dtype=dtype, pin_memory=pin_memory)
+        eta_cutoffs_t = torch.tensor(eta_cutoffs, device="cpu", dtype=dtype, pin_memory=pin_memory)
+        epsilon_cutoffs_t = torch.tensor(epsilon_cutoffs, device="cpu", dtype=dtype, pin_memory=pin_memory)
+        typical_ps_t = torch.tensor(typical_ps, device="cpu", dtype=dtype, pin_memory=pin_memory)
+        smoothing_factors_t = torch.tensor(smoothing_factors, device="cpu", dtype=dtype, pin_memory=pin_memory)
+        smoothing_curves_t = torch.tensor(smoothing_curves, device="cpu", dtype=dtype, pin_memory=pin_memory)
+        xtc_thresholds_t = torch.tensor(xtc_thresholds, device="cpu", dtype=dtype, pin_memory=pin_memory)
+        xtc_probabilities_t = torch.tensor(xtc_probabilities, device="cpu", dtype=dtype, pin_memory=pin_memory)
+        nsigmas_t = torch.tensor(nsigmas, device="cpu", dtype=dtype, pin_memory=pin_memory)
         dry_multipliers_t = torch.tensor(
             dry_multipliers,
             device="cpu",
@@ -806,9 +779,10 @@ class SamplingTensors:
             pin_memory=pin_memory,
         )
         dry_sequence_breakers_t = torch.tensor(
-            [seq + [0] * (max(len(s) for s in
-                              dry_sequence_breaker_ids) - len(seq))
-             for seq in dry_sequence_breaker_ids],
+            [
+                seq + [0] * (max(len(s) for s in dry_sequence_breaker_ids) - len(seq))
+                for seq in dry_sequence_breaker_ids
+            ],
             device="cpu",
             dtype=torch.long,
             pin_memory=pin_memory,
@@ -857,40 +831,26 @@ class SamplingTensors:
             top_ks=top_ks_t.to(device=device, non_blocking=True),
             top_as=top_as_t.to(device=device, non_blocking=True),
             min_ps=min_ps_t.to(device=device, non_blocking=True),
-            presence_penalties=presence_penalties_t.to(device=device,
-                                                       non_blocking=True),
-            frequency_penalties=frequency_penalties_t.to(device=device,
-                                                         non_blocking=True),
-            repetition_penalties=repetition_penalties_t.to(device=device,
-                                                           non_blocking=True),
-            no_repeat_ngram_sizes=no_repeat_ngram_sizes_t.to(device=device,
-                                                             non_blocking=True),
+            presence_penalties=presence_penalties_t.to(device=device, non_blocking=True),
+            frequency_penalties=frequency_penalties_t.to(device=device, non_blocking=True),
+            repetition_penalties=repetition_penalties_t.to(device=device, non_blocking=True),
+            no_repeat_ngram_sizes=no_repeat_ngram_sizes_t.to(device=device, non_blocking=True),
             tfss=tfss_t.to(device=device, non_blocking=True),
             eta_cutoffs=eta_cutoffs_t.to(device=device, non_blocking=True),
-            epsilon_cutoffs=epsilon_cutoffs_t.to(device=device,
-                                                 non_blocking=True),
-            smoothing_factors=smoothing_factors_t.to(device=device,
-                                                     non_blocking=True),
-            smoothing_curves=smoothing_curves_t.to(device=device,
-                                                   non_blocking=True),
-            xtc_thresholds=xtc_thresholds_t.to(device=device,
-                                               non_blocking=True),
-            xtc_probabilities=xtc_probabilities_t.to(device=device,
-                                                     non_blocking=True),
+            epsilon_cutoffs=epsilon_cutoffs_t.to(device=device, non_blocking=True),
+            smoothing_factors=smoothing_factors_t.to(device=device, non_blocking=True),
+            smoothing_curves=smoothing_curves_t.to(device=device, non_blocking=True),
+            xtc_thresholds=xtc_thresholds_t.to(device=device, non_blocking=True),
+            xtc_probabilities=xtc_probabilities_t.to(device=device, non_blocking=True),
             nsigmas=nsigmas_t.to(device=device, non_blocking=True),
-            dry_multipliers=dry_multipliers_t.to(device=device,
-                                                 non_blocking=True),
+            dry_multipliers=dry_multipliers_t.to(device=device, non_blocking=True),
             dry_bases=dry_bases_t.to(device=device, non_blocking=True),
-            dry_allowed_lengths=dry_allowed_lengths_t.to(device=device,
-                                                         non_blocking=True),
-            dry_sequence_breaker_ids=dry_sequence_breakers_t.to(device=device,
-                                                                non_blocking=True),
+            dry_allowed_lengths=dry_allowed_lengths_t.to(device=device, non_blocking=True),
+            dry_sequence_breaker_ids=dry_sequence_breakers_t.to(device=device, non_blocking=True),
             dry_ranges=dry_ranges_t.to(device=device, non_blocking=True),
             dry_max_ngram=dry_max_ngram_t.to(device=device, non_blocking=True),
-            dry_max_occurrences=dry_max_occurrences_t.to(device=device,
-                                                         non_blocking=True),
-            dry_early_exit_match_len=dry_early_exit_match_len_t.to(
-                device=device, non_blocking=True),
+            dry_max_occurrences=dry_max_occurrences_t.to(device=device, non_blocking=True),
+            dry_early_exit_match_len=dry_early_exit_match_len_t.to(device=device, non_blocking=True),
             skews=skews_t.to(device=device, non_blocking=True),
             typical_ps=typical_ps_t.to(device=device, non_blocking=True),
             prompt_tokens=prompt_t.to(device=device, non_blocking=True),

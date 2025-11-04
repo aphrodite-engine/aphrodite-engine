@@ -76,9 +76,7 @@ def _get_expected_values(num_requests: int, prompt_ids: list[int], max_tokens: i
     # {metric_family: [(suffix, expected_value)]}
     return {
         "aphrodite:time_to_first_token_seconds": [("_count", num_requests)],
-        "aphrodite:time_per_output_token_seconds": [
-            ("_count", num_requests * (max_tokens - 1))
-        ],
+        "aphrodite:time_per_output_token_seconds": [("_count", num_requests * (max_tokens - 1))],
         "aphrodite:e2e_request_latency_seconds": [("_count", num_requests)],
         "aphrodite:request_queue_time_seconds": [("_count", num_requests)],
         "aphrodite:request_inference_time_seconds": [("_count", num_requests)],
@@ -141,8 +139,7 @@ async def test_metrics_counts(
     expected_values = _get_expected_values(num_requests, prompt_ids, max_tokens)
     for metric_family, suffix_values_list in expected_values.items():
         if metric_family not in EXPECTED_METRICS_V1 or (
-            not server.show_hidden_metrics
-            and metric_family in HIDDEN_DEPRECATED_METRICS
+            not server.show_hidden_metrics and metric_family in HIDDEN_DEPRECATED_METRICS
         ):
             continue
 
@@ -170,9 +167,7 @@ async def test_metrics_counts(
                                 f"{sample.value}"
                             )
                             break
-                    assert found_suffix, (
-                        f"Did not find {metric_name_w_suffix} in prom endpoint"
-                    )
+                    assert found_suffix, f"Did not find {metric_name_w_suffix} in prom endpoint"
                 break
 
         assert found_metric, f"Did not find {metric_family} in prom endpoint"
@@ -348,19 +343,11 @@ async def test_abort_metrics_reset(
     assert response.status_code == HTTPStatus.OK
 
     # Verify running and waiting requests counts and KV cache usage are zero
-    running_requests_after, waiting_requests_after, kv_cache_usage_after = (
-        _get_running_metrics_from_api(server)
-    )
+    running_requests_after, waiting_requests_after, kv_cache_usage_after = _get_running_metrics_from_api(server)
 
-    assert running_requests_after == 0, (
-        f"Expected 0 running requests after abort, got {running_requests_after}"
-    )
-    assert waiting_requests_after == 0, (
-        f"Expected 0 waiting requests after abort, got {waiting_requests_after}"
-    )
-    assert kv_cache_usage_after == 0, (
-        f"Expected 0% KV cache usage after abort, got {kv_cache_usage_after}"
-    )
+    assert running_requests_after == 0, f"Expected 0 running requests after abort, got {running_requests_after}"
+    assert waiting_requests_after == 0, f"Expected 0 waiting requests after abort, got {waiting_requests_after}"
+    assert kv_cache_usage_after == 0, f"Expected 0% KV cache usage after abort, got {kv_cache_usage_after}"
 
 
 def _get_running_metrics_from_api(server: RemoteOpenAIServer):

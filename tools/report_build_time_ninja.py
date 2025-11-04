@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
+
 # Copyright (c) 2018 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 # Modified version of: https://chromium.googlesource.com/chromium/tools/depot_tools.git/+/refs/heads/main/post_build_ninja_summary.py
 """Summarize the last ninja build, invoked with ninja's -C syntax.
+
 > python3 tools/report_build_time_ninja.py -C build/..
+
 Typical output looks like this:
 ```
     Longest build steps for .cpp.o:
            1.0 weighted s to build ...torch_bindings.cpp.o (12.4 s elapsed time)
+           2.0 weighted s to build ..._attn_c.dir/csrc... (23.5 s elapsed time)
            2.6 weighted s to build ...torch_bindings.cpp.o (31.5 s elapsed time)
            3.2 weighted s to build ...torch_bindings.cpp.o (38.5 s elapsed time)
     Longest build steps for .so (linking):
-           0.1 weighted s to build _core_C.abi3.so (0.7 s elapsed time)
            0.1 weighted s to build _moe_C.abi3.so (1.0 s elapsed time)
            0.5 weighted s to build ...flash_attn_c.abi3.so (1.1 s elapsed time)
            6.2 weighted s to build _C.abi3.so (6.2 s elapsed time)
@@ -31,6 +35,7 @@ Typical output looks like this:
     134 build steps completed, average of 0.12/s
 ```
 """
+
 import argparse
 import errno
 import fnmatch
@@ -66,6 +71,7 @@ class Target:
 
     def WeightedDuration(self):
         """Returns the task's weighted duration in seconds as a float.
+
         Weighted_duration takes the elapsed time of the task and divides it
         by how many other tasks were running at the same time. Thus, it
         represents the approximate impact of this task on the total build time,
@@ -76,7 +82,7 @@ class Target:
         # Allow for modest floating-point errors
         epsilon = 0.000002
         if self.weighted_duration > self.Duration() + epsilon:
-            print("%s > %s?" % (self.weighted_duration, self.Duration()))
+            print("{} > {}?".format(self.weighted_duration, self.Duration()))
         assert self.weighted_duration <= self.Duration() + epsilon
         return self.weighted_duration
 
@@ -95,11 +101,10 @@ class Target:
 # Copied with some modifications from ninjatracing
 def ReadTargets(log, show_all):
     """Reads all targets from .ninja_log file |log_file|, sorted by duration.
+
     The result is a list of Target objects."""
     header = log.readline()
-    assert header == "# ninja log v5\n", (
-        "unrecognized ninja log version %r" % header
-    )
+    assert header == "# ninja log v5\n", "unrecognized ninja log version {!r}".format(header)
     targets_dict = {}
     last_end_seen = 0.0
     for line in log:
@@ -108,7 +113,7 @@ def ReadTargets(log, show_all):
             # If ninja.exe is rudely halted then the .ninja_log file may be
             # corrupt. Silently continue.
             continue
-        start, end, _, name, cmdhash = parts  # Ignore restat.
+        start, end, _, name, cmdhash = parts  # Ignore restart.
         # Convert from integral milliseconds to float seconds.
         start = int(start) / 1000.0
         end = int(end) / 1000.0
@@ -141,9 +146,10 @@ def ReadTargets(log, show_all):
 
 def GetExtension(target, extra_patterns):
     """Return the file extension that best represents a target.
+
     For targets that generate multiple outputs it is important to return a
-    consistent 'canonical' extension. Ultimately the goal is to group build
-    steps by type."""
+    consistent 'canonical' extension. Ultimately the goal is to group build steps
+    by type."""
     for output in target.targets:
         if extra_patterns:
             for fn_pattern in extra_patterns.split(";"):
@@ -153,13 +159,16 @@ def GetExtension(target, extra_patterns):
         if output.endswith("type_mappings"):
             extension = "type_mappings"
             break
+
         # Capture two extensions if present. For example: file.javac.jar should
         # be distinguished from file.interface.jar.
         root, ext1 = os.path.splitext(output)
         _, ext2 = os.path.splitext(root)
         extension = ext2 + ext1  # Preserve the order in the file name.
+
         if len(extension) == 0:
             extension = "(no extension found)"
+
         if ext1 in [".pdb", ".dll", ".exe"]:
             extension = "PEFile (linking)"
             # Make sure that .dll and .exe are grouped together and that the
@@ -184,6 +193,7 @@ def GetExtension(target, extra_patterns):
 
 def SummarizeEntries(entries, extra_step_types):
     """Print a summary of the passed in list of Target objects."""
+
     # Create a list that is in order by time stamp and has entries for the
     # beginning and ending of each build step (one time stamp may have multiple
     # entries due to multiple steps starting/stopping at exactly the same time).
@@ -191,6 +201,7 @@ def SummarizeEntries(entries, extra_step_types):
     # times. At each time step calculate a running total for weighted time so
     # that when each task ends its own weighted time can easily be calculated.
     task_start_stop_times = []
+
     earliest = -1
     latest = 0
     total_cpu_time = 0
@@ -204,6 +215,7 @@ def SummarizeEntries(entries, extra_step_types):
         task_start_stop_times.append((target.end, "stop", target))
     length = latest - earliest
     weighted_total = 0.0
+
     # Sort by the time/type records and ignore |target|
     task_start_stop_times.sort(key=lambda times: times[:2])
     # Now we have all task start/stop times sorted by when they happen. If a
@@ -238,37 +250,37 @@ def SummarizeEntries(entries, extra_step_types):
             del running_tasks[target]
         last_time = time
     assert len(running_tasks) == 0
+
     # Warn if the sum of weighted times is off by more than half a second.
     if abs(length - weighted_total) > 500:
         print(
             "Warning: Possible corrupt ninja log, results may be "
-            "untrustworthy. Length = %.3f, weighted total = %.3f"
-            % (length, weighted_total)
+            "untrustworthy. Length = {:.3f}, weighted total = {:.3f}".format(length, weighted_total)
         )
+
     entries_by_ext = defaultdict(list)
     for target in entries:
         extension = GetExtension(target, extra_step_types)
         entries_by_ext[extension].append(target)
+
     for key, values in entries_by_ext.items():
-        print("    Longest build steps for %s:" % key)
+        print("    Longest build steps for {}:".format(key))
         values.sort(key=lambda x: x.WeightedDuration())
         for target in values[-long_count:]:
             print(
-                "      %8.1f weighted s to build %s (%.1f s elapsed time)"
-                % (
+                "      {:8.1f} weighted s to build {} ({:.1f} s elapsed time)".format(
                     target.WeightedDuration(),
                     target.DescribeTargets(),
                     target.Duration(),
                 )
             )
+
     print(
-        "    %.1f s weighted time (%.1f s elapsed time sum, %1.1fx "
-        "parallelism)" % (length, total_cpu_time, total_cpu_time * 1.0 / length)
+        "    {:.1f} s weighted time ({:.1f} s elapsed time sum, {:1.1f}x parallelism)".format(
+            length, total_cpu_time, total_cpu_time * 1.0 / length
+        )
     )
-    print(
-        "    %d build steps completed, average of %1.2f/s"
-        % (len(entries), len(entries) / (length))
-    )
+    print("    {} build steps completed, average of {:1.2f}/s".format(len(entries), len(entries) / (length)))
 
 
 def main():
@@ -280,9 +292,7 @@ def main():
         "--step-types",
         help="semicolon separated fnmatch patterns for build-step grouping",
     )
-    parser.add_argument(
-        "--log-file", help="specific ninja log file to analyze."
-    )
+    parser.add_argument("--log-file", help="specific ninja log file to analyze.")
     args, _extra_args = parser.parse_known_args()
     if args.build_directory:
         log_file = os.path.join(args.build_directory, log_file)
@@ -292,12 +302,13 @@ def main():
         # Make room for the extra build types.
         global long_ext_count
         long_ext_count += len(args.step_types.split(";"))
+
     try:
-        with open(log_file, "r") as log:
+        with open(log_file) as log:
             entries = ReadTargets(log, False)
             SummarizeEntries(entries, args.step_types)
-    except IOError:
-        print("Log file %r not found, no build summary created." % log_file)
+    except OSError:
+        print("Log file {!r} not found, no build summary created.".format(log_file))
         return errno.ENOENT
 
 

@@ -28,10 +28,7 @@ class SharedFusedMoE(FusedMoE):
         # from being hidden from torch.compile.
         self.use_overlapped = (
             use_overlapped
-            and not (
-                self.use_ep
-                or (self.use_flashinfer_cutlass_kernels and self.dp_size > 1)
-            )
+            and not (self.use_ep or (self.use_flashinfer_cutlass_kernels and self.dp_size > 1))
             and self._shared_experts is not None
         )
 
@@ -60,11 +57,7 @@ class SharedFusedMoE(FusedMoE):
 
                 # Reduce shared expert outputs if necessary, since the MLP
                 # should have been created with reduce_results=False.
-                if (
-                    self.reduce_results
-                    and self.tp_size > 1
-                    and self.must_reduce_shared_expert_outputs()
-                ):
+                if self.reduce_results and self.tp_size > 1 and self.must_reduce_shared_expert_outputs():
                     shared_out = tensor_model_parallel_all_reduce(shared_out)
             else:
                 shared_out = None

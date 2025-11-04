@@ -2,8 +2,7 @@ import json
 
 import pytest
 
-from aphrodite.endpoints.openai.args import (make_arg_parser,
-                                             validate_parsed_serve_args)
+from aphrodite.endpoints.openai.args import make_arg_parser, validate_parsed_serve_args
 from aphrodite.endpoints.openai.serving_models import LoRAModulePath
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
@@ -71,18 +70,14 @@ def test_valid_json_format(serve_parser):
             json.dumps(LORA_MODULE),
         ]
     )
-    expected = [
-        LoRAModulePath(name="module2", path="/path/to/module2", base_model_name="llama")
-    ]
+    expected = [LoRAModulePath(name="module2", path="/path/to/module2", base_model_name="llama")]
     assert args.lora_modules == expected
 
 
 def test_invalid_json_format(serve_parser):
     # Test invalid JSON format input, missing closing brace
     with pytest.raises(SystemExit):
-        serve_parser.parse_args(
-            ["--lora-modules", '{"name": "module3", "path": "/path/to/module3"']
-        )
+        serve_parser.parse_args(["--lora-modules", '{"name": "module3", "path": "/path/to/module3"'])
 
 
 def test_invalid_type_error(serve_parser):
@@ -124,9 +119,7 @@ def test_multiple_valid_inputs(serve_parser):
     )
     expected = [
         LoRAModulePath(name="module1", path="/path/to/module1"),
-        LoRAModulePath(
-            name="module2", path="/path/to/module2", base_model_name="llama"
-        ),
+        LoRAModulePath(name="module2", path="/path/to/module2", base_model_name="llama"),
     ]
     assert args.lora_modules == expected
 
@@ -179,9 +172,7 @@ def test_passes_with_reasoning_parser(serve_parser):
 
 def test_chat_template_validation_for_happy_paths(serve_parser):
     """Ensure validation passes if the chat template exists"""
-    args = serve_parser.parse_args(
-        args=["--chat-template", CHATML_JINJA_PATH.absolute().as_posix()]
-    )
+    args = serve_parser.parse_args(args=["--chat-template", CHATML_JINJA_PATH.absolute().as_posix()])
     validate_parsed_serve_args(args)
 
 

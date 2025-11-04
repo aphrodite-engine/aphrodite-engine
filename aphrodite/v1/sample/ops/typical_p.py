@@ -19,8 +19,7 @@ def typical_p(
     surprisal_deviations = (neg_entropy - shifted_logits).abs()
     _, indices = torch.sort(surprisal_deviations)
     reordered_probs = probs.gather(-1, indices)
-    typ_mask_sorted = reordered_probs.cumsum(dim=-1) >= typical_p.unsqueeze(
-        dim=1)
+    typ_mask_sorted = reordered_probs.cumsum(dim=-1) >= typical_p.unsqueeze(dim=1)
 
     min_tokens_to_keep = 1
     # Keep at least min_tokens_to_keep

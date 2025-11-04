@@ -6,10 +6,8 @@ import torch
 import aphrodite.modeling.layers.fused_moe.modular_kernel as mk
 from aphrodite.logger import init_logger
 from aphrodite.modeling.layers.fused_moe.config import FusedMoEQuantConfig
-from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import (
-    TopKWeightAndReduceDelegate)
-from aphrodite.modeling.layers.fused_moe.utils import (
-    _validate_scale_shape, moe_kernel_quantize_input)
+from aphrodite.modeling.layers.fused_moe.topk_weight_and_reduce import TopKWeightAndReduceDelegate
+from aphrodite.modeling.layers.fused_moe.utils import _validate_scale_shape, moe_kernel_quantize_input
 from aphrodite.utils.math_utils import cdiv, round_up
 
 logger = init_logger(__name__)
@@ -112,8 +110,7 @@ class PplxPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
         #
         if expert_map is not None:
             logger.warning_once(
-                "The PPLX backend does not support expert mapping. "
-                "The provided `expert_map` will be ignored."
+                "The PPLX backend does not support expert mapping. The provided `expert_map` will be ignored."
             )
         expert_map = None  # noqa: F841
 
@@ -123,9 +120,7 @@ class PplxPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
         if apply_router_weight_on_input:
             topk = topk_ids.size(1)
             # TODO: this only works for topK=1, will need to update for topK>1
-            assert topk == 1, (
-                "apply_router_weight_on_input is only implemented for topk=1"
-            )
+            assert topk == 1, "apply_router_weight_on_input is only implemented for topk=1"
             a1 = a1 * topk_weights.to(a1.dtype)
 
         repeat_cols = 4
@@ -139,9 +134,7 @@ class PplxPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
             block_shape=quant_config.block_shape,
         )
 
-        _validate_scale_shape(
-            a1q, a1q_scale, quant_config.per_act_token_quant, quant_config.block_shape
-        )
+        _validate_scale_shape(a1q, a1q_scale, quant_config.per_act_token_quant, quant_config.block_shape)
 
         orig_a_scale_block_shape: int | None = None
 
@@ -254,9 +247,7 @@ class PplxPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
             expert_x_scale = expert_x_scale[:, :, :orig_a_scale_block_shape]
             assert expert_x_scale.ndim == 3
 
-        expert_tokens_meta = mk.ExpertTokensMetadata(
-            expert_num_tokens=expert_num_tokens, expert_num_tokens_cpu=None
-        )
+        expert_tokens_meta = mk.ExpertTokensMetadata(expert_num_tokens=expert_num_tokens, expert_num_tokens_cpu=None)
 
         return expert_x, expert_x_scale, expert_tokens_meta, None, None
 
@@ -303,12 +294,8 @@ class PplxPrepareAndFinalize(mk.FusedMoEPrepareAndFinalize):
         # num_tokens = output.size(0)  # M
         # assert topk_ids.size(0) == num_tokens, (
         #    f"{topk_ids.size(0)} == {num_tokens}")
-        assert topk_ids.size() == topk_weights.size(), (
-            f"{topk_ids.size()} == {topk_weights.size()}"
-        )
-        assert output.size(0) <= self.max_num_tokens, (
-            f"{output.size(0)} <= {self.max_num_tokens}"
-        )
+        assert topk_ids.size() == topk_weights.size(), f"{topk_ids.size()} == {topk_weights.size()}"
+        assert output.size(0) <= self.max_num_tokens, f"{output.size(0)} <= {self.max_num_tokens}"
         assert output.size(1) == fused_expert_output.size(-1)
 
         # Set weights to 1 if we did them in dispatch. This is hacky.

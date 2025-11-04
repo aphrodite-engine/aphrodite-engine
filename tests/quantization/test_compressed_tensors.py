@@ -9,11 +9,17 @@ from compressed_tensors.quantization import QuantizationType
 
 from aphrodite.platforms import current_platform
 from aphrodite.quantization.compressed_tensors.compressed_tensors import (  # noqa: E501
-    CompressedTensors24, CompressedTensorsLinearMethod,
-    CompressedTensorsW4A4Fp4, CompressedTensorsW4A8Fp8,
-    CompressedTensorsW4A16Fp4, CompressedTensorsW4A16Sparse24,
-    CompressedTensorsW8A8Fp8, CompressedTensorsW8A8Int8,
-    CompressedTensorsW8A16Fp8, CompressedTensorsWNA16)
+    CompressedTensors24,
+    CompressedTensorsLinearMethod,
+    CompressedTensorsW4A4Fp4,
+    CompressedTensorsW4A8Fp8,
+    CompressedTensorsW4A16Fp4,
+    CompressedTensorsW4A16Sparse24,
+    CompressedTensorsW8A8Fp8,
+    CompressedTensorsW8A8Int8,
+    CompressedTensorsW8A16Fp8,
+    CompressedTensorsWNA16,
+)
 from aphrodite.quantization.input_quant_fp8 import QuantFP8
 from aphrodite.quantization.utils.fp8_utils import W8A8BlockFp8LinearOp
 from aphrodite.quantization.utils.quant_utils import cutlass_fp4_supported
@@ -66,10 +72,7 @@ def enable_pickle(monkeypatch):
 def test_compressed_tensors_w8a8_static_setup(aphrodite_runner, model_args):
     model_path, strategy, quant_type, shape_0, is_symmetric = model_args
 
-    if (
-        current_platform.is_rocm()
-        and model_path not in ROCM_TRITON_SCALED_MM_SUPPORTED_INT8_MODEL
-    ):
+    if current_platform.is_rocm() and model_path not in ROCM_TRITON_SCALED_MM_SUPPORTED_INT8_MODEL:
         pytest.skip(f"Skip model {model_path} as it is not support on ROCm.")
 
     with aphrodite_runner(model_path, enforce_eager=True) as llm:
@@ -131,9 +134,7 @@ def test_compressed_tensors_w8a8_static_setup(aphrodite_runner, model_args):
 )
 @pytest.mark.parametrize("max_tokens", [8])
 @pytest.mark.parametrize("num_logprobs", [10])
-@pytest.mark.parametrize(
-    "use_aiter", [True, False] if current_platform.is_rocm() else [False]
-)
+@pytest.mark.parametrize("use_aiter", [True, False] if current_platform.is_rocm() else [False])
 def test_compressed_tensors_w8a8_logprobs(
     hf_runner,
     aphrodite_runner,
@@ -144,10 +145,7 @@ def test_compressed_tensors_w8a8_logprobs(
     use_aiter,
     monkeypatch,
 ):
-    if (
-        current_platform.is_rocm()
-        and model_path not in ROCM_TRITON_SCALED_MM_SUPPORTED_INT8_MODEL
-    ):
+    if current_platform.is_rocm() and model_path not in ROCM_TRITON_SCALED_MM_SUPPORTED_INT8_MODEL:
         pytest.skip(f"Skip model {model_path} as it is not support on ROCm.")
 
     if use_aiter:
@@ -166,14 +164,10 @@ def test_compressed_tensors_w8a8_logprobs(
         example_prompts = example_prompts[0:-1]
 
     with hf_runner(model_path, dtype=dtype) as hf_model:
-        hf_outputs = hf_model.generate_greedy_logprobs_limit(
-            example_prompts, max_tokens, num_logprobs
-        )
+        hf_outputs = hf_model.generate_greedy_logprobs_limit(example_prompts, max_tokens, num_logprobs)
 
     with aphrodite_runner(model_path, dtype=dtype) as aphrodite_model:
-        aphrodite_outputs = aphrodite_model.generate_greedy_logprobs(
-            example_prompts, max_tokens, num_logprobs
-        )
+        aphrodite_outputs = aphrodite_model.generate_greedy_logprobs(example_prompts, max_tokens, num_logprobs)
 
     check_logprobs_close(
         outputs_0_lst=hf_outputs,
@@ -203,9 +197,7 @@ def test_compressed_tensors_no_enforce_eager(aphrodite_runner):
         ),
     ],
 )
-@pytest.mark.parametrize(
-    "use_aiter", [True, False] if current_platform.is_rocm() else [False]
-)
+@pytest.mark.parametrize("use_aiter", [True, False] if current_platform.is_rocm() else [False])
 def test_compressed_tensors_w8a8_dynamic_per_token(
     aphrodite_runner,
     model_args,
@@ -214,10 +206,7 @@ def test_compressed_tensors_w8a8_dynamic_per_token(
 ):
     model_path, strategy = model_args
 
-    if (
-        current_platform.is_rocm()
-        and model_path not in ROCM_TRITON_SCALED_MM_SUPPORTED_INT8_MODEL
-    ):
+    if current_platform.is_rocm() and model_path not in ROCM_TRITON_SCALED_MM_SUPPORTED_INT8_MODEL:
         pytest.skip(f"Skip model {model_path} as it is not support on ROCm.")
 
     if use_aiter:
@@ -266,9 +255,7 @@ def test_compressed_tensors_w8a8_dynamic_per_token(
         ),
     ],
 )
-@pytest.mark.skipif(
-    not current_platform.is_cuda(), reason="The tests are skipped on non-CUDA platform."
-)
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="The tests are skipped on non-CUDA platform.")
 def test_compressed_tensors_wNa16(aphrodite_runner, wNa16_args):
     model, strategy, group, pack_factor, symmetric, has_g_idx = wNa16_args
     with aphrodite_runner(model, enforce_eager=True) as llm:
@@ -293,9 +280,7 @@ def test_compressed_tensors_wNa16(aphrodite_runner, wNa16_args):
         assert output
 
 
-@pytest.mark.skipif(
-    not current_platform.is_cuda(), reason="This test is skipped on non-CUDA platform."
-)
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="This test is skipped on non-CUDA platform.")
 def test_compressed_tensors_w4a16_marlin24(aphrodite_runner):
     model_path = "nm-testing/llama7b-one-shot-2_4-w4a16-marlin24-t"
     with aphrodite_runner(model_path, enforce_eager=True) as llm:
@@ -344,9 +329,7 @@ def test_compressed_tensors_fp8(aphrodite_runner):
         assert output
 
 
-@pytest.mark.skipif(
-    not current_platform.is_cuda(), reason="This test is skipped on non-CUDA platform."
-)
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="This test is skipped on non-CUDA platform.")
 def test_compressed_tensors_kv_cache(aphrodite_runner):
     model_path = "nm-testing/TinyLlama-1.1B-compressed-tensors-kv-cache-scheme"
     with aphrodite_runner(model_path, enforce_eager=True, kv_cache_dtype="fp8") as llm:
@@ -602,9 +585,7 @@ def test_compressed_tensors_2of4_sparse(aphrodite_runner, args_2of4):
     not sparse_cutlass_supported(),
     reason="Cutlass is not yet supported on this GPU type.",
 )
-@pytest.mark.parametrize(
-    "args_2of4", [("nm-testing/llama2.c-stories42M-pruned2.4-compressed")]
-)
+@pytest.mark.parametrize("args_2of4", [("nm-testing/llama2.c-stories42M-pruned2.4-compressed")])
 def test_compressed_tensors_2of4_sparse_compressed(aphrodite_runner, args_2of4):
     model = args_2of4
     with aphrodite_runner(model, enforce_eager=True) as llm:
@@ -700,9 +681,7 @@ def test_compressed_tensors_w4a8_fp8(aphrodite_runner, args):
         assert output
 
 
-@pytest.mark.skipif(
-    not current_platform.is_cuda(), reason="This test is skipped on non-CUDA platform."
-)
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="This test is skipped on non-CUDA platform.")
 @pytest.mark.parametrize(
     "model,prompt,exp_perplexity",
     [
@@ -718,9 +697,7 @@ def test_compressed_tensors_w4a8_fp8(aphrodite_runner, args):
         ),
     ],
 )
-def test_compressed_tensors_transforms_perplexity(
-    aphrodite_runner, model, prompt, exp_perplexity
-):
+def test_compressed_tensors_transforms_perplexity(aphrodite_runner, model, prompt, exp_perplexity):
     with aphrodite_runner(model, enforce_eager=True) as llm:
         perplexity = llm.generate_prompt_perplexity([prompt])[0]
         print(perplexity)
@@ -738,9 +715,7 @@ def test_compressed_tensors_fp8_block_enabled(aphrodite_runner):
             qkv_proj = layer.self_attn.qkv_proj
             assert isinstance(qkv_proj.quant_method, CompressedTensorsLinearMethod)
             assert isinstance(qkv_proj.scheme, CompressedTensorsW8A8Fp8)
-            assert isinstance(
-                qkv_proj.scheme.w8a8_block_fp8_linear, W8A8BlockFp8LinearOp
-            )
+            assert isinstance(qkv_proj.scheme.w8a8_block_fp8_linear, W8A8BlockFp8LinearOp)
 
             assert qkv_proj.weight.dtype is fp8_dtype
             assert qkv_proj.weight_scale.dtype is torch.float32

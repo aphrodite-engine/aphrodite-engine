@@ -6,11 +6,8 @@ import uvloop
 import aphrodite
 import aphrodite.envs as envs
 from aphrodite.endpoints.cli.types import CLISubcommand
-from aphrodite.endpoints.openai.api_server import (run_server,
-                                                   run_server_worker,
-                                                   setup_server)
-from aphrodite.endpoints.openai.args import (make_arg_parser,
-                                             validate_parsed_serve_args)
+from aphrodite.endpoints.openai.api_server import run_server, run_server_worker, setup_server
+from aphrodite.endpoints.openai.args import make_arg_parser, validate_parsed_serve_args
 from aphrodite.endpoints.utils import APHRODITE_SUBCMD_PARSER_EPILOG
 from aphrodite.logger import init_logger
 from aphrodite.usage.usage_lib import UsageContext
@@ -18,12 +15,10 @@ from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.network_utils import get_tcp_uri
 from aphrodite.utils.system_utils import decorate_logs, set_process_title
 from aphrodite.v1.engine.core import EngineCoreProc
-from aphrodite.v1.engine.utils import (CoreEngineProcManager,
-                                       launch_core_engines)
+from aphrodite.v1.engine.utils import CoreEngineProcManager, launch_core_engines
 from aphrodite.v1.executor.abstract import Executor
 from aphrodite.v1.metrics.prometheus import setup_multiprocess_prometheus
-from aphrodite.v1.utils import (APIServerProcessManager,
-                                wait_for_completion_or_failure)
+from aphrodite.v1.utils import APIServerProcessManager, wait_for_completion_or_failure
 
 logger = init_logger(__name__)
 
@@ -36,13 +31,14 @@ Search by using: `--help=<ConfigGroup>` to explore options by section (e.g.,
 
 
 class ServeSubcommand(CLISubcommand):
-    """The `run` subcommand for the Aphrodite CLI. """
+    """The `run` subcommand for the Aphrodite CLI."""
+
     name = "run"
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
         # If model is specified in CLI (as positional arg), it takes precedence
-        if hasattr(args, 'model_tag') and args.model_tag is not None:
+        if hasattr(args, "model_tag") and args.model_tag is not None:
             args.model = args.model_tag
 
         if args.headless or args.api_server_count < 1:
@@ -57,9 +53,7 @@ class ServeSubcommand(CLISubcommand):
     def validate(self, args: argparse.Namespace) -> None:
         validate_parsed_serve_args(args)
 
-    def subparser_init(
-        self, subparsers: argparse._SubParsersAction
-    ) -> FlexibleArgumentParser:
+    def subparser_init(self, subparsers: argparse._SubParsersAction) -> FlexibleArgumentParser:
         serve_parser = subparsers.add_parser(
             self.name, description=DESCRIPTION, usage="aphrodite run [model_tag] [options]"
         )
@@ -74,29 +68,25 @@ def cmd_init() -> list[CLISubcommand]:
 
 
 def run_headless(args: argparse.Namespace):
-
     if args.api_server_count > 1:
         raise ValueError("api_server_count can't be set in headless mode")
 
     # Create the EngineConfig.
     engine_args = aphrodite.AsyncEngineArgs.from_cli_args(args)
     usage_context = UsageContext.OPENAI_API_SERVER
-    aphrodite_config = engine_args.create_engine_config(usage_context=usage_context,
-                                                   headless=True)
+    aphrodite_config = engine_args.create_engine_config(usage_context=usage_context, headless=True)
 
     if not envs.APHRODITE_USE_V1:
         raise ValueError("Headless mode is only supported for V1")
 
     if engine_args.data_parallel_hybrid_lb:
-        raise ValueError("data_parallel_hybrid_lb is not applicable in "
-                         "headless mode")
+        raise ValueError("data_parallel_hybrid_lb is not applicable in headless mode")
 
     parallel_config = aphrodite_config.parallel_config
     local_engine_count = parallel_config.data_parallel_size_local
 
     if local_engine_count <= 0:
-        raise ValueError("data_parallel_size_local must be > 0 in "
-                         "headless mode")
+        raise ValueError("data_parallel_size_local must be > 0 in headless mode")
 
     host = parallel_config.data_parallel_master_ip
     port = engine_args.data_parallel_rpc_port  # add to config too
@@ -111,8 +101,10 @@ def run_headless(args: argparse.Namespace):
     signal.signal(signal.SIGINT, signal_handler)
 
     logger.info(
-        "Launching {} data parallel engine(s) in headless mode, "
-        "with head node address {}.", local_engine_count, handshake_address)
+        "Launching {} data parallel engine(s) in headless mode, with head node address {}.",
+        local_engine_count,
+        handshake_address,
+    )
 
     # Create the engines.
     engine_manager = CoreEngineProcManager(
@@ -135,7 +127,6 @@ def run_headless(args: argparse.Namespace):
 
 
 def run_multi_api_server(args: argparse.Namespace):
-
     assert not args.headless
     num_api_servers: int = args.api_server_count
     assert num_api_servers > 0
@@ -157,10 +148,7 @@ def run_multi_api_server(args: argparse.Namespace):
             raise ValueError("api_server_count > 1 is only supported for V1")
 
         if envs.APHRODITE_ALLOW_RUNTIME_LORA_UPDATING:
-            raise ValueError(
-                "APHRODITE_ALLOW_RUNTIME_LORA_UPDATING cannot be used "
-                "with api_server_count > 1"
-            )
+            raise ValueError("APHRODITE_ALLOW_RUNTIME_LORA_UPDATING cannot be used with api_server_count > 1")
 
     executor_class = Executor.get_class(aphrodite_config)
     log_stats = not engine_args.disable_log_stats
@@ -173,9 +161,11 @@ def run_multi_api_server(args: argparse.Namespace):
 
     api_server_manager: APIServerProcessManager | None = None
 
-    with launch_core_engines(
-        aphrodite_config, executor_class, log_stats, num_api_servers
-    ) as (local_engine_manager, coordinator, addresses):
+    with launch_core_engines(aphrodite_config, executor_class, log_stats, num_api_servers) as (
+        local_engine_manager,
+        coordinator,
+        addresses,
+    ):
         # Construct common args for the APIServerProcessManager up-front.
         api_server_manager_kwargs = dict(
             target_server_fn=run_api_server_worker_proc,
@@ -185,9 +175,7 @@ def run_multi_api_server(args: argparse.Namespace):
             num_servers=num_api_servers,
             input_addresses=addresses.inputs,
             output_addresses=addresses.outputs,
-            stats_update_address=coordinator.get_stats_publish_address()
-            if coordinator
-            else None,
+            stats_update_address=coordinator.get_stats_publish_address() if coordinator else None,
         )
 
         # For dp ranks > 0 in external/hybrid DP LB modes, we must delay the
@@ -197,14 +185,11 @@ def run_multi_api_server(args: argparse.Namespace):
         # via the handshake with the local engine.
         if dp_rank == 0 or not (external_dp_lb or hybrid_dp_lb):
             # Start API servers using the manager.
-            api_server_manager = APIServerProcessManager(
-                **api_server_manager_kwargs)
+            api_server_manager = APIServerProcessManager(**api_server_manager_kwargs)
 
     # Start API servers now if they weren't already started.
     if api_server_manager is None:
-        api_server_manager_kwargs["stats_update_address"] = (
-            addresses.frontend_stats_publish_address
-        )
+        api_server_manager_kwargs["stats_update_address"] = addresses.frontend_stats_publish_address
         api_server_manager = APIServerProcessManager(**api_server_manager_kwargs)
 
     # Wait for API servers
@@ -215,9 +200,7 @@ def run_multi_api_server(args: argparse.Namespace):
     )
 
 
-def run_api_server_worker_proc(
-    listen_address, sock, args, client_config=None, **uvicorn_kwargs
-) -> None:
+def run_api_server_worker_proc(listen_address, sock, args, client_config=None, **uvicorn_kwargs) -> None:
     """Entrypoint for individual API server worker processes."""
     client_config = client_config or {}
     server_index = client_config.get("client_index", 0)
@@ -226,6 +209,4 @@ def run_api_server_worker_proc(
     set_process_title("APIServer", str(server_index))
     decorate_logs()
 
-    uvloop.run(
-        run_server_worker(listen_address, sock, args, client_config, **uvicorn_kwargs)
-    )
+    uvloop.run(run_server_worker(listen_address, sock, args, client_config, **uvicorn_kwargs))

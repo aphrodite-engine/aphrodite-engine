@@ -50,8 +50,7 @@ class BlockTable:
             # → Each memory block corresponds to 2 kernel blocks
             if block_size % kernel_block_size != 0:
                 raise ValueError(
-                    f"kernel_block_size {kernel_block_size} must divide "
-                    f"kv_manager_block_size size {block_size} evenly"
+                    f"kernel_block_size {kernel_block_size} must divide kv_manager_block_size size {block_size} evenly"
                 )
 
             self.block_size = kernel_block_size
@@ -60,19 +59,13 @@ class BlockTable:
 
         self.max_num_blocks_per_req = max_num_blocks_per_req * self.blocks_per_kv_block
 
-        self.block_table = self._make_buffer(
-            self.max_num_reqs, self.max_num_blocks_per_req, dtype=torch.int32
-        )
+        self.block_table = self._make_buffer(self.max_num_reqs, self.max_num_blocks_per_req, dtype=torch.int32)
         self.num_blocks_per_row = np.zeros(max_num_reqs, dtype=np.int32)
 
-        self.slot_mapping = self._make_buffer(
-            self.max_num_batched_tokens, dtype=torch.int64
-        )
+        self.slot_mapping = self._make_buffer(self.max_num_batched_tokens, dtype=torch.int64)
 
         if self.use_hybrid_blocks:
-            self._kernel_block_arange = np.arange(0, self.blocks_per_kv_block).reshape(
-                1, -1
-            )
+            self._kernel_block_arange = np.arange(0, self.blocks_per_kv_block).reshape(1, -1)
         else:
             self._kernel_block_arange = None
 
@@ -115,9 +108,7 @@ class BlockTable:
         self.num_blocks_per_row[src_tgt] = self.num_blocks_per_row[tgt_src]
         self.block_table.np[src_tgt] = self.block_table.np[tgt_src]
 
-    def compute_slot_mapping(
-        self, req_indices: np.ndarray, positions: np.ndarray
-    ) -> None:
+    def compute_slot_mapping(self, req_indices: np.ndarray, positions: np.ndarray) -> None:
         # E.g., [0, 1, 0, 1, 2, 3, 4, 0, 1, 2]
         # -> [0, 0, K, K, K + 1, K + 1, K + 2, 2 * K, 2 * K, 2 * K + 1]
         # where K is the max_num_blocks_per_req and the block size is 2.
@@ -132,10 +123,7 @@ class BlockTable:
             # Use a "virtual block" which equals to world_size * block_size
             # for block_table_indices calculation.
             virtual_block_size = self.block_size * self.dcp_world_size
-            block_table_indices = (
-                req_indices * self.max_num_blocks_per_req
-                + positions // virtual_block_size
-            )
+            block_table_indices = req_indices * self.max_num_blocks_per_req + positions // virtual_block_size
 
             block_numbers = self.block_table.np.ravel()[block_table_indices]
             # Use virtual_block_size for mask calculation, which marks local
@@ -147,13 +135,9 @@ class BlockTable:
             # Calculate slot_mapping
             slot_mapping = block_numbers * self.block_size + block_offsets
             # Write final slots, use -1 for not-local
-            self.slot_mapping.np[: req_indices.shape[0]] = np.where(
-                mask, slot_mapping, -1
-            )
+            self.slot_mapping.np[: req_indices.shape[0]] = np.where(mask, slot_mapping, -1)
         else:
-            block_table_indices = (
-                req_indices * self.max_num_blocks_per_req + positions // self.block_size
-            )
+            block_table_indices = req_indices * self.max_num_blocks_per_req + positions // self.block_size
 
             block_numbers = self.block_table.np.ravel()[block_table_indices]
             block_offsets = positions % self.block_size
@@ -191,10 +175,7 @@ class BlockTable:
         if not self.use_hybrid_blocks:
             return kv_manager_block_ids
 
-        kernel_block_ids = (
-            kv_manager_block_ids.reshape(-1, 1) * self.blocks_per_kv_block
-            + self._kernel_block_arange
-        )
+        kernel_block_ids = kv_manager_block_ids.reshape(-1, 1) * self.blocks_per_kv_block + self._kernel_block_arange
 
         return kernel_block_ids.reshape(-1)
 
@@ -210,12 +191,8 @@ class BlockTable:
         """Returns the numpy array of the block table."""
         return self.block_table.np
 
-    def _make_buffer(
-        self, *size: int | torch.SymInt, dtype: torch.dtype
-    ) -> CpuGpuBuffer:
-        return CpuGpuBuffer(
-            *size, dtype=dtype, device=self.device, pin_memory=self.pin_memory
-        )
+    def _make_buffer(self, *size: int | torch.SymInt, dtype: torch.dtype) -> CpuGpuBuffer:
+        return CpuGpuBuffer(*size, dtype=dtype, device=self.device, pin_memory=self.pin_memory)
 
 
 class MultiGroupBlockTable:
@@ -280,9 +257,7 @@ class MultiGroupBlockTable:
         for block_table in self.block_tables:
             block_table.swap_row(src, tgt)
 
-    def compute_slot_mapping(
-        self, req_indices: np.ndarray, positions: np.ndarray
-    ) -> None:
+    def compute_slot_mapping(self, req_indices: np.ndarray, positions: np.ndarray) -> None:
         for block_table in self.block_tables:
             block_table.compute_slot_mapping(req_indices, positions)
 

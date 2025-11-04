@@ -17,11 +17,13 @@ from aphrodite.config import AphroditeConfig, CacheConfig
 from aphrodite.distributed import get_pp_group
 from aphrodite.modeling.layers.activation import SiluAndMul
 from aphrodite.modeling.layers.layernorm import RMSNorm
-from aphrodite.modeling.layers.linear import (MergedColumnParallelLinear,
-                                              RowParallelLinear)
+from aphrodite.modeling.layers.linear import MergedColumnParallelLinear, RowParallelLinear
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
+    DEFAULT_VOCAB_PADDING_SIZE,
+    ParallelLMHead,
+    VocabParallelEmbedding,
+)
 from aphrodite.quantization import QuantizationConfig
 
 from .granitemoe import GraniteMoeAttention, GraniteMoeModel, GraniteMoeMoE
@@ -55,10 +57,7 @@ class GraniteMoeSharedMLP(nn.Module):
             prefix=f"{prefix}.output_linear",
         )
         if config.hidden_act != "silu":
-            raise ValueError(
-                f"Unsupported activation: {config.hidden_act}. "
-                "Only silu is supported for now."
-            )
+            raise ValueError(f"Unsupported activation: {config.hidden_act}. Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -104,15 +103,11 @@ class GraniteMoeSharedDecoderLayer(nn.Module):
         self.shared_mlp = (
             None
             if getattr(config, "shared_intermediate_size", 0) == 0
-            else GraniteMoeSharedMLP(
-                config, quant_config=quant_config, prefix=f"{prefix}.shared_mlp"
-            )
+            else GraniteMoeSharedMLP(config, quant_config=quant_config, prefix=f"{prefix}.shared_mlp")
         )
 
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, eps=config.rms_norm_eps
-        )
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         self.residual_multiplier = config.residual_multiplier
 
@@ -157,11 +152,7 @@ class GraniteMoeSharedModel(nn.Module):
         self.config = config
         self.quant_config = quant_config  # Required by MixtralModel
         self.padding_idx = config.pad_token_id
-        lora_vocab = (
-            (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1))
-            if lora_config
-            else 0
-        )
+        lora_vocab = (lora_config.lora_extra_vocab_size * (lora_config.max_loras or 1)) if lora_config else 0
         self.vocab_size = config.vocab_size + lora_vocab
         self.org_vocab_size = config.vocab_size
 
@@ -175,9 +166,7 @@ class GraniteMoeSharedModel(nn.Module):
 
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: GraniteMoeSharedDecoderLayer(
-                config, cache_config, quant_config=quant_config, prefix=prefix
-            ),
+            lambda prefix: GraniteMoeSharedDecoderLayer(config, cache_config, quant_config=quant_config, prefix=prefix),
             prefix=f"{prefix}.layers",
         )
 
@@ -279,9 +268,7 @@ class GraniteMoeSharedForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         self.config = config
         self.lora_config = lora_config
 
-        self.model = GraniteMoeSharedModel(
-            aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model")
-        )
+        self.model = GraniteMoeSharedModel(aphrodite_config=aphrodite_config, prefix=maybe_prefix(prefix, "model"))
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -316,9 +303,7 @@ class GraniteMoeSharedForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: IntermediateTensors | None = None,
         inputs_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        hidden_states = self.model(
-            input_ids, positions, intermediate_tensors, inputs_embeds
-        )
+        hidden_states = self.model(input_ids, positions, intermediate_tensors, inputs_embeds)
         return hidden_states
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
@@ -330,9 +315,7 @@ class GraniteMoeSharedForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
     ) -> IntermediateTensors:
         return IntermediateTensors(
             {
-                "hidden_states": torch.zeros(
-                    (batch_size, self.config.hidden_size), dtype=dtype, device=device
-                ),
+                "hidden_states": torch.zeros((batch_size, self.config.hidden_size), dtype=dtype, device=device),
             }
         )
 

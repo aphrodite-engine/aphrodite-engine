@@ -78,9 +78,7 @@ class Backend(ABC):
         """
         pass
 
-    def get_load_store_spec(
-        self, block_hashes: Iterable[BlockHash], blocks: Iterable[BlockStatus]
-    ) -> LoadStoreSpec:
+    def get_load_store_spec(self, block_hashes: Iterable[BlockHash], blocks: Iterable[BlockStatus]) -> LoadStoreSpec:
         """
         Get backend-specific information on how to read/write blocks.
 

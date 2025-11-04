@@ -6,14 +6,11 @@ Run `pytest tests/kernels/moe/test_grouped_topk.py`.
 import pytest
 import torch
 
-from aphrodite.modeling.layers.fused_moe.fused_moe import (fused_grouped_topk,
-                                                           grouped_topk)
+from aphrodite.modeling.layers.fused_moe.fused_moe import fused_grouped_topk, grouped_topk
 from aphrodite.platforms import current_platform
 
 
-@pytest.mark.skipif(
-    not current_platform.is_cuda(), reason="This test is skipped on non-CUDA platform."
-)
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="This test is skipped on non-CUDA platform.")
 @pytest.mark.parametrize("n_token", [1, 33, 64])
 @pytest.mark.parametrize("n_hidden", [1024, 2048])
 @pytest.mark.parametrize("n_expert", [16])
@@ -40,9 +37,7 @@ def test_grouped_topk(
     current_platform.seed_everything(0)
     hidden_states = torch.randn((n_token, n_hidden), dtype=dtype, device="cuda")
     gating_output = torch.randn((n_token, n_expert), dtype=dtype, device="cuda")
-    e_score_correction_bias = torch.randn(
-        (n_expert,), dtype=torch.float32, device="cuda"
-    )
+    e_score_correction_bias = torch.randn((n_expert,), dtype=torch.float32, device="cuda")
 
     with monkeypatch.context() as m:
         m.setenv("APHRODITE_USE_FUSED_MOE_GROUPED_TOPK", "0")
@@ -71,7 +66,5 @@ def test_grouped_topk(
         )
 
         if renormalize:
-            torch.testing.assert_close(
-                baseline_topk_weights, test_topk_weights, atol=2e-2, rtol=0
-            )
+            torch.testing.assert_close(baseline_topk_weights, test_topk_weights, atol=2e-2, rtol=0)
         torch.testing.assert_close(baseline_topk_ids, test_topk_ids, atol=0, rtol=0)

@@ -78,6 +78,4 @@ def test_models(example_prompts, model_name) -> None:
     for i in range(len(example_prompts)):
         generated_str = generations[i]
         expected_str = expected_strs[i]
-        assert expected_str == generated_str, (
-            f"Test{i}:\nExpected: {expected_str!r}\nAphrodite: {generated_str!r}"
-        )
+        assert expected_str == generated_str, f"Test{i}:\nExpected: {expected_str!r}\nAphrodite: {generated_str!r}"

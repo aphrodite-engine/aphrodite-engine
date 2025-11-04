@@ -24,31 +24,22 @@ def kimi_k2_tool_parser(kimi_k2_tokenizer):
     return KimiK2ToolParser(kimi_k2_tokenizer)
 
 
-def assert_tool_calls(
-    actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]
-):
+def assert_tool_calls(actual_tool_calls: list[ToolCall], expected_tool_calls: list[ToolCall]):
     assert len(actual_tool_calls) == len(expected_tool_calls)
 
-    for actual_tool_call, expected_tool_call in zip(
-        actual_tool_calls, expected_tool_calls
-    ):
+    for actual_tool_call, expected_tool_call in zip(actual_tool_calls, expected_tool_calls):
         assert actual_tool_call.type == "function"
         assert actual_tool_call.function == expected_tool_call.function
 
         # assert tool call id format: should contain function name and numeric index
         # Format can be either "functions.func_name:0" or "func_name:0"
         assert actual_tool_call.id.split(":")[-1].isdigit()
-        assert (
-            actual_tool_call.id.split(":")[0].split(".")[-1]
-            == expected_tool_call.function.name
-        )
+        assert actual_tool_call.id.split(":")[0].split(".")[-1] == expected_tool_call.function.name
 
 
 def test_extract_tool_calls_no_tools(kimi_k2_tool_parser):
     model_output = "This is a test"
-    extracted_tool_calls = kimi_k2_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert not extracted_tool_calls.tools_called
     assert extracted_tool_calls.tool_calls == []
     assert extracted_tool_calls.content == model_output
@@ -114,12 +105,8 @@ functions.get_weather:1 <|tool_call_argument_begin|> {"city": "Shanghai"} <|tool
         ),
     ],
 )
-def test_extract_tool_calls(
-    kimi_k2_tool_parser, model_output, expected_tool_calls, expected_content
-):
-    extracted_tool_calls = kimi_k2_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+def test_extract_tool_calls(kimi_k2_tool_parser, model_output, expected_tool_calls, expected_content):
+    extracted_tool_calls = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
     assert extracted_tool_calls.tools_called
 
     assert_tool_calls(extracted_tool_calls.tool_calls, expected_tool_calls)
@@ -133,9 +120,7 @@ def test_extract_tool_calls_invalid_json(kimi_k2_tool_parser):
 functions.invalid_get_weather:0 <|tool_call_argument_begin|> {"city": "Beijing" <|tool_call_end|> <|tool_call_begin|>
 functions.valid_get_weather:1 <|tool_call_argument_begin|> {"city": "Shanghai"} <|tool_call_end|> <|tool_calls_section_end|>"""
 
-    extracted_tool_calls = kimi_k2_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     # Should extract only the valid JSON tool calls
@@ -150,9 +135,7 @@ def test_extract_tool_calls_invalid_funcall(kimi_k2_tool_parser):
 functions.invalid_get_weather.0 <|tool_call_argument_begin|> {"city": "Beijing"} <|tool_call_end|> <|tool_call_begin|>
 functions.valid_get_weather:1 <|tool_call_argument_begin|> {"city": "Shanghai"} <|tool_call_end|> <|tool_calls_section_end|>"""
 
-    extracted_tool_calls = kimi_k2_tool_parser.extract_tool_calls(
-        model_output, request=None
-    )  # type: ignore[arg-type]
+    extracted_tool_calls = kimi_k2_tool_parser.extract_tool_calls(model_output, request=None)  # type: ignore[arg-type]
 
     assert extracted_tool_calls.tools_called
     # Should extract only the valid JSON tool calls

@@ -46,9 +46,7 @@ class AudioDummyOptions(BaseDummyOptions):
 
 MMEncoderTPMode = Literal["weights", "data"]
 MMCacheType = Literal["shm", "lru"]
-DummyOptions: TypeAlias = (
-    BaseDummyOptions | VideoDummyOptions | ImageDummyOptions | AudioDummyOptions
-)
+DummyOptions: TypeAlias = BaseDummyOptions | VideoDummyOptions | ImageDummyOptions | AudioDummyOptions
 
 
 @config
@@ -144,9 +142,7 @@ class MultiModalConfig:
 
     @field_validator("limit_per_prompt", mode="before")
     @classmethod
-    def _validate_limit_per_prompt(
-        cls, value: dict[str, int | dict[str, int]]
-    ) -> dict[str, DummyOptions]:
+    def _validate_limit_per_prompt(cls, value: dict[str, int | dict[str, int]]) -> dict[str, DummyOptions]:
         for k, v in value.items():
             # Handle legacy format where only count is specified
             if isinstance(v, int):
@@ -165,8 +161,7 @@ class MultiModalConfig:
     @field_validator("mm_encoder_attn_backend", mode="before")
     @classmethod
     def _validate_mm_encoder_attn_backend(cls, value: object) -> _Backend | None:
-        from aphrodite.attention.backends.registry import (
-            _Backend as BackendEnum)
+        from aphrodite.attention.backends.registry import _Backend as BackendEnum
         from aphrodite.attention.backends.registry import backend_name_to_enum
 
         if value is None or isinstance(value, BackendEnum):
@@ -178,19 +173,15 @@ class MultiModalConfig:
                 return candidate
 
         valid_backends = ", ".join(sorted(BackendEnum.__members__.keys()))
-        raise ValueError(
-            f"Invalid mm encoder attention backend. Expected one of: {valid_backends}."
-        )
+        raise ValueError(f"Invalid mm encoder attention backend. Expected one of: {valid_backends}.")
 
     @model_validator(mode="after")
     def _validate_multimodal_config(self):
         if self.mm_processor_cache_type != "shm" and (
-            self.mm_shm_cache_max_object_size_mb
-            != MultiModalConfig.mm_shm_cache_max_object_size_mb
+            self.mm_shm_cache_max_object_size_mb != MultiModalConfig.mm_shm_cache_max_object_size_mb
         ):
             raise ValueError(
-                "'mm_shm_cache_max_object_size_mb' should only be set when "
-                "'mm_processor_cache_type' is 'shm'."
+                "'mm_shm_cache_max_object_size_mb' should only be set when 'mm_processor_cache_type' is 'shm'."
             )
         return self
 
@@ -206,11 +197,7 @@ class MultiModalConfig:
         excluding anything before input ids/embeddings and after
         the final hidden states.
         """
-        factors: list[Any] = [
-            self.mm_encoder_attn_backend.name
-            if self.mm_encoder_attn_backend is not None
-            else None
-        ]
+        factors: list[Any] = [self.mm_encoder_attn_backend.name if self.mm_encoder_attn_backend is not None else None]
         hash_str = hashlib.md5(str(factors).encode(), usedforsecurity=False).hexdigest()
         return hash_str
 
