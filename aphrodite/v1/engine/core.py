@@ -231,6 +231,8 @@ class EngineCore:
         # Initialize kv cache and warmup the execution
         self.modeling.initialize_from_config(kv_cache_configs)
 
+        aphrodite_config.cache_config.kv_bytes_per_block = scheduler_kv_cache_config.kv_bytes_per_block
+
         elapsed = time.time() - start
         logger.info_once(
             ("init engine (profile, create kv cache, warmup model) took %.2f seconds"),
