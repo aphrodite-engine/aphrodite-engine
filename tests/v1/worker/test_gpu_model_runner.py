@@ -3,6 +3,7 @@ import pytest
 import torch
 
 from aphrodite.attention import Attention
+from aphrodite.attention.backends.abstract import MultipleOf
 from aphrodite.common.sampling_params import SamplingParams
 from aphrodite.config import (
     AphroditeConfig,
@@ -23,6 +24,7 @@ from aphrodite.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KV
 from aphrodite.v1.sample.metadata import SamplingMetadata
 from aphrodite.v1.worker.gpu_input_batch import InputBatch
 from aphrodite.v1.worker.gpu_model_runner import GPUModelRunner
+from aphrodite.v1.worker.utils import AttentionGroup
 
 BLOCK_SIZE = 16
 NUM_BLOCKS = 10
@@ -158,6 +160,57 @@ def _is_req_state_block_table_match(model_runner, req_id: str) -> bool:
         return False
     num_blocks = block_table.num_blocks_per_row[req_index]
     return (block_table.block_table.np[req_index, :num_blocks] == req_state.block_ids[0]).all()
+
+
+def _make_mock_backend_for_kernel_block_size(
+    supported_sizes: list[int | MultipleOf],
+):
+    class _MockBackend:
+        @staticmethod
+        def get_supported_kernel_block_size():
+            return supported_sizes
+
+    return _MockBackend()
+
+
+def _make_kv_cache_spec() -> FullAttentionSpec:
+    return FullAttentionSpec(block_size=1, num_kv_heads=1, head_size=1, dtype="float16")
+
+
+def test_select_common_block_size_prefers_manager_block_size():
+    backend_a = _make_mock_backend_for_kernel_block_size([MultipleOf(32)])
+    backend_b = _make_mock_backend_for_kernel_block_size([64, MultipleOf(16)])
+    attn_groups = [
+        AttentionGroup(backend_a, [], [], _make_kv_cache_spec(), 0),
+        AttentionGroup(backend_b, [], [], _make_kv_cache_spec(), 0),
+    ]
+
+    selected_size = GPUModelRunner.select_common_block_size(128, attn_groups)
+    assert selected_size == 128
+
+
+def test_select_common_block_size_uses_largest_shared_int():
+    backend_a = _make_mock_backend_for_kernel_block_size([128, 64])
+    backend_b = _make_mock_backend_for_kernel_block_size([64, 32])
+    attn_groups = [
+        AttentionGroup(backend_a, [], [], _make_kv_cache_spec(), 0),
+        AttentionGroup(backend_b, [], [], _make_kv_cache_spec(), 0),
+    ]
+
+    selected_size = GPUModelRunner.select_common_block_size(256, attn_groups)
+    assert selected_size == 64
+
+
+def test_select_common_block_size_no_valid_option():
+    backend_a = _make_mock_backend_for_kernel_block_size([64])
+    backend_b = _make_mock_backend_for_kernel_block_size([MultipleOf(16)])
+    attn_groups = [
+        AttentionGroup(backend_a, [], [], _make_kv_cache_spec(), 0),
+        AttentionGroup(backend_b, [], [], _make_kv_cache_spec(), 0),
+    ]
+
+    with pytest.raises(ValueError):
+        GPUModelRunner.select_common_block_size(48, attn_groups)
 
 
 def test_update_states_new_request(model_runner, dist_init):
