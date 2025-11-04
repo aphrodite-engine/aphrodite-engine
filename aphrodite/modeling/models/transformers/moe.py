@@ -112,7 +112,7 @@ direct_register_custom_op(
 
 class MoEMixin(MixtureOfExperts):
     def __init__(self, *, aphrodite_config: "AphroditeConfig", prefix: str = ""):
-        self.check_version("4.57.0.dev0", "MoE models support")
+        self.check_version("5.0.0", "MoE models support")
         # Skip MixtureOfExperts.__init__ and call the next class in MRO
         super(MixtureOfExperts, self).__init__(aphrodite_config=aphrodite_config, prefix=prefix)
 
