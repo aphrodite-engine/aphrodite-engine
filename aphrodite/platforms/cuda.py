@@ -380,6 +380,7 @@ class CudaPlatformBase(Platform):
         logger.info_once(
             "Using FlexAttention backend for %s.",
             ", ".join(f"{k}={v}" for k, v in use_flex_attention_reason.items()),
+            scope="global",
         )
         return FLEX_ATTENTION_V1
 
