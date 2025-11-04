@@ -139,7 +139,7 @@ python = "./.venv"
 # these files may be written in non english words
 extend-exclude = ["tests/models/fixtures/*", "tests/prompts/*",
     "benchmarks/sonnet.txt", "tests/lora/data/*", "build/*",
-    "vllm/third_party/*"]
+    "aphrodite/third_party/*", "aphrodite/endpoints/openai/klite.embd"]
 ignore-hidden = true
 ignore-files = true
 ignore-dot = true
