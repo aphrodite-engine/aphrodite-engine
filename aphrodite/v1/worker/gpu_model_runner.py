@@ -2051,7 +2051,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             model_kwargs.update(encoder_inputs)
 
         return (
-            num_scheduled_tokens,
             input_ids,
             inputs_embeds,
             positions,
