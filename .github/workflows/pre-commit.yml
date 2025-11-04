@@ -18,8 +18,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - run: echo "::add-matcher::.github/workflows/matchers/actionlint.json"
-    - run: echo "::add-matcher::.github/workflows/matchers/markdownlint.json"
-    - run: echo "::add-matcher::.github/workflows/matchers/mypy.json"
     - uses: pre-commit/action@v3.0.1
       with:
         extra_args: --all-files --hook-stage manual
