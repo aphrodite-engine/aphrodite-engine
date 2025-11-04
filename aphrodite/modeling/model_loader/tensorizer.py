@@ -27,7 +27,7 @@ from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.import_utils import PlaceholderModule
 
 if TYPE_CHECKING:
-    from aphrodite.engine.arg_utils import EngineArgs
+    from aphrodite.engine.args_tools import EngineArgs
 
 try:
     from tensorizer import DecryptionParams, EncryptionParams, TensorDeserializer, TensorSerializer

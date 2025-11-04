@@ -34,7 +34,7 @@ Commandline arguments:
                     (Optional, default: 0)
 
 In the meantime, it also supports all the Aphrodite engine args to initialize the 
-LLM engine. You can refer to the `aphrodite.engine.arg_utils.EngineArgs` for more
+LLM engine. You can refer to the `aphrodite.engine.args_tools.EngineArgs` for more
 details.
 """
 
@@ -42,9 +42,8 @@ import dataclasses
 import random
 import time
 
-from aphrodite.engine.arg_utils import EngineArgs
-
 from aphrodite import LLM, SamplingParams
+from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 

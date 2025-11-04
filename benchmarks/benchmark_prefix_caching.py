@@ -31,10 +31,10 @@ import json
 import random
 import time
 
-from aphrodite.engine.arg_utils import EngineArgs
 from transformers import PreTrainedTokenizerBase
 
 from aphrodite import LLM, SamplingParams
+from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 try:

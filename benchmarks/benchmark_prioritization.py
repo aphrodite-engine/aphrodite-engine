@@ -6,9 +6,9 @@ import json
 import random
 import time
 
-from aphrodite.engine.arg_utils import EngineArgs
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
+from aphrodite.engine.args_tools import EngineArgs
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
 
