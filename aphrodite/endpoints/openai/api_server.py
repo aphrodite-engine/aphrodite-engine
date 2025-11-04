@@ -39,6 +39,13 @@ from typing_extensions import assert_never
 
 import aphrodite.envs as envs
 from aphrodite.config import AphroditeConfig
+from aphrodite.endpoints.anthropic.protocol import (
+    AnthropicError,
+    AnthropicErrorResponse,
+    AnthropicMessagesRequest,
+    AnthropicMessagesResponse,
+)
+from aphrodite.endpoints.anthropic.serving_messages import AnthropicServingMessages
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.args import make_arg_parser, validate_parsed_serve_args
 from aphrodite.endpoints.openai.protocol import (
@@ -81,7 +88,6 @@ from aphrodite.endpoints.openai.serving_completions import OpenAIServingCompleti
 from aphrodite.endpoints.openai.serving_embedding import OpenAIServingEmbedding
 from aphrodite.endpoints.openai.serving_engine import OpenAIServing
 from aphrodite.endpoints.openai.serving_kobold import OpenAIServingKobold
-from aphrodite.endpoints.openai.serving_messages import OpenAIServingMessages
 from aphrodite.endpoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 from aphrodite.endpoints.openai.serving_pooling import OpenAIServingPooling
 from aphrodite.endpoints.openai.serving_responses import OpenAIServingResponses
@@ -347,8 +353,8 @@ def completion(request: Request) -> OpenAIServingCompletion | None:
     return request.app.state.openai_serving_completion
 
 
-def messages(request: Request) -> OpenAIServingMessages | None:
-    return request.app.state.openai_serving_messages
+def messages(request: Request) -> AnthropicServingMessages:
+    return request.app.state.anthropic_serving_messages
 
 
 def chat(request: Request) -> OpenAIServingChat | None:
@@ -731,6 +737,57 @@ async def cancel_responses(response_id: str, raw_request: Request):
     if isinstance(response, ErrorResponse):
         return JSONResponse(content=response.model_dump(), status_code=response.code)
     return JSONResponse(content=response.model_dump())
+
+
+@router.post(
+    "/v1/messages",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.OK.value: {"content": {"text/event-stream": {}}},
+        HTTPStatus.BAD_REQUEST.value: {"model": AnthropicErrorResponse},
+        HTTPStatus.NOT_FOUND.value: {"model": AnthropicErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": AnthropicErrorResponse},
+    },
+)
+@with_cancellation
+@load_aware_call
+async def create_messages(request: AnthropicMessagesRequest, raw_request: Request):
+    def translate_error_response(response: ErrorResponse) -> JSONResponse:
+        anthropic_error = AnthropicErrorResponse(
+            error=AnthropicError(
+                type=response.error.type,
+                message=response.error.message,
+            )
+        )
+        return JSONResponse(status_code=response.error.code, content=anthropic_error.model_dump())
+
+    handler = messages(raw_request)
+    if handler is None:
+        error = base(raw_request).create_error_response(message="The model does not support Messages API")
+        return translate_error_response(error)
+
+    try:
+        generator = await handler.create_messages(request, raw_request)
+    except Exception as e:
+        logger.exception("Error in create_messages: %s", e)
+        return JSONResponse(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+            content=AnthropicErrorResponse(
+                error=AnthropicError(
+                    type="internal_error",
+                    message=str(e),
+                )
+            ).model_dump(),
+        )
+
+    if isinstance(generator, ErrorResponse):
+        return translate_error_response(generator)
+
+    elif isinstance(generator, AnthropicMessagesResponse):
+        logger.debug("Anthropic Messages Response: %s", generator.model_dump(exclude_none=True))
+        return JSONResponse(content=generator.model_dump(exclude_none=True))
+
+    return StreamingResponse(content=generator, media_type="text/event-stream")
 
 
 @router.post(
@@ -2464,6 +2521,24 @@ async def init_app_state(
         if "generate" in supported_tasks
         else None
     )
+    state.anthropic_serving_messages = (
+        AnthropicServingMessages(
+            engine_client,
+            state.openai_serving_models,
+            args.response_role,
+            request_logger=state.request_logger,
+            chat_template=resolved_chat_template,
+            chat_template_content_format=args.chat_template_content_format,
+            return_tokens_as_token_ids=args.return_tokens_as_token_ids,
+            enable_auto_tools=args.enable_auto_tool_choice,
+            tool_parser=args.tool_call_parser,
+            reasoning_parser=args.structured_outputs_config.reasoning_parser,
+            enable_prompt_tokens_details=args.enable_prompt_tokens_details,
+            enable_force_include_usage=args.enable_force_include_usage,
+        )
+        if "generate" in supported_tasks
+        else None
+    )
 
     state.enable_server_load_tracking = args.enable_server_load_tracking
     state.server_load_metrics = 0
@@ -2590,6 +2665,7 @@ async def run_server_worker(listen_address, sock, args, client_config=None, **uv
         logger.info("Completions API:        %s/v1/completions", url_prefix)
         logger.info("Chat API:               %s/v1/chat/completions", url_prefix)
         logger.info("Responses API:          %s/v1/responses", url_prefix)
+        logger.info("Messages API:           %s/v1/messages", url_prefix)
         logger.info("Embeddings API:         %s/v1/embeddings", url_prefix)
         logger.info("Pooling API:            %s/pooling", url_prefix)
         logger.info("Score API:              %s/score", url_prefix)
