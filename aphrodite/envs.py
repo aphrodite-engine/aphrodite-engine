@@ -254,11 +254,12 @@ def disable_compile_cache() -> bool:
 
 
 def use_aot_compile() -> bool:
+    from aphrodite.modeling.layers.batch_invariant import aphrodite_is_batch_invariant
     from aphrodite.utils.torch_utils import is_torch_equal_or_newer
 
     default_value = "1" if is_torch_equal_or_newer("2.10.0.dev") and not disable_compile_cache() else "0"
 
-    return os.environ.get("APHRODITE_USE_AOT_COMPILE", default_value) == "1"
+    return not aphrodite_is_batch_invariant() and os.environ.get("APHRODITE_USE_AOT_COMPILE", default_value) == "1"
 
 
 def env_with_choices(
