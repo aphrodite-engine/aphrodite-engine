@@ -10,7 +10,7 @@ from concurrent.futures import Future
 from contextlib import ExitStack, contextmanager
 from inspect import isclass, signature
 from logging import DEBUG
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import msgspec
 import zmq
@@ -168,7 +168,7 @@ class EngineCore:
         if kv_connector is not None:
             # Collect and store KV connector xfer metadata from workers
             # (after KV cache registration)
-            xfer_handshake_metadata = self.model_executor.get_kv_connector_handshake_metadata()
+            xfer_handshake_metadata = self.modeling.get_kv_connector_handshake_metadata()
 
             if xfer_handshake_metadata:
                 # xfer_handshake_metadata is list of dicts from workers
@@ -305,9 +305,13 @@ class EngineCore:
         if not self.scheduler.has_requests():
             return {}, False
         scheduler_output = self.scheduler.schedule()
+        future = self.modeling.execute_model(scheduler_output, non_block=True)
+        grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
 
         with self.log_error_detail(scheduler_output):
-            model_output = self.modeling.execute_model(scheduler_output)
+            model_output = future.result()
+            if model_output is None:
+                model_output = self.modeling.sample_tokens(grammar_output)
 
         engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
 
@@ -345,16 +349,39 @@ class EngineCore:
         assert len(batch_queue) < self.batch_queue_size
 
         model_executed = False
+        deferred_scheduler_output = None
         if self.scheduler.has_requests():
             scheduler_output = self.scheduler.schedule()
-            future = self.modeling.execute_model(scheduler_output, non_block=True)
-            batch_queue.appendleft((future, scheduler_output))
+            exec_future = self.modeling.execute_model(scheduler_output, non_block=True)
 
             model_executed = scheduler_output.total_num_scheduled_tokens > 0
-            if model_executed and len(batch_queue) < self.batch_queue_size and not batch_queue[-1][0].done():
-                # Don't block on next worker response unless the queue is full
-                # or there are no more requests to schedule.
-                return None, True
+            if scheduler_output.pending_structured_output_tokens:
+                # We need to defer sampling until we have processed the model output
+                # from the prior step.
+                deferred_scheduler_output = scheduler_output
+                # Block-wait for execute to return (continues running async on the GPU).
+                with self.log_error_detail(scheduler_output):
+                    exec_result = exec_future.result()
+                    assert exec_result is None
+            else:
+                # We aren't waiting for any tokens, get any grammar output immediately.
+                grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+                # Block-wait for execute to return (continues running async on the GPU).
+                with self.log_error_detail(scheduler_output):
+                    exec_result = exec_future.result()
+
+                if exec_result is None:
+                    # Call sample tokens.
+                    future = self.modeling.sample_tokens(grammar_output, non_block=True)
+                else:
+                    # No sampling required (e.g. all requests finished).
+                    future = cast(Future[ModelRunnerOutput], exec_future)
+                # Add this step's future to the queue.
+                batch_queue.appendleft((future, scheduler_output))
+                if model_executed and len(batch_queue) < self.batch_queue_size and not batch_queue[-1][0].done():
+                    # Don't block on next worker response unless the queue is full
+                    # or there are no more requests to schedule.
+                    return None, True
 
         elif not batch_queue:
             # Queue is empty. We should not reach here since this method should
@@ -368,6 +395,17 @@ class EngineCore:
             model_output = future.result()
 
         engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
+
+        # NOTE: We can either handle the deferred tasks here or save
+        # in a field and do it immediately once step_with_batch_queue is
+        # re-called. The latter slightly favors TTFT over TPOT/throughput.
+        if deferred_scheduler_output:
+            # We now have the tokens needed to compute the bitmask for the
+            # deferred request. Get the bitmask and call sample tokens.
+            grammar_output = self.scheduler.get_grammar_bitmask(deferred_scheduler_output)
+            future = self.modeling.sample_tokens(grammar_output, non_block=True)
+            batch_queue.appendleft((future, deferred_scheduler_output))
+
         return engine_core_outputs, model_executed
 
     def shutdown(self):

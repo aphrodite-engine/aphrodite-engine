@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from aphrodite.distributed.kv_transfer.kv_connector.v1 import KVConnectorBase_V1
-    from aphrodite.v1.core.sched.output import SchedulerOutput
+    from aphrodite.v1.core.sched.output import GrammarOutput, SchedulerOutput
     from aphrodite.v1.engine import EngineCoreOutputs
     from aphrodite.v1.metrics.stats import SchedulerStats
     from aphrodite.v1.outputs import DraftTokenIds, ModelRunnerOutput
@@ -36,6 +36,10 @@ class SchedulerInterface(ABC):
             A SchedulerOutput object containing information about the scheduled
             requests.
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_grammar_bitmask(self, scheduler_output: "SchedulerOutput") -> "GrammarOutput | None":
         raise NotImplementedError
 
     @abstractmethod

@@ -4,6 +4,9 @@ from copy import deepcopy
 
 from tblib import pickling_support
 
+# Import fixture
+from tests.v1.entrypoints.conftest import sample_json_schema
+
 # ruff: noqa
 
 # Install support for pickling exceptions so that we can nicely propagate

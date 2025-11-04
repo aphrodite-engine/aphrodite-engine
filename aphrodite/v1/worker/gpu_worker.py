@@ -4,6 +4,7 @@ import copy
 import gc
 import os
 from contextlib import AbstractContextManager, nullcontext
+from types import NoneType
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -28,6 +29,7 @@ from aphrodite.platforms import current_platform
 from aphrodite.tasks import SupportedTask
 from aphrodite.utils.mem_constants import GiB_bytes
 from aphrodite.utils.mem_utils import MemorySnapshot, memory_profiling
+from aphrodite.v1.core.sched.output import GrammarOutput
 from aphrodite.v1.engine import ReconfigureDistributedRequest, ReconfigureRankType
 from aphrodite.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from aphrodite.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, AsyncModelRunnerOutput, DraftTokenIds, ModelRunnerOutput
@@ -499,10 +501,11 @@ class Worker(WorkerBase):
         return self.model_runner.get_supported_tasks()
 
     @torch.inference_mode()
-    def execute_model(
-        self,
-        scheduler_output: "SchedulerOutput",
-    ) -> ModelRunnerOutput | AsyncModelRunnerOutput | None:
+    def sample_tokens(self, grammar_output: "GrammarOutput") -> ModelRunnerOutput | AsyncModelRunnerOutput:
+        return self.model_runner.sample_tokens(grammar_output)
+
+    @torch.inference_mode()
+    def execute_model(self, scheduler_output: "SchedulerOutput") -> ModelRunnerOutput | None:
         intermediate_tensors = None
         forward_pass = scheduler_output.total_num_scheduled_tokens > 0
         num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
@@ -517,12 +520,12 @@ class Worker(WorkerBase):
             )
 
         output = self.model_runner.execute_model(scheduler_output, intermediate_tensors)
-        if isinstance(output, (ModelRunnerOutput, AsyncModelRunnerOutput)):
+        if isinstance(output, (ModelRunnerOutput, NoneType)):
             return output
 
         assert isinstance(output, IntermediateTensors)
         parallel_config = self.aphrodite_config.parallel_config
-        assert parallel_config.distributed_executor_backend != ("external_launcher") and not get_pp_group().is_last_rank
+        assert parallel_config.distributed_executor_backend != "external_launcher" and not get_pp_group().is_last_rank
 
         get_pp_group().send_tensor_dict(
             output.tensors,

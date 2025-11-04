@@ -135,8 +135,6 @@ def _schedule_new_request(*req_ids: str) -> SchedulerOutput:
         num_common_prefix_blocks=[],
         finished_req_ids=set(),
         free_encoder_mm_hashes=[],
-        structured_output_request_ids=[],
-        grammar_bitmask=None,
     )
 
 
@@ -248,8 +246,6 @@ def test_update_states_request_finished(model_runner, dist_init):
         num_common_prefix_blocks=[],
         finished_req_ids={req_id},
         free_encoder_mm_hashes=[],
-        structured_output_request_ids=[],
-        grammar_bitmask=None,
     )
 
     metadata_before = model_runner.input_batch.sampling_metadata
@@ -280,8 +276,6 @@ def test_update_states_request_resumed(model_runner, dist_init):
         num_common_prefix_blocks=[],
         finished_req_ids=set(),
         free_encoder_mm_hashes=[],
-        structured_output_request_ids=[],
-        grammar_bitmask=None,
     )
 
     model_runner._update_states(scheduler_output)
@@ -309,8 +303,6 @@ def test_update_states_request_resumed(model_runner, dist_init):
         num_common_prefix_blocks=[],
         finished_req_ids=set(),
         free_encoder_mm_hashes=[],
-        structured_output_request_ids=[],
-        grammar_bitmask=None,
     )
 
     metadata_before = model_runner.input_batch.sampling_metadata
@@ -402,8 +394,6 @@ def test_update_states_no_changes(model_runner, dist_init):
         num_common_prefix_blocks=[],
         finished_req_ids=set(),
         free_encoder_mm_hashes=[],
-        structured_output_request_ids=[],
-        grammar_bitmask=None,
     )
 
     metadata_before = model_runner.input_batch.sampling_metadata
@@ -439,8 +429,6 @@ def test_update_states_request_unscheduled(model_runner, dist_init):
         num_common_prefix_blocks=[],
         finished_req_ids=set(),
         free_encoder_mm_hashes=[],
-        structured_output_request_ids=[],
-        grammar_bitmask=None,
     )
 
     metadata_before = model_runner._update_states(scheduler_output)
