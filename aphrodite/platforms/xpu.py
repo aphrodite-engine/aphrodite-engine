@@ -71,9 +71,7 @@ class XPUPlatform(Platform):
             logger.info_once("Using Flash Attention backend.", scope="global")
             return FLASH_ATTN
         elif selected_backend:
-            raise ValueError(
-                f"Invalid attention backend for {cls.device_name}, with use_v1: {use_v1} use_mla: {use_mla}"
-            )
+            raise ValueError(f"Invalid attention backend for {cls.device_name}, with use_mla: {use_mla}")
 
         logger.info_once("Using Flash Attention backend.", scope="global")
         return "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"
