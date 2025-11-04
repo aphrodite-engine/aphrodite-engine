@@ -24,6 +24,17 @@ ShareGPT example usage:
         --num-prompts 20 \
         --repeat-count 5 \
         --input-length-range 128:256
+
+CPU Offloading example usage:
+    python benchmark_prefix_caching.py \
+        --model meta-llama/Llama-2-7b-chat-hf \
+        --enable-prefix-caching \
+        --num-prompts 1 \
+        --repeat-count 100 \
+        --input-length-range 512:2048 \
+        --kv-offloading-size 16 \
+        --kv-offloading-backend native
+        --disable-hybrid-kv-cache-manager
 """
 
 import dataclasses

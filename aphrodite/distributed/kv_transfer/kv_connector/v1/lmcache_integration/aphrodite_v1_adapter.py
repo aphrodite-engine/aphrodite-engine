@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Optional
 import torch
 from lmcache import utils
 from lmcache.config import LMCacheEngineMetadata
-from lmcache.logging import init_logger
 from lmcache.observability import LMCStatsMonitor
 from lmcache.utils import _lmcache_nvtx_annotate
 from lmcache.v1.cache_engine import LMCacheEngine, LMCacheEngineBuilder
@@ -20,10 +19,6 @@ from lmcache.v1.gpu_connector import (VLLMBufferLayerwiseGPUConnector,
                                       VLLMPagedMemGPUConnectorV2,
                                       VLLMPagedMemLayerwiseGPUConnector)
 from lmcache.v1.internal_api_server.api_server import InternalAPIServer
-from lmcache.v1.lookup_client import LookupClientFactory
-from lmcache.v1.lookup_client.lmcache_async_lookup_client import (
-    LMCacheAsyncLookupServer)
-from lmcache.v1.offload_server.zmq_server import ZMQOffloadServer
 from lmcache.v1.plugin.plugin_launcher import PluginLauncher
 
 from aphrodite.common.sampling_params import SamplingParams
@@ -35,10 +30,15 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1.lmcache_integration.utils
     lmcache_get_or_create_config, mla_enabled)
 from aphrodite.distributed.parallel_state import (
     get_tensor_model_parallel_rank, get_tp_group)
+from aphrodite.logger import init_logger
 from aphrodite.utils.math_utils import cdiv
 from aphrodite.utils.torch_utils import get_kv_cache_torch_dtype
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.version import __version__ as APHRODITE_VERSION
+
+from .lookup_client import LookupClientFactory
+from .lookup_client.lmcache_async_lookup_client import LMCacheAsyncLookupServer
+from .offload_server.zmq_server import ZMQOffloadServer
 
 if TYPE_CHECKING:
     from aphrodite.attention.backends.abstract import AttentionMetadata
@@ -819,7 +819,7 @@ class LMCacheConnectorV1Impl:
             slot_mapping = request.slot_mapping.cuda()
             assert len(tokens) == len(slot_mapping)
 
-            self._stats_monitor.update_interval_aphrodite_hit_tokens(
+            self._stats_monitor.update_interval_vllm_hit_tokens(
                 request.load_spec.aphrodite_cached_tokens
             )
             token_mask = torch.ones(len(tokens), dtype=torch.bool)
