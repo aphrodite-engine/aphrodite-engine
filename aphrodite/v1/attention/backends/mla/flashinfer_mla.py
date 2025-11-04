@@ -3,7 +3,7 @@ from typing import ClassVar
 import torch
 from flashinfer.decode import trtllm_batch_decode_with_kv_cache_mla
 
-from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType
+from aphrodite.attention.backends.abstract import AttentionLayer, AttentionType, MultipleOf
 from aphrodite.logger import init_logger
 from aphrodite.v1.attention.backends.mla.common import (
     MLACommonBackend,
@@ -36,6 +36,10 @@ class FlashInferMLABackend(MLACommonBackend):
     @staticmethod
     def get_builder_cls() -> type["FlashInferMLAMetadataBuilder"]:
         return FlashInferMLAMetadataBuilder
+
+    @staticmethod
+    def get_supported_kernel_block_size() -> list[int | MultipleOf]:
+        return [32, 64]
 
 
 g_fi_workspace = torch.zeros(
