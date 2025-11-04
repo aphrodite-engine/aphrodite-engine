@@ -5,7 +5,10 @@ import torch.nn as nn
 from transformers import PretrainedConfig
 
 from aphrodite.config.lora import LoRAConfig
-from aphrodite.distributed import get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size
+from aphrodite.distributed import (
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+)
 from aphrodite.modeling.layers.logits_processor import LogitsProcessor
 from aphrodite.modeling.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from aphrodite.platforms import current_platform

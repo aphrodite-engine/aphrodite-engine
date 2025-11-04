@@ -275,7 +275,7 @@ class AphroditeConfig:
         return replace(self, model_config=model_config)
 
     def _post_init_kv_transfer_config(self) -> None:
-        """Update KVTransferConfig based on top-level configs in VllmConfig.
+        """Update KVTransferConfig based on top-level configs in AphroditeConfig.
         Right now, this function reads the offloading settings from
         CacheConfig and configures the KVTransferConfig accordingly.
         """

@@ -3,7 +3,12 @@ from typing import TYPE_CHECKING, Optional
 
 import huggingface_hub
 import regex as re
-from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError, HFValidationError, RepositoryNotFoundError
+from huggingface_hub.utils import (
+    EntryNotFoundError,
+    HfHubHTTPError,
+    HFValidationError,
+    RepositoryNotFoundError,
+)
 from torch import nn
 from transformers import PretrainedConfig
 

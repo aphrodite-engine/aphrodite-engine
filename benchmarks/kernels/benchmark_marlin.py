@@ -1,45 +1,45 @@
 import torch
 import torch.utils.benchmark as benchmark
-from aphrodite.model_executor.layers.quantization.gptq_marlin_24 import (
+from benchmark_shapes import WEIGHT_SHAPES
+
+from aphrodite import _custom_ops as ops
+from aphrodite.quantization.gptq_marlin_24 import (
     GPTQ_MARLIN_24_MAX_PARALLEL,
     GPTQ_MARLIN_24_MIN_THREAD_N,
     GPTQ_MARLIN_24_SUPPORTED_GROUP_SIZES,
     GPTQ_MARLIN_24_SUPPORTED_QUANT_TYPES,
 )
-from aphrodite.model_executor.layers.quantization.utils.allspark_utils import (
+from aphrodite.quantization.utils.allspark_utils import (
     ALLSPARK_AMPERE_M_CUBLAS_THRESHOLD,
     ALLSPARK_SUPPORTED_QUANT_TYPES,
 )
-from aphrodite.model_executor.layers.quantization.utils.marlin_utils import (
+from aphrodite.quantization.utils.marlin_utils import (
     GPTQ_MARLIN_MAX_PARALLEL,
     GPTQ_MARLIN_MIN_THREAD_N,
     MARLIN_SUPPORTED_GROUP_SIZES,
     query_marlin_supported_quant_types,
 )
-from aphrodite.model_executor.layers.quantization.utils.marlin_utils_fp4 import (
+from aphrodite.quantization.utils.marlin_utils_fp4 import (
     FP4_MARLIN_SUPPORTED_GROUP_SIZES,
     rand_marlin_weight_fp4_like,
 )
-from aphrodite.model_executor.layers.quantization.utils.marlin_utils_fp8 import (
+from aphrodite.quantization.utils.marlin_utils_fp8 import (
     marlin_quant_fp8_torch,
 )
-from aphrodite.model_executor.layers.quantization.utils.marlin_utils_test import (
+from aphrodite.quantization.utils.marlin_utils_test import (
     MarlinWorkspace,
     awq_marlin_quantize,
     marlin_quantize,
 )
-from aphrodite.model_executor.layers.quantization.utils.marlin_utils_test_24 import (
+from aphrodite.quantization.utils.marlin_utils_test_24 import (
     marlin_24_quantize,
 )
-from aphrodite.model_executor.layers.quantization.utils.quant_utils import (
+from aphrodite.quantization.utils.quant_utils import (
     gptq_pack,
     gptq_quantize_weights,
     quantize_weights,
     sort_weights,
 )
-from benchmark_shapes import WEIGHT_SHAPES
-
-from aphrodite import _custom_ops as ops
 from aphrodite.scalar_type import ScalarType, scalar_types
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 

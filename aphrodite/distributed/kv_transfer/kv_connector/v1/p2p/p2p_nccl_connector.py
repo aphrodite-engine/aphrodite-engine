@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import regex as re
 import torch
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from aphrodite.attention.backends.abstract import AttentionMetadata
     from aphrodite.forward_context import ForwardContext
     from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
+    from aphrodite.v1.kv_cache_interface import KVCacheConfig
     from aphrodite.v1.request import Request
 
 logger = init_logger(__name__)
@@ -64,8 +65,11 @@ class P2pNcclConnectorMetadata(KVConnectorMetadata):
 
 
 class P2pNcclConnector(KVConnectorBase_V1):
-    def __init__(self, aphrodite_config: "AphroditeConfig", role: KVConnectorRole):
-        super().__init__(aphrodite_config=aphrodite_config, role=role)
+    def __init__(
+        self, aphrodite_config: "AphroditeConfig", role: KVConnectorRole,
+        kv_cache_config: Optional["KVCacheConfig"] = None,
+    ):
+        super().__init__(aphrodite_config=aphrodite_config, role=role, kv_cache_config=kv_cache_config)
         self._block_size = aphrodite_config.cache_config.block_size
         self._requests_need_load: dict[str, Any] = {}
         self.is_producer = self._kv_transfer_config.is_kv_producer

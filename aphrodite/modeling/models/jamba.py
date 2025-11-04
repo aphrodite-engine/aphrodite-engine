@@ -29,7 +29,13 @@ from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
 from aphrodite.modeling.models.llama import LlamaMLP as JambaMLP
 from aphrodite.quantization import QuantizationConfig
 
-from .interfaces import HasInnerState, IsHybrid, SupportsLoRA, SupportsPP
+from .interfaces import (
+    HasInnerState,
+    IsHybrid,
+    SupportsLoRA,
+    SupportsMambaPrefixCaching,
+    SupportsPP,
+)
 from .utils import (
     AutoWeightsLoader,
     WeightsMapper,
@@ -435,7 +441,14 @@ class JambaModel(nn.Module):
         return loaded_params
 
 
-class JambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP, IsHybrid):
+class JambaForCausalLM(
+    nn.Module,
+    HasInnerState,
+    SupportsLoRA,
+    SupportsPP,
+    IsHybrid,
+    SupportsMambaPrefixCaching,
+):
     hf_to_aphrodite_mapper = WeightsMapper(
         orig_to_new_substr={".self_attn.": ".", ".A_log": ".A"},
     )
@@ -458,10 +471,8 @@ class JambaForCausalLM(nn.Module, HasInnerState, SupportsLoRA, SupportsPP, IsHyb
 
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         config = aphrodite_config.model_config.hf_config
-        cache_config = aphrodite_config.cache_config
         lora_config = aphrodite_config.lora_config
         scheduler_config = aphrodite_config.scheduler_config
-        assert not cache_config.enable_prefix_caching, "Jamba currently does not support prefix caching"
 
         super().__init__()
         self.config = config

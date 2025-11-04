@@ -10,7 +10,9 @@ from aphrodite.endpoints.openai.protocol import (
     FunctionCall,
     ToolCall,
 )
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
+    ToolParser,
+)
 from aphrodite.logger import init_logger
 
 if TYPE_CHECKING:
@@ -21,7 +23,6 @@ else:
 logger = init_logger(__name__)
 
 
-@ToolParserManager.register_module("openai")
 class OpenAIToolParser(ToolParser):
     def __init__(self, tokenizer: "AnyTokenizer"):
         super().__init__(tokenizer)

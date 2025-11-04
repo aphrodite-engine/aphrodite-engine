@@ -15,7 +15,7 @@ from aphrodite.endpoints.openai.protocol import (
     FunctionCall,
     ToolCall,
 )
-from aphrodite.endpoints.openai.tool_parsers import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers import ToolParser
 from aphrodite.endpoints.openai.tool_parsers.utils import extract_intermediate_diff
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
@@ -24,7 +24,6 @@ from aphrodite.transformers_utils.tokenizers import MistralTokenizer
 logger = init_logger(__name__)
 
 
-@ToolParserManager.register_module("jamba")
 class JambaToolParser(ToolParser):
     def __init__(self, tokenizer: AnyTokenizer):
         super().__init__(tokenizer)

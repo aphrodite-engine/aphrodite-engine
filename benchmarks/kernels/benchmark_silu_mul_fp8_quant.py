@@ -16,10 +16,10 @@ from collections.abc import Callable
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from aphrodite.model_executor.layers.fused_moe.batched_deep_gemm_moe import (
+
+from aphrodite.modeling.layers.fused_moe.batched_deep_gemm_moe import (
     persistent_masked_m_silu_mul_quant,
 )
-
 from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import tl, triton
 from aphrodite.utils.deep_gemm import is_deep_gemm_e8m0_used

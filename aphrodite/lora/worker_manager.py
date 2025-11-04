@@ -5,7 +5,12 @@ import torch
 
 from aphrodite.config import AphroditeConfig
 from aphrodite.logger import init_logger
-from aphrodite.lora.models import LoRAModel, LoRAModelManager, LRUCacheLoRAModelManager, create_lora_manager
+from aphrodite.lora.models import (
+    LoRAModel,
+    LoRAModelManager,
+    LRUCacheLoRAModelManager,
+    create_lora_manager,
+)
 from aphrodite.lora.peft_helper import PEFTHelper
 from aphrodite.lora.request import LoRARequest
 from aphrodite.lora.utils import get_adapter_absolute_path

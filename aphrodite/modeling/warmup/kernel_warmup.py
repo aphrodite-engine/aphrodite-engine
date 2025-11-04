@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 import torch
 
 import aphrodite.envs as envs
-from aphrodite.config import AphroditeConfig, CUDAGraphMode
 from aphrodite.logger import init_logger
 from aphrodite.modeling.warmup.deep_gemm_warmup import deep_gemm_warmup
 from aphrodite.platforms import current_platform
@@ -23,26 +22,6 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 
-def flashinfer_autotune_supported(aphrodite_config: AphroditeConfig) -> bool:
-    """
-    Record known issues with aphrodite + flashinfer autotune here. Return True if
-    and only if flashinfer autotune will run through without issues.
-    """
-    is_tp_or_dp = (aphrodite_config.parallel_config.data_parallel_size > 1) or (
-        aphrodite_config.parallel_config.tensor_parallel_size > 1
-    )
-    is_fi_mxfp4_backend = (
-        envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8
-        or envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_BF16
-        or envs.APHRODITE_USE_FLASHINFER_MOE_MXFP4_MXFP8_CUTLASS
-    ) or (
-        current_platform.is_cuda() and current_platform.is_device_capability(100)
-    )  # on >=sm100, default mxfp4 backend is flashinfer
-    is_eager = aphrodite_config.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
-
-    return not (is_tp_or_dp and is_fi_mxfp4_backend and is_eager)
-
-
 def kernel_warmup(worker: "Worker"):
     # Deep GEMM warmup
     do_deep_gemm_warmup = (
@@ -54,11 +33,7 @@ def kernel_warmup(worker: "Worker"):
         deep_gemm_warmup(model, max_tokens)
 
     # FlashInfer autotune for Hopper (SM 9.0) and Blackwell (SM 10.0) GPUs
-    if (
-        has_flashinfer()
-        and current_platform.has_device_capability(90)
-        and flashinfer_autotune_supported(worker.aphrodite_config)
-    ):
+    if has_flashinfer() and current_platform.has_device_capability(90):
         flashinfer_autotune(worker.model_runner)
 
     # FlashInfer attention warmup

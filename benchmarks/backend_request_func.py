@@ -544,8 +544,9 @@ async def async_request_openai_audio(
 
 def get_model(pretrained_model_name_or_path: str) -> str:
     if os.getenv("APHRODITE_USE_MODELSCOPE", "False").lower() == "true":
-        from aphrodite.model_executor.model_loader.weight_utils import get_lock
         from modelscope import snapshot_download
+
+        from aphrodite.modeling.model_loader.weight_utils import get_lock
 
         # Use file lock to prevent multiple processes from
         # downloading the same model weights at the same time.

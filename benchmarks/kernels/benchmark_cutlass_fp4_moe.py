@@ -8,15 +8,15 @@ and 16-bit activations.
 import nvtx
 import torch
 import torch.utils.benchmark as benchmark
-from aphrodite.model_executor.layers.fused_moe.config import (
-    fp8_w8a8_moe_quant_config,
-    nvfp4_moe_quant_config,
-)
-from aphrodite.model_executor.layers.fused_moe.cutlass_moe import cutlass_moe_fp4
-from aphrodite.model_executor.layers.fused_moe.fused_moe import fused_experts, fused_topk
 
 from aphrodite import _custom_ops as ops
 from aphrodite.config import AphroditeConfig, ParallelConfig, set_current_aphrodite_config
+from aphrodite.modeling.layers.fused_moe.config import (
+    fp8_w8a8_moe_quant_config,
+    nvfp4_moe_quant_config,
+)
+from aphrodite.modeling.layers.fused_moe.cutlass_moe import cutlass_moe_fp4
+from aphrodite.modeling.layers.fused_moe.fused_moe import fused_experts, fused_topk
 from aphrodite.scalar_type import scalar_types
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 

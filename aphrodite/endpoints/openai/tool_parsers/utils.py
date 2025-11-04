@@ -3,11 +3,17 @@ from json import JSONDecodeError, JSONDecoder
 from typing import Any
 
 import partial_json_parser
-from openai.types.responses import FunctionTool, ToolChoiceFunction
+from openai.types.responses import (
+    FunctionTool,
+    ToolChoiceFunction,
+)
 from openai.types.responses.tool import Tool
 from partial_json_parser.core.options import Allow
 
-from aphrodite.endpoints.openai.protocol import ChatCompletionNamedToolChoiceParam, ChatCompletionToolsParam
+from aphrodite.endpoints.openai.protocol import (
+    ChatCompletionNamedToolChoiceParam,
+    ChatCompletionToolsParam,
+)
 
 
 def find_common_prefix(s1: str, s2: str) -> str:

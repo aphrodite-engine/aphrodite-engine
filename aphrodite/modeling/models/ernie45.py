@@ -20,12 +20,22 @@
 # limitations under the License.
 """Inference-only Erine model compatible with HuggingFace weights."""
 
+from aphrodite.compilation.decorators import support_torch_compile
 from aphrodite.config import AphroditeConfig
 from aphrodite.modeling.models.llama import LlamaForCausalLM
 
 from .utils import PPMissingLayer
 
 
+@support_torch_compile(
+    # set dynamic_arg_dims to support mrope
+    dynamic_arg_dims={
+        "input_ids": 0,
+        "positions": -1,
+        "intermediate_tensors": 0,
+        "inputs_embeds": 0,
+    }
+)
 class Ernie4_5ForCausalLM(LlamaForCausalLM):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         super().__init__(aphrodite_config=aphrodite_config, prefix=prefix)

@@ -1,7 +1,7 @@
 import copy
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from aphrodite.distributed.kv_events import KVCacheEvent
     from aphrodite.forward_context import ForwardContext
     from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
+    from aphrodite.v1.kv_cache_interface import KVCacheConfig
     from aphrodite.v1.request import Request
 
 logger = init_logger(__name__)
@@ -102,8 +103,13 @@ class MultiConnector(KVConnectorBase_V1):
     - Save to all connectors.
     """
 
-    def __init__(self, aphrodite_config: "AphroditeConfig", role: KVConnectorRole):
-        super().__init__(aphrodite_config=aphrodite_config, role=role)
+    def __init__(
+        self,
+        aphrodite_config: "AphroditeConfig",
+        role: KVConnectorRole,
+        kv_cache_config: Optional["KVCacheConfig"] = None,
+    ):
+        super().__init__(aphrodite_config=aphrodite_config, role=role, kv_cache_config=kv_cache_config)
 
         self._connectors: list[KVConnectorBase_V1] = []
         self._ktc_kv_transfer_config = []

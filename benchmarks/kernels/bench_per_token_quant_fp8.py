@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 import pandas as pd
 import torch
-from aphrodite.model_executor.layers.quantization.input_quant_fp8 import QuantFP8
-from aphrodite.model_executor.layers.quantization.utils.quant_utils import GroupShape
 
+from aphrodite.quantization.input_quant_fp8 import QuantFP8
+from aphrodite.quantization.utils.quant_utils import GroupShape
 from aphrodite.triton_utils import triton
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE

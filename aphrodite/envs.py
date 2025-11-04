@@ -221,6 +221,7 @@ if TYPE_CHECKING:
     APHRODITE_USE_SAMPLING_KERNELS: bool = False
     APHRODITE_DISABLE_FLASH_ATTN_COMPILE: bool = False
     APHRODITE_ENABLE_DYNAMIC_KV_CACHE: bool = False
+    APHRODITE_COMPILE_CACHE_SAVE_FORMAT: Literal["binary", "unpacked"] = "binary"
 
 
 def get_default_cache_root():
@@ -1294,6 +1295,15 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # When enabled without prefix caching, allow aphrodite to dynamically
     # allocate KV cache memory instead of pre-allocation.
     "APHRODITE_ENABLE_DYNAMIC_KV_CACHE": lambda: bool(int(os.getenv("APHRODITE_ENABLE_DYNAMIC_KV_CACHE", "0"))),
+    # Format for saving torch.compile cache artifacts
+    # - "binary": saves as binary file
+    #     Safe for multiple aphrodite run processes accessing the same torch compile cache.
+    # - "unpacked": saves as directory structure (for inspection/debugging)
+    #     NOT multiprocess safe - race conditions may occur with multiple processes.
+    #     Allows viewing and setting breakpoints in Inductor's code output files.
+    "APHRODITE_COMPILE_CACHE_SAVE_FORMAT": env_with_choices(
+        "APHRODITE_COMPILE_CACHE_SAVE_FORMAT", "binary", ["binary", "unpacked"]
+    ),
 }
 
 # --8<-- [end:env-vars-definition]

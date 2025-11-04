@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import itertools
 import random
 import time
@@ -180,10 +179,10 @@ class Scheduler(SchedulerInterface):
         if self.aphrodite_config.kv_transfer_config is not None:
             assert not self.is_encoder_decoder, "Encoder-decoder models are not currently supported with KV connectors"
 
-            connector_aphrodite_config = copy.copy(self.aphrodite_config)
-            connector_aphrodite_config.kv_cache_config = copy.copy(kv_cache_config)
             self.connector = KVConnectorFactory.create_connector(
-                config=connector_aphrodite_config, role=KVConnectorRole.SCHEDULER
+                config=self.aphrodite_config,
+                role=KVConnectorRole.SCHEDULER,
+                kv_cache_config=self.kv_cache_config,
             )
             if self.log_stats:
                 self.connector_prefix_cache_stats = PrefixCacheStats()

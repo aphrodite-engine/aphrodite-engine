@@ -17,7 +17,9 @@ from aphrodite.endpoints.openai.protocol import (
     FunctionCall,
     ToolCall,
 )
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
+    ToolParser,
+)
 from aphrodite.endpoints.openai.tool_parsers.utils import extract_intermediate_diff
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer, MistralTokenizer
@@ -45,7 +47,6 @@ def _is_fn_name_regex_support(model_tokenizer: AnyTokenizer) -> bool:
     return isinstance(model_tokenizer, MistralTokenizer) and model_tokenizer.version >= 11
 
 
-@ToolParserManager.register_module("mistral")
 class MistralToolParser(ToolParser):
     """
     Tool call parser for Mistral 7B Instruct v0.3, intended for use with

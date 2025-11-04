@@ -21,7 +21,12 @@ from aphrodite.modeling.layers.vocab_parallel_embedding import (
     VocabParallelEmbedding,
 )
 from aphrodite.modeling.model_loader.weight_utils import default_weight_loader
-from aphrodite.modeling.models.interfaces import HasInnerState, IsAttentionFree, SupportsPP
+from aphrodite.modeling.models.interfaces import (
+    HasInnerState,
+    IsAttentionFree,
+    SupportsMambaPrefixCaching,
+    SupportsPP,
+)
 from aphrodite.quantization import QuantizationConfig
 
 from .utils import (
@@ -176,13 +181,11 @@ class MambaModel(nn.Module):
         return loaded_params
 
 
-class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree, SupportsPP):
+class MambaForCausalLM(nn.Module, HasInnerState, IsAttentionFree, SupportsPP, SupportsMambaPrefixCaching):
     def __init__(self, *, aphrodite_config: AphroditeConfig, prefix: str = ""):
         config = aphrodite_config.model_config.hf_config
-        cache_config = aphrodite_config.cache_config
         lora_config = aphrodite_config.lora_config
         self.scheduler_config = aphrodite_config.scheduler_config
-        assert not cache_config.enable_prefix_caching, "Mamba does not support prefix caching"
 
         super().__init__()
         self.config = config

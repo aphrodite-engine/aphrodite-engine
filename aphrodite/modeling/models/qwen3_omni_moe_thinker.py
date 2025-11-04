@@ -76,7 +76,7 @@ from .qwen2_5_omni_thinker import (
 )
 from .qwen2_5_vl import Qwen2_5_VisionAttention, Qwen2_5_VisionRotaryEmbedding, Qwen2_5_VLProcessingInfo
 from .qwen3_moe import Qwen3MoeForCausalLM, Qwen3MoeModel
-from .utils import AutoWeightsLoader, WeightsMapper, _merge_multimodal_embeddings, flatten_bn, maybe_prefix
+from .utils import AutoWeightsLoader, WeightsMapper, _merge_multimodal_embeddings, maybe_prefix
 from .vision import conv3d_to_linear_weight, get_llm_pos_ids_for_vision, get_vit_attn_backend
 
 try:
@@ -973,8 +973,6 @@ class Qwen3OmniMoeConditionalGenerationMixin(Qwen2_5OmniConditionalGenerationMix
     ) -> torch.Tensor:
         input_features = audio_input["input_features"]
         audio_feature_lengths = audio_input["audio_feature_lengths"]
-
-        audio_feature_lengths = flatten_bn(audio_feature_lengths, concat=True)
 
         audio_feat_lengths, audio_output_lengths = _get_feat_extract_output_lengths(audio_feature_lengths)
 

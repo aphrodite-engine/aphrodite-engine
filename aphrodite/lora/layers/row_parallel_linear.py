@@ -3,7 +3,10 @@ import torch.nn as nn
 from transformers import PretrainedConfig
 
 from aphrodite.config.lora import LoRAConfig
-from aphrodite.distributed import split_tensor_along_last_dim, tensor_model_parallel_all_reduce
+from aphrodite.distributed import (
+    split_tensor_along_last_dim,
+    tensor_model_parallel_all_reduce,
+)
 from aphrodite.modeling.layers.linear import RowParallelLinear
 from aphrodite.platforms import current_platform
 

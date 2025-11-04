@@ -15,7 +15,9 @@ from aphrodite.endpoints.openai.protocol import (
     FunctionCall,
     ToolCall,
 )
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
+    ToolParser,
+)
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils import random_uuid
@@ -23,7 +25,6 @@ from aphrodite.utils import random_uuid
 logger = init_logger(__name__)
 
 
-@ToolParserManager.register_module("xlam")
 class xLAMToolParser(ToolParser):
     def __init__(self, tokenizer: AnyTokenizer):
         super().__init__(tokenizer)

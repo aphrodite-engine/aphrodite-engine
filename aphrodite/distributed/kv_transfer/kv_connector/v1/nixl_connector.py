@@ -11,7 +11,7 @@ from collections import defaultdict
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import msgspec
 import numpy as np
@@ -40,6 +40,7 @@ from aphrodite.v1.core.sched.output import SchedulerOutput
 if TYPE_CHECKING:
     from aphrodite.attention.backends.abstract import AttentionMetadata
     from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
+    from aphrodite.v1.kv_cache_interface import KVCacheConfig
     from aphrodite.v1.request import Request
 
 Transfer = tuple[int, float]  # (xfer_handle, start_time)
@@ -138,7 +139,13 @@ class NixlConnectorMetadata(KVConnectorMetadata):
 
 
 class NixlConnector(KVConnectorBase_V1):
-    def __init__(self, aphrodite_config: AphroditeConfig, role: KVConnectorRole):
+    def __init__(
+        self,
+        aphrodite_config: AphroditeConfig,
+        role: KVConnectorRole,
+        kv_cache_config: Optional["KVCacheConfig"] = None,
+    ):
+        super().__init__(aphrodite_config=aphrodite_config, role=role, kv_cache_config=kv_cache_config)
         assert aphrodite_config.kv_transfer_config is not None
         assert aphrodite_config.kv_transfer_config.engine_id is not None
         self.engine_id: EngineId = aphrodite_config.kv_transfer_config.engine_id

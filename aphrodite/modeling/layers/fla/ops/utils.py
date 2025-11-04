@@ -15,6 +15,7 @@ from typing import Any, Literal
 
 import torch
 
+from aphrodite.platforms import current_platform
 from aphrodite.triton_utils import triton
 
 logger = logging.getLogger(__name__)
@@ -124,8 +125,8 @@ def _check_platform() -> Literal["nvidia", "amd", "intel", "musa"]:
 # For AMD GPUs, the triton backend is 'hip', while for Nvidia GPUs, the triton backend is 'cuda'.
 # However, the torch backend is 'cuda' for both Nvidia and AMD GPUs.
 # Therefore, we need to check the triton backend to determine the actual GPU vendor.
-device = get_available_device() if get_available_device() != "hip" else "cuda"
-device_torch_lib = getattr(torch, device)
+device = "cuda" if current_platform.is_cuda_alike() else get_available_device()
+device_torch_lib = getattr(torch, device, None)
 device_platform = _check_platform()
 
 is_amd = device_platform == "amd"

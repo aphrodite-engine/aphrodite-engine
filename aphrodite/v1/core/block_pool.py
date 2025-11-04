@@ -233,7 +233,7 @@ class BlockPool:
                     parent_block_hash=parent_block_hash,
                     token_ids=request.all_token_ids[num_cached_blocks * block_size : num_full_blocks * block_size],
                     block_size=block_size,
-                    lora_id=request.lora_request.id if request.lora_request else None,
+                    lora_id=request.lora_request.adapter_id if request.lora_request else None,
                     medium=MEDIUM_GPU,
                 )
             )

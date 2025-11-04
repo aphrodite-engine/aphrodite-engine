@@ -13,13 +13,14 @@ from aphrodite.endpoints.openai.protocol import (
     FunctionCall,
     ToolCall,
 )
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
+    ToolParser,
+)
 from aphrodite.logger import init_logger
 
 logger = init_logger(__name__)
 
 
-@ToolParserManager.register_module("phi4_mini_json")
 class Phi4MiniJsonToolParser(ToolParser):
     """
     Tool call parser for phi-4-mini models intended for use with the

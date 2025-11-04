@@ -379,9 +379,7 @@ class Worker(WorkerBase):
         # NOTE: This need to be done before `initialize_kv_cache`,
         # because `initialize_kv_cache` will inject kv cache groups not
         # related to kv cache connector (e.g. kv cache sharing layers).
-        connector_aphrodite_config = copy.copy(self.aphrodite_config)
-        connector_aphrodite_config.kv_cache_config = copy.copy(kv_cache_config)
-        ensure_kv_transfer_initialized(connector_aphrodite_config)
+        ensure_kv_transfer_initialized(self.aphrodite_config, kv_cache_config)
 
         if self.aphrodite_config.model_config.enable_sleep_mode:
             from aphrodite.device_allocator.cumem import CuMemAllocator

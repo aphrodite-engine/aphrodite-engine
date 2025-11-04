@@ -1,4 +1,5 @@
 import contextlib
+import functools
 import os
 from collections import namedtuple
 from collections.abc import Callable
@@ -790,6 +791,7 @@ def get_batch_invariant_attention_block_size() -> AttentionBlockSize:
     return AttentionBlockSize(block_m=16, block_n=16)
 
 
+@functools.cache
 def aphrodite_is_batch_invariant():
     env_key = "APHRODITE_BATCH_INVARIANT"
     is_overridden = False

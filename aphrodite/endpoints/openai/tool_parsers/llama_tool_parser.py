@@ -16,15 +16,19 @@ from aphrodite.endpoints.openai.protocol import (
     FunctionCall,
     ToolCall,
 )
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
-from aphrodite.endpoints.openai.tool_parsers.utils import find_common_prefix, is_complete_json, partial_json_loads
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
+    ToolParser,
+)
+from aphrodite.endpoints.openai.tool_parsers.utils import (
+    find_common_prefix,
+    is_complete_json,
+    partial_json_loads,
+)
 from aphrodite.logger import init_logger
 
 logger = init_logger(__name__)
 
 
-@ToolParserManager.register_module("llama3_json")
-@ToolParserManager.register_module("llama4_json")
 class Llama3JsonToolParser(ToolParser):
     """
     Tool call parser for Llama 3.x and 4 models intended for use with the
