@@ -62,7 +62,7 @@ def flash_attn_maxseqlen_wrapper(
         if use_upstream_fa:
             from flash_attn import flash_attn_varlen_func
         else:
-            from aphrodite.aphrodite_flash_attn import flash_attn_varlen_func
+            from aphrodite.attention.utils.fa_utils import flash_attn_varlen_func
     q, k, v = (einops.rearrange(x, "b s ... -> (b s) ...") for x in [q, k, v])
     output = flash_attn_varlen_func(
         q,

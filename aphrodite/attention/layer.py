@@ -100,6 +100,9 @@ def maybe_get_vit_flash_attn_backend(
         if attn_backend != _Backend.FLASH_ATTN and check_upstream_fa_availability(torch.get_default_dtype()):
             attn_backend = _Backend.FLASH_ATTN
             use_upstream_fa = True
+    elif current_platform.is_xpu():
+        assert attn_backend == _Backend.FLASH_ATTN, "XPU platform only supports FLASH_ATTN as vision attention backend."
+        use_upstream_fa = False
     else:
         return _Backend.TORCH_SDPA, None
 
@@ -110,7 +113,7 @@ def maybe_get_vit_flash_attn_backend(
             if use_upstream_fa:
                 from flash_attn import flash_attn_varlen_func
             else:
-                from aphrodite.aphrodite_flash_attn import flash_attn_varlen_func
+                from aphrodite.attention.utils.fa_utils import flash_attn_varlen_func
     else:
         flash_attn_varlen_func = None
 
@@ -473,22 +476,18 @@ class MultiHeadAttention(nn.Module):
         # If aphrodite native fa is selected, we use it directly.
         use_upstream_fa = False
 
-        if current_platform.is_xpu():
-            # currently, only torch_sdpa is supported on xpu
-            self.attn_backend = _Backend.TORCH_SDPA
-        else:
-            self.attn_backend = (
-                backend
-                if backend
-                in {
-                    _Backend.TORCH_SDPA,
-                    _Backend.XFORMERS,
-                    _Backend.PALLAS,
-                    _Backend.ROCM_AITER_FA,
-                    _Backend.FLASH_ATTN,
-                }
-                else _Backend.TORCH_SDPA
-            )
+        self.attn_backend = (
+            backend
+            if backend
+            in {
+                _Backend.TORCH_SDPA,
+                _Backend.XFORMERS,
+                _Backend.PALLAS,
+                _Backend.ROCM_AITER_FA,
+                _Backend.FLASH_ATTN,
+            }
+            else _Backend.TORCH_SDPA
+        )
 
         self.attn_backend, self._flash_attn_varlen_func = maybe_get_vit_flash_attn_backend(
             self.attn_backend,
