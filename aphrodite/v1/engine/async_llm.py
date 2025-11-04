@@ -82,14 +82,6 @@ class AsyncLLM(EngineClient):
         Returns:
             None
         """
-        if not envs.APHRODITE_USE_V1:
-            raise ValueError(
-                "Using V1 AsyncLLMEngine, but envs.APHRODITE_USE_V1=False. "
-                "This should not happen. As a workaround, try using "
-                "AsyncLLMEngine.from_aphrodite_config(...) or explicitly set "
-                "APHRODITE_USE_V1=0 or 1 and report this issue on Github."
-            )
-
         # Ensure we can serialize custom transformer configs
         maybe_register_config_serialize_by_value()
 
@@ -196,14 +188,6 @@ class AsyncLLM(EngineClient):
         client_index: int = 0,
         disable_log_requests: bool = True,  # Deprecated, will be removed
     ) -> "AsyncLLM":
-        if not envs.APHRODITE_USE_V1:
-            raise ValueError(
-                "Using V1 AsyncLLMEngine, but envs.APHRODITE_USE_V1=False. "
-                "This should not happen. As a workaround, try using "
-                "AsyncLLMEngine.from_aphrodite_config(...) or explicitly set "
-                "APHRODITE_USE_V1=0 or 1 and report this issue on Github."
-            )
-
         # Create the LLMEngine.
         return cls(
             aphrodite_config=aphrodite_config,

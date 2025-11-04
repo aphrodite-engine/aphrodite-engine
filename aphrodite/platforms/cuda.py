@@ -252,16 +252,12 @@ class CudaPlatformBase(Platform):
                     "FLASHMLA, FLASH_ATTN_MLA, or TRITON_MLA. Alternatively, set "
                     "APHRODITE_MLA_DISABLE=1 to disable MLA for this model."
                 )
-            if not use_v1:
-                raise RuntimeError(
-                    "MLA attention backends require the V1 engine. Set APHRODITE_USE_V1=1 to enable them."
-                )
 
             from aphrodite.attention.ops.flashmla import is_flashmla_dense_supported
             from aphrodite.attention.utils.fa_utils import flash_attn_supports_mla
 
             if use_sparse:
-                logger.info_once("Using Sparse MLA backend on V1 engine.", scope="global")
+                logger.info_once("Using Sparse MLA backend.", scope="global")
                 return "aphrodite.v1.attention.backends.mla.flashmla_sparse.FlashMLASparseBackend"
 
             use_cutlassmla = selected_backend == _Backend.CUTLASS_MLA or (
@@ -281,13 +277,13 @@ class CudaPlatformBase(Platform):
             use_triton = selected_backend == _Backend.TRITON_MLA or (selected_backend is None)
 
             if use_cutlassmla:
-                logger.info_once("Using Cutlass MLA backend on V1 engine.", scope="local")
+                logger.info_once("Using Cutlass MLA backend.", scope="local")
                 return "aphrodite.v1.attention.backends.mla.cutlass_mla.CutlassMLABackend"
             if use_flashinfermla:
                 from aphrodite.v1.attention.backends.utils import set_kv_cache_layout
 
                 set_kv_cache_layout("HND")
-                logger.info_once("Using FlashInfer MLA backend on V1 engine.", scope="global")
+                logger.info_once("Using FlashInfer MLA backend.", scope="global")
                 return "aphrodite.v1.attention.backends.mla.flashinfer_mla.FlashInferMLABackend"
             if use_flashmla:
                 if block_size % 64 != 0:
@@ -296,106 +292,96 @@ class CudaPlatformBase(Platform):
                         block_size,
                     )
                 else:
-                    logger.info_once("Using FlashMLA backend on V1 engine.", scope="global")
+                    logger.info_once("Using FlashMLA backend.", scope="global")
                     return "aphrodite.v1.attention.backends.mla.flashmla.FlashMLABackend"
             if use_flashattn:
-                logger.info_once("Using FlashAttention MLA backend on V1 engine.", scope="global")
+                logger.info_once("Using FlashAttention MLA backend.", scope="global")
                 return "aphrodite.v1.attention.backends.mla.flashattn_mla.FlashAttnMLABackend"
             if use_triton:
-                logger.info_once("Using Triton MLA backend on V1 engine.", scope="global")
+                logger.info_once("Using Triton MLA backend.", scope="global")
                 return "aphrodite.v1.attention.backends.mla.triton_mla.TritonMLABackend"
-        if use_v1:
-            FLASHINFER_V1 = "aphrodite.v1.attention.backends.flashinfer.FlashInferBackend"  # noqa: E501
-            FLEX_ATTENTION_V1 = "aphrodite.v1.attention.backends.flex_attention.FlexAttentionBackend"  # noqa: E501
-            TRITON_ATTN = "aphrodite.v1.attention.backends.triton_attn.TritonAttentionBackend"  # noqa: E501
-            FLASH_ATTN_V1 = "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"  # noqa: E501
-            TREE_ATTN_V1 = "aphrodite.v1.attention.backends.tree_attn.TreeAttentionBackend"  # noqa: E501
-            XFORMERS_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
 
-            use_fp8_kv_cache = kv_cache_dtype is not None and kv_cache_dtype.startswith("fp8")
+        FLASHINFER_V1 = "aphrodite.v1.attention.backends.flashinfer.FlashInferBackend"  # noqa: E501
+        FLEX_ATTENTION_V1 = "aphrodite.v1.attention.backends.flex_attention.FlexAttentionBackend"  # noqa: E501
+        TRITON_ATTN = "aphrodite.v1.attention.backends.triton_attn.TritonAttentionBackend"  # noqa: E501
+        FLASH_ATTN_V1 = "aphrodite.v1.attention.backends.flash_attn.FlashAttentionBackend"  # noqa: E501
+        TREE_ATTN_V1 = "aphrodite.v1.attention.backends.tree_attn.TreeAttentionBackend"  # noqa: E501
+        XFORMERS_V1 = "aphrodite.v1.attention.backends.xformers.XFormersAttentionBackend"  # noqa: E501
 
-            if selected_backend == _Backend.FLASHINFER:
-                logger.info_once("Using FlashInfer backend on V1 engine.", scope="global")
-                if cls.has_device_capability(100):
-                    from aphrodite.v1.attention.backends.utils import set_kv_cache_layout
+        use_fp8_kv_cache = kv_cache_dtype is not None and kv_cache_dtype.startswith("fp8")
 
-                    set_kv_cache_layout("HND")
-                return FLASHINFER_V1
-            elif selected_backend == _Backend.FLEX_ATTENTION:
-                logger.info_once("Using FlexAttention backend on V1 engine.", scope="global")
-                return FLEX_ATTENTION_V1
-            elif selected_backend == _Backend.TRITON_ATTN:
-                logger.info_once("Using Triton backend on V1 engine.", scope="global")
-                return TRITON_ATTN
-            elif selected_backend == _Backend.FLASH_ATTN:
-                logger.info_once("Using Flash Attention backend on V1 engine.", scope="global")
-                return FLASH_ATTN_V1
-            elif selected_backend == _Backend.TREE_ATTN:
-                logger.info_once("Using Tree Attention backend on V1 engine.", scope="global")
-                return TREE_ATTN_V1
-            elif selected_backend == _Backend.XFORMERS:
-                logger.info_once("Using XFormers backend on V1 engine.", scope="global")
-                return XFORMERS_V1
+        if selected_backend == _Backend.FLASHINFER:
+            logger.info_once("Using FlashInfer backend.")
+            if cls.has_device_capability(100):
+                from aphrodite.v1.attention.backends.utils import set_kv_cache_layout
 
-            from aphrodite.attention.selector import is_attn_backend_supported
-
-            # Default backends for V1 engine
-            # Prefer FlashInfer for Blackwell GPUs if installed
-            if cls.is_device_capability(100):
-                if is_default_backend_supported := is_attn_backend_supported(FLASHINFER_V1, head_size, dtype):
-                    from aphrodite.v1.attention.backends.utils import set_kv_cache_layout
-
-                    logger.info_once(
-                        "Using FlashInfer backend with HND KV cache layout on "
-                        "V1 engine by default for Blackwell (SM 10.0) GPUs.",
-                        scope="global",
-                    )
-                    set_kv_cache_layout("HND")
-
-                    return FLASHINFER_V1
-
-                if not is_default_backend_supported.can_import:
-                    logger.warning_once(
-                        "FlashInfer failed to import for V1 engine on "
-                        "Blackwell (SM 10.0) GPUs; it is recommended to "
-                        "install FlashInfer for better performance.",
-                        scope="global",
-                    )
-
-            # FlashAttention is the default for SM 8.0+ GPUs
-            if cls.has_device_capability(80):
-                if (has_sink or use_fp8_kv_cache) and not cls.is_device_capability(90):
-                    logger.info_once("Using Triton backend on V1 engine.", scope="global")
-                    return TRITON_ATTN
-                elif is_default_backend_supported := is_attn_backend_supported(
-                    FLASH_ATTN_V1, head_size, dtype, allow_import_error=False
-                ):
-                    logger.info_once("Using Flash Attention backend on V1 engine.", scope="global")
-                    return FLASH_ATTN_V1
-
-            # FlexAttention is the default for older GPUs
-            else:
-                logger.info_once("Using FlexAttention backend on V1 engine.", scope="global")
-                return FLEX_ATTENTION_V1
-
-            assert not is_default_backend_supported
-
-            use_flex_attention_reason = {}
-            if not is_default_backend_supported.head_size:
-                use_flex_attention_reason["head_size"] = head_size
-            if not is_default_backend_supported.dtype:
-                use_flex_attention_reason["dtype"] = dtype
-
-            logger.info_once(
-                "Using FlexAttention backend for %s on V1 engine.",
-                ", ".join(f"{k}={v}" for k, v in use_flex_attention_reason.items()),
-                scope="global",
-            )
+                set_kv_cache_layout("HND")
+            return FLASHINFER_V1
+        elif selected_backend == _Backend.FLEX_ATTENTION:
+            logger.info_once("Using FlexAttention backend.")
             return FLEX_ATTENTION_V1
+        elif selected_backend == _Backend.TRITON_ATTN:
+            logger.info_once("Using Triton backend.")
+            return TRITON_ATTN
+        elif selected_backend == _Backend.FLASH_ATTN:
+            logger.info_once("Using Flash Attention backend.")
+            return FLASH_ATTN_V1
+        elif selected_backend == _Backend.TREE_ATTN:
+            logger.info_once("Using Tree Attention backend.")
+            return TREE_ATTN_V1
+        elif selected_backend == _Backend.XFORMERS:
+            logger.info_once("Using XFormers backend.")
+            return XFORMERS_V1
 
-        raise RuntimeError(
-            "V0 attention backends have been removed. Set APHRODITE_USE_V1=1 to select a supported backend."
+        from aphrodite.attention.selector import is_attn_backend_supported
+
+        # Default backends for V1 engine
+        # Prefer FlashInfer for Blackwell GPUs if installed
+        if cls.is_device_capability(100):
+            if is_default_backend_supported := is_attn_backend_supported(FLASHINFER_V1, head_size, dtype):
+                from aphrodite.v1.attention.backends.utils import set_kv_cache_layout
+
+                logger.info_once(
+                    "Using FlashInfer backend with HND KV cache layout on "
+                    "V1 engine by default for Blackwell (SM 10.0) GPUs.",
+                    scope="global",
+                )
+                set_kv_cache_layout("HND")
+
+                return FLASHINFER_V1
+
+            if not is_default_backend_supported.can_import:
+                logger.warning_once(
+                    "FlashInfer failed to import for V1 engine on "
+                    "Blackwell (SM 10.0) GPUs; it is recommended to "
+                    "install FlashInfer for better performance.",
+                    scope="global",
+                )
+
+        # FlashAttention is the default for SM 8.0+ GPUs
+        if cls.has_device_capability(80):
+            if (has_sink or use_fp8_kv_cache) and not cls.is_device_capability(90):
+                logger.info_once("Using Triton backend.", scope="global")
+                return TRITON_ATTN
+            elif is_default_backend_supported := is_attn_backend_supported(
+                FLASH_ATTN_V1, head_size, dtype, allow_import_error=False
+            ):
+                logger.info_once("Using Flash Attention backend.", scope="global")
+                return FLASH_ATTN_V1
+
+        assert not is_default_backend_supported
+
+        use_flex_attention_reason = {}
+        if not is_default_backend_supported.head_size:
+            use_flex_attention_reason["head_size"] = head_size
+        if not is_default_backend_supported.dtype:
+            use_flex_attention_reason["dtype"] = dtype
+
+        logger.info_once(
+            "Using FlexAttention backend for %s.",
+            ", ".join(f"{k}={v}" for k, v in use_flex_attention_reason.items()),
         )
+        return FLEX_ATTENTION_V1
 
     @classmethod
     def get_punica_wrapper(cls) -> str:
