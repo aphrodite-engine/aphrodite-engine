@@ -155,6 +155,8 @@ class FlashInferAllGatherMoEPrepareAndFinalize(FlashInferCutlassMoEPrepareAndFin
         quant_config: FusedMoEQuantConfig,
     ) -> mk.PrepareResultType:
         self._apply_router_weight_on_input(a1, topk_weights, topk_ids, apply_router_weight_on_input)
+        if not self.use_dp:
+            return a1, None, None, topk_ids, topk_weights
 
         a1q, a1q_scale = moe_kernel_quantize_input(
             a1,
@@ -164,14 +166,13 @@ class FlashInferAllGatherMoEPrepareAndFinalize(FlashInferCutlassMoEPrepareAndFin
             quant_config.block_shape,
             is_fp4_scale_swizzled=not self.use_dp,
         )
-        if self.use_dp:
-            topk_weights, topk_ids, a1q, a1q_scale = get_dp_group().all_gatherv(
-                [topk_weights, topk_ids, a1q, a1q_scale],
-                dim=0,
-                sizes=get_local_sizes(),
-            )
-            if quant_config.quant_dtype == "nvfp4":
-                a1q_scale = nvfp4_block_scale_interleave(a1q_scale)
+        topk_weights, topk_ids, a1q, a1q_scale = get_dp_group().all_gatherv(
+            [topk_weights, topk_ids, a1q, a1q_scale],
+            dim=0,
+            sizes=get_local_sizes(),
+        )
+        if quant_config.quant_dtype == "nvfp4":
+            a1q_scale = nvfp4_block_scale_interleave(a1q_scale)
 
         return a1q, a1q_scale, None, topk_ids, topk_weights
 
