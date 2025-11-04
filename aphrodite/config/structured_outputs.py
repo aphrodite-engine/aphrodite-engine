@@ -1,8 +1,9 @@
 import hashlib
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
 from pydantic import model_validator
 from pydantic.dataclasses import dataclass
+from typing_extensions import Self
 
 from aphrodite.config.utils import config
 
