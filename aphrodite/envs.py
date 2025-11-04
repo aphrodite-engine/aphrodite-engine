@@ -205,7 +205,6 @@ if TYPE_CHECKING:
     APHRODITE_OBJECT_STORAGE_SHM_BUFFER_NAME: str = "APHRODITE_OBJECT_STORAGE_SHM_BUFFER"
     APHRODITE_DEEPEP_BUFFER_SIZE_MB: int = 1024
     APHRODITE_DEEPEP_HIGH_THROUGHPUT_FORCE_INTRA_NODE: bool = False
-    APHRODITE_DEEPEP_LOW_LATENCY_ALLOW_NVLINK: bool = True
     APHRODITE_DEEPEP_LOW_LATENCY_USE_MNNVL: bool = False
     APHRODITE_DBO_COMM_SMS: int = 20
     APHRODITE_PATTERN_MATCH_DEBUG: str | None = None
@@ -1250,11 +1249,6 @@ environment_variables: dict[str, Callable[[], Any]] = {
     "APHRODITE_DEEPEP_HIGH_THROUGHPUT_FORCE_INTRA_NODE": lambda: bool(
         int(os.getenv("APHRODITE_DEEPEP_HIGH_THROUGHPUT_FORCE_INTRA_NODE", "0"))
     ),
-    # Allow DeepEP to use nvlink for internode_ll kernel, turn this on for
-    # better latency on GB200 like system
-    "APHRODITE_DEEPEP_LOW_LATENCY_ALLOW_NVLINK": lambda: bool(
-        int(os.getenv("APHRODITE_DEEPEP_LOW_LATENCY_ALLOW_NVLINK", "1"))
-    ),
     # Allow DeepEP to use MNNVL (multi-node nvlink) for internode_ll kernel,
     # turn this for better latency on GB200 like system
     "APHRODITE_DEEPEP_LOW_LATENCY_USE_MNNVL": lambda: bool(
@@ -1423,7 +1417,6 @@ def compute_hash() -> str:
         "APHRODITE_NVFP4_GEMM_BACKEND",
         "APHRODITE_USE_FBGEMM",
         "APHRODITE_DEEPEP_HIGH_THROUGHPUT_FORCE_INTRA_NODE",
-        "APHRODITE_DEEPEP_LOW_LATENCY_ALLOW_NVLINK",
         "APHRODITE_DEEPEP_LOW_LATENCY_USE_MNNVL",
     ]
     for key in environment_variables_to_hash:

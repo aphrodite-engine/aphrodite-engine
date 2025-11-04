@@ -336,7 +336,7 @@ class DeepEPLLAll2AllManager(DeepEPAll2AllManagerBase):
             num_rdma_bytes=num_rdma_bytes,
             low_latency_mode=True,
             num_qps_per_rank=num_qps_per_rank,
-            allow_nvlink_for_low_latency_mode=envs.APHRODITE_DEEPEP_LOW_LATENCY_ALLOW_NVLINK,
+            allow_nvlink_for_low_latency_mode=True,
             allow_mnnvl=envs.APHRODITE_DEEPEP_LOW_LATENCY_USE_MNNVL,
         )
 
