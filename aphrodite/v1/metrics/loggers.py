@@ -1005,6 +1005,9 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
             self.counter_generation_tokens[engine_idx].inc(finished_request.num_generation_tokens)
 
     def record_sleep_state(self, sleep: int = 0, level: int = 0):
+        if not envs.APHRODITE_SERVER_DEV_MODE:
+            return
+
         awake = 1
         discard_all = 0
         weights_offloaded = 0
