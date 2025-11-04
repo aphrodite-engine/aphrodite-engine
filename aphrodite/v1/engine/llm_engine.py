@@ -55,19 +55,8 @@ class LLMEngine:
         use_cached_outputs: bool = False,
         multiprocess_mode: bool = False,
     ) -> None:
-        if not envs.APHRODITE_USE_V1:
-            raise ValueError(
-                "Using V1 LLMEngine, but envs.APHRODITE_USE_V1=False. "
-                "This should not happen. As a workaround, try using "
-                "LLMEngine.from_aphrodite_config(...) or explicitly set "
-                "APHRODITE_USE_V1=0 or 1 and report this issue on Github."
-            )
-
         if stat_loggers is not None:
-            raise NotImplementedError(
-                "Passing StatLoggers to LLMEngine in V1 is not yet supported. "
-                "Set APHRODITE_USE_V1=0 and file and issue on Github."
-            )
+            raise NotImplementedError("Passing StatLoggers to LLMEngine is not yet supported.")
 
         self.aphrodite_config = aphrodite_config
         self.observability_config = aphrodite_config.observability_config

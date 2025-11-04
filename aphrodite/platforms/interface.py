@@ -453,11 +453,7 @@ class Platform:
         """
         Whether to use allgather in LogitsProcessor to gather the logits.
         """
-        import aphrodite.envs as envs
-        from aphrodite.config import get_current_aphrodite_config
-
-        parallel_config = get_current_aphrodite_config().parallel_config
-        return envs.APHRODITE_USE_V1 or parallel_config.distributed_executor_backend == "external_launcher"
+        return True
 
     @classmethod
     def use_custom_allreduce(cls) -> bool:
