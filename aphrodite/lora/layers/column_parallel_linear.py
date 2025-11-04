@@ -5,7 +5,11 @@ from transformers import PretrainedConfig
 from aphrodite.config.lora import LoRAConfig
 from aphrodite.distributed import tensor_model_parallel_all_gather
 from aphrodite.distributed.utils import divide
-from aphrodite.modeling.layers.linear import ColumnParallelLinear, MergedColumnParallelLinear, QKVParallelLinear
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    MergedColumnParallelLinear,
+    QKVParallelLinear,
+)
 from aphrodite.platforms import current_platform
 
 from .base_linear import BaseLinearLayerWithLoRA

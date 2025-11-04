@@ -3,7 +3,12 @@ from transformers import PretrainedConfig
 
 from aphrodite.config.lora import LoRAConfig
 from aphrodite.distributed.utils import divide
-from aphrodite.modeling.layers.linear import ColumnParallelLinear, LinearBase, ReplicatedLinear, RowParallelLinear
+from aphrodite.modeling.layers.linear import (
+    ColumnParallelLinear,
+    LinearBase,
+    ReplicatedLinear,
+    RowParallelLinear,
+)
 from aphrodite.platforms import current_platform
 
 from .base import BaseLayerWithLoRA

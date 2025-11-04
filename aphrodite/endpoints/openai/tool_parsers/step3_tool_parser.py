@@ -14,7 +14,9 @@ from aphrodite.endpoints.openai.protocol import (
     FunctionCall,
     ToolCall,
 )
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
+    ToolParser,
+)
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 from aphrodite.utils import random_uuid
@@ -22,7 +24,6 @@ from aphrodite.utils import random_uuid
 logger = init_logger(__name__)
 
 
-@ToolParserManager.register_module(["step3"])
 class Step3ToolParser(ToolParser):
     """
     Tool parser for a model that uses a specific XML-like format for tool calls.

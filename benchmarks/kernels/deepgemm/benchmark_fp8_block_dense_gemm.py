@@ -2,12 +2,12 @@
 import time
 
 import torch
-from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
+
+from aphrodite import _custom_ops as ops
+from aphrodite.quantization.utils.fp8_utils import (
     per_token_group_quant_fp8,
     w8a8_triton_block_scaled_mm,
 )
-
-from aphrodite import _custom_ops as ops
 from aphrodite.triton_utils import triton
 from aphrodite.utils.deep_gemm import (
     calc_diff,

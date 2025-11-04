@@ -17,7 +17,9 @@ from aphrodite.endpoints.openai.protocol import (
     FunctionCall,
     ToolCall,
 )
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParser, ToolParserManager
+from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import (
+    ToolParser,
+)
 from aphrodite.logger import init_logger
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
@@ -1089,7 +1091,6 @@ class StreamingXMLToolCallParser:
         self.deferred_param_raw_value = ""
 
 
-@ToolParserManager.register_module("qwen3_xml")
 class Qwen3XMLToolParser(ToolParser):
     def __init__(self, tokenizer: AnyTokenizer):
         super().__init__(tokenizer)

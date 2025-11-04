@@ -1,17 +1,19 @@
 import importlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import aphrodite.envs as envs
-from aphrodite.config import AphroditeConfig
 from aphrodite.distributed.kv_transfer.kv_connector.base import (
     KVConnectorBase, KVConnectorBaseType)
 from aphrodite.distributed.kv_transfer.kv_connector.v1 import (KVConnectorRole,
                                                                supports_hma)
 from aphrodite.logger import init_logger
+from aphrodite.utils.func_utils import supports_kw
 
 if TYPE_CHECKING:
+    from aphrodite.config import AphroditeConfig
     from aphrodite.config.kv_transfer import KVTransferConfig
+    from aphrodite.v1.kv_cache_interface import KVCacheConfig
 
 logger = init_logger(__name__)
 
@@ -34,8 +36,9 @@ class KVConnectorFactory:
     @classmethod
     def create_connector(
         cls,
-        config: AphroditeConfig,
+        config: "AphroditeConfig",
         role: KVConnectorRole,
+        kv_cache_config: Optional["KVCacheConfig"] = None,
     ) -> KVConnectorBase:
         if not envs.APHRODITE_USE_V1:
             raise ValueError(
@@ -46,7 +49,9 @@ class KVConnectorFactory:
         kv_transfer_config = config.kv_transfer_config
         if kv_transfer_config is None:
             raise ValueError("kv_transfer_config must be set to create a connector")
-        connector_cls = cls.get_connector_class(kv_transfer_config)
+        connector_cls, compat_sig = cls._get_connector_class_with_compat(
+            kv_transfer_config
+        )
 
         # check if the connector supports HMA
         hma_enabled = not config.scheduler_config.disable_hybrid_kv_cache_manager
@@ -69,7 +74,12 @@ class KVConnectorFactory:
         # - Co-locate with worker process
         # - Should only be used inside the forward context & attention layer
         # We build separately to enforce strict separation
-        return connector_cls(config, role)
+        if compat_sig:
+            # Old signature: __init__(self, aphrodite_config, role)
+            return connector_cls(config, role)
+        else:
+            # New signature: __init__(self, aphrodite_config, role, kv_cache_config)
+            return connector_cls(config, role, kv_cache_config)
 
     @classmethod
     def get_connector_class_by_name(
@@ -90,13 +100,13 @@ class KVConnectorFactory:
         return cls._registry[connector_name]()
 
     @classmethod
-    def get_connector_class(
+    def _get_connector_class_with_compat(
         cls, kv_transfer_config: "KVTransferConfig"
-    ) -> type[KVConnectorBaseType]:
-        """Get the connector class by name."""
+    ) -> tuple[type[KVConnectorBaseType], bool]:
         connector_name = kv_transfer_config.kv_connector
         if connector_name is None:
             raise ValueError("Connector name is not set in KVTransferConfig")
+        compat_sig = False
         if connector_name in cls._registry:
             connector_cls = cls._registry[connector_name]()
         else:
@@ -111,6 +121,21 @@ class KVConnectorFactory:
                     f"Class {connector_name} not found in {connector_module_path}"
                 ) from e
             connector_cls = cast(type[KVConnectorBaseType], connector_cls)
+            if not supports_kw(connector_cls, "kv_cache_config"):
+                compat_sig = True
+                logger.warning(
+                    "Connector %s uses deprecated signature with 2 required arguments. "
+                    "Please update to include kv_cache_config as the second argument.",
+                    connector_cls.__name__,
+                )
+        return connector_cls, compat_sig
+
+    @classmethod
+    def get_connector_class(
+        cls, kv_transfer_config: "KVTransferConfig"
+    ) -> type[KVConnectorBaseType]:
+        """Get the connector class by name."""
+        connector_cls, _ = cls._get_connector_class_with_compat(kv_transfer_config)
         return connector_cls
 
 

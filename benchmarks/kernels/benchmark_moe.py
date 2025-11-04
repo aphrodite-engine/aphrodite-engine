@@ -9,13 +9,13 @@ from typing import Any, TypedDict
 
 import ray
 import torch
-from aphrodite.model_executor.layers.fused_moe.config import (
+from ray.experimental.tqdm_ray import tqdm
+
+from aphrodite.modeling.layers.fused_moe.config import (
     FusedMoEQuantConfig,
     _get_config_dtype_str,
 )
-from aphrodite.model_executor.layers.fused_moe.fused_moe import *
-from ray.experimental.tqdm_ray import tqdm
-
+from aphrodite.modeling.layers.fused_moe.fused_moe import *
 from aphrodite.platforms import current_platform
 from aphrodite.transformers_utils.config import get_config
 from aphrodite.triton_utils import triton
@@ -119,7 +119,7 @@ def benchmark_config(
         input_gating.copy_(gating_output[i])
 
     def run():
-        from aphrodite.model_executor.layers.fused_moe import override_config
+        from aphrodite.modeling.layers.fused_moe import override_config
 
         if use_fp8_w8a8:
             quant_dtype = torch.float8_e4m3fn

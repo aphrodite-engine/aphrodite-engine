@@ -1,11 +1,9 @@
 import regex as re
 
-from aphrodite.endpoints.openai.tool_parsers.abstract_tool_parser import ToolParserManager
 from aphrodite.endpoints.openai.tool_parsers.hermes_tool_parser import Hermes2ProToolParser
 from aphrodite.transformers_utils.tokenizer import AnyTokenizer
 
 
-@ToolParserManager.register_module("longcat")
 class LongcatFlashToolParser(Hermes2ProToolParser):
     def __init__(self, tokenizer: AnyTokenizer):
         super().__init__(tokenizer)

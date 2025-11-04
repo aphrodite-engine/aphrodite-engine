@@ -9,12 +9,12 @@ from datetime import datetime
 from typing import Any
 
 import torch
-from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
-    _w8a8_triton_block_scaled_mm,
-)
 from tqdm import tqdm
 
 from aphrodite.platforms import current_platform
+from aphrodite.quantization.utils.fp8_utils import (
+    _w8a8_triton_block_scaled_mm,
+)
 from aphrodite.triton_utils import triton
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 
@@ -375,7 +375,7 @@ if __name__ == "__main__":
         description="""
 Tune triton w8a8 block fp8 for DeepSeek-V3/DeepSeek-R1:
     python3 benchmark_w8a8_block_fp8.py --tp-size 8 --input-type fp8
-Then copy to model_executor/layers/quantization/utils/configs
+Then copy to modeling/layers/quantization/utils/configs
         """,
         formatter_class=argparse.RawTextHelpFormatter,
     )

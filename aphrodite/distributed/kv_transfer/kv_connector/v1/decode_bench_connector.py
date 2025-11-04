@@ -30,7 +30,7 @@ Usage:
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
     from aphrodite.forward_context import ForwardContext
     from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
+    from aphrodite.v1.kv_cache_interface import KVCacheConfig
     from aphrodite.v1.core.sched.output import SchedulerOutput
     from aphrodite.v1.request import Request
 
@@ -76,8 +77,13 @@ class DecodeBenchConnector(KVConnectorBase_V1):
     testing of the decoder with larger input sequence lengths.
     """
 
-    def __init__(self, aphrodite_config: "AphroditeConfig", role: KVConnectorRole):
-        super().__init__(aphrodite_config, role)
+    def __init__(
+        self,
+        aphrodite_config: "AphroditeConfig",
+        role: KVConnectorRole,
+        kv_cache_config: Optional["KVCacheConfig"] = None,
+    ):
+        super().__init__(aphrodite_config, role, kv_cache_config)
 
         self.connector_scheduler: DecodeBenchConnectorScheduler | None = None
         self.connector_worker: DecodeBenchConnectorWorker | None = None

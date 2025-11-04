@@ -3,16 +3,16 @@ from typing import Any, TypedDict
 
 import ray
 import torch
-from aphrodite.model_executor.layers.fused_moe.fused_moe import *
-from aphrodite.model_executor.layers.fused_moe.moe_permute_unpermute import (
+from transformers import AutoConfig
+
+from aphrodite.modeling.layers.fused_moe.fused_moe import *
+from aphrodite.modeling.layers.fused_moe.moe_permute_unpermute import (
     _moe_permute,
     _moe_unpermute_and_reduce,
     moe_permute,
     moe_unpermute,
 )
-from aphrodite.model_executor.layers.fused_moe.utils import _fp8_quantize
-from transformers import AutoConfig
-
+from aphrodite.modeling.layers.fused_moe.utils import _fp8_quantize
 from aphrodite.platforms import current_platform
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 

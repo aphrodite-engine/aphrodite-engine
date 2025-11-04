@@ -5,9 +5,9 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import torch
-from aphrodite.model_executor.layers.quantization.utils import fp8_utils, int8_utils
 
 from aphrodite.platforms import current_platform
+from aphrodite.quantization.utils import fp8_utils, int8_utils
 
 
 @contextmanager

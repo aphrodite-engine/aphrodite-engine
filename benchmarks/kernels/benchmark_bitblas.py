@@ -1,10 +1,11 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from aphrodite.model_executor.layers.quantization.utils.bitblas_utils import (
+from packaging import version
+
+from aphrodite.quantization.utils.bitblas_utils import (
     MINIMUM_BITBLAS_VERSION,
 )
-from packaging import version
 
 try:
     import bitblas

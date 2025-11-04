@@ -2,7 +2,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from itertools import islice
-from typing import Any
+from typing import Any, Optional
 
 import torch
 
@@ -17,6 +17,7 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1.base import (
 from aphrodite.forward_context import ForwardContext
 from aphrodite.logger import init_logger
 from aphrodite.v1.core.kv_cache_manager import KVCacheBlocks
+from aphrodite.v1.kv_cache_interface import KVCacheConfig
 from aphrodite.v1.core.kv_cache_utils import BlockHash
 from aphrodite.v1.core.sched.output import SchedulerOutput
 from aphrodite.v1.kv_offload.abstract import OffloadingManager
@@ -40,8 +41,10 @@ class OffloadingConnectorMetadata(KVConnectorMetadata):
 
 
 class OffloadingConnector(KVConnectorBase_V1):
-    def __init__(self, aphrodite_config: AphroditeConfig, role: KVConnectorRole):
-        super().__init__(aphrodite_config, role)
+    def __init__(self, aphrodite_config: AphroditeConfig, role: KVConnectorRole,
+        kv_cache_config: Optional["KVCacheConfig"] = None,
+    ):
+        super().__init__(aphrodite_config, role, kv_cache_config)
 
         spec = OffloadingSpecFactory.create_spec(aphrodite_config)
 

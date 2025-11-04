@@ -1,12 +1,12 @@
 import torch
-from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
-    apply_w8a8_block_fp8_linear,
-)
-from aphrodite.model_executor.layers.quantization.utils.w8a8_utils import (
-    CUTLASS_BLOCK_FP8_SUPPORTED,
-)
 
 from aphrodite.platforms import current_platform
+from aphrodite.quantization.utils.fp8_utils import (
+    apply_w8a8_block_fp8_linear,
+)
+from aphrodite.quantization.utils.w8a8_utils import (
+    CUTLASS_BLOCK_FP8_SUPPORTED,
+)
 from aphrodite.triton_utils import triton as aphrodite_triton
 
 assert current_platform.is_cuda(), "Only support benchmarking w8a8 block fp8 kernel on CUDA device."

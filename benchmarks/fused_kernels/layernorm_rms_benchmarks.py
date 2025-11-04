@@ -6,11 +6,11 @@ from itertools import product
 
 import torch
 import torch.utils.benchmark as TBenchmark
-from aphrodite.model_executor.layers.layernorm import RMSNorm
 from torch.utils.benchmark import Measurement as TMeasurement
 from tqdm import tqdm
 
 import aphrodite._custom_ops as ops
+from aphrodite.modeling.layers.layernorm import RMSNorm
 
 
 @dataclass

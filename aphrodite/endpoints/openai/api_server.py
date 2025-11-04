@@ -48,6 +48,7 @@ from aphrodite.endpoints.anthropic.protocol import (
 from aphrodite.endpoints.anthropic.serving_messages import AnthropicServingMessages
 from aphrodite.endpoints.logger import RequestLogger
 from aphrodite.endpoints.openai.args import make_arg_parser, validate_parsed_serve_args
+from aphrodite.endpoints.openai.orca_metrics import metrics_header
 from aphrodite.endpoints.openai.protocol import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -130,6 +131,8 @@ sampler_json = ""
 prometheus_multiproc_dir: tempfile.TemporaryDirectory
 
 logger = init_logger("aphrodite.endpoints.openai.api_server")
+
+ENDPOINT_LOAD_METRICS_FORMAT_HEADER_LABEL = "endpoint-load-metrics-format"
 
 _running_tasks: set[asyncio.Task] = set()
 
@@ -803,6 +806,7 @@ async def create_messages(request: AnthropicMessagesRequest, raw_request: Reques
 @with_cancellation
 @load_aware_call
 async def create_chat_completion(request: ChatCompletionRequest, raw_request: Request):
+    metrics_header_format = raw_request.headers.get(ENDPOINT_LOAD_METRICS_FORMAT_HEADER_LABEL, "")
     # Check if we need to switch models (inline model loading)
     await maybe_switch_model(raw_request, request.model)
 
@@ -819,7 +823,10 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
         return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
 
     elif isinstance(generator, ChatCompletionResponse):
-        return JSONResponse(content=generator.model_dump())
+        return JSONResponse(
+            content=generator.model_dump(),
+            headers=metrics_header(metrics_header_format),
+        )
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
@@ -837,6 +844,7 @@ async def create_chat_completion(request: ChatCompletionRequest, raw_request: Re
 @with_cancellation
 @load_aware_call
 async def create_completion(request: CompletionRequest, raw_request: Request):
+    metrics_header_format = raw_request.headers.get(ENDPOINT_LOAD_METRICS_FORMAT_HEADER_LABEL, "")
     # Check if we need to switch models (inline model loading)
     await maybe_switch_model(raw_request, request.model)
 
@@ -854,7 +862,10 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
     elif isinstance(generator, CompletionResponse):
-        return JSONResponse(content=generator.model_dump())
+        return JSONResponse(
+            content=generator.model_dump(),
+            headers=metrics_header(metrics_header_format),
+        )
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
@@ -2564,7 +2575,7 @@ def create_server_unix_socket(path: str) -> socket.socket:
 
 
 def validate_api_server_args(args):
-    valid_tool_parses = ToolParserManager.tool_parsers.keys()
+    valid_tool_parses = ToolParserManager.list_registered()
     if args.enable_auto_tool_choice and args.tool_call_parser not in valid_tool_parses:
         raise KeyError(
             f"invalid tool call parser: {args.tool_call_parser} (chose from {{ {','.join(valid_tool_parses)} }})"

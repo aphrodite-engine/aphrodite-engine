@@ -7,14 +7,14 @@ from collections.abc import Callable, Iterable
 
 import torch
 import torch.utils.benchmark as TBenchmark
-from aphrodite.model_executor.layers.quantization.utils.fp8_utils import (
-    w8a8_triton_block_scaled_mm,
-)
 from torch.utils.benchmark import Measurement as TMeasurement
 from utils import make_rand_tensors
 from weight_shapes import WEIGHT_SHAPES
 
 from aphrodite import _custom_ops as ops
+from aphrodite.quantization.utils.fp8_utils import (
+    w8a8_triton_block_scaled_mm,
+)
 from aphrodite.utils.argparse_utils import FlexibleArgumentParser
 from aphrodite.utils.math_utils import cdiv
 

@@ -141,25 +141,6 @@ class Mamba2AttentionMetadataBuilder(BaseMambaAttentionMetadataBuilder[Mamba2Att
         super().__init__(kv_cache_spec, layer_names, aphrodite_config, device)
         self.chunk_size = aphrodite_config.model_config.get_mamba_chunk_size()
         assert self.chunk_size is not None, "chunk_size needs to be set in the model config for Mamba2 models"
-        if self.aphrodite_config.cache_config.enable_prefix_caching:
-            self.state_indices_tensor = torch.empty(
-                (
-                    self.decode_cudagraph_max_bs,
-                    cdiv(aphrodite_config.model_config.max_model_len, kv_cache_spec.block_size),
-                ),
-                dtype=torch.int32,
-                device=device,
-            )
-            self.block_idx_last_scheduled_token = torch.empty(
-                (self.decode_cudagraph_max_bs,),
-                dtype=torch.int32,
-                device=device,
-            )
-            self.block_idx_last_computed_token = torch.empty(
-                (self.decode_cudagraph_max_bs,),
-                dtype=torch.int32,
-                device=device,
-            )
 
     def build(
         self,
@@ -192,14 +173,11 @@ class Mamba2AttentionMetadataBuilder(BaseMambaAttentionMetadataBuilder[Mamba2Att
             # Additional cache-related varaiables:
             mamba_block_size = self.kv_cache_spec.block_size
             num_computed_tokens = common_attn_metadata.num_computed_tokens_cpu.to(self.device)
-            # Block index of the last computed token
-            block_idx_last_computed_token = cdiv(num_computed_tokens, mamba_block_size) - 1
-            # which is <= block index for the first scheduled token
-            block_idx_first_scheduled_token = cdiv(num_computed_tokens + 1, mamba_block_size) - 1
-            # which is <= block index of the last scheduled token
-            block_idx_last_scheduled_token = cdiv(common_attn_metadata.seq_lens, mamba_block_size) - 1
-            # -1 in case it's non-computed and causes later issues with indexing
-            block_idx_last_computed_token = block_idx_last_computed_token.clamp(min=0)
+            (
+                block_idx_last_computed_token,
+                block_idx_first_scheduled_token,
+                block_idx_last_scheduled_token,
+            ) = self._compute_prefix_caching_block_indices(common_attn_metadata, mamba_block_size)
         else:
             # Always return just a single block per each request:
             state_indices_tensor = common_attn_metadata.block_table_tensor[:, 0]

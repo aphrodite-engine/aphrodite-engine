@@ -2,10 +2,10 @@ import argparse
 import itertools
 
 import torch
-from aphrodite.model_executor.layers.fused_moe.moe_align_block_size import (
+
+from aphrodite.modeling.layers.fused_moe.moe_align_block_size import (
     moe_align_block_size,
 )
-
 from aphrodite.triton_utils import triton
 
 

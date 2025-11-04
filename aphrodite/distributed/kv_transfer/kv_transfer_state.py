@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from aphrodite import envs
 from aphrodite.distributed.kv_transfer.kv_connector.base import (
@@ -10,6 +10,7 @@ from aphrodite.distributed.kv_transfer.kv_connector.v1 import (
 
 if TYPE_CHECKING:
     from aphrodite.config import AphroditeConfig
+    from aphrodite.v1.kv_cache_interface import KVCacheConfig
 
 _KV_CONNECTOR_AGENT: KVConnectorBaseType | None = None
 
@@ -46,7 +47,10 @@ def is_v1_kv_transfer_group(connector: KVConnectorBaseType | None = None) -> boo
     return isinstance(connector, KVConnectorBase_V1)
 
 
-def ensure_kv_transfer_initialized(aphrodite_config: "AphroditeConfig") -> None:
+def ensure_kv_transfer_initialized(
+    aphrodite_config: "AphroditeConfig",
+    kv_cache_config: Optional["KVCacheConfig"] = None,
+) -> None:
     """
     Initialize KV cache transfer parallel group.
     """
@@ -62,7 +66,7 @@ def ensure_kv_transfer_initialized(aphrodite_config: "AphroditeConfig") -> None:
     ):
         if envs.APHRODITE_USE_V1:
             _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(
-                config=aphrodite_config, role=KVConnectorRole.WORKER
+                config=aphrodite_config, role=KVConnectorRole.WORKER, kv_cache_config=kv_cache_config
             )
         else:
             raise ValueError("V0 is no longer supported")

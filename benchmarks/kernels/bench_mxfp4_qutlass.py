@@ -20,11 +20,11 @@ import copy
 import itertools
 
 import torch
-from aphrodite.model_executor.layers.quantization.qutlass_utils import to_blocked
 from compressed_tensors.transform.utils.hadamard import deterministic_hadamard_matrix
 from weight_shapes import WEIGHT_SHAPES
 
 from aphrodite._custom_ops import fusedQuantizeMx, matmul_mxf4_bf16_tn
+from aphrodite.quantization.qutlass_utils import to_blocked
 from aphrodite.triton_utils import triton
 
 PROVIDER_CFGS = {
